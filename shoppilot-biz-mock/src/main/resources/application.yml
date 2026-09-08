@@ -35,6 +35,19 @@ management:
   endpoint:
     health:
       show-details: always
+      # Boot 只在 K8s 环境下自动注册 livenessState/readinessState 这两个指示器，本机必须显式打开，
+      # 否则下面的 group 会因为成员不存在而直接启动失败（实测报 NoSuchHealthContributorException）。
+      probes:
+        enabled: true
+      group:
+        # Readiness gate: /actuator/health flips to UP as soon as the web server binds,
+        # but SeedRunner (an ApplicationRunner) is still inserting 50k orders at that point.
+        # Callers must wait on /actuator/health/readiness instead -- Spring Boot only
+        # publishes ACCEPTING_TRAFFIC after all ApplicationRunners return.
+        readiness:
+          include: readinessState
+        liveness:
+          include: livenessState
 
 shoppilot:
   bizmock:

@@ -85,12 +85,13 @@ if (-not $SkipIngest) {
 }
 
 Write-Host '[6/6] 网关' -ForegroundColor Cyan
-if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8091/actuator/health' -TimeoutSec 5).status -eq 'UP' } 'biz-mock :8091' 180)) {
+# readiness 组：seed 5 万订单期间就是 503 OUT_OF_SERVICE，避免"health 已 UP 但库里还没数据"的抢跑
+if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8091/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } 'biz-mock :8091' 180)) {
     throw 'biz-mock 未就绪，看 logs\bizmock.out'
 }
 & (Join-Path $root 'scripts\start-gateway.ps1') -Profile $Profile | Out-Null
 $gatewayLog = "logs\gateway-$Profile.out"
-if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8082/actuator/health' -TimeoutSec 5).status -eq 'UP' } '网关 :8082' 180)) {
+if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8082/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } '网关 :8082' 180)) {
     throw "网关未就绪，看 $root\$gatewayLog"
 }
 

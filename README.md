@@ -33,6 +33,9 @@ start http://127.0.0.1:8082                   # 调试台
 ```
 
 `up.ps1` 里每一步都可重入：容器已在跑就跳过，seed 非空即跳过，入库是幂等 upsert。
+就绪判定用 Spring Boot 的 readiness 健康组（`/actuator/health/readiness`）：`ApplicationRunner`
+跑完之前端口已经开着，但 `/actuator/health` 会返回 503 `OUT_OF_SERVICE`，脚本因此不会在
+biz-mock 还在 seed 5 万单、网关还在预热 bge-m3 的时候就把流量放进来。
 要停：`pwsh -NoProfile -File scripts/down.ps1`（加 `-Containers` 连中间件一起停，数据卷保留）。
 
 <details>
@@ -214,6 +217,13 @@ slot_ask | fallback | duplicate_submit | rate_limited
 - **perf 模式的 token 数由 Mock 按提示模板估算**，62.4% 的节约率要在 dev 模式重放同一流量模型复核真实计费 token。
 - **网关侧没有 JVM 内端到端用例**：端到端验证靠 `scripts/verify-*.ps1` 打活体服务（真跨进程），
   代价是 `mvn test` 不覆盖它；`@SpringBootTest` 只在 biz-mock 侧。
+  本机还有一条约束：服务在跑的时候 `mvn package` / `mvnw verify` 会被 fat jar 文件锁挡住
+  （`Unable to rename ...jar to ...jar.original`），改完代码要先 `scripts/stop.ps1` 再构建；
+  `mvn -o test` 不受影响。
+- **biz-mock 整个进程消失时，降级帧里没有工单号**：工单存储就在 biz-mock（ADR 0009），
+  `FallbackService.escalate()` 只能留下 warn 日志，网关侧没有本地暂存队列可补投。
+  依赖只慢不挂（`failRate=1.0`）的场景工单照样能落，所以这是"下游彻底没了"这一格的缺口，
+  PLAN 对 ticket 10 的判据（返回降级语义而非 500）仍然成立。
 - **Qdrant 容器 healthcheck 长期报 `unhealthy`**（容器内 wget 访问 `/readyz` 超时），实测读写正常。
 - **本机 `mvn` 与 `mvnw` 的本地仓库不同**：`mvn` 走 `E:\maven_repository`，wrapper 走 `~/.m2`。
   离线复现时统一加 `-Dmaven.repo.local=E:\maven_repository`，干净机器联网首跑无此问题。
@@ -270,6 +280,37 @@ pwsh -NoProfile -File scripts/verify-ratelimit.ps1      # 同步 429 与 SSE rat
 pwsh -NoProfile -File scripts/verify-polarity.ps1       # 反义对不互命中（要求 local/dev 模式）
 node scripts/verify-console.mjs                         # 调试台 15 项（Playwright）
 ```
+
+### 逐 ticket 验收动作 → 覆盖命令
+
+PLAN.md 的 19 行动作都有机器可执行的落点，顺序、退出码、日志位置由一条命令固定：
+
+```powershell
+pwsh -NoProfile -File scripts/run-acceptance.ps1            # 构建 + 起栈 + 全部验收 + 三条演示
+pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，只跑活体验收
+```
+
+| PLAN 行 | 覆盖它的命令 |
+| --- | --- |
+| 01 | `run-acceptance.ps1` 的 stop / build / unit / stack 四步（`mvnw verify` + `mvn -o test` + `up.ps1`）；`verify-plan-actions.ps1` 第 01 段判"三中间件在跑、两服务健康 UP" |
+| 02 | `AuthFilterTest`、`verify-action-loop.ps1` 第 3 段、`demo.ps1 -Which isolation` |
+| 03 | `verify-plan-actions.ps1 -WithRestarts`：重启 biz-mock，等 readiness 放行后再比两次 seed 的订单总数 |
+| 04 | `verify-plan-actions.ps1` 第 04 段：活体 ES/Qdrant 条目数相等，再用上一轮入库日志的纪元与条数证明重跑不增长 |
+| 05 | `verify-plan-actions.ps1` 第 05 段（SSE 逐帧、`done` 带非空 citations、同步端点同答案）、`verify-console.mjs` |
+| 06 | `verify-hit-zero-llm.ps1` |
+| 07 | `verify_l2_filters.py`（intent / tenant / scope / kb_epoch 四条 must-filter 各自独立生效）、`verify-polarity.ps1` |
+| 08 | `python scripts/retrieval_compare.py` → `docs/retrieval-comparison.md` |
+| 09 | `verify_l2_filters.py` 的纪元段（推进纪元后旧缓存点不再命中）、`python scripts/calibrate_intent.py` |
+| 10 | `verify-plan-actions.ps1 -WithRestarts` 第 10 段：进程级 kill 之后仍以同一条 SSE 通道回降级语义 |
+| 11 | `verify-action-loop.ps1`（两轮闭环 / 缺槽追问 / 跨店越权） |
+| 12 | `verify-idempotency.ps1`、`IdempotencyServiceTest` |
+| 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
+| 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
+| 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>.csv` 与 `-summary.csv` |
+| 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
+| 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py` |
+| 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo` |
 
 各 ticket 的实现决策与"当时能答上来的三个追问"记在 `.scratch/shoppilot-mvp/issues/`，
 汇总清单：`python scripts/collect_interview_questions.py` → [docs/interview-qa.md](docs/interview-qa.md)。

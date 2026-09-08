@@ -28,6 +28,17 @@ management:
   endpoint:
     health:
       show-details: always
+      # 同上：非 K8s 环境要显式打开探针指示器，readiness 组才存在。
+      probes:
+        enabled: true
+      group:
+        # Same readiness gate as biz-mock: the gateway's StartupInitializer/IngestRunner
+        # are ApplicationRunners, so plain /actuator/health can report UP before the
+        # knowledge base and intent centroids are actually usable.
+        readiness:
+          include: readinessState
+        liveness:
+          include: livenessState
 
 shoppilot:
   # ADR 0014：mock JWT 签名密钥，至少 32 字节
