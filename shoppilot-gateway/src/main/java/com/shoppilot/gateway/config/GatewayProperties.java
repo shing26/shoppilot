@@ -15,7 +15,8 @@ public record GatewayProperties(
         Agent agent,
         RateLimit ratelimit,
         Ingest ingest,
-        Triage triage) {
+        Triage triage,
+        Ops ops) {
 
     public record Llm(String mode, String baseUrl, String apiKey, String model, double temperature,
                       Duration connectTimeout, Duration readTimeout, long dailyTokenBudget,
@@ -61,5 +62,14 @@ public record GatewayProperties(
     }
 
     public record Triage(String centroidCache) {
+    }
+
+    /**
+     * 运维代理端点（ticket 14/15）。
+     *
+     * <p>浏览器只与同源网关通信，{@code X-Internal-Token} 永远由网关在服务端补上。
+     * 故障注入与复位是平台级动作，额外要求一个运维凭证；生产把 {@code enabled=false} 整条关掉。
+     */
+    public record Ops(boolean enabled, String token) {
     }
 }

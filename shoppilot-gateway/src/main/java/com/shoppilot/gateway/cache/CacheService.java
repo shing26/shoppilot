@@ -9,6 +9,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -145,6 +147,35 @@ public class CacheService {
 
     public void writeNegative(String tenantId, Intent intent, long kbEpoch, Lookup lookup) {
         l1.putNegative(l1.key(tenantId, intent.name(), kbEpoch, lookup.normalizedQuery()));
+    }
+
+    /**
+     * 演示/验收用：直接给某个问法打负缓存标记，让 {@code INTENT_UNRESOLVED} 可稳定复现。
+     *
+     * <p>90 条语料上稠密召回几乎总能返回候选，"检索为空 -> 打负标记"这条分支在真实流量里
+     * 极难自然命中；一条打不开的内部开关，好过一段永远走不到的死代码。
+     * 只在运维代理开启时可达，见 {@code OpsController}。
+     */
+    public void markNegative(String tenantId, Intent intent, long kbEpoch, String rawQuery) {
+        String normalized = QueryNormalizer.normalize(rawQuery);
+        // 两个桶都打：查询顺序是先平台桶后本店桶，只标本店桶会被平台桶里的既有答案抢先命中
+        l1.putNegative(l1.key(RuleChunk.PLATFORM_TENANT, intent.name(), kbEpoch, normalized));
+        l1.putNegative(l1.key(tenantId, intent.name(), kbEpoch, normalized));
+    }
+
+    /**
+     * 复位答案缓存：清 L1 正文与负标记、重建 L2 向量表。
+     *
+     * <p>刻意不动知识库纪元。纪元同时是检索过滤器，推一次纪元等于把 90 条政策条款
+     * 从检索范围里整体摘掉，那不是"清缓存"，那是"把知识库关了"。
+     */
+    public Map<String, Object> flush() {
+        long l1Keys = l1.flush();
+        l2.flush();
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("l1KeysDeleted", l1Keys);
+        view.put("kbEpoch", "unchanged");
+        return view;
     }
 
     private List<Bucket> buckets(String tenantId, Intent intent, long kbEpoch, String normalized) {

@@ -117,4 +117,10 @@ public class L2SemanticCache {
             return 0;
         }
     }
+
+    /** 清空答案缓存向量表并重建，供演示复位使用。 */
+    public void flush() {
+        qdrant.deleteCollection(retrievalConfig.cacheCollection());
+        ensureCollection();
+    }
 }

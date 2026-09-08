@@ -3,7 +3,9 @@ package com.shoppilot.gateway.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.agent.AgentResult;
 import com.shoppilot.gateway.agent.AgentStateMachine;
+import com.shoppilot.gateway.agent.FallbackReason;
 import com.shoppilot.gateway.agent.EventSink;
+import com.shoppilot.gateway.agent.FallbackService;
 import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.ratelimit.RateLimitService;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -46,15 +49,18 @@ public class ChatController {
     private final AgentStateMachine agent;
     private final CacheService cacheService;
     private final RateLimitService rateLimit;
+    private final FallbackService fallbackService;
     private final ObjectMapper mapper;
     private final Timer ttftTimer;
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     public ChatController(AgentStateMachine agent, CacheService cacheService, RateLimitService rateLimit,
-                          ObjectMapper mapper, MeterRegistry registry) {
+                          ObjectMapper mapper, MeterRegistry registry,
+                          FallbackService fallbackService) {
         this.agent = agent;
         this.cacheService = cacheService;
         this.rateLimit = rateLimit;
+        this.fallbackService = fallbackService;
         this.mapper = mapper;
         // TTFT 口径：服务端收到请求 -> 写出首个 token 帧，不含网络往返
         this.ttftTimer = Timer.builder("shoppilot_ttft_seconds")
@@ -70,9 +76,13 @@ public class ChatController {
         RateLimitService.Decision decision = admit(servletRequest);
         if (!decision.allowed()) {
             // 同步端点用标准 429 + Retry-After，脚本与中间层都能直接理解
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .header(HttpHeaders.RETRY_AFTER, String.valueOf(Math.max(1, decision.retryAfterMs() / 1000)))
-                    .build();
+            String ticketId = ticketFor(TenantContext.current(), request.query()).orElse(null);
+            ResponseEntity.BodyBuilder builder = ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .header(HttpHeaders.RETRY_AFTER, String.valueOf(Math.max(1, decision.retryAfterMs() / 1000)));
+            if (ticketId != null) {
+                builder.header("X-Fallback-Ticket", ticketId);
+            }
+            return builder.build();
         }
         AgentResult result = agent.run(request.query(), request.idempotencyToken(), EventSink.NOOP);
         return ResponseEntity.ok(ChatResponse.of(UUID.randomUUID().toString(), result));
@@ -92,6 +102,9 @@ public class ChatController {
         if (!decision.allowed()) {
             // 被限流的用户看到的仍是同一条通道里的正常提示，而不是裸 429
             sink.meta(identity.conversationId(), null, CacheService.Layer.NONE);
+            // 降级必须留可查证的痕迹，否则"转人工"只是话术
+            sink.fallback(FallbackReason.RATE_LIMITED,
+                    ticketFor(identity, request.query()).orElse(null));
             sink.rateLimited(decision.retryAfterMs(),
                     "当前咨询人数较多，请稍后再试。（限流维度：" + decision.dimension() + "）");
             emitter.complete();
@@ -121,6 +134,11 @@ public class ChatController {
     private RateLimitService.Decision admit(HttpServletRequest servletRequest) {
         return rateLimit.tryAcquire(TenantContext.tenantId(), TenantContext.customerId(),
                 servletRequest.getRemoteAddr());
+    }
+
+    /** 限流工单按 (租户, 买家) 合并，避免洪峰把人工队列刷爆。 */
+    private Optional<String> ticketFor(TenantContext.Identity identity, String query) {
+        return fallbackService.escalateRateLimited(query, identity.tenantId(), identity.customerId());
     }
 
     public record ChatRequest(@NotBlank @Size(max = 500) String query, String idempotencyToken) {

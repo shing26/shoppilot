@@ -95,6 +95,11 @@ shoppilot:
   triage:
     # T1 意图质心的本地缓存，按样本指纹失效；删掉它会重新向量化 90 条样本
     centroid-cache: ${SHOPPILOT_CENTROID_CACHE:.cache/intent-centroids.json}
+  ops:
+    # 调试台的故障注入 / 工单队列 / 演示复位经网关代理到 biz-mock（ticket 14、15）。
+    # 生产必须置 false：故障注入是平台级动作，能拖慢整条链路。
+    enabled: ${SHOPPILOT_OPS_ENABLED:true}
+    token: ${SHOPPILOT_OPS_TOKEN:dev-ops-token}
 
 ---
 spring:

@@ -261,6 +261,15 @@ public class AgentStateMachine {
             step(trace, sink, AgentState.PLAN, "tool-rounds-exhausted");
         }
 
+        if (rounds == 0 && !toolUsed && intent != null && intent.isAction()) {
+            // 小模型经常用自然语言追问槽位而不是发 function call。槽位状态机不能建在"模型肯不肯调工具"上，
+            // 否则 maxSlotAsks 与 SLOT_UNRESOLVED 全是摆设：网关自己派生工具、自己抽槽位、自己数追问次数。
+            ToolDispatcher.Dispatch gap = slotGapForActionTurn(intent, query);
+            if (gap != null) {
+                return ModelRun.solo(askSlot(session, tenantId, conversationId, gap, query, trace, sink));
+            }
+        }
+
         step(trace, sink, AgentState.REPLY, "streaming");
         String answer;
         int promptTokens = 0;
@@ -284,8 +293,7 @@ public class AgentStateMachine {
             }
         }
 
-        sessionStore.save(tenantId, sessionStore.appendTurn(
-                clearPending(session), query, answer));
+        sessionStore.save(tenantId, sessionStore.appendTurn(clearPending(session), query, answer));
 
         List<String> citations = retrieved == null ? List.of()
                 : retrieved.rules().stream().map(HybridRetriever.Retrieved::ruleId).toList();
@@ -345,6 +353,43 @@ public class AgentStateMachine {
     }
 
     /**
+     * 模型这一轮只发了自然语言、没发 function call 时，由网关自己派生工具并检查槽位缺口。
+     *
+     * <p>返回 null 表示不接管：要么没有缺口，要么这个工具的槽位必须靠模型抽取。
+     * 改地址有 7 个槽位（姓名/手机/省/市/区/详址），正则派生会把能办的单子一路问成转人工，
+     * 所以那一格仍然交给模型；能靠订单号正则定死的查询与退款才由状态机接管。
+     */
+    private ToolDispatcher.Dispatch slotGapForActionTurn(Intent intent, String query) {
+        ToolName tool = ToolName.forIntent(intent);
+        if (tool == null || tool == ToolName.MODIFY_DELIVERY_ADDRESS) {
+            return null;
+        }
+        List<String> missing = dispatcher.missingSlots(tool, extractSlots(tool, query));
+        return missing.isEmpty() ? null
+                : new ToolDispatcher.Dispatch(tool, null, null, missing, null, false, false);
+    }
+
+    /** 槽位抽取：能正则定死的绝不打模型，这一条同时服务派生路径与续办路径。 */
+    private static Map<String, Object> extractSlots(ToolName tool, String query) {
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?<!\\d)(\\d{5,8})(?!\\d)").matcher(query);
+        if (matcher.find()) {
+            arguments.put("orderNo", matcher.group(1));
+        }
+        if (tool == ToolName.MODIFY_DELIVERY_ADDRESS) {
+            java.util.regex.Matcher phone =
+                    java.util.regex.Pattern.compile("(?<!\\d)(1[3-9]\\d{9})(?!\\d)").matcher(query);
+            if (phone.find()) {
+                arguments.put("receiverPhone", phone.group(1));
+            }
+        }
+        if (tool == ToolName.APPLY_REFUND && !query.isBlank()) {
+            arguments.put("reason", query.length() > 60 ? query.substring(0, 60) : query);
+        }
+        return arguments;
+    }
+
+    /**
      * 上一轮追问过槽位，这一轮把用户补充的信息与原始诉求合并后重放工具。
      * 这里刻意不再进模型：订单号这类槽位用正则就能取，交给模型只会更慢更贵。
      */
@@ -357,20 +402,7 @@ public class AgentStateMachine {
             sessionStore.save(tenantId, clearPending(session));
             return fallback(AgentState.SLOT_ASK, trace, sink, FallbackReason.INTENT_UNRESOLVED, query, "待办工具已失效");
         }
-        Map<String, Object> arguments = new LinkedHashMap<>();
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?<!\\d)(\\d{5,8})(?!\\d)").matcher(query);
-        if (matcher.find()) {
-            arguments.put("orderNo", matcher.group(1));
-        }
-        if (tool == ToolName.MODIFY_DELIVERY_ADDRESS) {
-            java.util.regex.Matcher phone = java.util.regex.Pattern.compile("(?<!\\d)(1[3-9]\\d{9})(?!\\d)").matcher(query);
-            if (phone.find()) {
-                arguments.put("receiverPhone", phone.group(1));
-            }
-        }
-        if (tool == ToolName.APPLY_REFUND && !query.isBlank()) {
-            arguments.put("reason", query.length() > 60 ? query.substring(0, 60) : query);
-        }
+        Map<String, Object> arguments = extractSlots(tool, query);
         List<String> missing = dispatcher.missingSlots(tool, arguments);
         if (!missing.isEmpty()) {
             String slot = missing.get(0);
@@ -437,7 +469,8 @@ public class AgentStateMachine {
         return intent.isAction() ? ToolContracts.functionDescriptorsFor(intent) : List.of();
     }
 
-    private static FallbackReason mapLlmFailure(LlmException failure) {
+    /** 包级可见只为让降级映射进用例（ticket 14）；三类模型失败必须各自映射到不同 reason。 */
+    static FallbackReason mapLlmFailure(LlmException failure) {
         return switch (failure.kind()) {
             case TIMEOUT -> FallbackReason.LLM_TIMEOUT;
             case UNAVAILABLE -> FallbackReason.LLM_CIRCUIT_OPEN;

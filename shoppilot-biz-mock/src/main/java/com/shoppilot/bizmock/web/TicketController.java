@@ -3,6 +3,7 @@ package com.shoppilot.bizmock.web;
 import com.shoppilot.bizmock.service.BizMockService;
 import com.shoppilot.tool.view.TicketView;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -36,12 +37,26 @@ public class TicketController {
         return service.listTickets();
     }
 
+    /** 按 id 查单张工单：降级回执里给了工单号，用户与调试台都要能查得到。 */
+    @GetMapping("/{ticketId}")
+    public ResponseEntity<TicketView> get(@PathVariable String ticketId) {
+        return service.findTicket(ticketId).map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     @PatchMapping("/{ticketId}/status")
     public ResponseEntity<TicketView> updateStatus(@PathVariable String ticketId,
                                                    @RequestBody Map<String, @NotBlank String> body) {
-        return service.updateTicketStatus(ticketId, body.get("status"))
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        try {
+            return service.updateTicketStatus(ticketId, body.get("status"))
+                    .map(ResponseEntity::ok)
+                    .orElseGet(() -> ResponseEntity.notFound().build());
+        } catch (IllegalArgumentException unknownStatus) {
+            return ResponseEntity.badRequest().build();
+        } catch (IllegalStateException illegalTransition) {
+            // 409 而不是 400：请求本身没写错，是这张单当前状态不允许这么流转
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
     }
 
     public record CreateTicketRequest(String customerId, String reason, String userQuery, String transcript) {

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * L1 精确哈希缓存（ADR 0003、ADR 0011）。
@@ -87,5 +88,25 @@ public class L1Cache {
 
     public boolean enabled() {
         return config.enabled();
+    }
+
+    /**
+     * 清空 L1 正文与负标记。
+     *
+     * <p>用 KEYS 而不是 SCAN 是因为这只有运维复位会调，不在请求路径上；
+     * 生产把 ops.enabled 关掉就彻底到不了这里。
+     */
+    public long flush() {
+        try {
+            Set<String> keys = redis.keys("shoppilot:c:l1:*");
+            if (keys == null || keys.isEmpty()) {
+                return 0;
+            }
+            redis.delete(keys);
+            return keys.size();
+        } catch (Exception failure) {
+            log.warn("清空 L1 失败: {}", failure.getMessage());
+            return 0;
+        }
     }
 }

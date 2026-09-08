@@ -8,8 +8,10 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -32,12 +34,49 @@ public class FallbackService {
     private final ObjectMapper mapper;
     private final GatewayProperties.BizMock config;
     private final MeterRegistry registry;
+    private final StringRedisTemplate redis;
 
-    public FallbackService(HttpClient http, ObjectMapper mapper, GatewayProperties properties, MeterRegistry registry) {
+    public FallbackService(HttpClient http, ObjectMapper mapper, GatewayProperties properties, MeterRegistry registry,
+                           StringRedisTemplate redis) {
         this.http = http;
         this.mapper = mapper;
         this.config = properties.bizmock();
         this.registry = registry;
+        this.redis = redis;
+    }
+
+    /**
+     * 限流降级的落单窗口。
+     *
+     * <p>限流是七种降级里唯一会自我放大的：被限流的请求本身就在洪峰上，每个 429 都落一单
+     * 会把工单表变成 DDoS 目标，人工队列瞬间失去可读性。所以按 (租户, 买家) 合并成一张单，
+     * 窗口内后续命中只更新既有工单。
+     */
+    public static final Duration RATE_LIMIT_TICKET_WINDOW = Duration.ofMinutes(5);
+
+    /** 限流专用：同一买家在窗口内只保留一张工单。 */
+    public Optional<String> escalateRateLimited(String userQuery, String tenantId, String customerId) {
+        String key = "shoppilot:ticket:ratelimit:" + tenantId + ":" + customerId;
+        try {
+            String existing = redis.opsForValue().get(key);
+            if (existing != null) {
+                // 已有在办工单：计数而不是再开一张，人工侧看到的是"这个买家被限流 N 次"
+                redis.opsForValue().increment(key + ":hits");
+                return Optional.of(existing);
+            }
+        } catch (RuntimeException redisUnavailable) {
+            log.warn("限流工单去重存储不可用，本次直接落单: {}", redisUnavailable.getMessage());
+        }
+        Optional<String> ticket = escalate(FallbackReason.RATE_LIMITED, userQuery,
+                "tenant=" + tenantId + " customer=" + customerId);
+        ticket.ifPresent(id -> {
+            try {
+                redis.opsForValue().set(key, id, RATE_LIMIT_TICKET_WINDOW);
+            } catch (RuntimeException redisUnavailable) {
+                log.debug("限流工单去重键未写入: {}", redisUnavailable.getMessage());
+            }
+        });
+        return ticket;
     }
 
     public Optional<String> escalate(FallbackReason reason, String userQuery, String transcript) {

@@ -23,13 +23,15 @@ public class LlmGateway {
     private final LlmClient delegate;
     private final TokenBudget tokenBudget;
     private final GatewayProperties properties;
+    private final LlmFaultInjector faultInjector;
     private final Counter failureCounter;
     private final Timer latencyTimer;
 
     public LlmGateway(HttpClient httpClient, ObjectMapper mapper, GatewayProperties properties,
-                      TokenBudget tokenBudget, MeterRegistry registry) {
+                      TokenBudget tokenBudget, MeterRegistry registry, LlmFaultInjector faultInjector) {
         this.properties = properties;
         this.tokenBudget = tokenBudget;
+        this.faultInjector = faultInjector;
         GatewayProperties.Llm llm = properties.llm();
         if (llm.perf()) {
             this.delegate = new MockLlmClient(llm);
@@ -52,6 +54,7 @@ public class LlmGateway {
 
     public LlmTypes.Reply complete(LlmTypes.Request request) {
         guardBudget();
+        injectFault();
         long started = System.nanoTime();
         try {
             LlmTypes.Reply reply = delegate.complete(request);
@@ -67,6 +70,7 @@ public class LlmGateway {
 
     public LlmTypes.Reply stream(LlmTypes.Request request, Consumer<String> tokenSink) {
         guardBudget();
+        injectFault();
         long started = System.nanoTime();
         try {
             LlmTypes.Reply reply = delegate.stream(request, tokenSink);
@@ -83,6 +87,13 @@ public class LlmGateway {
     private void guardBudget() {
         if (properties.llm().dev()) {
             tokenBudget.checkOrThrow(properties.llm().dailyTokenBudget());
+        }
+    }
+
+    /** 注入的模型故障走的是与真实故障完全相同的异常类型，不是另开一条降级分支。 */
+    private void injectFault() {
+        if (properties.ops().enabled()) {
+            faultInjector.checkOrThrow();
         }
     }
 

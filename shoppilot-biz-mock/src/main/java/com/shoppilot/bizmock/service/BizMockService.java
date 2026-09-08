@@ -5,6 +5,7 @@ import com.shoppilot.bizmock.domain.LogisticsNode;
 import com.shoppilot.bizmock.domain.Order;
 import com.shoppilot.bizmock.domain.Refund;
 import com.shoppilot.bizmock.domain.Ticket;
+import com.shoppilot.bizmock.domain.TicketStatus;
 import com.shoppilot.bizmock.fault.FaultInjector;
 import com.shoppilot.bizmock.repo.AddressHistoryRepository;
 import com.shoppilot.bizmock.repo.LogisticsRepository;
@@ -208,10 +209,24 @@ public class BizMockService {
         return ticketRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toTicketView).toList();
     }
 
+    /** 租户隔离由仓储层的 @TenantId 谓词兜住，这里只按 id 取。 */
+    @Transactional(readOnly = true)
+    public Optional<TicketView> findTicket(String ticketId) {
+        return ticketRepository.findById(ticketId).map(this::toTicketView);
+    }
+
     @Transactional
     public Optional<TicketView> updateTicketStatus(String ticketId, String status) {
+        TicketStatus target = TicketStatus.parse(status);
+        if (target == null) {
+            throw new IllegalArgumentException("未知工单状态 " + status + "，可选 " + TicketStatus.names());
+        }
         return ticketRepository.findById(ticketId).map(ticket -> {
-            ticket.setStatus(status);
+            TicketStatus current = TicketStatus.parse(ticket.getStatus());
+            if (current == null || !current.canTransitionTo(target)) {
+                throw new IllegalStateException("工单不允许从 " + ticket.getStatus() + " 流转到 " + target);
+            }
+            ticket.setStatus(target.name());
             return toTicketView(ticketRepository.save(ticket));
         });
     }

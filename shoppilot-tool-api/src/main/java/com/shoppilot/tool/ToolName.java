@@ -37,4 +37,15 @@ public enum ToolName {
                 .findFirst()
                 .orElse(null);
     }
+
+    /** 意图到工具的反向映射：网关需要在不依赖模型发 function call 时自己派生工具。 */
+    public static ToolName forIntent(Intent intent) {
+        if (intent == null) {
+            return null;
+        }
+        return Arrays.stream(values())
+                .filter(t -> t.intent == intent)
+                .findFirst()
+                .orElse(null);
+    }
 }

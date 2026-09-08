@@ -120,6 +120,13 @@ public class QdrantRestClient {
         }
     }
 
+    /** 整表清空用删表重建，不用 delete-by-filter：Qdrant 不接受空 filter，硬凑一个恒真条件太脆。 */
+    public boolean deleteCollection(String collection) {
+        HttpResponse<String> response = sendRaw("DELETE", "/collections/" + collection, null);
+        // 404 = 表本来就不存在，对"清空"这个语义来说就是成功
+        return response.statusCode() / 100 == 2 || response.statusCode() == 404;
+    }
+
     public long count(String collection, Map<String, Object> filter) {
         Map<String, Object> body = filter == null || filter.isEmpty() ? Map.of() : Map.of("filter", filter);
         String response = send("POST", "/collections/" + collection + "/points/count", body);
