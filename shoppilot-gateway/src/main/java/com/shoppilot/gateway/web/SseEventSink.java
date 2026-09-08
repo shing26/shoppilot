@@ -143,6 +143,14 @@ public class SseEventSink implements EventSink {
         send("status", data);
     }
 
+    /** 被限流不是失败：仍走同一条 SSE 通道，客户端不需要为它准备第二套错误处理。 */
+    public void rateLimited(long retryAfterMs, String message) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("retryAfterMs", retryAfterMs);
+        data.put("message", message);
+        send("rate_limited", data);
+    }
+
     private String quote(String delta) {
         try {
             return mapper.writeValueAsString(delta);

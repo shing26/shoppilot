@@ -6,15 +6,20 @@ import com.shoppilot.gateway.agent.AgentStateMachine;
 import com.shoppilot.gateway.agent.EventSink;
 import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.identity.TenantContext;
+import com.shoppilot.gateway.ratelimit.RateLimitService;
 import com.shoppilot.tool.Intent;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,7 +33,7 @@ import java.util.concurrent.Executors;
 
 /**
  * 对话入口：同步端点与 SSE 端点共用同一编排核心，只有输出适配不同。
-
+ *
  * <p>压测的 QPS/TP99 走同步端点，SSE 单独测 500 并发长连接的 TTFT 与内存（ADR 0001 口径声明）。
  */
 @RestController
@@ -40,14 +45,16 @@ public class ChatController {
 
     private final AgentStateMachine agent;
     private final CacheService cacheService;
+    private final RateLimitService rateLimit;
     private final ObjectMapper mapper;
     private final Timer ttftTimer;
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public ChatController(AgentStateMachine agent, CacheService cacheService, ObjectMapper mapper,
-                          MeterRegistry registry) {
+    public ChatController(AgentStateMachine agent, CacheService cacheService, RateLimitService rateLimit,
+                          ObjectMapper mapper, MeterRegistry registry) {
         this.agent = agent;
         this.cacheService = cacheService;
+        this.rateLimit = rateLimit;
         this.mapper = mapper;
         // TTFT 口径：服务端收到请求 -> 写出首个 token 帧，不含网络往返
         this.ttftTimer = Timer.builder("shoppilot_ttft_seconds")
@@ -57,14 +64,22 @@ public class ChatController {
     }
 
     @PostMapping("/chat")
-    public ChatResponse chat(@Valid @RequestBody ChatRequest request) {
+    public ResponseEntity<ChatResponse> chat(@Valid @RequestBody ChatRequest request,
+                                             HttpServletRequest servletRequest) {
         cacheService.recordRequest();
+        RateLimitService.Decision decision = admit(servletRequest);
+        if (!decision.allowed()) {
+            // 同步端点用标准 429 + Retry-After，脚本与中间层都能直接理解
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .header(HttpHeaders.RETRY_AFTER, String.valueOf(Math.max(1, decision.retryAfterMs() / 1000)))
+                    .build();
+        }
         AgentResult result = agent.run(request.query(), request.idempotencyToken(), EventSink.NOOP);
-        return ChatResponse.of(UUID.randomUUID().toString(), result);
+        return ResponseEntity.ok(ChatResponse.of(UUID.randomUUID().toString(), result));
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@Valid @RequestBody ChatRequest request) {
+    public SseEmitter stream(@Valid @RequestBody ChatRequest request, HttpServletRequest servletRequest) {
         cacheService.recordRequest();
         // 身份必须在请求线程上取出后带进工作线程：ThreadLocal 不会跟着任务跑
         TenantContext.Identity identity = TenantContext.current();
@@ -72,6 +87,17 @@ public class ChatController {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
         SseEventSink sink = new SseEventSink(emitter, mapper, traceId, ttftTimer, System.nanoTime());
         emitter.onTimeout(emitter::complete);
+
+        RateLimitService.Decision decision = admit(servletRequest);
+        if (!decision.allowed()) {
+            // 被限流的用户看到的仍是同一条通道里的正常提示，而不是裸 429
+            sink.meta(identity.conversationId(), null, CacheService.Layer.NONE);
+            sink.rateLimited(decision.retryAfterMs(),
+                    "当前咨询人数较多，请稍后再试。（限流维度：" + decision.dimension() + "）");
+            emitter.complete();
+            return emitter;
+        }
+
         streamExecutor.execute(() -> {
             TenantContext.set(identity);
             try {
@@ -89,6 +115,12 @@ public class ChatController {
             }
         });
         return emitter;
+    }
+
+    /** 限流判定一律发生在检索与模型调用之前，否则它保护成本的意义就没了。 */
+    private RateLimitService.Decision admit(HttpServletRequest servletRequest) {
+        return rateLimit.tryAcquire(TenantContext.tenantId(), TenantContext.customerId(),
+                servletRequest.getRemoteAddr());
     }
 
     public record ChatRequest(@NotBlank @Size(max = 500) String query, String idempotencyToken) {

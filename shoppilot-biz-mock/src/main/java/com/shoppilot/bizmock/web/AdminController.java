@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** 运维端点：故障注入与数据规模核对。 */
@@ -42,6 +43,25 @@ public class AdminController {
         stats.put("refunds", count("refunds"));
         stats.put("tickets", count("tickets"));
         return stats;
+    }
+
+    /**
+     * 店铺配额由业务侧持有，网关只读不写。
+     *
+     * <p>限流配置放在 tenants 表而不是网关 yml，是为了让"改某店配额"是一个业务动作，
+     * 不需要改网关配置再重启；网关侧带 60 秒缓存，改动的生效延迟在可接受范围内。
+     */
+    @GetMapping("/tenants")
+    public List<Map<String, Object>> tenants() {
+        return jdbcTemplate.queryForList("select id, name, rate_limit_qps from tenants order by id").stream()
+                .map(row -> {
+                    Map<String, Object> tenant = new LinkedHashMap<>();
+                    tenant.put("tenantId", row.get("id"));
+                    tenant.put("name", row.get("name"));
+                    tenant.put("rateLimitQps", row.get("rate_limit_qps"));
+                    return tenant;
+                })
+                .toList();
     }
 
     @GetMapping("/fault")
