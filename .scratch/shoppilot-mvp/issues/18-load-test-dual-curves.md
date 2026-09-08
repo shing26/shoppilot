@@ -45,9 +45,12 @@ python scripts/run_loadtest.py --model l1 --workers 4 --steps 100,200,400,800,12
 python scripts/run_loadtest.py --model l2 --profile no-embedding-cache --steps 50,100
 python scripts/run_loadtest.py --model biz --profile pool2      # 连接池对比见 run_experiment_suite.ps1 的 pool 臂
 pwsh -File scripts/verify-fallback.ps1                          # failRate=1.0 注入降级
+python scripts/plot_loadtest_curves.py                          # docs/loadtest-curves.png（判据要的是曲线图）
 ```
 
-阶梯 CSV / 环境快照在 `loadtest/results/`，汇总报告由 `python scripts/build_loadtest_report.py` 生成到 `docs/loadtest-report.md`。
+阶梯 CSV / 环境快照在 `loadtest/results/`，汇总报告由 `python scripts/build_loadtest_report.py` 生成到 `docs/loadtest-report.md`；
+画图脚本一开始用 `split(",")` 读 CSV，被 `profile=perf,no-virtual` 这种带引号的逗号值坑出过一条 QPS=0 的假曲线，
+已改成 `csv.DictReader` 并把这条写进注释——图上冒出的假数据比没有图更糟。
 
 **未勾项说明**
 
