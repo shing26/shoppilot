@@ -62,6 +62,7 @@ FALLBACK    六种 reason -> 落工单
 meta            {conversationId, intent, cacheHit, cacheLayer, traceId}
 status          {state, ts}                      状态机转移即事件
 tool_executing  {tool, label}
+duplicate_submit {tool, message}         幂等命中：业务动作未重复执行
 tool_result     {tool, status, summary}
 slot_ask        {slot, question}
 token           <text delta>

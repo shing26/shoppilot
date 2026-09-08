@@ -84,6 +84,13 @@ public class AdminController {
         return stats();
     }
 
+    /** 演示复位：把四张固定演示单恢复初始状态，供彩排与验收脚本重复执行。 */
+    @PostMapping("/demo/reset")
+    public Map<String, Object> resetDemo() {
+        seedRunner.resetDemoFixtures();
+        return stats();
+    }
+
     private long count(String table) {
         Long value = jdbcTemplate.queryForObject("select count(*) from " + table, Long.class);
         return value == null ? 0 : value;

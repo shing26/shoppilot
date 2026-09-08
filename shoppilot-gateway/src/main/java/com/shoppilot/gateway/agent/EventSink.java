@@ -26,6 +26,10 @@ public interface EventSink {
         }
 
         @Override
+        public void duplicateSubmit(ToolName tool, String message) {
+        }
+
+        @Override
         public void toolResult(ToolName tool, ToolStatus status, String summary) {
         }
 
@@ -46,6 +50,9 @@ public interface EventSink {
     void fallback(FallbackReason reason, String ticketId);
 
     void toolExecuting(ToolName tool, String label);
+
+    /** 幂等层判定为重复提交：业务动作没有再次执行，回放的是首次结果（ticket 12）。 */
+    void duplicateSubmit(ToolName tool, String message);
 
     void toolResult(ToolName tool, ToolStatus status, String summary);
 

@@ -58,6 +58,9 @@ public class SeedRunner implements ApplicationRunner {
     private static final String[][] CARRIERS = {
             {"ZTO", "中通快递"}, {"YTO", "圆通速递"}, {"SF", "顺丰速运"}, {"YD", "韵达快递"}};
 
+    /** 演示固定单的归属买家，seedMasterData 造的 C001 一定存在。 */
+    private static final String DEMO_CUSTOMER = "C001";
+
     private final TenantRepository tenantRepository;
     private final CustomerRepository customerRepository;
     private final OrderRepository orderRepository;
@@ -123,6 +126,7 @@ public class SeedRunner implements ApplicationRunner {
             }
             log.info("seed 完成：{} 租户 / {} 买家 / {} 订单，耗时 {} ms",
                     TENANTS.size(), customerCount, orderCount, Duration.ofNanos(System.nanoTime() - started).toMillis());
+            seedDemoFixtures();
         } finally {
             TenantContextHolder.clear();
             running.set(false);
@@ -191,6 +195,80 @@ public class SeedRunner implements ApplicationRunner {
     }
 
     private void seedLogistics(String tenantId, String orderNo, Instant shippedAt, Random random) {
+        seedLogistics(tenantId, orderNo, shippedAt, random, 2 + random.nextInt(3));
+    }
+
+    /**
+     * 演示固定单（ticket 12/19）：随机造数的下单时间是 0~30 天均匀分布，
+     * "订单是否还在 7 天退款窗内"会随启动时刻漂移，演示脚本今天能跑明天就可能被状态校验拒掉。
+     * 这四单把四种业务状态各钉死一个，且时间相对 now 计算，任何时刻起栈都成立。
+     */
+    private static final List<String> DEMO_ORDER_NOS = List.of("90001", "90002", "90003", "90004");
+
+    /**
+     * 演示前复位：删掉固定单产生的退款单、改址流水与物流节点，再按初始状态重建。
+     * 只碰这四单，随机造数与真实业务数据不受影响。
+     */
+    public void resetDemoFixtures() {
+        if (!running.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            String in = String.join(",", java.util.Collections.nCopies(DEMO_ORDER_NOS.size(), "?"));
+            Object[] ids = DEMO_ORDER_NOS.toArray();
+            transactionTemplate.executeWithoutResult(status -> {
+                jdbcTemplate.update("delete from refunds where order_id in (" + in + ")", ids);
+                jdbcTemplate.update("delete from order_addresses where order_id in (" + in + ")", ids);
+                jdbcTemplate.update("delete from logistics where order_id in (" + in + ")", ids);
+                jdbcTemplate.update("delete from orders where id in (" + in + ")", ids);
+            });
+            seedDemoFixtures();
+        } finally {
+            TenantContextHolder.clear();
+            running.set(false);
+        }
+    }
+
+    private void seedDemoFixtures() {
+        Instant now = Instant.now();
+        record Fixture(String orderNo, String status, Instant createdAt, String categoryCode, String categoryName,
+                       String serviceFlag) {
+        }
+        List<Fixture> fixtures = List.of(
+                new Fixture("90001", "PAID", now.minus(Duration.ofDays(2)), "fresh", "生鲜果蔬", "FRESH_GUARANTEE"),
+                new Fixture("90002", "SHIPPED", now.minus(Duration.ofDays(3)), "digital", "数码配件", "SEVEN_DAY_RETURN"),
+                new Fixture("90003", "DELIVERED", now.minus(Duration.ofDays(20)), "apparel", "服饰鞋包", "SEVEN_DAY_RETURN"),
+                new Fixture("90004", "CREATED", now.minus(Duration.ofHours(3)), "home", "家居日用", "SEVEN_DAY_RETURN"));
+        TenantContextHolder.set("T001", DEMO_CUSTOMER);
+        transactionTemplate.executeWithoutResult(status -> {
+            for (Fixture fixture : fixtures) {
+                Order order = new Order(fixture.orderNo(), "T001", DEMO_CUSTOMER, 19900L,
+                        OrderStatus.valueOf(fixture.status()), fixture.categoryCode(), fixture.categoryName(),
+                        fixture.createdAt());
+                order.setReceiverName("演示买家");
+                order.setReceiverPhone("13800001234");
+                order.setProvince("浙江省");
+                order.setCity("杭州市");
+                order.setDistrict("西湖区");
+                order.setDetailAddress("文三路 1 号");
+                order.setServiceFlags(List.of(fixture.serviceFlag()));
+                if (order.getStatus() != OrderStatus.CREATED) {
+                    order.setPaidAt(fixture.createdAt().plusSeconds(600));
+                }
+                if (order.getStatus() == OrderStatus.SHIPPED || order.getStatus() == OrderStatus.DELIVERED) {
+                    order.setShippedAt(fixture.createdAt().plusSeconds(3600 * 12));
+                    seedLogistics("T001", fixture.orderNo(), order.getShippedAt(), new Random(7), 4);
+                }
+                if (order.getStatus() == OrderStatus.DELIVERED) {
+                    order.setDeliveredAt(fixture.createdAt().plusSeconds(3600 * 60));
+                }
+                orderRepository.save(order);
+            }
+        });
+        log.info("演示固定单就绪：{}（买家 {}）", fixtures.stream().map(Fixture::orderNo).toList(), DEMO_CUSTOMER);
+    }
+
+    private void seedLogistics(String tenantId, String orderNo, Instant shippedAt, Random random, int count) {
         String[] carrier = CARRIERS[random.nextInt(CARRIERS.length)];
         String trackingNo = carrier[0] + System.nanoTime() % 1000000000L;
         String[][] nodes = {
@@ -198,7 +276,6 @@ public class SeedRunner implements ApplicationRunner {
                 {"TRANSPORT", "快件已到达杭州转运中心"},
                 {"DELIVERING", "派件员正在为您派送"},
                 {"SIGNED", "快件已被签收"}};
-        int count = 2 + random.nextInt(3);
         for (int n = 0; n < count; n++) {
             logisticsRepository.save(new LogisticsNode(tenantId, orderNo, carrier[0], carrier[1], trackingNo,
                     n + 1, nodes[n][0], nodes[n][1], shippedAt.plusSeconds(3600L * (n + 1))));

@@ -77,6 +77,14 @@ public class SseEventSink implements EventSink {
     }
 
     @Override
+    public void duplicateSubmit(ToolName tool, String message) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("tool", tool == null ? "" : tool.apiName());
+        data.put("message", message);
+        send("duplicate_submit", data);
+    }
+
+    @Override
     public void toolResult(ToolName tool, ToolStatus status, String summary) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("tool", tool == null ? "" : tool.apiName());

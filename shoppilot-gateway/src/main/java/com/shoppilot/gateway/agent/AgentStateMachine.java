@@ -242,7 +242,12 @@ public class AgentStateMachine {
                 return ModelRun.solo(askSlot(session, tenantId, conversationId, dispatch, query, trace, sink));
             }
             step(trace, sink, AgentState.TOOL_EXEC, dispatch.tool() + "=" + dispatch.status());
-            sink.toolExecuting(dispatch.tool(), dispatch.label());
+            if (dispatch.duplicate()) {
+                // 幂等命中：业务动作没有再执行，推"正在查询"是在骗用户；直接回放首次结果
+                sink.duplicateSubmit(dispatch.tool(), "该请求已处理过，本次未重复执行");
+            } else {
+                sink.toolExecuting(dispatch.tool(), dispatch.label());
+            }
             sink.toolResult(dispatch.tool(), dispatch.status(), summarize(dispatch));
             if (dispatch.degraded()) {
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
@@ -383,7 +388,11 @@ public class AgentStateMachine {
         LlmTypes.ToolCall call = new LlmTypes.ToolCall("resumed", tool.apiName(), arguments);
         ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken);
         step(trace, sink, AgentState.TOOL_EXEC, tool + "=" + dispatch.status());
-        sink.toolExecuting(tool, dispatch.label());
+        if (dispatch.duplicate()) {
+            sink.duplicateSubmit(tool, "该请求已处理过，本次未重复执行");
+        } else {
+            sink.toolExecuting(tool, dispatch.label());
+        }
         sink.toolResult(tool, dispatch.status(), summarize(dispatch));
         sessionStore.save(tenantId, clearPending(session));
         if (dispatch.degraded()) {
