@@ -1,0 +1,14 @@
+{
+  "mode": "local",
+  "model": "qwen2.5:3b",
+  "cases": 180,
+  "limit": 0,
+  "promptTokens": 145411,
+  "completionTokens": 6450,
+  "estimatedPerCaseTokens": 1173,
+  "dailyTokenBudget": 200000,
+  "tokensUsedBeforeRun": 0,
+  "concurrency": 6,
+  "startedAt": "20260908-1331",
+  "requestErrors": 0
+}

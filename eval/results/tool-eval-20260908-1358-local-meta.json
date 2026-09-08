@@ -1,0 +1,25 @@
+{
+  "mode": "local",
+  "model": "qwen2.5:3b",
+  "cases": 18,
+  "limit": 0,
+  "promptTokens": 7908,
+  "completionTokens": 683,
+  "estimatedPerCaseTokens": 776,
+  "dailyTokenBudget": 200000,
+  "tokensUsedBeforeRun": 0,
+  "concurrency": 2,
+  "startedAt": "20260908-1358",
+  "requestErrors": 0,
+  "summary": {
+    "ACTION_ORDER": {
+      "intent": "ACTION_ORDER",
+      "cases": 18,
+      "tool_accuracy": "61.1%",
+      "args_accuracy": "68.8%",
+      "slotask_accuracy": "83.3%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "61.1%"
+    }
+  }
+}

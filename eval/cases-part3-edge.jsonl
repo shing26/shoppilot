@@ -1,0 +1,36 @@
+{"id":"ESC-01","intent":"ESCALATE","kind":"normal","query":"这个我不想跟机器说了，给我转个人","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-02","intent":"ESCALATE","kind":"normal","query":"叫你们经理过来处理","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-03","intent":"ESCALATE","kind":"normal","query":"这个问题我要真人给我答复","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-04","intent":"ESCALATE","kind":"normal","query":"我要投诉你们客服","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-05","intent":"ESCALATE","kind":"normal","query":"给我接一个能拍板的客服","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-06","intent":"ESCALATE","kind":"normal","query":"机器人答非所问，换个人来","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-07","intent":"ESCALATE","kind":"normal","query":"我要走消费者申诉渠道，先给我转人工","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-08","intent":"ESCALATE","kind":"normal","query":"别再自动回复了，我要人工","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-09","intent":"ESCALATE","kind":"normal","query":"这个损失你们必须有人负责，转接坐席","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-10","intent":"ESCALATE","kind":"normal","query":"我要找值班客服，晚上也行","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-11","intent":"ESCALATE","kind":"normal","query":"90001 这单你们搞错了，我不跟机器人掰扯，转人工","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-12","intent":"ESCALATE","kind":"normal","query":"打你们客服电话多少，我不想在这说","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-13","intent":"ESCALATE","kind":"multi_intent","query":"90002 物流太慢了，我要投诉，给我转个人处理","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-14","intent":"ESCALATE","kind":"multi_intent","query":"满减算错了我要求赔偿，机器人办不了就叫人","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-15","intent":"ESCALATE","kind":"colloquial","query":"算了算了，找个人跟我说句话吧","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-16","intent":"ESCALATE","kind":"colloquial","query":"你们这客服是活的吗","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-17","intent":"ESCALATE","kind":"colloquial","query":"别发了别发了，我要人","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"ESC-18","intent":"ESCALATE","kind":"colloquial","query":"这事没个活人说不清楚","expect":{"tool":null,"args":{},"slotAsk":false,"escalate":true}}
+{"id":"UNK-01","intent":"UNKNOWN","kind":"colloquial","query":"在吗","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-02","intent":"UNKNOWN","kind":"colloquial","query":"？？？","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-03","intent":"UNKNOWN","kind":"colloquial","query":"你好","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-04","intent":"UNKNOWN","kind":"colloquial","query":"随便看看","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-05","intent":"UNKNOWN","kind":"colloquial","query":"今天天气怎么样","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-06","intent":"UNKNOWN","kind":"colloquial","query":"给我讲个笑话","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-07","intent":"UNKNOWN","kind":"colloquial","query":"这个那个就是那个事","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-08","intent":"UNKNOWN","kind":"colloquial","query":"asdfghjkl","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-09","intent":"UNKNOWN","kind":"colloquial","query":"嗯","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-10","intent":"UNKNOWN","kind":"colloquial","query":"你们老板是谁","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-11","intent":"UNKNOWN","kind":"colloquial","query":"推荐个手机呗","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-12","intent":"UNKNOWN","kind":"colloquial","query":"能不能便宜点卖给我","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-13","intent":"UNKNOWN","kind":"colloquial","query":"我说的话你听懂了吗","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-14","intent":"UNKNOWN","kind":"colloquial","query":"这个怎么弄","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-15","intent":"UNKNOWN","kind":"colloquial","query":"asdf 123 测试","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-16","intent":"UNKNOWN","kind":"colloquial","query":"帮我写一首诗","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-17","intent":"UNKNOWN","kind":"colloquial","query":"你们几点下班","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}
+{"id":"UNK-18","intent":"UNKNOWN","kind":"colloquial","query":"哦","expect":{"tool":null,"args":{},"slotAsk":false,"cacheAdmissible":false}}

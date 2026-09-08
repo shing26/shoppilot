@@ -1,0 +1,2 @@
+intent,cases,tool_accuracy,args_accuracy,slotask_accuracy,fabricated_cases,overall_accuracy
+ACTION_LOGISTICS,18,61.1%,62.5%,88.9%,1,55.6%

@@ -39,6 +39,9 @@ import java.util.concurrent.ExecutorService;
 @Component
 public class AgentStateMachine {
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper TRACE_JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
     private static final Logger log = LoggerFactory.getLogger(AgentStateMachine.class);
 
     /** 单条条款注入上限：防止一次检索把 Prompt 撑爆，也保证 5 条条款可控。 */
@@ -235,13 +238,18 @@ public class AgentStateMachine {
             }
             if (dispatch.fabricated()) {
                 // 模型凭空编了一个订单号：绝不拿它去撞库，退回来向用户追问合法订单号
-                step(trace, sink, AgentState.TOOL_EXEC, "fabricated-orderNo 已拦截");
+                step(trace, sink, AgentState.TOOL_EXEC,
+                        "fabricated-orderNo 已拦截 modelArgs=" + traceArgs(call.arguments()));
                 return ModelRun.solo(askSlot(session, tenantId, conversationId, dispatch, query, trace, sink));
             }
             if (dispatch.needsSlot()) {
+                step(trace, sink, AgentState.TOOL_EXEC,
+                        dispatch.tool() + " missing=" + dispatch.missingSlots()
+                                + " modelArgs=" + traceArgs(call.arguments()));
                 return ModelRun.solo(askSlot(session, tenantId, conversationId, dispatch, query, trace, sink));
             }
-            step(trace, sink, AgentState.TOOL_EXEC, dispatch.tool() + "=" + dispatch.status());
+            step(trace, sink, AgentState.TOOL_EXEC,
+                    dispatch.tool() + "=" + dispatch.status() + " modelArgs=" + traceArgs(call.arguments()));
             if (dispatch.duplicate()) {
                 // 幂等命中：业务动作没有再执行，推"正在查询"是在骗用户；直接回放首次结果
                 sink.duplicateSubmit(dispatch.tool(), "该请求已处理过，本次未重复执行");
@@ -264,9 +272,32 @@ public class AgentStateMachine {
         if (rounds == 0 && !toolUsed && intent != null && intent.isAction()) {
             // 小模型经常用自然语言追问槽位而不是发 function call。槽位状态机不能建在"模型肯不肯调工具"上，
             // 否则 maxSlotAsks 与 SLOT_UNRESOLVED 全是摆设：网关自己派生工具、自己抽槽位、自己数追问次数。
-            ToolDispatcher.Dispatch gap = slotGapForActionTurn(intent, query);
-            if (gap != null) {
-                return ModelRun.solo(askSlot(session, tenantId, conversationId, gap, query, trace, sink));
+            DerivedCall derived = deriveActionCall(intent, query);
+            if (derived != null && derived.gap() != null) {
+                step(trace, sink, AgentState.TOOL_EXEC,
+                        derived.tool() + " missing=" + derived.gap().missingSlots()
+                                + " modelArgs=" + traceArgs(derived.slots()));
+                return ModelRun.solo(askSlot(session, tenantId, conversationId, derived.gap(), query, trace, sink));
+            }
+            if (derived != null && derived.missing().isEmpty() && !IdempotencyService.isWrite(derived.tool())) {
+                // 读路径且槽位齐备：模型没发 function call 也要把这一枪开了，
+                // 不能因为模型偷懒让用户拿不到自己订单的事实。写路径由 deriveActionCall 挡在门外。
+                toolUsed = true;
+                rounds++;
+                LlmTypes.ToolCall derivedCall = new LlmTypes.ToolCall("gateway-derived",
+                        derived.tool().apiName(), derived.slots());
+                messages.add(LlmTypes.Message.assistant(null, List.of(derivedCall)));
+                ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(derivedCall, idempotencyToken);
+                step(trace, sink, AgentState.TOOL_EXEC,
+                        "gateway-derived " + dispatch.tool() + "=" + dispatch.status()
+                                + " modelArgs=" + traceArgs(derivedCall.arguments()));
+                sink.toolExecuting(dispatch.tool(), dispatch.label());
+                sink.toolResult(dispatch.tool(), dispatch.status(), summarize(dispatch));
+                if (dispatch.degraded()) {
+                    return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
+                            FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json()));
+                }
+                messages.add(LlmTypes.Message.tool(derivedCall.id(), dispatch.json()));
             }
         }
 
@@ -352,21 +383,40 @@ public class AgentStateMachine {
                 null, null, true, 0, 0, false, false);
     }
 
+    /** 网关自己派生出的工具调用：missing 非空即追问，missing 为空且是读工具即可代为执行。 */
+    private record DerivedCall(ToolName tool, Map<String, Object> slots, List<String> missing,
+                               ToolDispatcher.Dispatch gap) {
+    }
+
+    /** 每个工具里"正则能确定判缺"的槽位；不在表里的槽位缺失不触发网关侧追问。 */
+    private static final Map<ToolName, List<String>> GATEWAY_CONFIDENT_SLOTS = Map.of(
+            ToolName.QUERY_ORDER_DETAIL, List.of("orderNo"),
+            ToolName.QUERY_LOGISTICS, List.of("orderNo"),
+            ToolName.APPLY_REFUND, List.of("orderNo"),
+            ToolName.MODIFY_DELIVERY_ADDRESS, List.of("orderNo", "receiverPhone"));
+
     /**
      * 模型这一轮只发了自然语言、没发 function call 时，由网关自己派生工具并检查槽位缺口。
      *
-     * <p>返回 null 表示不接管：要么没有缺口，要么这个工具的槽位必须靠模型抽取。
-     * 改地址有 7 个槽位（姓名/手机/省/市/区/详址），正则派生会把能办的单子一路问成转人工，
-     * 所以那一格仍然交给模型；能靠订单号正则定死的查询与退款才由状态机接管。
+     * <p>只接管 GATEWAY_CONFIDENT_SLOTS 里能靠正则定死的那几格：改地址的省/市/区/详址与收件人
+     * 必须交给模型抽，用正则判它们缺失等于把用户已经写出来的地址再问一遍。
+     *
+     * @return null 表示不接管；否则 gap 非空即追问，槽位齐备且是读工具时才允许代为执行
      */
-    private ToolDispatcher.Dispatch slotGapForActionTurn(Intent intent, String query) {
+    private DerivedCall deriveActionCall(Intent intent, String query) {
         ToolName tool = ToolName.forIntent(intent);
-        if (tool == null || tool == ToolName.MODIFY_DELIVERY_ADDRESS) {
+        if (tool == null) {
             return null;
         }
-        List<String> missing = dispatcher.missingSlots(tool, extractSlots(tool, query));
-        return missing.isEmpty() ? null
-                : new ToolDispatcher.Dispatch(tool, null, null, missing, null, false, false);
+        Map<String, Object> slots = extractSlots(tool, query);
+        List<String> missing = dispatcher.missingSlots(tool, slots);
+        // 只对"正则能确定判缺"的槽位发起网关侧追问。改地址有 5 个自由文本槽位，
+        // 用正则判它们缺失等于把用户已经写出来的省市区的再问一遍，那种活该交给模型。
+        List<String> confident = GATEWAY_CONFIDENT_SLOTS.getOrDefault(tool, List.of());
+        List<String> actionable = missing.stream().filter(confident::contains).toList();
+        return new DerivedCall(tool, slots, missing,
+                actionable.isEmpty() ? null
+                        : new ToolDispatcher.Dispatch(tool, null, null, actionable, null, false, false));
     }
 
     /** 槽位抽取：能正则定死的绝不打模型，这一条同时服务派生路径与续办路径。 */
@@ -531,6 +581,18 @@ public class AgentStateMachine {
             int from = i * answer.length() / chunks;
             int to = (i + 1) * answer.length() / chunks;
             sink.token(answer.substring(from, to));
+        }
+    }
+
+    /** trace 里记的是模型自己抽出来的参数，不是工具返回体：评测要量的是前者。 */
+    private static String traceArgs(java.util.Map<String, Object> arguments) {
+        if (arguments == null || arguments.isEmpty()) {
+            return "{}";
+        }
+        try {
+            return TRACE_JSON.writeValueAsString(arguments);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException malformed) {
+            return String.valueOf(arguments);
         }
     }
 

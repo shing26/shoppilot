@@ -1,0 +1,72 @@
+{"id":"P-RET-01","intent":"POLICY_RETURN","kind":"normal","query":"七天无理由是从签收那天开始算吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-02","intent":"POLICY_RETURN","kind":"normal","query":"无理由退货的运费谁承担","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-03","intent":"POLICY_RETURN","kind":"normal","query":"拆封使用过的商品还能七天无理由吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-04","intent":"POLICY_RETURN","kind":"normal","query":"换货之后还能再退吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-05","intent":"POLICY_RETURN","kind":"normal","query":"退款一般几个工作日到账","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-06","intent":"POLICY_RETURN","kind":"normal","query":"哪些商品不支持无理由退货","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-07","intent":"POLICY_RETURN","kind":"normal","query":"赠品需要一起退回去吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-08","intent":"POLICY_RETURN","kind":"normal","query":"退货以后发票怎么处理","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-09","intent":"POLICY_RETURN","kind":"normal","query":"定制款商品能不能退","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-10","intent":"POLICY_RETURN","kind":"normal","query":"大件商品是上门取件退货吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-11","intent":"POLICY_RETURN","kind":"normal","query":"影响二次销售具体指什么情况","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-12","intent":"POLICY_RETURN","kind":"normal","query":"退货运费险怎么理赔","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-13","intent":"POLICY_RETURN","kind":"normal","query":"部分退款会影响剩下的售后吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-14","intent":"POLICY_RETURN","kind":"normal","query":"退货地址在哪里查看","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-15","intent":"POLICY_RETURN","kind":"normal","query":"质量问题退货是不是不用出运费","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-16","intent":"POLICY_RETURN","kind":"colloquial","query":"买回来发现不合适 想问下能不能给退了啊","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-17","intent":"POLICY_RETURN","kind":"colloquial","query":"东西还没拆 就后悔了 咋办","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-RET-18","intent":"POLICY_RETURN","kind":"colloquial","query":"寄回去的东西你们多久能确认收货","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-01","intent":"POLICY_SHIPPING","kind":"normal","query":"默认发什么快递","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-02","intent":"POLICY_SHIPPING","kind":"normal","query":"可以指定发顺丰吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-03","intent":"POLICY_SHIPPING","kind":"normal","query":"满多少金额才包邮","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-04","intent":"POLICY_SHIPPING","kind":"normal","query":"新疆西藏这些偏远地区发不发","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-05","intent":"POLICY_SHIPPING","kind":"normal","query":"拍下之后多久发货啊","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-06","intent":"POLICY_SHIPPING","kind":"normal","query":"大促期间发货时效会延长吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-07","intent":"POLICY_SHIPPING","kind":"normal","query":"一个订单会分成几个包裹发","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-08","intent":"POLICY_SHIPPING","kind":"normal","query":"签收前可以先验货吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-09","intent":"POLICY_SHIPPING","kind":"normal","query":"物流信息多久更新一次","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-10","intent":"POLICY_SHIPPING","kind":"normal","query":"支持到店自提吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-11","intent":"POLICY_SHIPPING","kind":"normal","query":"港澳台地区能下单发货吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-12","intent":"POLICY_SHIPPING","kind":"normal","query":"运费是下单时付还是到付","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-13","intent":"POLICY_SHIPPING","kind":"normal","query":"生鲜是冷链发货吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-14","intent":"POLICY_SHIPPING","kind":"normal","query":"周末会发货吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-15","intent":"POLICY_SHIPPING","kind":"normal","query":"预售商品的发货时间怎么算","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-16","intent":"POLICY_SHIPPING","kind":"colloquial","query":"我就想问下你们一般走哪家快递呀","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-17","intent":"POLICY_SHIPPING","kind":"colloquial","query":"今天拍的话大概几天能到手上","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-SHP-18","intent":"POLICY_SHIPPING","kind":"colloquial","query":"村里能送到吗 还是得去镇上取","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-01","intent":"POLICY_PROMO","kind":"normal","query":"跨店满减是怎么计算的","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-02","intent":"POLICY_PROMO","kind":"normal","query":"定金膨胀的倍率是多少","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-03","intent":"POLICY_PROMO","kind":"normal","query":"店铺优惠券能和跨店满减叠加吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-04","intent":"POLICY_PROMO","kind":"normal","query":"凑单没到满减门槛会怎样","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-05","intent":"POLICY_PROMO","kind":"normal","query":"价保申请的条件是什么","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-06","intent":"POLICY_PROMO","kind":"normal","query":"秒杀商品每人限购几件","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-07","intent":"POLICY_PROMO","kind":"normal","query":"会员券和大促券可以一起用吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-08","intent":"POLICY_PROMO","kind":"normal","query":"用了满减的商品退款优惠怎么算","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-09","intent":"POLICY_PROMO","kind":"normal","query":"尾款没付定金还能退吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-10","intent":"POLICY_PROMO","kind":"normal","query":"平台红包和店铺优惠能同时抵扣吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-11","intent":"POLICY_PROMO","kind":"normal","query":"满减的门槛是按实付还是按标价","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-12","intent":"POLICY_PROMO","kind":"normal","query":"赠品占不占用满减额度","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-13","intent":"POLICY_PROMO","kind":"normal","query":"大促价格比平时贵有补偿吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-14","intent":"POLICY_PROMO","kind":"normal","query":"优惠券有效期过了能补发吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-15","intent":"POLICY_PROMO","kind":"normal","query":"多张同店优惠券能叠加使用吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-16","intent":"POLICY_PROMO","kind":"colloquial","query":"满三百减五十是几个店凑够才行","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-17","intent":"POLICY_PROMO","kind":"colloquial","query":"先付的那笔钱后面能抵多少","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-PRM-18","intent":"POLICY_PROMO","kind":"colloquial","query":"券和满减到底哪个先算啊 看不懂","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-01","intent":"POLICY_FRESH","kind":"normal","query":"生鲜收到坏果怎么理赔","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-02","intent":"POLICY_FRESH","kind":"normal","query":"死蟹赔付标准是什么","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-03","intent":"POLICY_FRESH","kind":"normal","query":"冻品化冻了算谁的责任","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-04","intent":"POLICY_FRESH","kind":"normal","query":"生鲜报损要在签收后多久内提出","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-05","intent":"POLICY_FRESH","kind":"normal","query":"生鲜适用七天无理由吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-06","intent":"POLICY_FRESH","kind":"normal","query":"重量缺斤少两怎么赔","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-07","intent":"POLICY_FRESH","kind":"normal","query":"水果变质了要提供照片吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-08","intent":"POLICY_FRESH","kind":"normal","query":"生鲜理赔的赔付比例是多少","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-09","intent":"POLICY_FRESH","kind":"normal","query":"冷链断链导致损坏怎么申诉","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-10","intent":"POLICY_FRESH","kind":"normal","query":"生鲜到底能不能退货","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-11","intent":"POLICY_FRESH","kind":"normal","query":"保鲜剂放少了导致变质算质量问题吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-12","intent":"POLICY_FRESH","kind":"normal","query":"临期生鲜有专门标注吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-13","intent":"POLICY_FRESH","kind":"normal","query":"水果不甜可以要求补偿吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-14","intent":"POLICY_FRESH","kind":"normal","query":"水产到手是死的怎么申请赔付","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-15","intent":"POLICY_FRESH","kind":"normal","query":"生鲜理赔款多久到账","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-16","intent":"POLICY_FRESH","kind":"colloquial","query":"菜收到都烂了 这咋整","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-17","intent":"POLICY_FRESH","kind":"colloquial","query":"冰淇淋到手软趴趴的 没人管吗","expect":{"tool":null,"args":{},"slotAsk":false}}
+{"id":"P-FRS-18","intent":"POLICY_FRESH","kind":"colloquial","query":"桃子有几个压坏了 能补点钱不","expect":{"tool":null,"args":{},"slotAsk":false}}

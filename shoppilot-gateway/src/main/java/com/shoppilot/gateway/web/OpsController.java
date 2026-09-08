@@ -7,6 +7,7 @@ import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.llm.LlmFaultInjector;
+import com.shoppilot.gateway.llm.TokenBudget;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.tool.Intent;
 import org.springframework.http.HttpStatus;
@@ -50,10 +51,11 @@ public class OpsController {
     private final LlmFaultInjector llmFaultInjector;
     private final CacheService cacheService;
     private final KbEpoch kbEpoch;
+    private final TokenBudget tokenBudget;
 
     public OpsController(HttpClient http, GatewayProperties properties, BizMockClient bizMockClient,
                          ObjectMapper mapper, LlmFaultInjector llmFaultInjector, CacheService cacheService,
-                         KbEpoch kbEpoch) {
+                         KbEpoch kbEpoch, TokenBudget tokenBudget) {
         this.http = http;
         this.properties = properties;
         this.bizMockClient = bizMockClient;
@@ -61,6 +63,7 @@ public class OpsController {
         this.llmFaultInjector = llmFaultInjector;
         this.cacheService = cacheService;
         this.kbEpoch = kbEpoch;
+        this.tokenBudget = tokenBudget;
     }
 
     /** 本店工单队列，按当前身份的租户隔离。 */
@@ -113,7 +116,22 @@ public class OpsController {
         view.put("circuitState", bizMockClient.circuitState());
         view.put("lastToolLatencyMs", bizMockClient.lastLatencyMs());
         view.put("llmMode", properties.llm().mode());
+        // 评测脚本要记录"这组数字是哪个模型跑出来的"，以及跑之前预算还剩多少（ADR 0012）
+        view.put("llmModel", activeModelName());
+        view.put("tokensUsedToday", tokenBudget.usedToday());
+        view.put("dailyTokenBudget", properties.llm().dailyTokenBudget());
         return view;
+    }
+
+    private String activeModelName() {
+        GatewayProperties.Llm llm = properties.llm();
+        if (llm.dev()) {
+            return llm.model();
+        }
+        if (llm.local()) {
+            return llm.localModel();
+        }
+        return "MockLLM";
     }
 
     /**

@@ -1,0 +1,11 @@
+id,intent,kind,query,error,prompt_tokens,completion_tokens,latency_ms,rate_limit_retries,fallback,intent_actual,triage_layer,cache_layer,expect_tool,expect_args,expect_slot,tool_ok,args_ok,slot_ok,fabricated,checks_ok,actual_tool,actual_args,args_detail,tool_status
+P-RET-01,POLICY_RETURN,normal,七天无理由是从签收那天开始算吗,,1191,47,11841,0,,POLICY_RETURN,T0,NONE,,{},False,True,,True,,True,,{},,
+P-RET-02,POLICY_RETURN,normal,无理由退货的运费谁承担,,1136,52,10087,0,,POLICY_RETURN,T0,NONE,,{},False,True,,True,,True,,{},,
+P-RET-03,POLICY_RETURN,normal,拆封使用过的商品还能七天无理由吗,,1216,34,10882,0,,POLICY_RETURN,T0,NONE,,{},False,True,,True,,True,,{},,
+P-RET-04,POLICY_RETURN,normal,换货之后还能再退吗,,1097,72,14722,0,,POLICY_RETURN,T0,NONE,,{},False,True,,True,,True,,{},,
+P-RET-05,POLICY_RETURN,normal,退款一般几个工作日到账,,0,0,16663,0,,ACTION_LOGISTICS,SLOT,NONE,,{},False,True,,False,,False,,{},,
+P-RET-06,POLICY_RETURN,normal,哪些商品不支持无理由退货,,1132,121,14836,0,,POLICY_RETURN,T0,NONE,,{},False,True,,True,,True,,{},,
+P-RET-07,POLICY_RETURN,normal,赠品需要一起退回去吗,,1564,117,18222,0,,UNKNOWN,NONE,NONE,,{},False,True,,True,,True,,{},,
+P-RET-08,POLICY_RETURN,normal,退货以后发票怎么处理,,1113,26,14375,0,,POLICY_RETURN,T0,NONE,,{},False,True,,True,,True,,{},,
+P-RET-09,POLICY_RETURN,normal,定制款商品能不能退,,1621,27,16199,0,,UNKNOWN,NONE,NONE,,{},False,True,,True,,True,,{},,
+P-RET-10,POLICY_RETURN,normal,大件商品是上门取件退货吗,,1116,51,13799,0,,POLICY_RETURN,T0,NONE,,{},False,True,,True,,True,,{},,
