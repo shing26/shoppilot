@@ -16,5 +16,6 @@ __pycache__/
 .pytest_cache/
 locust_results/
 node_modules/
+.tools/
 
 .cache/

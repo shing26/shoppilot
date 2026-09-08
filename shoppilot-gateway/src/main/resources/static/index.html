@@ -1,72 +1,456 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>ShopPilot 竖切验证</title>
-  <style>
-    body { font: 14px/1.6 system-ui, sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; }
-    #log { border: 1px solid #ddd; padding: 12px; min-height: 220px; white-space: pre-wrap; }
-    #status { color: #666; font-size: 12px; }
-    input[type=text] { width: 62%; padding: 6px; }
-    button { padding: 6px 14px; }
-    .ev { color: #0a6; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShopPilot 调试台</title>
+<style>
+  :root {
+    --bg: #f2f3f5; --panel: #fff; --ink: #14161a; --ink-2: #5c636e; --ink-3: #8b929d;
+    --line: #dfe2e7; --line-2: #eceef1;
+    --teal: #0f766e; --amber: #b45309; --rose: #be123c; --violet: #6d28d9;
+    --sky: #0369a1; --green: #15803d;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 13px/1.55 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--line); height: 49px; }
+  header h1 { font-size: 14px; margin: 0 10px 0 0; font-weight: 650; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); display: inline-block; }
+  .dot.bad { background: var(--rose); }
+  .grow { flex: 1; }
+  main { display: grid; grid-template-columns: 250px minmax(0,1fr) 400px;
+    height: calc(100vh - 49px - 62px); gap: 1px; background: var(--line); }
+  section { background: var(--panel); min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  section > h2 { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3);
+    margin: 0; padding: 9px 12px 7px; border-bottom: 1px solid var(--line-2); font-weight: 650; }
+  .body { padding: 12px; overflow: auto; min-height: 0; }
+  label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ink-3); margin: 12px 0 4px; font-weight: 650; }
+  label:first-child { margin-top: 0; }
+  input, select, button { font: inherit; color: inherit; }
+  input[type=text], select { width: 100%; padding: 5px 7px; border: 1px solid var(--line);
+    border-radius: 6px; background: #fff; }
+  button { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover { border-color: var(--ink-3); }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button.sm { padding: 2px 7px; font-size: 11px; border-radius: 5px; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .claims { font-family: var(--mono); font-size: 11px; background: var(--line-2); border-radius: 6px;
+    padding: 7px 8px; overflow-wrap: anywhere; color: var(--ink-2); }
+  #chat { flex: 1; overflow: auto; padding: 12px; min-height: 0; }
+  .msg { margin-bottom: 12px; }
+  .msg .who { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 3px; }
+  .msg .bubble { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap;
+    overflow-wrap: anywhere; background: #fff; }
+  .msg.user .bubble { background: var(--line-2); border-color: var(--line-2); }
+  .msg .cite { margin-top: 5px; font-family: var(--mono); font-size: 10px; color: var(--ink-3); overflow-wrap: anywhere; }
+  .msg details.cite { margin-top: 5px; font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+  .msg details.cite > summary { cursor: pointer; list-style: none; color: var(--teal); }
+  .msg details.cite > summary::-webkit-details-marker { display: none; }
+  .msg details.cite ul { margin: 4px 0 0; padding-left: 16px; overflow-wrap: anywhere; }
+  .composer { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line-2); }
+  .composer input { flex: 1; }
+  #timeline { flex: 1; overflow: auto; min-height: 0; }
+  .ev { display: grid; grid-template-columns: 78px minmax(0,1fr); gap: 8px; padding: 5px 10px;
+    border-bottom: 1px solid var(--line-2); font-size: 12px; }
+  .ev .k { font-family: var(--mono); font-size: 10px; font-weight: 700; padding-top: 2px; }
+  .ev .v { min-width: 0; overflow-wrap: anywhere; }
+  .dim { color: var(--ink-3); }
+  .ev.status .k { color: var(--ink-3); }
+  .ev.meta .k { color: var(--sky); }
+  .ev.tool_executing .k, .ev.tool_result .k { color: var(--violet); }
+  .ev.slot_ask .k { color: var(--amber); }
+  .ev.fallback .k, .ev.rate_limited .k, .ev.duplicate_submit .k { color: var(--rose); }
+  .ev.done .k { color: var(--green); }
+  .ev.token .k { color: var(--teal); }
+  .ev.ops .k { color: var(--ink-2); }
+  .ev.ops.ok .v { color: var(--green); }
+  .ev.ops.bad .v { color: var(--rose); }
+  .chips { display: flex; flex-wrap: wrap; gap: 2px; }
+  .chip { font-family: var(--mono); font-size: 11px; background: #ecfdf8; border: 1px solid #a7f3d0;
+    border-radius: 4px; padding: 0 3px; }
+  footer { background: var(--panel); border-top: 1px solid var(--line); display: flex; align-items: center;
+    gap: 13px; padding: 9px 12px; height: 62px; overflow-x: auto; }
+  .ctl { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .ctl .t { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); font-weight: 650; }
+  input[type=range] { width: 104px; accent-color: var(--teal); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 4px 9px; font-size: 11px; background: #fff; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed=true] { background: var(--ink); color: #fff; }
+  .val { font-family: var(--mono); font-size: 11px; min-width: 44px; color: var(--ink-2); }
+  aside.drawer { position: fixed; inset: 0 0 0 auto; width: min(520px,92vw); background: var(--panel);
+    border-left: 1px solid var(--line); box-shadow: -12px 0 28px rgba(20,22,26,.10);
+    transform: translateX(100%); transition: transform .18s ease; display: flex; flex-direction: column; z-index: 20; }
+  aside.drawer.open { transform: none; }
+  #tickets { flex: 1; overflow: auto; }
+  .tk { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; padding: 9px 12px;
+    border-bottom: 1px solid var(--line-2); align-items: start; }
+  .tk .id { font-family: var(--mono); font-size: 11px; color: var(--ink-2); overflow-wrap: anywhere; }
+  .tk .q { overflow-wrap: anywhere; }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .badge.OPEN { color: var(--amber); border-color: #fcd34d; background: #fffbeb; }
+  .badge.ASSIGNED { color: var(--sky); border-color: #7dd3fc; background: #f0f9ff; }
+  .badge.RESOLVED { color: var(--green); border-color: #86efac; background: #f0fdf4; }
+  .empty { color: var(--ink-3); padding: 14px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 220px minmax(0,1fr); } #pane-events { display: none; } }
+</style>
 </head>
 <body>
-  <h2>ShopPilot — 打字机链路验证</h2>
-  <p><input type="text" id="q" value="生鲜坏了怎么赔"> <button id="go">问</button></p>
-  <div id="log"></div>
-  <p id="status">正在获取 mock 身份…</p>
+<header>
+  <span class="dot" id="health"></span>
+  <h1>ShopPilot 调试台</h1>
+  <span class="dim" id="mode">mode -</span>
+  <span class="grow"></span>
+  <div class="ctl"><span class="t">ops</span><input type="text" id="opsToken" size="14" value="dev-ops-token"></div>
+  <button id="btnTickets">工单队列</button>
+</header>
+<main>
+  <section id="pane-id">
+    <h2>身份</h2>
+    <div class="body">
+      <label>店铺 tenant</label><select id="tenant"></select>
+      <label>买家 customer</label><input type="text" id="customer" value="C001">
+      <div class="row" style="margin-top:10px">
+        <button class="primary sm" id="btnLogin">换身份</button>
+        <button class="sm" id="btnNewConv">新会话</button>
+      </div>
+      <label>当前 claims</label><div class="claims" id="claims">未签发</div>
+      <label>会话 id</label><div class="claims" id="conv"></div>
+    </div>
+  </section>
+  <section id="pane-chat">
+    <h2>对话</h2>
+    <div id="chat"></div>
+    <div class="composer">
+      <input type="text" id="q" value="生鲜坏了怎么赔" placeholder="向客服提问">
+      <button class="primary" id="btnSend">发送</button>
+    </div>
+  </section>
+  <section id="pane-events">
+    <h2>事件时间线</h2>
+    <div id="timeline"><div class="empty">尚无事件</div></div>
+  </section>
+</main>
+<footer>
+  <div class="ctl"><span class="t">biz delay</span><input type="range" id="delay" min="0" max="4000" step="100" value="0"><span class="val" id="delayV">0 ms</span></div>
+  <div class="ctl"><span class="t">fail rate</span><input type="range" id="failRate" min="0" max="1" step="0.05" value="0"><span class="val" id="failRateV">0.00</span></div>
+  <div class="ctl"><span class="t">llm</span><div class="seg" id="llmSeg">
+    <button data-mode="none" aria-pressed="true">none</button><button data-mode="timeout">timeout</button><button data-mode="unavailable">unavailable</button><button data-mode="budget">budget</button>
+  </div></div>
+  <div class="ctl"><button class="sm" id="btnApply">注入</button><button class="sm" id="btnClear">清除</button>
+    <button class="sm" id="btnFlush">清缓存</button><button class="sm" id="btnDemo">复位演示单</button></div>
+  <div class="ctl"><span class="t">circuit</span><span class="val" id="circuit">-</span><span class="t">refunds</span><span class="val" id="refunds">-</span></div>
+</footer>
+<aside class="drawer" id="drawer">
+  <h2 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:0;padding:13px 12px;border-bottom:1px solid var(--line-2);font-weight:650" class="row">
+    <span class="grow">工单队列</span><button class="sm" id="btnCloseTickets">关闭</button></h2>
+  <div id="tickets"><div class="empty">尚未拉取</div></div>
+</aside>
 <script>
-const log = document.getElementById('log'), status = document.getElementById('status');
-let token = '', conv = crypto.randomUUID();
-async function login() {
-  const r = await fetch('/auth/mock-token', { method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tenantId: 'T001', customerId: 'C155' }) });
-  token = (await r.json()).token;
-  status.textContent = '身份就绪 tenant=T001 customer=C155';
+const $ = (id) => document.getElementById(id);
+const state = { token: '', tenant: 'T001', customer: 'C001', conv: crypto.randomUUID(), busy: false };
+
+function newConv() {
+  state.conv = crypto.randomUUID();
+  $('conv').textContent = state.conv;
 }
-function line(text, cls) { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text; log.appendChild(d); }
-document.getElementById('go').onclick = ask;
-async function ask() {
-  const query = document.getElementById('q').value;
-  line('买家：' + query);
-  const out = line('', null);
-  const res = await fetch('/api/v1/support/chat/stream', {
-    method: 'POST', signal: AbortSignal.timeout(60000),
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream',
-      Authorization: 'Bearer ' + token, 'X-Conversation-Id': conv },
-    body: JSON.stringify({ query }) });
-  if (!res.ok) { status.textContent = 'HTTP ' + res.status; return; }
-  const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = '';
+
+// ---- SSE 帧解析：与 ticket 05 同一套，EventSource 不支持 POST，只能手解 ----
+async function readSse(response, onFrame) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
-    buf += decoder.decode(value, { stream: true });
+    buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
     let cut;
     while ((cut = buf.indexOf('\n\n')) >= 0) {
-      const frame = buf.slice(0, cut); buf = buf.slice(cut + 2);
-      let name = 'message', data = '';
-      for (const l of frame.split('\n')) {
-        if (l.startsWith('event:')) name = l.slice(6).trim();
-        else if (l.startsWith('data:')) data += l.slice(5).trim();
+      const frame = buf.slice(0, cut);
+      buf = buf.slice(cut + 2);
+      let name = 'message';
+      let data = '';
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) name = line.slice(6).trim();
+        else if (line.startsWith('data:')) data += line.slice(5).trim();
       }
-      handle(name, data, out);
+      onFrame(name, data);
     }
   }
 }
-function handle(name, raw, out) {
-  if (name === 'token') { out.textContent += JSON.parse(raw); return; }
-  const data = JSON.parse(raw);
-  if (name === 'status') line('  · ' + data.label + ' ' + (data.detail || ''), 'ev');
-  else if (name === 'meta') line('  meta intent=' + data.intent + ' cache=' + data.cacheLayer, 'ev');
-  else if (name === 'tool_executing') line('  工具 ' + data.label, 'ev');
-  else if (name === 'slot_ask') line('  追问 ' + data.question, 'ev');
-  else if (name === 'fallback') line('  转人工 ' + data.reason + ' 工单=' + (data.ticketId || '-'), 'ev');
-  else if (name === 'done') { status.textContent = '完成 引用=' + data.citations.length + ' tokens=' + JSON.stringify(data.usage); line('  done ' + JSON.stringify(data.citations), 'ev'); }
+
+async function api(method, path, body, withAuth = true) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (withAuth && state.token) headers.Authorization = 'Bearer ' + state.token;
+  // 运维凭证随每个请求带上：只有 ops 端点会读它，其余端点忽略
+  headers['X-Ops-Token'] = $('opsToken').value.trim();
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const text = await res.text();
+  let parsed = null;
+  try { parsed = text ? JSON.parse(text) : null; } catch (e) { parsed = { raw: text }; }
+  return { status: res.status, body: parsed };
 }
-login();
+
+// ---- 身份 ----
+async function loadTenants() {
+  const res = await api('GET', '/api/v1/support/ops/tenants', null);
+  const list = Array.isArray(res.body) && res.body.length ? res.body
+    : [{ tenantId: 'T001', name: '数码旗舰店' }, { tenantId: 'T002', name: '生鲜超市' }, { tenantId: 'T003', name: '服饰官方店' }];
+  $('tenant').innerHTML = list.map((t) =>
+    `<option value="${t.tenantId}">${t.tenantId} · ${t.name}</option>`).join('');
+}
+
+async function login() {
+  // 下拉可能还没被代理数据填上（首次签发就发生在拉取店铺清单之前），此时用默认值而不是空串：
+  // 空 tenantId 签出来的 token 会让整条链路以"无租户"身份跑下去，症状是流式端点悄悄不出 done 帧。
+  state.tenant = $('tenant').value || state.tenant;
+  state.customer = $('customer').value.trim() || 'C001';
+  const res = await api('POST', '/auth/mock-token', { tenantId: state.tenant, customerId: state.customer }, false);
+  if (res.status !== 200) { $('claims').textContent = '签发失败 ' + res.status; return; }
+  state.token = res.body.token;
+  $('claims').textContent = JSON.stringify(decodeJwt(state.token), null, 1);
+  $('health').classList.remove('bad');
+}
+
+function decodeJwt(jwt) {
+  const part = jwt.split('.')[1];
+  return JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+}
+
+// ---- 对话 ----
+function bubble(cls, who, text) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + cls;
+  if (who) {
+    const head = document.createElement('div');
+    head.className = 'who';
+    head.textContent = who;
+    wrap.appendChild(head);
+  }
+  const body = document.createElement('div');
+  body.className = 'bubble';
+  body.textContent = text || '';
+  wrap.appendChild(body);
+  $('chat').appendChild(wrap);
+  $('chat').scrollTop = $('chat').scrollHeight;
+  return body;
+}
+
+// ---- 事件时间线 ----
+function clearTimeline() { $('timeline').innerHTML = ''; }
+
+function ev(name, html) {
+  const row = document.createElement('div');
+  row.className = 'ev ' + name;
+  const k = document.createElement('div');
+  k.className = 'k';
+  k.textContent = name;
+  const v = document.createElement('div');
+  v.className = 'v';
+  v.innerHTML = html;
+  row.append(k, v);
+  $('timeline').appendChild(row);
+  $('timeline').scrollTop = $('timeline').scrollHeight;
+  return v;
+}
+
+const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+async function ask() {
+  if (state.busy) return;
+  const query = $('q').value.trim();
+  if (!query) return;
+  if (!state.token) await login();
+  state.busy = true;
+  $('btnSend').disabled = true;
+  bubble('user', '买家 ' + state.customer, query);
+  const answerEl = bubble('bot', '客服');
+  clearTimeline();
+  const started = performance.now();
+  let tokens = 0;
+  let tokenRow = null;
+  let chips = null;
+  try {
+    const res = await fetch('/api/v1/support/chat/stream', {
+      method: 'POST',
+      signal: AbortSignal.timeout(90000),
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream',
+        Authorization: 'Bearer ' + state.token, 'X-Conversation-Id': state.conv },
+      body: JSON.stringify({ query })
+    });
+    if (!res.ok) { ev('fallback', 'HTTP ' + res.status); answerEl.textContent = '请求被拒绝：' + res.status; return; }
+    await readSse(res, (name, raw) => {
+      let d = {};
+      try { d = JSON.parse(raw); } catch (e) { d = { text: raw }; }
+      if (typeof d === 'string') d = { text: d };
+      const text = d.text ?? raw;
+      if (name === 'token') {
+        tokens++;
+        answerEl.textContent += text;
+        if (!tokenRow) {
+          chips = document.createElement('div');
+          chips.className = 'chips';
+          tokenRow = ev('token', '');
+          tokenRow.appendChild(chips);
+        }
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = text;
+        chips.appendChild(chip);
+        $('chat').scrollTop = $('chat').scrollHeight;
+        return;
+      }
+      if (name === 'status') { ev('status', esc(d.label) + ' <span class="dim">' + esc(d.detail || '') + '</span>'); return; }
+      if (name === 'meta') {
+        ev('meta', `intent <b>${esc(d.intent) || '-'}</b> · cache <b>${esc(d.cacheLayer)}</b>`
+          + (d.cacheHit ? ' <span class="dim">命中：一次性下发</span>' : ' <span class="dim">未命中：打字机</span>'));
+        return;
+      }
+      if (name === 'tool_executing') { ev('tool_executing', esc(d.tool) + ' <span class="dim">' + esc(d.label || '') + '</span>'); return; }
+      if (name === 'tool_result') { ev('tool_result', esc(d.tool) + ' <b>' + esc(d.status) + '</b>'); return; }
+      if (name === 'duplicate_submit') { ev('duplicate_submit', esc(d.tool) + ' <span class="dim">' + esc(d.message) + '</span>'); return; }
+      if (name === 'slot_ask') { ev('slot_ask', esc(d.slot) + ' <span class="dim">' + esc(d.question) + '</span>'); return; }
+      if (name === 'fallback') { ev('fallback', `<b>${esc(d.reason)}</b> 工单 <span class="dim">${esc(d.ticketId || '-')}</span>`); return; }
+      if (name === 'rate_limited') { ev('rate_limited', esc(d.message) + ' <span class="dim">retry ' + esc(d.retryAfterMs) + 'ms</span>'); return; }
+      if (name === 'done') {
+        const ms = Math.round(performance.now() - started);
+        const cites = d.citations || [];
+        ev('done', `引用 ${cites.length} · token ${d.usage ? d.usage.promptTokens + '/' + d.usage.completionTokens : '-'}`
+          + ` · <span class="dim">${ms}ms / ${tokens} 帧</span>`);
+        // 规则 id 是 40 位哈希，摊在答案下面会把答案本身挤没；默认收成一行，点开再看
+        if (cites.length) {
+          const box = document.createElement('details');
+          box.className = 'cite';
+          const summary = document.createElement('summary');
+          summary.textContent = `依据条款 ${cites.length} 条`;
+          const list = document.createElement('ul');
+          list.innerHTML = cites.map((c) => `<li>${esc(c)}</li>`).join('');
+          box.append(summary, list);
+          answerEl.parentElement.appendChild(box);
+        }
+      }
+    });
+  } catch (failure) {
+    ev('fallback', 'stream error <span class="dim">' + esc(failure.message) + '</span>');
+  } finally {
+    state.busy = false;
+    $('btnSend').disabled = false;
+  }
+}
+
+// ---- 故障注入（全部经网关运维代理，页面不接触 biz-mock 内部凭证）----
+function setLlmMode(mode) {
+  [...$('llmSeg').children].forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+}
+
+async function applyFaults() {
+  const delayMs = Number($('delay').value);
+  const failRate = Number($('failRate').value);
+  const biz = await api('PUT', '/api/v1/support/ops/fault', { delayMs, failRate });
+  const mode = [...$('llmSeg').children].find((b) => b.getAttribute('aria-pressed') === 'true').dataset.mode;
+  const llm = await api('PUT', '/api/v1/support/ops/llm-fault', { mode });
+  report(biz.status === 200 && llm.status === 200,
+    biz.status === 200 && llm.status === 200 ? `已注入 delay=${delayMs}ms fail=${failRate} llm=${mode}`
+      : '注入被拒绝：' + JSON.stringify(biz.body) + ' ' + JSON.stringify(llm.body));
+  await refreshOps();
+}
+
+async function clearFaults() {
+  $('delay').value = 0; $('failRate').value = 0; syncSliders(); setLlmMode('none');
+  await api('PUT', '/api/v1/support/ops/fault', { delayMs: 0, failRate: 0 });
+  await api('PUT', '/api/v1/support/ops/llm-fault', { mode: 'none' });
+  report(true, '故障已清除');
+  await refreshOps();
+}
+
+async function refreshOps() {
+  const circuit = await api('GET', '/api/v1/support/ops/circuit', null, true);
+  if (circuit.body) {
+    $('circuit').textContent = circuit.body.circuitState + ' / ' + circuit.body.llmMode;
+    $('mode').textContent = 'mode ' + circuit.body.llmMode;
+  }
+  const stats = await api('GET', '/api/v1/support/ops/stats', null, true);
+  if (stats.status === 200) $('refunds').textContent = String(stats.body.refunds);
+}
+
+function report(ok, message) {
+  const row = document.createElement('div');
+  // 独立事件名，不复用 done：验收脚本用 .ev.done 等"这一轮答完了"，
+  // 运维回执要是混进同一个类，脚本会在自己写的行上提前收工。
+  row.className = 'ev ops ' + (ok ? 'ok' : 'bad');
+  row.innerHTML = `<div class="k">ops</div><div class="v">${esc(message)}</div>`;
+  $('timeline').appendChild(row);
+  $('timeline').scrollTop = $('timeline').scrollHeight;
+}
+
+// ---- 工单抽屉 ----
+async function loadTickets() {
+  $('drawer').classList.add('open');
+  const res = await api('GET', '/api/v1/support/ops/tickets', null, true);
+  if (res.status !== 200) { $('tickets').innerHTML = '<div class="empty">拉取失败 ' + res.status + '</div>'; return; }
+  if (!res.body.length) { $('tickets').innerHTML = '<div class="empty">当前店铺暂无工单</div>'; return; }
+  $('tickets').innerHTML = res.body.map((t) => `
+    <div class="tk">
+      <div><div class="id">${esc(t.id)} · ${esc(t.reason)} · ${esc(t.customerId)}</div>
+        <div class="q">${esc(t.userQuery)}</div>
+        <div class="row" style="margin-top:6px">
+          <button class="sm" data-tk="${esc(t.id)}" data-to="ASSIGNED">认领</button>
+          <button class="sm" data-tk="${esc(t.id)}" data-to="RESOLVED">结单</button>
+        </div></div>
+      <span class="badge ${esc(t.status)}">${esc(t.status)}</span>
+    </div>`).join('');
+  $('tickets').querySelectorAll('button[data-to]').forEach((btn) => {
+    btn.onclick = async () => {
+      const r = await api('PATCH', '/api/v1/support/ops/tickets/' + btn.dataset.tk + '/status', { status: btn.dataset.to });
+      report(r.status === 200, r.status === 200 ? `${btn.dataset.tk} -> ${btn.dataset.to}`
+        : `流转被拒 ${r.status}：${btn.dataset.tk} -> ${btn.dataset.to}`);
+      loadTickets();
+    };
+  });
+}
+
+function syncSliders() {
+  $('delayV').textContent = $('delay').value + ' ms';
+  $('failRateV').textContent = Number($('failRate').value).toFixed(2);
+}
+
+// ---- 装配 ----
+$('btnLogin').onclick = login;
+$('btnNewConv').onclick = newConv;
+$('btnSend').onclick = ask;
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
+$('delay').oninput = syncSliders;
+$('failRate').oninput = syncSliders;
+$('llmSeg').querySelectorAll('button').forEach((b) => { b.onclick = () => setLlmMode(b.dataset.mode); });
+$('btnApply').onclick = applyFaults;
+$('btnClear').onclick = clearFaults;
+$('btnFlush').onclick = async () => {
+  const r = await api('POST', '/api/v1/support/ops/cache/flush', {});
+  report(r.status === 200, '清缓存 ' + JSON.stringify(r.body));
+};
+$('btnDemo').onclick = async () => {
+  const r = await api('POST', '/api/v1/support/ops/demo/reset', {});
+  report(r.status === 200, '演示单复位 ' + JSON.stringify(r.body));
+  refreshOps();
+};
+$('btnTickets').onclick = loadTickets;
+$('btnCloseTickets').onclick = () => $('drawer').classList.remove('open');
+
+(async function boot() {
+  newConv();
+  syncSliders();
+  // 先签一个身份再拉店铺清单：租户下拉是运维代理端点，没身份会被 AuthFilter 401，
+  // 于是静默退化成页面里那份兜底名单——那正是"写死名单会和后端分家"的起点。
+  await login();
+  await loadTenants();
+  $('tenant').value = state.tenant;
+  await refreshOps();
+})();
+</script>
 </script>
 </body>
 </html>

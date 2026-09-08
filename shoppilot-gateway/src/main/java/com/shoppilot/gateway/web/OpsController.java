@@ -69,6 +69,15 @@ public class OpsController {
         return forward("GET", "/api/tickets", null, true);
     }
 
+    /**
+     * 店铺清单：调试台的租户下拉从这里取，不在页面里写死一份名单。
+     * 写死的那份会和 biz-mock 的 tenants 表悄悄分家，届时"选不到店"会被当成前端 bug 查。
+     */
+    @GetMapping("/tenants")
+    public ResponseEntity<String> tenants() {
+        return forward("GET", "/api/admin/tenants", null, false);
+    }
+
     @PatchMapping("/tickets/{ticketId}/status")
     public ResponseEntity<String> updateTicketStatus(@PathVariable String ticketId,
                                                      @RequestBody Map<String, Object> body) {

@@ -4,20 +4,38 @@
 
 **Blocked by:** 14 — 降级原因枚举、工单落点与 local 模式验证
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Verify:** 浏览器打开页面走完三条演示（串号防线、降级转人工、缓存命中）-> 时间线逐帧与状态机一致，故障注入经网关代理生效，DevTools 里看不到任何指向 `:8091` 的请求与内部 token。
 
-- [ ] `gateway/src/main/resources/static/index.html`，不引 Node/Vite；用 `fetch()` + `ReadableStream` 手解 SSE 帧（`EventSource` 不支持 POST）
-- [ ] 三栏布局：左身份、中对话、右时间线，底部故障注入条。替换 ticket 05 那个 60 行壳，但沿用同一套 SSE 解析代码，不重写第二份
-- [ ] 左侧身份区：选店铺 + 选买家一键换 token，可看到当前 token 的 claims
-- [ ] 中间对话流；右侧事件时间线逐帧显示 `meta` `status` `tool_executing` `tool_result` `slot_ask` `token` `done` `fallback` `rate_limited`
-- [ ] 命中路径与未命中路径的推送形态不同（一次性 vs 打字机），时间线上要能区分
-- [ ] 故障注入与工单队列一律经网关代理端点转发到 biz-mock，浏览器只与同源网关通信。不得让页面直连 `:8091`：那会把 `X-Internal-Token` 暴露进浏览器，且 biz-mock 只监听本机、跨 origin 必被 CORS 拦
-- [ ] 底部故障注入面板：滑块调 `delayMs` / `failRate`，经代理生效
-- [ ] 工单抽屉：只读列表 + 状态流转按钮，同样经代理拉取
-- [ ] 布局稳定：事件文本长度不得把时间线挤变形
+- [x] `gateway/src/main/resources/static/index.html`，不引 Node/Vite；用 `fetch()` + `ReadableStream` 手解 SSE 帧（`EventSource` 不支持 POST）
+- [x] 三栏布局：左身份、中对话、右时间线，底部故障注入条。替换 ticket 05 那个 60 行壳，但沿用同一套 SSE 解析代码，不重写第二份
+- [x] 左侧身份区：选店铺 + 选买家一键换 token，可看到当前 token 的 claims
+- [x] 中间对话流；右侧事件时间线逐帧显示 `meta` `status` `tool_executing` `tool_result` `slot_ask` `token` `done` `fallback` `rate_limited`
+- [x] 命中路径与未命中路径的推送形态不同（一次性 vs 打字机），时间线上要能区分
+- [x] 故障注入与工单队列一律经网关代理端点转发到 biz-mock，浏览器只与同源网关通信
+- [x] 底部故障注入面板：滑块调 `delayMs` / `failRate`，经代理生效
+- [x] 工单抽屉：只读列表 + 状态流转按钮，同样经代理拉取
+- [x] 布局稳定：事件文本长度不得把时间线挤变形
 
 ## Handoff notes
 
-（收尾时填写：关键决策 + 你需要能当场回答的三个追问）
+**关键决策**
+
+1. **运维代理端点是这个页面的前提，不是附加功能。** 故障注入与工单队列都在 biz-mock，而 `X-Internal-Token` 一旦进浏览器就等于这道门没建；biz-mock 只监听本机，跨 origin 直连还会先被 CORS 拦。所以页面只跟同源网关说话，`OpsController` 在服务端补凭证再转发。验收脚本用 `page.on('request')` 逐条断言：没有任何请求指向 `:8091`、没有任何请求头带 `x-internal-token`、所有请求同源。
+2. **租户下拉的数据来自 `/ops/tenants`，页面里那份只在代理失败时兜底。** 写死一份名单会和 biz-mock 的 `tenants` 表悄悄分家，届时"选不到店"会被当成前端 bug 查半天。
+3. **启动顺序是先签身份再拉店铺清单。** 反过来的话 `/ops/tenants` 会被 `AuthFilter` 401，页面静默退化成兜底名单——而且 `$('tenant').value` 是空串，签出一个 `tid=""` 的 token，症状是流式端点悄悄不出 `done` 帧。`login()` 里对空值回退到默认租户，脚本里断言 claims 的**值**而不只是键名。
+4. **token 帧渲染成一排 chip，而不是拼成一段文本。** 这样"命中 = 1 个 chip、未命中 = 5~50 个 chip"是肉眼可数的，直接满足"两条路径的推送形态要能区分"，不需要额外标注。
+5. **运维回执用独立事件名 `ops`，不复用 `done`。** 复用之后，验收脚本等 `.ev.done` 会在自己刚写的那行运维回执上提前收工——这个坑真踩了一次，表现为"时间线里没有 meta 帧"这种莫名其妙的问题。
+6. **引用条款默认收成 `依据条款 N 条` 的 `<details>`。** 规则 id 是 40 位哈希，摊在答案下面会把答案本身挤没。
+7. **时间线列宽固定 `78px + minmax(0,1fr)`，长文本 `overflow-wrap: anywhere`。** 断言用 `getBoundingClientRect` 比较"最宽事件行"与"面板宽度"，而不是靠肉眼看截图。
+
+**你需要能当场回答的三个追问**
+
+- *Q：为什么不直接上 React + Vite？* A：这个页面的定位是"克隆仓库的人不起 npm 也能看到系统怎么跑"。多一条构建链就多一类起不来的理由，而它不承担任何产品职责。零构建不等于零结构——SSE 解析、事件渲染、代理调用各自一个函数。
+- *Q：`X-Ops-Token` 放在页面输入框里，跟内部凭证有什么区别？* A：作用域不同。它只授权"演示环境的故障注入与复位"，默认值 `dev-ops-token` 是公开的开发凭证；`X-Internal-Token` 授权"以任意租户身份读写业务库"，永远只在网关进程里。生产把 `shoppilot.ops.enabled=false`，运维端点整条 503，页面只剩对话与时间线。
+- *Q：页面怎么保证时间线和后端状态机一致？* A：它不保证——它只转发。每一帧都是 `SseEventSink` 写出来的原样内容，页面不做二次推断，所以后端加一个事件（比如 `duplicate_submit`）前端不改一行也能显示。这是刻意的：调试台一旦开始自己"编"状态，就失去作为证据的资格。
+
+**验证记录（2026-09-08）**
+
+`scripts/verify-console.mjs`（Playwright，15 项）全绿：claims 解出真实租户、店铺清单来自代理、政策问答逐字流式（5 帧）+ 引用折叠、缓存命中一次性下发（1 帧）、注入 `failRate=1.0` 后 `TOOL_UNAVAILABLE` 带工单号、工单抽屉可认领/结单、时间线列宽不被长文本撑变形、浏览器全程不接触 `:8091` 与内部凭证、无失败请求。截图见 `docs/console.png` 与 `docs/console-tickets.png`。
