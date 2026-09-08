@@ -10,6 +10,12 @@ param(
     [string]$OpsToken = 'dev-ops-token'
 )
 $ErrorActionPreference = 'Stop'
+# 第 8 步用到 pwsh 7 才有的 -SkipHttpErrorCheck（429 也要能读到响应体）。
+# 用 Windows PowerShell 5.1 跑会在参数上直接炸，所以先把话说清楚。
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host 'requires PowerShell 7+: pwsh -NoProfile -File scripts/verify-fallback.ps1'
+    exit 2
+}
 $script:Results = @()
 
 function Get-MockToken([string]$tenantId, [string]$customerId) {
@@ -108,7 +114,8 @@ foreach ($i in 1..14) {
         -Body ([System.Text.Encoding]::UTF8.GetBytes((@{ query = '发什么快递' } | ConvertTo-Json -Compress))) `
         -ContentType 'application/json; charset=utf-8' -TimeoutSec 60 -UseBasicParsing -SkipHttpErrorCheck
     if ([int]$resp.StatusCode -eq 429) {
-        $ticket = $resp.Headers['X-Fallback-Ticket']
+        # 响应头取回来是 String[]（同名头可有多个值），不取单个的话表格里全是花括号，断言也难读
+        $ticket = @($resp.Headers['X-Fallback-Ticket']) | Select-Object -First 1
         $burst += $ticket
         $script:Results += [pscustomobject]@{ Reason = 'RATE_LIMITED'; Trigger = "burst-429-#$i"; TicketId = $ticket; Pass = ($null -ne $ticket -and "$ticket" -ne '') }
     }
@@ -118,6 +125,19 @@ Write-Host ("  429 responses: " + @($burst).Count + "  distinct tickets: " + @($
 Write-Host "`n=== tickets landed in biz-mock (via gateway proxy) ==="
 (Invoke-Ops 'GET' '/api/v1/support/ops/tickets' $null) | ForEach-Object {
     Write-Host ("  {0}  {1,-20} {2}" -f $_.id, $_.reason, $_.userQuery)
+}
+
+# "可查工单"必须真被查到：只在 SSE 帧里印出工单号不算数，坐席从队列里捞不到就等于没转人工。
+Write-Host "`n=== every ticket id must come back from the queue ==="
+$queued = @(Invoke-Ops 'GET' '/api/v1/support/ops/tickets' $null | ForEach-Object { $_.id })
+Write-Host ("  queue size: " + $queued.Count)
+foreach ($row in $script:Results) {
+    if (-not $row.TicketId) { continue }
+    $found = $queued -contains [string]$row.TicketId
+    if (-not $found) {
+        Write-Host ("  MISSING from queue: {0} ({1})" -f $row.TicketId, $row.Reason) -ForegroundColor Red
+    }
+    $row.Pass = ([bool]$row.Pass) -and $found
 }
 
 Write-Host "`n=== summary ==="

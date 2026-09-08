@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -47,14 +48,16 @@ public class IngestRunner implements ApplicationRunner {
     private final EsRestClient es;
     private final KbEpoch kbEpoch;
     private final GatewayProperties properties;
+    private final ConfigurableApplicationContext context;
 
     public IngestRunner(EmbeddingClient embedding, QdrantRestClient qdrant, EsRestClient es, KbEpoch kbEpoch,
-                        GatewayProperties properties) {
+                        GatewayProperties properties, ConfigurableApplicationContext context) {
         this.embedding = embedding;
         this.qdrant = qdrant;
         this.es = es;
         this.kbEpoch = kbEpoch;
         this.properties = properties;
+        this.context = context;
     }
 
     @Override
@@ -63,6 +66,12 @@ public class IngestRunner implements ApplicationRunner {
         try {
             ingest();
             log.info("入库完成，耗时 {} 秒", (System.nanoTime() - started) / 1_000_000_000);
+            // 一次性离线作业必须自己收尾：Redisson 的 netty 线程不是守护线程，main 返回后
+            // JVM 不会退出，mvn spring-boot:run 于是永远不返回（scripts/up.ps1 卡在第 5 步）。
+            // 先 close 让 Bean 走正常销毁，再 exit 保证进程一定结束。
+            context.close();
+            System.exit(0);
+            return;
         } catch (DependencyMissing missing) {
             // 依赖没起来是操作问题，给一条能照着做的提示，不甩堆栈
             log.error("入库中止：{}", missing.getMessage());
