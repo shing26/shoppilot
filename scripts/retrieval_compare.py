@@ -86,6 +86,10 @@ def main() -> int:
                      "fused_top": [titles.get(r, "?") for r in fused[:TOP_K]],
                      "lexical_only_top": [titles.get(r, "?") for r in probe["lexicalTop"][:TOP_K]],
                      "relaxed": probe.get("intentFilterRelaxed", False)})
+        if probe.get("degraded"):
+            # 有一路召回引擎当时是挂的：这一行的"dense 序 vs hybrid 序"比的是故障不是算法
+            print(f"FAIL: 探针期间有召回引擎不可用，对比不可信: query={query}")
+            return 1
 
     dense_hits = sum(1 for r in rows if r["dense_rank"] and r["dense_rank"] <= TOP_K)
     fused_hits = sum(1 for r in rows if r["fused_rank"] and r["fused_rank"] <= TOP_K)

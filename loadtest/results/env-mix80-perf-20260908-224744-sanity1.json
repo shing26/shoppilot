@@ -1,0 +1,112 @@
+{
+  "run": "mix80-perf-20260908-224744-sanity1",
+  "trafficModel": "mix80",
+  "gatewayProfile": "perf",
+  "locustWorkers": 2,
+  "stepsCsv": "ladder-mix80-perf-20260908-224744-sanity1.csv",
+  "durationPerStepS": 60,
+  "steps": [
+    {
+      "request_count": "38392",
+      "failure_count": "0",
+      "qps": "650.41",
+      "p50": "19",
+      "p95": "1200",
+      "p99": "1300",
+      "max": "3227",
+      "hot_request_count": "30510",
+      "hot_failure_count": "0",
+      "hot_qps": "516.89",
+      "hot_p50": "17",
+      "hot_p95": "1200",
+      "hot_p99": "1300",
+      "action_request_count": "3820",
+      "action_failure_count": "0",
+      "action_qps": "64.71",
+      "action_p50": "1200",
+      "action_p95": "1300",
+      "action_p99": "1500",
+      "long_request_count": "3854",
+      "long_failure_count": "0",
+      "long_qps": "65.29",
+      "long_p50": "18",
+      "long_p95": "1200",
+      "long_p99": "1400",
+      "users": 200,
+      "workers": 2,
+      "per_worker_users": 100,
+      "wall_s": 79.9,
+      "model": "mix80",
+      "requests_delta": 38365,
+      "admitted_delta": 29819,
+      "ratelimited_delta": 0,
+      "l1_delta": 29702,
+      "l2_delta": 0,
+      "flight_delta": 72,
+      "llm_delta": 25667,
+      "embed_remote_delta": 18,
+      "embed_cached_delta": 14761,
+      "embed_merged_delta": 74,
+      "negative_suppressed_delta": 0,
+      "valid_requests_delta": 38365,
+      "interception_total": 0.7761,
+      "interception_cache_only": 0.7742,
+      "interception_admitted": 0.9985,
+      "cpu_mean_pct": 59.6,
+      "cpu_max_pct": 98.0,
+      "freemem_min_gb": 0.0,
+      "profile": "perf"
+    }
+  ],
+  "env": {
+    "timestamp": "2026-09-08T22:49:04",
+    "os": "Windows 10",
+    "python": "3.11.9",
+    "machine": "LAPTOP-TODOM8HG",
+    "cpu_count": 16,
+    "gitCommit": "9722471",
+    "containers": [
+      "shoppilot-redis=16.53MiB / 192MiB",
+      "shoppilot-qdrant=131.9MiB / 512MiB",
+      "shoppilot-es=996.8MiB / 1GiB"
+    ],
+    "freeMemGB": "0.6"
+  },
+  "counters": {
+    "requests": [
+      "shoppilot_requests_total"
+    ],
+    "admitted": [
+      "shoppilot_cache_admitted_total"
+    ],
+    "rate_limited": [
+      "shoppilot_rate_limited_total"
+    ],
+    "l1": [
+      "shoppilot_cache_hit_total?tag=layer:L1"
+    ],
+    "l2": [
+      "shoppilot_cache_hit_total?tag=layer:L2"
+    ],
+    "flight": [
+      "shoppilot_singleflight_merged_total"
+    ],
+    "llm": [
+      "shoppilot_llm_calls_total?tag=kind:complete",
+      "shoppilot_llm_calls_total?tag=kind:stream"
+    ],
+    "embed_remote": [
+      "shoppilot_embedding_calls_total?tag=result:remote"
+    ],
+    "embed_cached": [
+      "shoppilot_embedding_calls_total?tag=result:in-process-cache"
+    ],
+    "embed_merged": [
+      "shoppilot_embedding_calls_total?tag=result:singleflight-merge"
+    ],
+    "negative_suppressed": [
+      "shoppilot_cache_negative_suppressed_total"
+    ]
+  },
+  "note": "perf profile 下调限流配额（见 application.yml perf 段）；生成侧为 MockLLM 固定延迟，embedding 仍为真实 bge-m3"
+}

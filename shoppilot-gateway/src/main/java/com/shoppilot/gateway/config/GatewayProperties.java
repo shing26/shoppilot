@@ -36,8 +36,13 @@ public record GatewayProperties(
         }
     }
 
+    /**
+     * @param inProcessCache 进程内向量缓存开关，默认开。
+     *                       {@code no-embedding-cache} profile 关掉它，用来把
+     *                       "L2 曲线的天花板是编排层还是本地 bge-m3 推理"这件事分开归因。
+     */
     public record Embedding(String baseUrl, String model, int dimension, Duration timeout,
-                            Duration warmupTimeout) {
+                            Duration warmupTimeout, boolean inProcessCache) {
     }
 
     public record Retrieval(String qdrantUrl, String esUrl, String ruleCollection, String cacheCollection,

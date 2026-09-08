@@ -40,6 +40,9 @@ COUNTERS = {
     "llm": ["shoppilot_llm_calls_total?tag=kind:complete", "shoppilot_llm_calls_total?tag=kind:stream"],
     "embed_remote": ["shoppilot_embedding_calls_total?tag=result:remote"],
     "embed_cached": ["shoppilot_embedding_calls_total?tag=result:in-process-cache"],
+    # embedding 的合并与负缓存抑制：中间件抖动时这两列不为 0，才说明踩踏防线真的生效了
+    "embed_merged": ["shoppilot_embedding_calls_total?tag=result:singleflight-merge"],
+    "negative_suppressed": ["shoppilot_cache_negative_suppressed_total"],
 }
 
 
@@ -65,6 +68,21 @@ def counter(base, metric):
 def snapshot(base):
     return {name: sum(counter(base, metric) for metric in metrics)
             for name, metrics in COUNTERS.items()}
+
+
+def gateway_healthy(base: str) -> bool:
+    """
+    网关是否还在服务。
+
+    <p>压测中途 JVM 凭空消失时（这台机器上真的发生过），计数器快照会全读成 0，
+    差值变负数却没人报错——于是一份看起来正常的 CSV 其实是废数据。
+    每档结束都问一次健康，宁可中途停下也不留下能骗人的表。
+    """
+    try:
+        with urllib.request.urlopen(f"{base}/actuator/health", timeout=5) as response:
+            return json.loads(response.read().decode("utf-8")).get("status") == "UP"
+    except Exception:
+        return False
 
 
 def env_record():
@@ -267,6 +285,8 @@ def run_step(base, users, spawn, duration, model, out_prefix, workers=1):
         "llm_delta": round(after["llm"] - before["llm"]),
         "embed_remote_delta": round(after["embed_remote"] - before["embed_remote"]),
         "embed_cached_delta": round(after["embed_cached"] - before["embed_cached"]),
+        "embed_merged_delta": round(after["embed_merged"] - before["embed_merged"]),
+        "negative_suppressed_delta": round(after["negative_suppressed"] - before["negative_suppressed"]),
     })
     valid = (stats["requests_delta"] or 0) - (stats["ratelimited_delta"] or 0)
     stats["valid_requests_delta"] = valid
@@ -302,6 +322,10 @@ def main() -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     tag = f"{args.model}-{args.profile}-{stamp}" + (f"-{args.tag}" if args.tag else "")
     rows = []
+    if not gateway_healthy(args.base):
+        print(f"网关 {args.base} 未就绪，先跑 scripts/start-gateway.ps1 -Profile {args.profile} 再来", flush=True)
+        return 2
+    aborted = False
     for users in [int(s) for s in args.steps.split(",") if s.strip()]:
         prefix = str(RESULTS / f"locust-{tag}-u{users}")
         print(f"== 并发 {users}（{args.workers} 进程），时长 {args.duration}s，流量模型 {args.model} ==",
@@ -310,6 +334,11 @@ def main() -> int:
         row["profile"] = args.profile
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
+        if not gateway_healthy(args.base):
+            row["gateway_down_after_step"] = "true"
+            aborted = True
+            print("!! 网关在这一档之后失联，阶梯中止：本次数据只能用于定位，不能作为结论", flush=True)
+            break
 
     ladder = RESULTS / f"ladder-{tag}.csv"
     fields = ["users", "workers", "per_worker_users", "model", "profile",
@@ -317,10 +346,13 @@ def main() -> int:
               "p99", "max", "requests_delta", "admitted_delta", "ratelimited_delta",
               "valid_requests_delta", "l1_delta", "l2_delta",
               "flight_delta", "llm_delta", "embed_remote_delta", "embed_cached_delta",
+              "embed_merged_delta", "negative_suppressed_delta",
               "interception_total", "interception_cache_only", "interception_admitted",
               "rate_limited_nonzero",
               "cpu_mean_pct", "cpu_max_pct", "freemem_min_gb",
               "wall_s", "locust_error"]
+    if aborted:
+        fields.append("gateway_down_after_step")
     for _, column in TRAFFIC_COLUMNS:
         fields += [f"{column}_{metric}" for metric in
                    ("request_count", "failure_count", "qps", "p50", "p95", "p99")]
@@ -339,7 +371,7 @@ def main() -> int:
 
     print(f"\n阶梯结果 {ladder.relative_to(REPO)}")
     print(f"环境记录 {(RESULTS / f'env-{tag}.json').relative_to(REPO)}")
-    return 0
+    return 3 if aborted else 0
 
 
 if __name__ == "__main__":

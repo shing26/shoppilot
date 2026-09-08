@@ -1,6 +1,7 @@
 package com.shoppilot.gateway.config;
 
 import com.shoppilot.gateway.cache.L2SemanticCache;
+import com.shoppilot.gateway.knowledge.EmbeddingClient;
 import com.shoppilot.gateway.knowledge.EsRestClient;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.knowledge.QdrantRestClient;
@@ -11,7 +12,9 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.List;
+
 
 /**
  * 启动时把两个向量集合与 ES 索引准备好，省掉"第一次请求才发现基础设施没建表"这类假故障。
@@ -30,14 +33,16 @@ public class StartupInitializer implements ApplicationRunner {
     private final L2SemanticCache l2;
     private final KbEpoch kbEpoch;
     private final GatewayProperties properties;
+    private final EmbeddingClient embedding;
 
     public StartupInitializer(QdrantRestClient qdrant, EsRestClient es, L2SemanticCache l2, KbEpoch kbEpoch,
-                              GatewayProperties properties) {
+                              GatewayProperties properties, EmbeddingClient embedding) {
         this.qdrant = qdrant;
         this.es = es;
         this.l2 = l2;
         this.kbEpoch = kbEpoch;
         this.properties = properties;
+        this.embedding = embedding;
     }
 
     @Override
@@ -55,6 +60,24 @@ public class StartupInitializer implements ApplicationRunner {
                     qdrant.count(retrieval.ruleCollection()), es.count(retrieval.esIndex()), purged);
         } catch (RuntimeException infrastructureUnavailable) {
             log.warn("检索基础设施未就绪，网关以降级模式启动: {}", infrastructureUnavailable.getMessage());
+        }
+        warmEmbeddingModel();
+    }
+
+    /**
+     * 把 bge-m3 提前载入内存。
+     *
+     * <p>Ollama 冷启动首次向量化要花几十秒把模型读进内存，而意图质心命中本地缓存时启动路径上一个
+     * embedding 都不发——于是第一批线上流量全去抢这一次冷加载，5 秒超时全线失败。
+     * 预热带宽到 warmup-timeout，且失败不阻断启动（降级演练要求中间件不可用时网关照样对外）。
+     */
+    private void warmEmbeddingModel() {
+        long started = System.nanoTime();
+        try {
+            embedding.embedWarmup("预热");
+            log.info("向量化预热完成，耗时 {}ms", Duration.ofNanos(System.nanoTime() - started).toMillis());
+        } catch (RuntimeException unavailable) {
+            log.warn("向量化预热失败，首批请求可能触发降级: {}", unavailable.getMessage());
         }
     }
 }

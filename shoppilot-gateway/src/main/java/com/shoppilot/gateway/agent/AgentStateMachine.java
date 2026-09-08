@@ -69,6 +69,7 @@ public class AgentStateMachine {
     private final GatewayProperties properties;
     private final ExecutorService writeBackExecutor;
     private final Counter toolRoundExhaustedCounter;
+    private final Counter negativeSuppressedCounter;
 
     public AgentStateMachine(TriageEngine triageEngine, CacheService cacheService, SingleFlight singleFlight,
                              WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, HybridRetriever retriever,
@@ -88,6 +89,9 @@ public class AgentStateMachine {
         this.properties = properties;
         this.writeBackExecutor = writeBackExecutor;
         this.toolRoundExhaustedCounter = Counter.builder("shoppilot_tool_round_exhausted_total").register(registry);
+        // 被拦下来的"不该写的负缓存"要看得见：它是这条防线在中间件抖动时确实生效的唯一证据
+        this.negativeSuppressedCounter = Counter.builder("shoppilot_cache_negative_suppressed_total")
+                .tag("reason", "retrieval-degraded").register(registry);
     }
 
     public AgentResult run(String query, String idempotencyToken, EventSink sink) {
@@ -201,10 +205,10 @@ public class AgentStateMachine {
                 retrieved = retriever.retrieve(query, tenantId, intent == Intent.UNKNOWN ? null : intent);
             } catch (RuntimeException retrievalFailure) {
                 log.warn("混合检索失败，本轮无政策上下文: {}", retrievalFailure.getMessage());
-                retrieved = new HybridRetriever.Result(List.of(), 0, 0, epoch);
+                retrieved = HybridRetriever.Result.unavailable(epoch);
             }
             step(trace, sink, AgentState.RETRIEVE, "dense=" + retrieved.denseHits() + " lexical=" + retrieved.lexicalHits()
-                    + " fused=" + retrieved.rules().size());
+                    + " fused=" + retrieved.rules().size() + " degraded=" + retrieved.degraded());
         }
         messages.add(LlmTypes.Message.user(composeUserMessage(query, retrieved)));
 
@@ -332,7 +336,8 @@ public class AgentStateMachine {
                 : retrieved.rules().stream().map(HybridRetriever.Retrieved::scope).toList();
 
         WriteBackPolicy.Verdict verdict = writeBackPolicy.evaluate(new WriteBackPolicy.Request(
-                intent, answer, retrieved != null && !retrieved.empty(), toolUsed, false, false));
+                intent, answer, retrieved != null && !retrieved.empty(), toolUsed,
+                retrieved != null && retrieved.degraded(), false));
         Optional<CacheEntry> written = Optional.empty();
         if (verdict.eligible()) {
             Optional<CacheEntry> prepared = cacheService.prepareWrite(tenantId, intent, epoch, lookup, answer,
@@ -355,8 +360,14 @@ public class AgentStateMachine {
             }
         } else {
             step(trace, sink, AgentState.CACHE_WRITE, "rejected:" + verdict.reason());
-            if (retrieved != null && retrieved.empty() && intent != null && intent.cacheAdmissible()) {
+            if (retrieved != null && retrieved.empty() && !retrieved.degraded()
+                    && intent != null && intent.cacheAdmissible()) {
                 cacheService.writeNegative(tenantId, intent, epoch, lookup);
+            } else if (retrieved != null && retrieved.empty() && retrieved.degraded()) {
+                // 检索引擎挂了不等于库里没有。这时写负缓存，等于把一次抖动固化成
+                // 60 秒的批量转人工——2026-09-08 mix80 压测里就是这样把自己打停的。
+                negativeSuppressedCounter.increment();
+                step(trace, sink, AgentState.CACHE_WRITE, "negative-suppressed:retrieval-degraded");
             }
         }
 

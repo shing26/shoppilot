@@ -36,6 +36,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 四个原子业务动作 + 工单。业务规则（状态前置校验、归属、幂等兜底）全部在这里强制，
@@ -46,6 +47,15 @@ public class BizMockService {
 
     /** 退款时限：下单后 7 天内。 */
     private static final Duration REFUND_WINDOW = Duration.ofDays(7);
+
+    /**
+     * 工单号后缀序列。
+     *
+     * <p>原来只用 "T + 毫秒 + 内容哈希"：大促压测里同一店铺同一句话在同一毫秒内落几十张单，
+     * 内容一样、时间戳一样，工单号就撞在一张表的主键上，返回 500，降级链路直接断在终点。
+     * 加一个进程内单调序列，让 (毫秒, 序列) 这一对唯一，不依赖时钟精度。
+     */
+    private static final AtomicLong TICKET_SEQ = new AtomicLong();
 
     private final OrderRepository orderRepository;
     private final LogisticsRepository logisticsRepository;
@@ -198,10 +208,15 @@ public class BizMockService {
     @Transactional
     public TicketView createTicket(String customerId, String reason, String userQuery, String transcript) {
         Instant now = Instant.now();
-        String id = "T" + now.toEpochMilli() + "-" + Integer.toHexString(java.util.Objects.hash(customerId, userQuery, now));
+        String id = nextTicketId(now);
         Ticket ticket = new Ticket(id, TenantContextHolder.tenantId(), customerId, reason, truncate(userQuery),
                 transcript == null ? "" : transcript, "OPEN", now);
         return toTicketView(ticketRepository.save(ticket));
+    }
+
+    /** 工单号：毫秒保证跨时间有序，序列保证同一毫秒内不撞主键。 */
+    static String nextTicketId(Instant now) {
+        return "T" + now.toEpochMilli() + "-" + Long.toUnsignedString(TICKET_SEQ.getAndIncrement(), 36);
     }
 
     @Transactional(readOnly = true)

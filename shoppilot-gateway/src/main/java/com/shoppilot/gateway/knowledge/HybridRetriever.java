@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * 双引擎混合检索：Qdrant 稠密召回 + ES BM25 召回，RRF 融合（ADR 0010）。
@@ -53,20 +54,37 @@ public class HybridRetriever {
 
         // 意图过滤过严导致召回为空时退回不带意图的检索：宁可噪声高，不可答不出
         if (dense.isEmpty() && lexical.isEmpty() && intent != null && intent.cacheAdmissible()) {
-            Recalls relaxed = recall(query, visibleTenants, null, epoch);
-            dense = relaxed.dense();
-            lexical = relaxed.lexical();
+            recalls = recall(query, visibleTenants, null, epoch);
+            dense = recalls.dense();
+            lexical = recalls.lexical();
         }
 
         List<Retrieved> fused = rrf(dense, lexical);
         return new Result(fused.subList(0, Math.min(config.fusedTopK(), fused.size())),
-                dense.size(), lexical.size(), epoch);
+                dense.size(), lexical.size(), epoch, recalls.degraded());
     }
 
     private Recalls recall(String query, List<String> visibleTenants, Intent intent, long epoch) {
-        List<Scored> dense = timed(denseTimer, () -> denseRecall(query, visibleTenants, intent, epoch));
-        List<Scored> lexical = timed(lexicalTimer, () -> lexicalRecall(query, visibleTenants, intent, epoch));
-        return new Recalls(dense, lexical);
+        Path dense = timed(denseTimer, () -> run("稠密召回", () -> denseRecall(query, visibleTenants, intent, epoch)));
+        Path lexical = timed(lexicalTimer,
+                () -> run("词法召回", () -> lexicalRecall(query, visibleTenants, intent, epoch)));
+        return new Recalls(dense.hits(), lexical.hits(), dense.failed() || lexical.failed());
+    }
+
+    /**
+     * 单路失效由另一路独扛，但"这一路挂了"与"这一路查到 0 条"必须留下区别。
+     *
+     * <p>区别丢掉的代价在压测里现形过：Ollama 被打爆时稠密路全部超时，返回的空列表被上层当成
+     * "库里确实没有这条政策"，于是写进 60 秒负缓存，同问题的后续请求直接短路成转人工——
+     * 一次中间件抖动被固化成 60 秒的自己制造的服务中断。
+     */
+    private Path run(String label, Supplier<List<Scored>> action) {
+        try {
+            return new Path(action.get(), false);
+        } catch (RuntimeException failure) {
+            log.warn("{}不可用，本轮由另一路独扛: {}", label, failure.getMessage());
+            return new Path(List.of(), true);
+        }
     }
 
     /**
@@ -85,13 +103,13 @@ public class HybridRetriever {
         List<Scored> lexical = recalls.lexical();
         boolean usedFallback = false;
         if (dense.isEmpty() && lexical.isEmpty() && intent != null && intent.cacheAdmissible()) {
-            Recalls relaxed = recall(query, visibleTenants, null, epoch);
-            dense = relaxed.dense();
-            lexical = relaxed.lexical();
+            recalls = recall(query, visibleTenants, null, epoch);
+            dense = recalls.dense();
+            lexical = recalls.lexical();
             usedFallback = true;
         }
         return new Diagnosis(topIds(dense, limit), topIds(lexical, limit),
-                topIdsFromFused(rrf(dense, lexical), limit), dense.size(), lexical.size(), epoch, usedFallback);
+                topIdsFromFused(rrf(dense, lexical), limit), dense.size(), lexical.size(), epoch, usedFallback, recalls.degraded());
     }
 
     private static List<String> topIds(List<Scored> scored, int limit) {
@@ -102,22 +120,20 @@ public class HybridRetriever {
         return fused.stream().map(Retrieved::ruleId).limit(limit).toList();
     }
 
-    private record Recalls(List<Scored> dense, List<Scored> lexical) {
+    private record Recalls(List<Scored> dense, List<Scored> lexical, boolean degraded) {
+    }
+
+    private record Path(List<Scored> hits, boolean failed) {
     }
 
     public record Diagnosis(List<String> denseTop, List<String> lexicalTop, List<String> fusedTop,
-                            int denseHits, int lexicalHits, long kbEpoch, boolean intentFilterRelaxed) {
+                            int denseHits, int lexicalHits, long kbEpoch, boolean intentFilterRelaxed,
+                            boolean degraded) {
     }
 
     private List<Scored> denseRecall(String query, List<String> visibleTenants, Intent intent, long epoch) {
-        float[] vector;
-        try {
-            vector = embedding.embed(query);
-        } catch (RuntimeException embeddingUnavailable) {
-            // 稠密这一路挂了就让词法那路独扛，两路同时失效才算检索失败
-            log.warn("稠密召回不可用，本轮仅用词法召回: {}", embeddingUnavailable.getMessage());
-            return List.of();
-        }
+        // 向量化失败不在此处吞：上层要靠异常区分“这路挂了”与“库里确实没有”
+        float[] vector = embedding.embed(query);
         List<Map<String, Object>> must = new ArrayList<>();
         must.add(Map.of("key", "kb_epoch", "match", Map.of("value", epoch)));
         if (intent != null) {
@@ -173,9 +189,8 @@ public class HybridRetriever {
                     "_source", List.of("ruleId", "text", "title", "ruleType", "applicableCategory", "scope"),
                     "query", Map.of("bool", bool)));
         } catch (RuntimeException failure) {
-            // 词法那一路挂了不影响可用性，退化为单路稠密召回
-            log.warn("ES 词法召回失败，本轮仅用稠密召回: {}", failure.getMessage());
-            return List.of();
+            // 异常抛到 recall() 那层统一记 degraded：绝不把“挂了”翻译成“没查到”
+            throw new IllegalStateException("ES 词法召回失败", failure);
         }
     }
 
@@ -210,7 +225,7 @@ public class HybridRetriever {
         }
     }
 
-    private static <T> List<T> timed(Timer timer, java.util.function.Supplier<List<T>> action) {
+    private static <T> T timed(Timer timer, Supplier<T> action) {
         long started = System.nanoTime();
         try {
             return action.get();
@@ -245,7 +260,16 @@ public class HybridRetriever {
                             String title, String text) {
     }
 
-    public record Result(List<Retrieved> rules, int denseHits, int lexicalHits, long kbEpoch) {
+    public record Result(List<Retrieved> rules, int denseHits, int lexicalHits, long kbEpoch, boolean degraded) {
+
+        public Result(List<Retrieved> rules, int denseHits, int lexicalHits, long kbEpoch) {
+            this(rules, denseHits, lexicalHits, kbEpoch, false);
+        }
+
+        /** 检索没跑成：与“跑完了、命中 0 条”严格区分。 */
+        public static Result unavailable(long epoch) {
+            return new Result(List.of(), 0, 0, epoch, true);
+        }
 
         public boolean empty() {
             return rules.isEmpty();

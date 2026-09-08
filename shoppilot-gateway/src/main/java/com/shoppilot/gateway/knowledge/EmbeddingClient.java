@@ -16,6 +16,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 本地 bge-m3 稠密向量（ADR 0001）。
@@ -34,7 +38,9 @@ public class EmbeddingClient {
     private final Counter failureCounter;
     private final Counter remoteCounter;
     private final Counter cacheHitCounter;
+    private final Counter dedupeMergedCounter;
     private final Map<String, float[]> cache = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<float[]>> inflight = new ConcurrentHashMap<>();
 
     public EmbeddingClient(HttpClient http, ObjectMapper mapper, GatewayProperties properties, MeterRegistry registry) {
         this.http = http;
@@ -46,22 +52,62 @@ public class EmbeddingClient {
                 .tag("result", "remote").register(registry);
         this.cacheHitCounter = Counter.builder("shoppilot_embedding_calls_total")
                 .tag("result", "in-process-cache").register(registry);
+        this.dedupeMergedCounter = Counter.builder("shoppilot_embedding_calls_total")
+                .tag("result", "singleflight-merge").register(registry);
     }
 
     public float[] embed(String text) {
         String normalized = text == null ? "" : text.trim();
+        if (!config.inProcessCache()) {
+            // 归因实验（no-embedding-cache profile）：去重层整体关掉，每个请求真打一次 bge-m3。
+            remoteCounter.increment();
+            return request(normalized, config.timeout());
+        }
         float[] cached = cache.get(normalized);
         if (cached != null) {
             cacheHitCounter.increment();
             return cached;
         }
-        remoteCounter.increment();
-        float[] vector = request(normalized, config.timeout());
-        if (cache.size() > CACHE_MAX) {
-            cache.clear();
+        return loadOnce(normalized);
+    }
+
+    /**
+     * 同一句话的并发请求只放一个去 Ollama，其余等待者复用它的结果。
+     *
+     * <p>压测里踩到的坑：模型冷启动那几十秒里所有并发请求全部 cache miss、全部自己发一次远程向量化，
+     * 把 Ollama 队列撑爆后集体 5 秒超时；失败的结果不进缓存，于是下一批继续全量打——踩踏自己维持自己。
+     * 合并之后一次压测的真实远程调用数接近"问法种类数"，而不是请求数；要失败也只失败一次。
+     */
+    private float[] loadOnce(String normalized) {
+        CompletableFuture<float[]> leader = new CompletableFuture<>();
+        CompletableFuture<float[]> existing = inflight.putIfAbsent(normalized, leader);
+        if (existing != null) {
+            dedupeMergedCounter.increment();
+            try {
+                // 等待者多给 1 秒：发起者超时后会把异常广播过来，等待者不该再排一轮队
+                return existing.get(config.timeout().plusSeconds(1).toMillis(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("等待向量化结果时被中断", interrupted);
+            } catch (ExecutionException | TimeoutException failure) {
+                throw new IllegalStateException("向量化失败（并发发起者未成功，已复用其结果）", failure);
+            }
         }
-        cache.put(normalized, vector);
-        return vector;
+        remoteCounter.increment();
+        try {
+            float[] vector = request(normalized, config.timeout());
+            leader.complete(vector);
+            if (cache.size() > CACHE_MAX) {
+                cache.clear();
+            }
+            cache.put(normalized, vector);
+            return vector;
+        } catch (RuntimeException failure) {
+            leader.completeExceptionally(failure);
+            throw failure;
+        } finally {
+            inflight.remove(normalized, leader);
+        }
     }
 
     /**

@@ -53,6 +53,8 @@ shoppilot:
     model: ${SHOPPILOT_EMBED_MODEL:bge-m3}
     dimension: 1024
     timeout: 5s
+    # 进程内向量缓存开关：默认开（命中路径靠它做到零远程向量化），归因实验用 profile 关掉
+    in-process-cache: true
     # 仅预热与入库使用：Ollama 首次调用要把模型载入内存，运行期请求不享受这个放宽
     warmup-timeout: 60s
   retrieval:
@@ -142,6 +144,18 @@ shoppilot:
 spring:
   config:
     activate:
+      on-profile: nocache
+shoppilot:
+  cache:
+    # Token 节约率的基线组：与 perf 组合使用（-Profile perf,nocache），
+    # 同一套流量模型、同一组限流配额，只关缓存。
+    # 基线不是"假设没有缓存会怎样"，是实测出来的 token 数。
+    enabled: false
+
+---
+spring:
+  config:
+    activate:
       on-profile: no-virtual
   threads:
     virtual:
@@ -151,6 +165,17 @@ server:
     threads:
       max: 200
       min-spare: 20
+
+---
+spring:
+  config:
+    activate:
+      on-profile: no-embedding-cache
+shoppilot:
+  embedding:
+    # 关掉 EmbeddingClient 的进程内向量缓存，让命中路径也暴露出真实的向量化调用。
+    # 这是归因实验：L2 曲线的天花板到底来自编排还是本地 bge-m3 推理，只有这一组能分开。
+    in-process-cache: false
 
 ---
 spring:
