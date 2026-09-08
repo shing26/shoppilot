@@ -10,17 +10,23 @@ function Start-ShoppilotService {
         [Parameter(Mandatory = $true)][string]$WorkingDirectory,
         [Parameter(Mandatory = $true)][string]$FilePath,
         [Parameter(Mandatory = $true)][string[]]$ArgumentList,
-        [Parameter(Mandatory = $true)][string]$StandardOutput
+        [Parameter(Mandatory = $true)][string]$StandardOutput,
+        # 追加到 launcher 进程环境里的变量。多 profile 走 SPRING_PROFILES_ACTIVE 而不是命令行：
+        # cmd.exe 会把 --spring.profiles.active=perf,nocache 里的逗号当参数分隔符，第二个 profile
+        # 静默丢失，"关缓存基线"那组实验跑的其实还是开着缓存的网关。
+        [hashtable]$Environment = @{}
     )
     $logDir = Split-Path -Parent $StandardOutput
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     $runner = Join-Path $logDir ("run-$Name.cmd")
     $quoted = ($ArgumentList | ForEach-Object { '"' + $_ + '"' }) -join ' '
-    $lines = @(
-        '@echo off',
-        "cd /d `"$WorkingDirectory`"",
-        "`"$FilePath`" $quoted > `"$StandardOutput`" 2>&1"
-    )
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('@echo off')
+    $lines.Add("cd /d `"$WorkingDirectory`"")
+    foreach ($key in ($Environment.Keys | Sort-Object)) {
+        $lines += "set `"$key=$($Environment[$key])`""
+    }
+    $lines += "`"$FilePath`" $quoted > `"$StandardOutput`" 2>&1"
     Set-Content -Path $runner -Value $lines -Encoding ascii
     $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
         CommandLine = "cmd.exe /c `"$runner`""

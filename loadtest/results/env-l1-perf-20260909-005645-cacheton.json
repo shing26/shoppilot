@@ -1,0 +1,137 @@
+{
+  "run": "l1-perf-20260909-005645-cacheton",
+  "trafficModel": "l1",
+  "gatewayProfile": "perf",
+  "locustWorkers": 4,
+  "stepsCsv": "ladder-l1-perf-20260909-005645-cacheton.csv",
+  "durationPerStepS": 60,
+  "steps": [
+    {
+      "request_count": "34443",
+      "failure_count": "0",
+      "qps": "579.62",
+      "p50": "12",
+      "p95": "1200",
+      "p99": "1200",
+      "max": "1950",
+      "aggregated_request_count": "69086",
+      "qps_scope": "chat-only",
+      "error_rate": 0.0,
+      "hot_request_count": "18934",
+      "hot_failure_count": "0",
+      "hot_qps": "318.63",
+      "hot_p50": "11",
+      "hot_p95": "1200",
+      "hot_p99": "1200",
+      "para_request_count": "5147",
+      "para_failure_count": "0",
+      "para_qps": "86.61",
+      "para_p50": "11",
+      "para_p95": "1200",
+      "para_p99": "1200",
+      "action_request_count": "5124",
+      "action_failure_count": "0",
+      "action_qps": "86.23",
+      "action_p50": "1200",
+      "action_p95": "1200",
+      "action_p99": "1400",
+      "long_request_count": "5238",
+      "long_failure_count": "0",
+      "long_qps": "88.15",
+      "long_p50": "12",
+      "long_p95": "1200",
+      "long_p99": "1200",
+      "hit_request_count": "25634",
+      "hit_failure_count": "0",
+      "hit_qps": "431.38",
+      "hit_p50": "10",
+      "hit_p95": "25",
+      "hit_p99": "43",
+      "miss_request_count": "8809",
+      "miss_failure_count": "0",
+      "miss_qps": "148.24",
+      "miss_p50": "1200",
+      "miss_p95": "1200",
+      "miss_p99": "1400",
+      "users": 200,
+      "workers": 4,
+      "per_worker_users": 50,
+      "wall_s": 79.5,
+      "model": "l1",
+      "requests_delta": 34547,
+      "admitted_delta": 25635,
+      "ratelimited_delta": 0,
+      "l1_delta": 25635,
+      "l2_delta": 0,
+      "flight_delta": 0,
+      "llm_delta": 26736,
+      "embed_remote_delta": 15,
+      "embed_cached_delta": 14501,
+      "embed_merged_delta": 15,
+      "negative_suppressed_delta": 0,
+      "tokens_delta": 13666716,
+      "valid_requests_delta": 34547,
+      "interception_total": 0.742,
+      "interception_cache_only": 0.742,
+      "interception_admitted": 1.0,
+      "cpu_mean_pct": 56.5,
+      "cpu_max_pct": 89.0,
+      "freemem_min_gb": 0.0,
+      "profile": "perf"
+    }
+  ],
+  "env": {
+    "timestamp": "2026-09-09T00:58:05",
+    "os": "Windows 10",
+    "python": "3.11.9",
+    "machine": "LAPTOP-TODOM8HG",
+    "cpu_count": 16,
+    "gitCommit": "487f8b0",
+    "containers": [
+      "shoppilot-redis=18.05MiB / 192MiB",
+      "shoppilot-qdrant=134.1MiB / 512MiB",
+      "shoppilot-es=1019MiB / 1GiB"
+    ],
+    "freeMemGB": "1"
+  },
+  "counters": {
+    "requests": [
+      "shoppilot_requests_total"
+    ],
+    "admitted": [
+      "shoppilot_cache_admitted_total"
+    ],
+    "rate_limited": [
+      "shoppilot_rate_limited_total"
+    ],
+    "l1": [
+      "shoppilot_cache_hit_total?tag=layer:L1"
+    ],
+    "l2": [
+      "shoppilot_cache_hit_total?tag=layer:L2"
+    ],
+    "flight": [
+      "shoppilot_singleflight_merged_total"
+    ],
+    "llm": [
+      "shoppilot_llm_calls_total?tag=kind:complete",
+      "shoppilot_llm_calls_total?tag=kind:stream"
+    ],
+    "embed_remote": [
+      "shoppilot_embedding_calls_total?tag=result:remote"
+    ],
+    "embed_cached": [
+      "shoppilot_embedding_calls_total?tag=result:in-process-cache"
+    ],
+    "embed_merged": [
+      "shoppilot_embedding_calls_total?tag=result:singleflight-merge"
+    ],
+    "negative_suppressed": [
+      "shoppilot_cache_negative_suppressed_total"
+    ],
+    "tokens": [
+      "shoppilot_llm_tokens_total"
+    ]
+  },
+  "note": "perf profile 下调限流配额（见 application.yml perf 段）；生成侧为 MockLLM 固定延迟，embedding 仍为真实 bge-m3"
+}

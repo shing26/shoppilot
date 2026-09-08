@@ -77,6 +77,9 @@ WEIGHTS = {
     # l1 模型只有约 56% 可缓存流量，拿它的 QPS 去对 1200 的线是错配口径，
     # 所以单独构造 80% 热点重复 + 10% 业务办理 + 10% 长尾的模型来回答这个问题。
     "mix80": [("hot", 80), ("para", 0), ("action", 10), ("long", 10)],
+    # 连接池饱和点探针（ticket 18）：全部流量走业务办理，直穿 biz-mock 的 DB 路径。
+    # 用 l1 模型找池饱和点是找不到的——那里只有 15% 请求真打数据库。
+    "biz": [("hot", 0), ("para", 0), ("action", 100), ("long", 0)],
 }[TRAFFIC_MODEL]
 
 POOL = {
@@ -140,6 +143,16 @@ class ShopPilotUser(HttpUser):
             if not payload.get("answer"):
                 response.failure("空答案")
                 return
+            # 命中路径与未命中路径各记一条派生事件：缓存 TP99 < 30ms 这条 SLO 只能对着
+            # "真命中"的样本报，混在 hot 这一路里会被未命中请求（含 mock 固定延迟）淹没。
+            # 派生事件不计入头条吞吐，见 scripts/run_loadtest.py 的 DERIVED_COLUMNS。
+            layer = payload.get("cacheLayer") or "NONE"
+            self.environment.events.request.fire(
+                request_type="CACHE",
+                name="cache[hitpath]" if layer in ("L1", "L2") else "cache[misspath]",
+                response_time=int((time.perf_counter() - started) * 1000), response_length=0,
+                exception=None, context=self.environment.runner.user_count,
+            )
             # 降级与转人工在功能上是对的，但在压测里必须单独计数，
             # 否则"错误率 0.1%"会把一整片转人工算成成功
             if payload.get("fallbackReason"):

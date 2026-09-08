@@ -13,25 +13,28 @@ $jdk = if ($env:SHOPPILOT_JDK) { $env:SHOPPILOT_JDK } else { "E:\java\jdk21" }
 $java = Join-Path (Join-Path $jdk "bin") "java.exe"
 $logDir = Join-Path $root "logs"
 $suffix = if ($Profile) { $Profile } else { "default" }
-$out = Join-Path $logDir "gateway-$suffix.out"
-$errFile = Join-Path $logDir "gateway-$suffix.err"
-$pidFile = Join-Path $logDir "gateway-$suffix.pid"
+# 文件名里的逗号会让 cmd 的重定向与 WMI 命令行解析出意外（日志曾经直接消失），
+# 所以日志/launcher 用净化过的后缀，真实 profile 串只通过环境变量传。
+$fileSuffix = if ($Profile) { $Profile -replace '[^A-Za-z0-9._-]', '+' } else { "default" }
+$out = Join-Path $logDir "gateway-$fileSuffix.out"
+$errFile = Join-Path $logDir "gateway-$fileSuffix.err"
+$pidFile = Join-Path $logDir "gateway-$fileSuffix.pid"
 $jar = Get-ChildItem (Join-Path $root "shoppilot-gateway\target") -Filter "shoppilot-gateway-*.jar" `
     -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
 
 if ($jar) {
     $argsList = @("-Xmx$Xmx", "-Dfile.encoding=UTF-8", "-jar", $jar.FullName)
-    if ($Profile) { $argsList += "--spring.profiles.active=$Profile" }
-    $cmdPid = Start-ShoppilotService -Name "gateway-$suffix" -WorkingDirectory $root `
-        -FilePath $java -ArgumentList $argsList -StandardOutput $out
+    $envVars = if ($Profile) { @{ SPRING_PROFILES_ACTIVE = $Profile } } else { @{} }
+    $cmdPid = Start-ShoppilotService -Name "gateway-$fileSuffix" -WorkingDirectory $root `
+        -FilePath $java -ArgumentList $argsList -StandardOutput $out -Environment $envVars
 } else {
     Write-Host "未找到 fat jar，退回 mvn spring-boot:run；先跑 mvnw -pl shoppilot-gateway package 可获得更稳的启动路径"
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
     $mvnArgs = @("-B", "-ntp", "-o", "-pl", "shoppilot-gateway", "spring-boot:run")
-    if ($Profile) { $mvnArgs += "-Dspring-boot.run.profiles=$Profile" }
-    $cmdPid = Start-ShoppilotService -Name "gateway-$suffix" -WorkingDirectory $root `
-        -FilePath "mvn.cmd" -ArgumentList $mvnArgs -StandardOutput $out
+    $envVars = if ($Profile) { @{ SPRING_PROFILES_ACTIVE = $Profile } } else { @{} }
+    $cmdPid = Start-ShoppilotService -Name "gateway-$fileSuffix" -WorkingDirectory $root `
+        -FilePath "mvn.cmd" -ArgumentList $mvnArgs -StandardOutput $out -Environment $envVars
 }
 Set-Content -Path $pidFile -Value $cmdPid -Encoding ascii
-Write-Host "网关启动中（profile=$suffix，launcher PID $cmdPid），日志 $out 与 $errFile"
+Write-Host "网关启动中（profile=$Profile，launcher PID $cmdPid），日志 $out 与 $errFile"

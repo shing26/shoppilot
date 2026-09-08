@@ -49,8 +49,12 @@ public record GatewayProperties(
                             String esIndex, int denseTopK, int lexicalTopK, int fusedTopK, int rrfK) {
     }
 
+    /**
+     * @param singleflightEnabled 防击穿合并开关。Token 节约率的基线组要把它和缓存一起关掉，
+     *                            否则"基线"里仍然有合并替模型省调用，测出来的节约率是假的。
+     */
     public record Cache(boolean enabled, Duration l1Ttl, double semanticThreshold, Duration negativeTtl,
-                        Duration singleflightWaitTimeout) {
+                        Duration singleflightWaitTimeout, boolean singleflightEnabled) {
     }
 
     public record BizMock(String baseUrl, String internalToken, Duration connectTimeout, Duration readTimeout) {

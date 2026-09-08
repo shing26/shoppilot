@@ -38,6 +38,7 @@ public class SingleFlight {
     private final StringRedisTemplate redis;
     private final ObjectMapper mapper;
     private final Duration waitTimeout;
+    private final boolean enabled;
     private final Counter mergedCounter;
     private final Counter lockLostCounter;
 
@@ -45,6 +46,7 @@ public class SingleFlight {
         this.redis = redis;
         this.mapper = mapper;
         this.waitTimeout = properties.cache().singleflightWaitTimeout();
+        this.enabled = properties.cache().singleflightEnabled();
         this.mergedCounter = Counter.builder("shoppilot_singleflight_merged_total")
                 .description("等待者复用穿透结果的次数").register(registry);
         this.lockLostCounter = Counter.builder("shoppilot_singleflight_timeout_total")
@@ -66,6 +68,10 @@ public class SingleFlight {
     }
 
     public Gate join(String cacheKey) {
+        if (!enabled) {
+            // 基线组：谁都不等谁，每个请求自己打一次模型。Token 节约率没有这一档就只是算式，不是实测。
+            return Gate.lead();
+        }
         CompletableFuture<Optional<CacheEntry>> mine = new CompletableFuture<>();
         CompletableFuture<Optional<CacheEntry>> existing = inFlight.putIfAbsent(cacheKey, mine);
         if (existing != null) {

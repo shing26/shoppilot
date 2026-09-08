@@ -1,0 +1,2 @@
+connections,duration_s,streams,ok,failed,ttft_p50_ms,ttft_p90_ms,ttft_p99_ms,ttft_max_ms,heap_before_mb,heap_peak_mb,heap_after_mb,errors
+500,60,15188,14688,500,592.5,743.0,2436.1,2928.8,142.9,445.0,-1.0,OSError: [WinError 10048] 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。

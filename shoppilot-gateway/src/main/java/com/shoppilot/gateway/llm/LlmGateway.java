@@ -28,6 +28,7 @@ public class LlmGateway {
     private final Timer latencyTimer;
     private final Counter completeCounter;
     private final Counter streamCounter;
+    private final Counter tokenCounter;
 
     public LlmGateway(HttpClient httpClient, ObjectMapper mapper, GatewayProperties properties,
                       TokenBudget tokenBudget, MeterRegistry registry, LlmFaultInjector faultInjector) {
@@ -53,6 +54,10 @@ public class LlmGateway {
                 .tag("mode", delegate.mode()).tag("kind", "complete").register(registry);
         this.streamCounter = Counter.builder("shoppilot_llm_calls_total")
                 .tag("mode", delegate.mode()).tag("kind", "stream").register(registry);
+        // Token 节约率要能在 perf 模式下测：日预算只在 dev 记账，压测里读不到，
+        // 所以单独放一个"实际发给模型的 token 数"计数器，缓存开/关两组直接比差值。
+        this.tokenCounter = Counter.builder("shoppilot_llm_tokens_total")
+                .tag("mode", delegate.mode()).register(registry);
     }
 
     public String mode() {
@@ -107,6 +112,7 @@ public class LlmGateway {
     }
 
     private void record(LlmTypes.Reply reply) {
+        tokenCounter.increment(reply.totalTokens());
         if (properties.llm().dev()) {
             tokenBudget.record(reply.totalTokens());
         }

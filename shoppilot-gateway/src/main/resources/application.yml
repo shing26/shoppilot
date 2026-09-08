@@ -74,6 +74,8 @@ shoppilot:
     semantic-threshold: 0.95
     negative-ttl: 60s
     singleflight-wait-timeout: 2s
+    # 防击穿合并开关，只有 nosf profile 会关它（token 基线）
+    singleflight-enabled: true
   bizmock:
     base-url: ${SHOPPILOT_BIZMOCK_URL:http://127.0.0.1:8091}
     internal-token: ${SHOPPILOT_INTERNAL_TOKEN:dev-internal-token-change-me}
@@ -151,6 +153,17 @@ shoppilot:
     # 同一套流量模型、同一组限流配额，只关缓存。
     # 基线不是"假设没有缓存会怎样"，是实测出来的 token 数。
     enabled: false
+
+---
+spring:
+  config:
+    activate:
+      on-profile: nosf
+shoppilot:
+  cache:
+    # 与 perf,nocache 组合成"零防线"基线：缓存与防击穿合并都关掉，
+    # 这一档的 tokens/request 才是"每个请求真打模型"的实测值。
+    singleflight-enabled: false
 
 ---
 spring:

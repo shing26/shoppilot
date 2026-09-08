@@ -16,6 +16,7 @@ import csv
 import json
 import os
 import platform
+import threading
 import subprocess
 import sys
 import time
@@ -43,6 +44,8 @@ COUNTERS = {
     # embedding 的合并与负缓存抑制：中间件抖动时这两列不为 0，才说明踩踏防线真的生效了
     "embed_merged": ["shoppilot_embedding_calls_total?tag=result:singleflight-merge"],
     "negative_suppressed": ["shoppilot_cache_negative_suppressed_total"],
+    # Token 节约率 = 1 - 实际发出的 token / 关缓存同 trace 发出的 token，两组都要读得到
+    "tokens": ["shoppilot_llm_tokens_total"],
 }
 
 
@@ -188,8 +191,92 @@ def read_cpu_sample(path):
             "freemem_min_gb": round(min(mems) / 1024.0, 2)}
 
 
+# HikariCP 饱和点证据（ticket 18）。active/pending 是瞬时 gauge：负载一停就归零，
+# 所以必须在压测过程中轮询取峰值；usage/acquire/timeout 是累计量，跑完读一次即可。
+POOL_TIMERS = {"usage": "hikaricp.connections.usage", "acquire": "hikaricp.connections.acquire"}
+POOL_COUNTERS = {"timeout": "hikaricp.connections.timeout"}
+
+
+def gauge_value(base, metric):
+    try:
+        with urllib.request.urlopen(f"{base}/actuator/metrics/{metric}", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+    for measurement in payload.get("measurements", []):
+        if measurement.get("statistic") == "VALUE":
+            return measurement["value"]
+    return None
+
+
+class PoolProbe:
+    """压测期间每秒采一次 biz-mock 连接池的 active/pending，留峰值。"""
+
+    def __init__(self, base, interval=1.0):
+        self.base = base
+        self.interval = interval
+        self.active_max = 0.0
+        self.pending_max = 0.0
+        self.samples = 0
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _loop(self):
+        while not self._stop.is_set():
+            active = gauge_value(self.base, "hikaricp.connections.active")
+            pending = gauge_value(self.base, "hikaricp.connections.pending")
+            if active is not None:
+                self.active_max = max(self.active_max, active)
+            if pending is not None:
+                self.pending_max = max(self.pending_max, pending)
+            if active is not None or pending is not None:
+                self.samples += 1
+            self._stop.wait(self.interval)
+
+    def start(self):
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=10)
+
+    def summary(self):
+        return {"pool_active_max": self.active_max, "pool_pending_max": self.pending_max,
+                "pool_samples": self.samples}
+
+
+def pool_record(base):
+    out = {}
+    try:
+        with urllib.request.urlopen(f"{base}/actuator/metrics/hikaricp.connections.max",
+                                    timeout=5) as response:
+            out["pool_max"] = sum(m["value"] for m in json.loads(response.read().decode("utf-8"))["measurements"])
+    except Exception:
+        out["pool_max"] = ""
+    for name in POOL_COUNTERS:
+        out[f"pool_{name}"] = counter(base, POOL_COUNTERS[name])
+    for name, metric in POOL_TIMERS.items():
+        try:
+            with urllib.request.urlopen(f"{base}/actuator/metrics/{metric}", timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            continue
+        values = {m["statistic"]: m["value"] for m in payload.get("measurements", [])}
+        total, count, peak = values.get("TOTAL_TIME", 0.0), values.get("COUNT", 0.0), values.get("MAX", 0.0)
+        # actuator 的时间量纲是秒，换算成毫秒更好读；COUNT=0 时不算均值，避免 0/0
+        out[f"pool_{name}_count"] = count
+        out[f"pool_{name}_mean_ms"] = round(total / count * 1000.0, 2) if count else ""
+        out[f"pool_{name}_max_ms"] = round(peak * 1000.0, 2)
+    return out
+
+
 TRAFFIC_COLUMNS = (("chat[hot]", "hot"), ("chat[para]", "para"),
                    ("chat[action]", "action"), ("chat[long]", "long"))
+# 派生事件（同一请求按缓存层再记一次）：只用来把命中路径的分位数单独报出来，
+# 绝不计入头条吞吐，否则 QPS 会被自己翻倍。
+DERIVED_COLUMNS = (("cache[hitpath]", "hit"), ("cache[misspath]", "miss"))
 
 
 def aggregate_locust(per_worker_stats):
@@ -223,7 +310,7 @@ def aggregate_locust(per_worker_stats):
     return merged
 
 
-def run_step(base, users, spawn, duration, model, out_prefix, workers=1):
+def run_step(base, users, spawn, duration, model, out_prefix, workers=1, bizmock=""):
     environment = dict(os.environ)
     environment["SHOPPILOT_TRAFFIC_MODEL"] = model
     environment["SHOPPILOT_BASE_URL"] = base
@@ -237,6 +324,9 @@ def run_step(base, users, spawn, duration, model, out_prefix, workers=1):
     started = time.perf_counter()
     sampler_path = Path(f"{out_prefix}_cpu.txt")
     sampler, sampler_handle = cpu_sampler(sampler_path, duration + 15)
+    probe = PoolProbe(bizmock) if bizmock else None
+    if probe:
+        probe.start()
     for index in range(workers):
         prefix = out_prefix if workers == 1 else f"{out_prefix}-w{index + 1}"
         prefixes.append(prefix)
@@ -260,12 +350,29 @@ def run_step(base, users, spawn, duration, model, out_prefix, workers=1):
         except subprocess.TimeoutExpired:
             sampler.kill()
     sampler_handle.close()
+    if probe:
+        probe.stop()
     elapsed = time.perf_counter() - started
     after = snapshot(base)
     merged = aggregate_locust([read_locust_stats(prefix) for prefix in prefixes])
     stats = dict(merged.get("Aggregated", {}))
+    # 头条口径：只加四个真实请求组。locust 的 Aggregated 行还把 auth 握手与派生事件算进去，
+    # 用它报吞吐会凭空抬高 2-3%，而 1200 QPS 是一条要对着判据报的硬线。
+    request_rows = [merged[name] for name, _ in TRAFFIC_COLUMNS if name in merged]
+    stats["aggregated_request_count"] = stats.get("request_count", "")
+    if request_rows:
+        def column_total(key):
+            return sum(int(float(row.get(key) or 0)) for row in request_rows)
+
+        stats["request_count"] = str(column_total("request_count"))
+        stats["failure_count"] = str(column_total("failure_count"))
+        stats["qps"] = f"{sum(float(row.get('qps') or 0) for row in request_rows):.2f}"
+        stats["qps_scope"] = "chat-only"
+        requests = int(float(stats.get("request_count") or 0))
+        # 吞吐判据是"QPS >= 1200 且错误率 < 0.1%"，错误率得单独成列，不能只留一个 failure_count
+        stats["error_rate"] = round(int(float(stats.get("failure_count") or 0)) / requests, 5) if requests else ""
     # 分流量类型报分位数：hot 这一路就是"缓存命中 TP99 < 30ms"的直接证据
-    for name, column in TRAFFIC_COLUMNS:
+    for name, column in TRAFFIC_COLUMNS + DERIVED_COLUMNS:
         row = merged.get(name)
         if row:
             for metric in ("request_count", "failure_count", "qps", "p50", "p95", "p99"):
@@ -287,7 +394,12 @@ def run_step(base, users, spawn, duration, model, out_prefix, workers=1):
         "embed_cached_delta": round(after["embed_cached"] - before["embed_cached"]),
         "embed_merged_delta": round(after["embed_merged"] - before["embed_merged"]),
         "negative_suppressed_delta": round(after["negative_suppressed"] - before["negative_suppressed"]),
+        "tokens_delta": round(after["tokens"] - before["tokens"]),
     })
+    if probe:
+        stats.update(probe.summary())
+    if bizmock:
+        stats.update(pool_record(bizmock))
     valid = (stats["requests_delta"] or 0) - (stats["ratelimited_delta"] or 0)
     stats["valid_requests_delta"] = valid
     admitted = stats["admitted_delta"] or 0
@@ -308,8 +420,11 @@ def run_step(base, users, spawn, duration, model, out_prefix, workers=1):
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8082")
-    parser.add_argument("--model", choices=("l1", "l2", "mix80"), default="l1")
+    parser.add_argument("--model", choices=("l1", "l2", "mix80", "biz"), default="l1",
+                        help="biz = 100% 业务办理，专门用来压穿 biz-mock 的连接池")
     parser.add_argument("--profile", default="perf", help="网关启动 profile，仅用于命名与归档")
+    parser.add_argument("--bizmock", default="http://127.0.0.1:8091",
+                        help="biz-mock 基址，用于读 HikariCP 池指标；传空字符串则不采")
     parser.add_argument("--steps", default="50,100,200,400,800,1200")
     parser.add_argument("--duration", type=int, default=60)
     parser.add_argument("--spawn", type=int, default=20)
@@ -330,7 +445,8 @@ def main() -> int:
         prefix = str(RESULTS / f"locust-{tag}-u{users}")
         print(f"== 并发 {users}（{args.workers} 进程），时长 {args.duration}s，流量模型 {args.model} ==",
               flush=True)
-        row = run_step(args.base, users, args.spawn, args.duration, args.model, prefix, args.workers)
+        row = run_step(args.base, users, args.spawn, args.duration, args.model, prefix,
+                       args.workers, args.bizmock)
         row["profile"] = args.profile
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
@@ -347,13 +463,22 @@ def main() -> int:
               "valid_requests_delta", "l1_delta", "l2_delta",
               "flight_delta", "llm_delta", "embed_remote_delta", "embed_cached_delta",
               "embed_merged_delta", "negative_suppressed_delta",
+              "tokens_delta",
               "interception_total", "interception_cache_only", "interception_admitted",
               "rate_limited_nonzero",
               "cpu_mean_pct", "cpu_max_pct", "freemem_min_gb",
+              "pool_max", "pool_active_max", "pool_pending_max", "pool_samples",
+              "pool_usage_count", "pool_usage_mean_ms", "pool_usage_max_ms",
+              "pool_acquire_count", "pool_acquire_mean_ms", "pool_acquire_max_ms",
+              "pool_timeout",
               "wall_s", "locust_error"]
+    fields += ["error_rate", "qps_scope", "aggregated_request_count"]
     if aborted:
         fields.append("gateway_down_after_step")
     for _, column in TRAFFIC_COLUMNS:
+        fields += [f"{column}_{metric}" for metric in
+                   ("request_count", "failure_count", "qps", "p50", "p95", "p99")]
+    for _, column in DERIVED_COLUMNS:
         fields += [f"{column}_{metric}" for metric in
                    ("request_count", "failure_count", "qps", "p50", "p95", "p99")]
     with ladder.open("w", encoding="utf-8", newline="") as handle:
