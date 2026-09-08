@@ -26,6 +26,8 @@ public class LlmGateway {
     private final LlmFaultInjector faultInjector;
     private final Counter failureCounter;
     private final Timer latencyTimer;
+    private final Counter completeCounter;
+    private final Counter streamCounter;
 
     public LlmGateway(HttpClient httpClient, ObjectMapper mapper, GatewayProperties properties,
                       TokenBudget tokenBudget, MeterRegistry registry, LlmFaultInjector faultInjector) {
@@ -46,6 +48,11 @@ public class LlmGateway {
         this.latencyTimer = Timer.builder("shoppilot_llm_latency_seconds")
                 .tag("mode", delegate.mode())
                 .register(registry);
+        // 命中路径必须"零模型调用"，这条断言只能靠计数器，不能靠读代码保证（PLAN 承诺项）
+        this.completeCounter = Counter.builder("shoppilot_llm_calls_total")
+                .tag("mode", delegate.mode()).tag("kind", "complete").register(registry);
+        this.streamCounter = Counter.builder("shoppilot_llm_calls_total")
+                .tag("mode", delegate.mode()).tag("kind", "stream").register(registry);
     }
 
     public String mode() {
@@ -55,6 +62,7 @@ public class LlmGateway {
     public LlmTypes.Reply complete(LlmTypes.Request request) {
         guardBudget();
         injectFault();
+        completeCounter.increment();
         long started = System.nanoTime();
         try {
             LlmTypes.Reply reply = delegate.complete(request);
@@ -71,6 +79,7 @@ public class LlmGateway {
     public LlmTypes.Reply stream(LlmTypes.Request request, Consumer<String> tokenSink) {
         guardBudget();
         injectFault();
+        streamCounter.increment();
         long started = System.nanoTime();
         try {
             LlmTypes.Reply reply = delegate.stream(request, tokenSink);

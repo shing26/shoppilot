@@ -89,6 +89,8 @@ shoppilot:
     default-tenant-qps: 200
     customer-qps: 5
     ip-qps: 20
+    # 店铺配额默认从 biz-mock 的 tenants 表读，这里只是兜底值；只有 perf profile 会绕过它。
+    override-tenant-quota: false
   ingest:
     # 政策语料目录，相对项目根目录；CI 与本机一致
     dir: ${SHOPPILOT_KNOWLEDGE_DIR:knowledge}
@@ -127,6 +129,14 @@ spring:
 shoppilot:
   llm:
     mode: perf
+  ratelimit:
+    # 压测测的是编排层与缓存层，不是限流器本身；限流行为由 ticket 13 的用例与 verify-ratelimit 负责。
+    # 这里刻意"调高"而不是"关掉"：关掉会让 Redisson 整条路径退出被测范围，那组数字就没有意义了。
+    # 压测报告与 README 必须注明本组数字是在这个配额下取得的。
+    default-tenant-qps: 100000
+    customer-qps: 100000
+    ip-qps: 100000
+    override-tenant-quota: true
 
 ---
 spring:

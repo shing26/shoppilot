@@ -45,6 +45,8 @@ public class RateLimitService {
     private final String internalToken;
     private final Map<String, CachedQuota> quotas = new ConcurrentHashMap<>();
     private final Map<String, RRateLimiter> limiters = new ConcurrentHashMap<>();
+    /** key -> 本进程已向 Redis 对齐过的速率。用来把"每次请求都写 Redis"降成"配额变了才写"。 */
+    private final Map<String, Long> appliedRates = new ConcurrentHashMap<>();
     private final Map<String, Counter> rejections = new ConcurrentHashMap<>();
 
     public RateLimitService(RedissonClient redisson, HttpClient http, ObjectMapper mapper,
@@ -110,11 +112,20 @@ public class RateLimitService {
     }
 
     private RRateLimiter limiter(String key, long permitsPerSecond) {
-        return limiters.compute(key, (name, existing) -> {
-            RRateLimiter limiter = redisson.getRateLimiter("shoppilot:rl:" + name);
-            limiter.trySetRate(RateType.OVERALL, Math.max(1, permitsPerSecond), 1, RateIntervalUnit.SECONDS);
+        long desired = Math.max(1, permitsPerSecond);
+        RRateLimiter limiter = limiters.computeIfAbsent(key,
+                name -> redisson.getRateLimiter("shoppilot:rl:" + name));
+        if (appliedRates.get(key) != null && appliedRates.get(key) == desired) {
             return limiter;
-        });
+        }
+        // trySetRate 只在"没设置过"时生效，配额变更后必须显式 setRate，
+        // 否则桶永远停在进程第一次见到的那个速率上（压测 profile 改不动配额就是这个原因）。
+        var rateConfig = limiter.getConfig();
+        if (rateConfig == null || rateConfig.getRate() != desired) {
+            limiter.setRate(RateType.OVERALL, desired, 1, RateIntervalUnit.SECONDS);
+        }
+        appliedRates.put(key, desired);
+        return limiter;
     }
 
     private long retryAfterMillis(RRateLimiter limiter) {
@@ -125,6 +136,9 @@ public class RateLimitService {
 
     /** 店铺配额来自 biz-mock 的 tenants 表，本地缓存 60 秒；取不到就用默认值。 */
     private long tenantQuota(String tenantId) {
+        if (config.overrideTenantQuota()) {
+            return config.defaultTenantQps();
+        }
         CachedQuota cached = quotas.get(tenantId);
         if (cached != null && cached.expiresAt() > System.nanoTime()) {
             return cached.qps();

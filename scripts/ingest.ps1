@@ -1,4 +1,4 @@
-# 政策知识库离线入库：切分 30 篇 Markdown，向量化后写 Qdrant + ES，成功后推进知识库纪元。
+﻿# 政策知识库离线入库：切分 30 篇 Markdown，向量化后写 Qdrant + ES，成功后推进知识库纪元。
 param([string]$Dir = "")
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot

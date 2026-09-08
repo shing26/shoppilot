@@ -1,4 +1,4 @@
-<#
+﻿<#
     限流验收：连打同一买家，统计 429 与 SSE rate_limited。
     例: .\scripts\verify-ratelimit.ps1 -Total 12
 #>

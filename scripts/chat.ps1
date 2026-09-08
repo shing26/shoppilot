@@ -1,4 +1,4 @@
-# 冒烟一次对话：拿 mock token -> 调同步端点 -> 打印意图、缓存层、引用数与答案。
+﻿# 冒烟一次对话：拿 mock token -> 调同步端点 -> 打印意图、缓存层、引用数与答案。
 param(
     [string]$Query = "生鲜坏了怎么赔",
     [string]$Tenant = "T001",

@@ -32,6 +32,8 @@ public class EmbeddingClient {
     private final ObjectMapper mapper;
     private final GatewayProperties.Embedding config;
     private final Counter failureCounter;
+    private final Counter remoteCounter;
+    private final Counter cacheHitCounter;
     private final Map<String, float[]> cache = new ConcurrentHashMap<>();
 
     public EmbeddingClient(HttpClient http, ObjectMapper mapper, GatewayProperties properties, MeterRegistry registry) {
@@ -39,14 +41,21 @@ public class EmbeddingClient {
         this.mapper = mapper;
         this.config = properties.embedding();
         this.failureCounter = Counter.builder("shoppilot_embedding_failure_total").register(registry);
+        // "命中路径零 embedding 调用"这条断言要能证伪，就得把进程内命中与真打 Ollama 分开记
+        this.remoteCounter = Counter.builder("shoppilot_embedding_calls_total")
+                .tag("result", "remote").register(registry);
+        this.cacheHitCounter = Counter.builder("shoppilot_embedding_calls_total")
+                .tag("result", "in-process-cache").register(registry);
     }
 
     public float[] embed(String text) {
         String normalized = text == null ? "" : text.trim();
         float[] cached = cache.get(normalized);
         if (cached != null) {
+            cacheHitCounter.increment();
             return cached;
         }
+        remoteCounter.increment();
         float[] vector = request(normalized, config.timeout());
         if (cache.size() > CACHE_MAX) {
             cache.clear();

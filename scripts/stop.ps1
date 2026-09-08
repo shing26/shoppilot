@@ -1,4 +1,4 @@
-# 只停本项目占用的端口，绝不碰别的项目的进程。
+﻿# 只停本项目占用的端口，绝不碰别的项目的进程。
 param([int[]]$Ports = @(8082, 8091))
 foreach ($port in $Ports) {
     $owners = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess

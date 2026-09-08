@@ -1,4 +1,4 @@
-# 启动网关（:8082）。默认 local 模式，走本机 Ollama，不产生任何 API 费用。
+﻿# 启动网关（:8082）。默认 local 模式，走本机 Ollama，不产生任何 API 费用。
 param(
     [string]$Profile = ""
 )

@@ -12,7 +12,8 @@ spring:
     username: sa
     password: ""
     hikari:
-      maximum-pool-size: 30
+      # 压测要能不改码调池：ticket 18 的 HikariCP 饱和点对比实验用 SHOPPILOT_BIZMOCK_POOL_SIZE 切换
+      maximum-pool-size: ${SHOPPILOT_BIZMOCK_POOL_SIZE:30}
       minimum-idle: 5
   jpa:
     hibernate:

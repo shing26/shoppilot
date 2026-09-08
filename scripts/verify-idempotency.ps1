@@ -1,4 +1,4 @@
-<#
+﻿<#
     ticket 12 验收：同一笔退款重复提交只产生一条退款单，第二次推 duplicate_submit。
     对已发货订单改地址必须被状态前置校验拒绝，并由模型说明原因。
     例: .\scripts\verify-idempotency.ps1

@@ -54,7 +54,12 @@ public record GatewayProperties(
     public record Agent(int maxToolRounds, int maxSlotAsks, Duration sessionTtl, int historyTurns) {
     }
 
-    public record RateLimit(boolean enabled, long defaultTenantQps, long customerQps, long ipQps) {
+    /**
+     * @param overrideTenantQuota true 时店铺配额取 {@code defaultTenantQps}，不再读 biz-mock 的 tenants 表。
+     *                            只有压测 profile 该开：真实流量要的是每店配额，不是全局大数。
+     */
+    public record RateLimit(boolean enabled, long defaultTenantQps, long customerQps, long ipQps,
+                            boolean overrideTenantQuota) {
     }
 
     /** 离线入库脚本的配置，只有 ingest profile 会用到。 */
