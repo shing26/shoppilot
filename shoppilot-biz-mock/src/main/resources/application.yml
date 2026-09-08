@@ -1,0 +1,48 @@
+server:
+  port: 8091
+  # 只监听本机：浏览器不得直连本服务（ticket 15），网关是唯一调用方
+  address: 127.0.0.1
+
+spring:
+  application:
+    name: shoppilot-biz-mock
+  datasource:
+    url: jdbc:h2:mem:shoppilot;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 5
+  jpa:
+    hibernate:
+      ddl-auto: create
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 200
+        order_inserts: true
+        # ADR 0005 防线二：@TenantId + 该 resolver 让所有查询自动拼接归属条件
+        tenant_identifier_resolver: com.shoppilot.bizmock.tenant.HibernateTenantResolver
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+
+shoppilot:
+  bizmock:
+    # ADR 0002：故障注入，用于现场演示降级
+    default-delay-ms: 0
+    default-fail-rate: 0.0
+    internal-token: ${SHOPPILOT_INTERNAL_TOKEN:dev-internal-token-change-me}
+    seed:
+      enabled: true
+      tenants: 3
+      customers: 200
+      orders: 50000

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>ShopPilot 竖切验证</title>
+  <style>
+    body { font: 14px/1.6 system-ui, sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    #log { border: 1px solid #ddd; padding: 12px; min-height: 220px; white-space: pre-wrap; }
+    #status { color: #666; font-size: 12px; }
+    input[type=text] { width: 62%; padding: 6px; }
+    button { padding: 6px 14px; }
+    .ev { color: #0a6; }
+  </style>
+</head>
+<body>
+  <h2>ShopPilot — 打字机链路验证</h2>
+  <p><input type="text" id="q" value="生鲜坏了怎么赔"> <button id="go">问</button></p>
+  <div id="log"></div>
+  <p id="status">正在获取 mock 身份…</p>
+<script>
+const log = document.getElementById('log'), status = document.getElementById('status');
+let token = '', conv = crypto.randomUUID();
+async function login() {
+  const r = await fetch('/auth/mock-token', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tenantId: 'T001', customerId: 'C155' }) });
+  token = (await r.json()).token;
+  status.textContent = '身份就绪 tenant=T001 customer=C155';
+}
+function line(text, cls) { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = text; log.appendChild(d); }
+document.getElementById('go').onclick = ask;
+async function ask() {
+  const query = document.getElementById('q').value;
+  line('买家：' + query);
+  const out = line('', null);
+  const res = await fetch('/api/v1/support/chat/stream', {
+    method: 'POST', signal: AbortSignal.timeout(60000),
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream',
+      Authorization: 'Bearer ' + token, 'X-Conversation-Id': conv },
+    body: JSON.stringify({ query }) });
+  if (!res.ok) { status.textContent = 'HTTP ' + res.status; return; }
+  const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, cut); buf = buf.slice(cut + 2);
+      let name = 'message', data = '';
+      for (const l of frame.split('\n')) {
+        if (l.startsWith('event:')) name = l.slice(6).trim();
+        else if (l.startsWith('data:')) data += l.slice(5).trim();
+      }
+      handle(name, data, out);
+    }
+  }
+}
+function handle(name, raw, out) {
+  if (name === 'token') { out.textContent += JSON.parse(raw); return; }
+  const data = JSON.parse(raw);
+  if (name === 'status') line('  · ' + data.label + ' ' + (data.detail || ''), 'ev');
+  else if (name === 'meta') line('  meta intent=' + data.intent + ' cache=' + data.cacheLayer, 'ev');
+  else if (name === 'tool_executing') line('  工具 ' + data.label, 'ev');
+  else if (name === 'slot_ask') line('  追问 ' + data.question, 'ev');
+  else if (name === 'fallback') line('  转人工 ' + data.reason + ' 工单=' + (data.ticketId || '-'), 'ev');
+  else if (name === 'done') { status.textContent = '完成 引用=' + data.citations.length + ' tokens=' + JSON.stringify(data.usage); line('  done ' + JSON.stringify(data.citations), 'ev'); }
+}
+login();
+</script>
+</body>
+</html>

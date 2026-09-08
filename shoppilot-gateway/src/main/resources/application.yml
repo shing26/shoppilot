@@ -1,0 +1,147 @@
+server:
+  port: 8082
+  address: 127.0.0.1
+
+spring:
+  application:
+    name: shoppilot-gateway
+  threads:
+    virtual:
+      # ticket 18 的对比实验靠 no-virtual profile 关掉它，不改代码
+      enabled: true
+  data:
+    redis:
+      host: ${SHOPPILOT_REDIS_HOST:127.0.0.1}
+      port: ${SHOPPILOT_REDIS_PORT:16379}
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 64
+          max-idle: 16
+          min-idle: 4
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+
+shoppilot:
+  # ADR 0014：mock JWT 签名密钥，至少 32 字节
+  jwt-secret: ${SHOPPILOT_JWT_SECRET:dev-jwt-secret-change-me-please-0123456789}
+  llm:
+    # dev | local | perf —— 三态模式，指标分口径声明见 ADR 0001
+    mode: local
+    base-url: ${SHOPPILOT_LLM_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    api-key: ${SHOPPILOT_LLM_API_KEY:}
+    model: ${SHOPPILOT_LLM_MODEL:qwen-plus}
+    temperature: 0.2
+    connect-timeout: 3s
+    read-timeout: 20s
+    # ADR 0012：dev 模式 token 日预算熔断
+    daily-token-budget: 200000
+    local-base-url: ${SHOPPILOT_OLLAMA_URL:http://127.0.0.1:11434}
+    local-model: ${SHOPPILOT_LOCAL_LLM_MODEL:qwen2.5:3b}
+    perf-first-token-latency: 300ms
+    perf-total-latency: 500ms
+  embedding:
+    # ADR 0001：embedding 恒为本地 bge-m3，1024 维
+    base-url: ${SHOPPILOT_OLLAMA_URL:http://127.0.0.1:11434}
+    model: ${SHOPPILOT_EMBED_MODEL:bge-m3}
+    dimension: 1024
+    timeout: 5s
+    # 仅预热与入库使用：Ollama 首次调用要把模型载入内存，运行期请求不享受这个放宽
+    warmup-timeout: 60s
+  retrieval:
+    qdrant-url: ${SHOPPILOT_QDRANT_URL:http://127.0.0.1:16333}
+    es-url: ${SHOPPILOT_ES_URL:http://127.0.0.1:19200}
+    rule-collection: policy_rules
+    cache-collection: answer_cache
+    es-index: policy_rules
+    dense-top-k: 20
+    lexical-top-k: 20
+    fused-top-k: 5
+    rrf-k: 60
+  cache:
+    enabled: true
+    l1-ttl: 6h
+    # ADR 0003：阈值只负责同意图内表述归一，串号防线在缓存准入与意图分区
+    semantic-threshold: 0.95
+    negative-ttl: 60s
+    singleflight-wait-timeout: 2s
+  bizmock:
+    base-url: ${SHOPPILOT_BIZMOCK_URL:http://127.0.0.1:8091}
+    internal-token: ${SHOPPILOT_INTERNAL_TOKEN:dev-internal-token-change-me}
+    connect-timeout: 2s
+    read-timeout: 3s
+  agent:
+    # ADR 0008：工具循环硬上限
+    max-tool-rounds: 2
+    # ticket 11：缺槽位只追问一次
+    max-slot-asks: 1
+    session-ttl: 30m
+    history-turns: 6
+  ratelimit:
+    enabled: true
+    default-tenant-qps: 200
+    customer-qps: 5
+    ip-qps: 20
+  ingest:
+    # 政策语料目录，相对项目根目录；CI 与本机一致
+    dir: ${SHOPPILOT_KNOWLEDGE_DIR:knowledge}
+  triage:
+    # T1 意图质心的本地缓存，按样本指纹失效；删掉它会重新向量化 90 条样本
+    centroid-cache: ${SHOPPILOT_CENTROID_CACHE:.cache/intent-centroids.json}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+shoppilot:
+  llm:
+    mode: dev
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+shoppilot:
+  llm:
+    mode: local
+
+---
+spring:
+  config:
+    activate:
+      on-profile: perf
+shoppilot:
+  llm:
+    mode: perf
+
+---
+spring:
+  config:
+    activate:
+      on-profile: no-virtual
+  threads:
+    virtual:
+      enabled: false
+server:
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+
+---
+spring:
+  config:
+    activate:
+      on-profile: ingest
+  # 入库是一次性脚本，不需要监听端口；关掉 web 容器也避免 8082 占用冲突
+  main:
+    web-application-type: none
