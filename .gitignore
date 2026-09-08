@@ -21,4 +21,11 @@ node_modules/
 .cache/
 
 .venv-loadtest/
+# 只保留汇总产物（ladder-*.csv / env-*.json），locust 原始分位数与 CPU 采样不入库
 loadtest/results/locust-*
+loadtest/results/*_stats.csv
+loadtest/results/*_stats_history.csv
+loadtest/results/*_failures.csv
+loadtest/results/*_exceptions.csv
+loadtest/results/*_cpu.txt
+loadtest/results/tmp-multi/

@@ -44,6 +44,9 @@ public class TriageEngine {
             earlyExitCounter.increment();
             return new Outcome(byRules.get(), null);
         }
+        // T0 未定案意味着句子里没有实体也没有第一人称，但可能仍有动作动词（"我要退款"）。
+        // 这个区别决定 T1 能不能把 ACTION 质心放进候选，详见 T1CentroidLayer#classify。
+        boolean actionEvidence = t0.hasActionVerb(query);
         // 向量化失败不阻断请求：判定降级为"不确定"，缓存自然不准入，交给带 tools 的模型定案
         float[] embedded;
         try {
@@ -53,7 +56,7 @@ public class TriageEngine {
             return new Outcome(TriageResult.undecided(), null);
         }
         float[] vector = embedded;
-        Optional<TriageResult> byCentroid = t1.classify(query, vector);
+        Optional<TriageResult> byCentroid = t1.classify(query, vector, actionEvidence);
         if (byCentroid.isPresent()) {
             earlyExitCounter.increment();
             return new Outcome(byCentroid.get(), vector);

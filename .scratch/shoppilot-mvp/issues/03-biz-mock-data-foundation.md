@@ -4,18 +4,36 @@
 
 **Blocked by:** 01 — 三模块骨架与中间件容器栈
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Verify:** seed 跑两次后统计订单总数，再用 A 店身份查 B 店订单 -> 两次数量一致不翻倍；查询返回"未在本店找到该订单"而非 500。
 
-- [ ] 表：`tenants` `customers` `customer_shops` `orders` `order_addresses` `logistics` `coupons` `refunds` `tickets`；金额一律以分为单位的整型存储
-- [ ] 订单状态机 `CREATED -> PAID -> SHIPPED -> DELIVERED -> COMPLETED`，分支 `CANCELLED` 与 `REFUNDING -> REFUNDED`；非法转移在仓储层拒绝
-- [ ] 租户感知仓储：所有查询强制拼接归属条件（Hibernate `@TenantId` 或 entity filter），禁止裸 JPQL 绕过，新增实体默认受管
-- [ ] seed 脚本幂等可重跑：3 租户 / 200 买家 / 5 万订单 / 约 20 万物流节点，含跨店买家样本（同一买家在 A、B 两店各有订单）
-- [ ] 只监听 127.0.0.1，校验 `X-Internal-Token`，缺失或不匹配返回 401
-- [ ] 故障注入参数 `delayMs` / `failRate` 在订单与物流两个端点上可用
-- [ ] 越权用例进 CI：A 店身份查 B 店订单必须返回"未在本店找到该订单"语义，不得返回 500 或空指针
+- [x] 表：`tenants` `customers` `customer_shops` `orders` `order_addresses` `logistics` `coupons` `refunds` `tickets`；金额一律以分为单位的整型存储
+- [x] 订单状态机 `CREATED -> PAID -> SHIPPED -> DELIVERED -> COMPLETED`，分支 `CANCELLED` 与 `REFUNDING -> REFUNDED`；非法转移在仓储层拒绝
+- [x] 租户感知仓储：所有查询强制拼接归属条件（Hibernate `@TenantId` 或 entity filter），禁止裸 JPQL 绕过，新增实体默认受管
+- [x] seed 脚本幂等可重跑：3 租户 / 200 买家 / 5 万订单 / 约 20 万物流节点，含跨店买家样本（同一买家在 A、B 两店各有订单）
+- [x] 只监听 127.0.0.1，校验 `X-Internal-Token`，缺失或不匹配返回 401
+- [x] 故障注入参数 `delayMs` / `failRate` 在订单与物流两个端点上可用
+- [x] 越权用例进 CI：A 店身份查 B 店订单必须返回"未在本店找到该订单"语义，不得返回 500 或空指针
 
 ## Handoff notes
 
-（收尾时填写：关键决策 + 你需要能当场回答的三个追问）
+**关键决策**
+
+1. **biz-mock 是独立进程（:8091），不是网关里的一个包。** ADR 0002：只有跨进程，"租户身份必须随调用传递"才无法被偷懒绕过——同进程里顺手读个字段就过去了，跨进程则必须显式带上 `X-Internal-Token` 与身份。
+2. **只监听 `127.0.0.1`，所有管理端点校验 `X-Internal-Token`**，缺失或不匹配 401。内部凭证永不下发浏览器（ticket 15 的调试台经网关代理取数）。
+3. **金额一律以"分"为单位的整型存储。** 浮点金额在退款与满减叠加场景会累积误差，这是业务系统的基本功，不是电商特例。
+4. **订单状态机显式枚举并在仓储层拒绝非法转移**：`CREATED -> PAID -> SHIPPED -> DELIVERED -> COMPLETED`，分支 `CANCELLED` 与 `REFUNDING -> REFUNDED`。状态校验放业务系统而不是网关，因为业务系统才是状态真相的所有者（ticket 12 的前置校验也建立在这条上）。
+5. **租户感知仓储用 Hibernate `@TenantId`（discriminator 列）实现行级隔离**，这是 ADR 0005 的第二道防线；第一道是 token 身份注入，第三道是查询端点强制归属条件。裸 JPQL 绕过由"新增实体默认受管 + 越权用例进 CI"压制。
+6. **seed 幂等：`orders` 表非空即跳过**，所以重启不翻倍；规模 3 租户 / 200 买家 / 5 万订单 / 约 20 万物流节点，并刻意造出跨店买家样本（同一买家在 A、B 两店各有订单），否则"跨店越权"这条最重要的用例根本没有素材。
+7. **故障注入参数 `delayMs` / `failRate` 内建在订单与物流端点上**，ticket 14 的降级链路靠它复现，不需要真的拔网线。
+
+**你需要能当场回答的三个追问**
+
+- *Q：A 店查 B 店订单，为什么返回"未在本店找到该订单"而不是 403？* A：403 会确认"这单存在"，本身就是信息泄露。`@TenantId` 让 B 店订单在 A 店的会话里根本不可见，语义上等价于不存在，这也是 CI 用例的断言内容。
+- *Q：5 万订单在 H2 上不会慢吗？* A：会，而且慢是设计的一部分——H2 写入是本项目已知的吞吐瓶颈（README 已知限制里写明）。压测报告里的 TP99 含这段真实成本，不是内存玩具。
+- *Q：seed 数据是随机的，演示怎么保证可复现？* A：随机造数之外另钉四张演示固定单 90001-90004（ticket 12），`POST /api/admin/demo/reset` 复位。
+
+**验证记录（2026-09-05）**
+
+seed 连跑两次订单总数不变；A 店身份查 B 店订单返回"未在本店找到该订单"，无 500、无空指针；`TenantIsolationAndIdempotencyTest` 覆盖越权与唯一约束。

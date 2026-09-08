@@ -98,47 +98,164 @@ def env_record():
 
 
 def read_locust_stats(prefix):
+    """返回 {locust name -> 指标}，含 Aggregated。
+
+    按流量类型分别取分位数是这张表最有用的部分：缓存命中路径的 TP99 要对着 30ms 的 SLO 报，
+    混在 Aggregated 里会被未命中路径（含 mock 的固定模型延迟）彻底淹没。
+    """
     # locust 2.x headless 落的是 _stats.csv；旧文档里叫 _statistics.csv，两种都认
     path = next((Path(f"{prefix}_{n}.csv") for n in ("stats", "statistics")
                  if Path(f"{prefix}_{n}.csv").exists()), None)
     if path is None:
-        return None
-    rows = list(csv.DictReader(path.open(encoding="utf-8")))
-    target = next((r for r in rows if r.get("Name") == "Aggregated"), None)
-    if target is None:
-        return None
+        return {}
+    result = {}
+    for target in csv.DictReader(path.open(encoding="utf-8")):
+        name = (target.get("Name") or "").strip()
+        if not name:
+            continue
 
-    def number(key):
-        raw = (target.get(key) or "").strip()
-        return raw.replace("*", "").strip()
+        def number(key):
+            raw = (target.get(key) or "").strip()
+            return raw.replace("*", "").strip()
 
-    return {
-        "request_count": number("Request Count") or number("# Requests"),
-        "failure_count": number("Failure Count") or number("# Fails"),
-        "qps": number("Requests/s"),
-        "p50": number("50%"),
-        "p95": number("95%"),
-        "p99": number("99%"),
-        "max": number("Max"),
-    }
+        result[name] = {
+            "request_count": number("Request Count") or number("# Requests"),
+            "failure_count": number("Failure Count") or number("# Fails"),
+            "qps": number("Requests/s"),
+            "p50": number("50%"),
+            "p95": number("95%"),
+            "p99": number("99%"),
+            "max": number("Max Response Time") or number("Max"),
+        }
+    return result
 
 
-def run_step(base, users, spawn, duration, model, out_prefix):
+def cpu_sampler(path, seconds):
+    """采样本机 CPU 与空闲内存。不带环境采样的压测数字没有可比性：
+    这台机器上还跑着别的项目的容器，发压进程自己也要吃 CPU。"""
+    script = ('$end = (Get-Date).AddSeconds($env:LM_SAMPLE_S); '
+              'while ((Get-Date) -lt $end) { '
+              '$c = (Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name=\'_Total\'").PercentProcessorTime; '
+              '$f = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB,1); '
+              'Write-Output ((Get-Date -Format HH:mm:ss) + "=" + $c + "=" + $f); '
+              'Start-Sleep -Seconds 5 }')
+    handle = open(path, "w", encoding="utf-8")
+    environment = dict(os.environ)
+    environment["LM_SAMPLE_S"] = str(seconds)
+    try:
+        process = subprocess.Popen(["powershell", "-NoProfile", "-Command", script],
+                                   stdout=handle, stderr=subprocess.DEVNULL, env=environment)
+        return process, handle
+    except OSError:
+        handle.close()
+        return None, None
+
+
+def read_cpu_sample(path):
+    if not path.exists():
+        return {}
+    loads, mems = [], []
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        parts = line.strip().split("=")
+        if len(parts) != 3:
+            continue
+        try:
+            loads.append(float(parts[1]))
+            mems.append(float(parts[2]))
+        except ValueError:
+            continue
+    if not loads:
+        return {}
+    return {"cpu_mean_pct": round(sum(loads) / len(loads), 1), "cpu_max_pct": max(loads),
+            "freemem_min_gb": round(min(mems) / 1024.0, 2)}
+
+
+TRAFFIC_COLUMNS = (("chat[hot]", "hot"), ("chat[para]", "para"),
+                   ("chat[action]", "action"), ("chat[long]", "long"))
+
+
+def aggregate_locust(per_worker_stats):
+    """多进程发压时合并：请求数与 QPS 相加，分位数取最差 worker。
+    合并分位数需要原始样本，这里不做假精确，取上界并写明。"""
+    rows = [row for row in per_worker_stats if row]
+    if not rows:
+        return {}
+    merged = {}
+    for name in set().union(*(set(row) for row in rows)):
+        parts = [row[name] for row in rows if name in row]
+        if len(parts) == 1:
+            merged[name] = parts[0]
+            continue
+
+        def total(key):
+            return sum(int(float(part.get(key) or 0)) for part in parts)
+
+        def worst(key):
+            return max((float(part.get(key) or 0) for part in parts), default=0.0)
+
+        merged[name] = {
+            "request_count": str(total("request_count")),
+            "failure_count": str(total("failure_count")),
+            "qps": f"{sum(float(part.get('qps') or 0) for part in parts):.2f}",
+            "p50": str(int(worst("p50"))),
+            "p95": str(int(worst("p95"))),
+            "p99": str(int(worst("p99"))),
+            "max": str(int(worst("max"))),
+        }
+    return merged
+
+
+def run_step(base, users, spawn, duration, model, out_prefix, workers=1):
     environment = dict(os.environ)
     environment["SHOPPILOT_TRAFFIC_MODEL"] = model
     environment["SHOPPILOT_BASE_URL"] = base
-    command = [locust_python(), "-m", "locust", "-f", str(LOCUSTFILE), "--host", base, "--headless",
-               "-u", str(users), "-r", str(spawn), "-t", f"{duration}s",
-               "--csv", out_prefix, "--only-summary", "--loglevel", "WARNING"]
+    # locust 在 Windows 上不支持 --processes，而单进程自己就会先成为瓶颈（实测约 260 QPS/进程）。
+    # 高并发档必须多进程发压，否则测到的是发压机而不是网关。
+    per_users = max(1, users // workers)
+    per_spawn = max(1, spawn // workers)
+    prefixes = []
+    processes = []
     before = snapshot(base)
     started = time.perf_counter()
-    process = subprocess.run(command, cwd=REPO, env=environment, capture_output=True, text=True,
-                             timeout=duration * 4 + 240)
+    sampler_path = Path(f"{out_prefix}_cpu.txt")
+    sampler, sampler_handle = cpu_sampler(sampler_path, duration + 15)
+    for index in range(workers):
+        prefix = out_prefix if workers == 1 else f"{out_prefix}-w{index + 1}"
+        prefixes.append(prefix)
+        command = [locust_python(), "-m", "locust", "-f", str(LOCUSTFILE), "--host", base, "--headless",
+                   "-u", str(per_users), "-r", str(per_spawn), "-t", f"{duration}s",
+                   "--csv", prefix, "--only-summary", "--loglevel", "WARNING"]
+        processes.append(subprocess.Popen(command, cwd=REPO, env=environment,
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+    errors = []
+    for process in processes:
+        try:
+            _, error = process.communicate(timeout=duration * 4 + 240)
+            if process.returncode != 0:
+                errors.append((error or "")[-200:])
+        except subprocess.TimeoutExpired:
+            process.kill()
+            errors.append("locust timeout")
+    if sampler:
+        try:
+            sampler.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            sampler.kill()
+    sampler_handle.close()
     elapsed = time.perf_counter() - started
     after = snapshot(base)
-    stats = read_locust_stats(out_prefix) or {}
+    merged = aggregate_locust([read_locust_stats(prefix) for prefix in prefixes])
+    stats = dict(merged.get("Aggregated", {}))
+    # 分流量类型报分位数：hot 这一路就是"缓存命中 TP99 < 30ms"的直接证据
+    for name, column in TRAFFIC_COLUMNS:
+        row = merged.get(name)
+        if row:
+            for metric in ("request_count", "failure_count", "qps", "p50", "p95", "p99"):
+                stats[f"{column}_{metric}"] = row[metric]
     stats.update({
         "users": users,
+        "workers": workers,
+        "per_worker_users": per_users,
         "wall_s": round(elapsed, 1),
         "model": model,
         "requests_delta": round(after["requests"] - before["requests"]),
@@ -162,47 +279,58 @@ def run_step(base, users, spawn, duration, model, out_prefix):
     stats["interception_admitted"] = round(hits / admitted, 4) if admitted else ""
     if stats["ratelimited_delta"]:
         stats["rate_limited_nonzero"] = "true"
-    if process.returncode != 0:
-        stats["locust_error"] = (process.stderr or "")[-300:]
+    stats.update(read_cpu_sample(sampler_path))
+    if errors:
+        stats["locust_error"] = errors[0]
     return stats
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8082")
-    parser.add_argument("--model", choices=("l1", "l2"), default="l1")
+    parser.add_argument("--model", choices=("l1", "l2", "mix80"), default="l1")
     parser.add_argument("--profile", default="perf", help="网关启动 profile，仅用于命名与归档")
     parser.add_argument("--steps", default="50,100,200,400,800,1200")
     parser.add_argument("--duration", type=int, default=60)
     parser.add_argument("--spawn", type=int, default=20)
+    parser.add_argument("--workers", type=int, default=1,
+                        help="locust 进程数；单进程约 260 QPS 就会自饱和，高并发档必须 >1")
+    parser.add_argument("--tag", default="", help="附加到结果文件名上的实验标识")
     args = parser.parse_args()
 
     RESULTS.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    tag = f"{args.model}-{args.profile}-{stamp}"
+    tag = f"{args.model}-{args.profile}-{stamp}" + (f"-{args.tag}" if args.tag else "")
     rows = []
     for users in [int(s) for s in args.steps.split(",") if s.strip()]:
         prefix = str(RESULTS / f"locust-{tag}-u{users}")
-        print(f"== 并发 {users}，时长 {args.duration}s，流量模型 {args.model} ==", flush=True)
-        row = run_step(args.base, users, args.spawn, args.duration, args.model, prefix)
+        print(f"== 并发 {users}（{args.workers} 进程），时长 {args.duration}s，流量模型 {args.model} ==",
+              flush=True)
+        row = run_step(args.base, users, args.spawn, args.duration, args.model, prefix, args.workers)
         row["profile"] = args.profile
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
 
     ladder = RESULTS / f"ladder-{tag}.csv"
-    fields = ["users", "model", "profile", "request_count", "failure_count", "qps", "p50", "p95",
+    fields = ["users", "workers", "per_worker_users", "model", "profile",
+              "request_count", "failure_count", "qps", "p50", "p95",
               "p99", "max", "requests_delta", "admitted_delta", "ratelimited_delta",
               "valid_requests_delta", "l1_delta", "l2_delta",
               "flight_delta", "llm_delta", "embed_remote_delta", "embed_cached_delta",
               "interception_total", "interception_cache_only", "interception_admitted",
               "rate_limited_nonzero",
+              "cpu_mean_pct", "cpu_max_pct", "freemem_min_gb",
               "wall_s", "locust_error"]
+    for _, column in TRAFFIC_COLUMNS:
+        fields += [f"{column}_{metric}" for metric in
+                   ("request_count", "failure_count", "qps", "p50", "p95", "p99")]
     with ladder.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
     (RESULTS / f"env-{tag}.json").write_text(json.dumps({
         "run": tag, "trafficModel": args.model, "gatewayProfile": args.profile,
+        "locustWorkers": args.workers, "stepsCsv": str(ladder.name),
         "durationPerStepS": args.duration, "steps": rows, "env": env_record(),
         "counters": COUNTERS,
         "note": ("perf profile 下调限流配额（见 application.yml perf 段）；"

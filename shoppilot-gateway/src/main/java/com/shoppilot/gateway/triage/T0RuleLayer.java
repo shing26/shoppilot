@@ -61,6 +61,7 @@ public class T0RuleLayer {
     }
 
     private Intent actionIntent(String query) {
+        // 动作意图内部优先级：改址 > 退款 > 物流 > 订单（"改地址并退款"要的是改址）
         if (containsAny(query, ADDRESS_WORDS)) {
             return Intent.ACTION_ADDRESS;
         }
@@ -71,6 +72,17 @@ public class T0RuleLayer {
             return Intent.ACTION_LOGISTICS;
         }
         return Intent.ACTION_ORDER;
+    }
+
+    /**
+     * 是否有动作动词证据（改址 / 退款 / 物流 / 订单）。
+     *
+     * <p>供 T1 决定候选意图集：T0 未定案但句子里带动作动词时，质心层不允许把这句判成政策咨询，
+     * 因为政策意图会进缓存，而"我要退款"这类无实体动作诉求的正确出口是追问槽位。
+     */
+    public boolean hasActionVerb(String query) {
+        return query != null && (containsAny(query, ADDRESS_WORDS) || containsAny(query, REFUND_WORDS)
+                || containsAny(query, LOGISTICS_WORDS) || containsAny(query, ORDER_WORDS));
     }
 
     private Intent policyIntent(String query) {

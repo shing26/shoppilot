@@ -36,4 +36,4 @@
 
 **验证记录（2026-09-08，local 模式 / qwen2.5:3b）**
 
-`scripts/verify-idempotency.ps1`：首次退款 `tool_executing -> tool_result`，refunds 0→1；同 token 重放 `duplicate_submit -> tool_result`，refunds 仍为 1；对 90002（SHIPPED）改址返回 `STATE_NOT_ALLOWED`，模型回复"订单状态为已发货（SHIPPED），此时无法修改收货地址"。`mvn test` 35 项全绿。
+`scripts/verify-idempotency.ps1`：首次退款 `tool_executing -> tool_result`，refunds 0→1；同 token 重放 `duplicate_submit -> tool_result`，refunds 仍为 1；对 90002（SHIPPED）改址返回 `STATE_NOT_ALLOWED`，模型回复"订单状态为已发货（SHIPPED），此时无法修改收货地址"。`mvn test` 当时 35 项全绿（ticket 16/17 与 T1 标定后为 50 项：网关 39 + biz-mock 8 + tool-api 3）。

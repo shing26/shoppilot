@@ -37,7 +37,13 @@ public class T1CentroidLayer {
     private static final Logger log = LoggerFactory.getLogger(T1CentroidLayer.class);
 
     /** 低于这个相似度就不敢定案，交给下一级或直接 fail-closed。 */
-    private static final double MIN_CONFIDENCE = 0.82d;
+    /**
+     * 判定线由 {@code scripts/calibrate_intent.py} 在 180 条标注用例上标定，
+     * 报告见 {@code docs/intent-calibration.md}：政策问句准入率 9.1% -> 72.7%，
+     * 判错桶 1/24，动作问句被准入为政策 0 条。改这两个常量必须重跑标定，不要凭手感调。
+     */
+    private static final double MIN_CONFIDENCE = 0.70d;
+    private static final double MIN_MARGIN = 0.02d;
 
     private final EmbeddingClient embedding;
     private final ObjectMapper mapper;
@@ -161,7 +167,13 @@ public class T1CentroidLayer {
     private record CachedCentroids(String fingerprint, Map<String, List<Double>> centroids) {
     }
 
-    public Optional<TriageResult> classify(String query, float[] queryVector) {
+    /**
+     * @param actionEvidence 句子里是否带动作动词。T0 未定案意味着没有实体也没有第一人称，
+     *                       此时把 ACTION 质心放进候选只会把政策问句吸进动作桶
+     *                       （实测 {@code 退款多久到账} 的最近质心是 {@code ACTION_REFUND}），
+     *                       而动作意图不准入缓存——分类越保守，缓存越漏。
+     */
+    public Optional<TriageResult> classify(String query, float[] queryVector, boolean actionEvidence) {
         if (centroids.isEmpty() || queryVector == null) {
             return Optional.empty();
         }
@@ -171,6 +183,9 @@ public class T1CentroidLayer {
         double bestScore = -1;
         double runnerUp = -1;
         for (Map.Entry<Intent, float[]> entry : centroids.entrySet()) {
+            if (!actionEvidence && entry.getKey().isAction()) {
+                continue;
+            }
             double score = cosine(normalized, entry.getValue());
             if (score > bestScore) {
                 runnerUp = bestScore;
@@ -181,7 +196,7 @@ public class T1CentroidLayer {
             }
         }
         // 两个意图咬得很近时不硬判，交给下一级
-        if (best == null || bestScore < MIN_CONFIDENCE || bestScore - runnerUp < 0.03d) {
+        if (best == null || bestScore < MIN_CONFIDENCE || bestScore - runnerUp < MIN_MARGIN) {
             return Optional.empty();
         }
         if (best == Intent.ESCALATE) {
