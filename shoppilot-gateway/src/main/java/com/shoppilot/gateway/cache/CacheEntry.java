@@ -13,6 +13,8 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record CacheEntry(
         String answer,
+        /** 写入时的归一化问法，供 {@link PolarityGuard} 在语义命中后做极性复核。 */
+        String query,
         String intent,
         String tenantId,
         String scope,
@@ -22,8 +24,9 @@ public record CacheEntry(
         Instant createdAt) {
 
     public static CacheEntry of(String answer, Intent intent, String tenantId, String scope, long kbEpoch,
-                                List<String> sourceRuleIds, String modelId) {
-        return new CacheEntry(answer, intent.name(), tenantId, scope, kbEpoch, sourceRuleIds, modelId, Instant.now());
+                                List<String> sourceRuleIds, String modelId, String query) {
+        return new CacheEntry(answer, query, intent.name(), tenantId, scope, kbEpoch, sourceRuleIds, modelId,
+                Instant.now());
     }
 
     public boolean matches(Intent expectedIntent, String expectedTenant, long expectedEpoch) {

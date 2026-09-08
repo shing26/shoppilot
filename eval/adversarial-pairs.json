@@ -1,0 +1,665 @@
+{
+  "_comment": "语义缓存阈值标定的对抗对集合（ticket 17、ADR 0003）。positive 是同意图改写、期望互相命中；其余三类都期望不命中。cross_tenant 是否决项证据：这一类在任何阈值下都不许命中，而它本来就不该由阈值负责——隔离由 payload filter 承担。",
+  "positive": [
+    {
+      "a": "生鲜坏了怎么赔",
+      "b": "菜收到已经烂了要怎么理赔",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "生鲜坏了怎么赔",
+      "b": "水果坏果能赔多少钱",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "冻品化冻了找谁",
+      "b": "冰淇淋到手软了算谁的",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "螃蟹收到是死的",
+      "b": "死蟹怎么申请赔付",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "生鲜签收后多久内能报损",
+      "b": "菜坏了要几天内反馈才有效",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "怎么申请退款",
+      "b": "我要退货退款怎么操作",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "七天无理由是什么意思",
+      "b": "无理由退换的七天怎么算",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "拆封了还能退吗",
+      "b": "包装开了支持退货不",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "退货运费谁出",
+      "b": "寄回去的快递费要我承担吗",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "换货要怎么弄",
+      "b": "尺码不合想换个号如何操作",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "退款多久到账",
+      "b": "钱几天能退回我卡上",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "发什么快递",
+      "b": "你们家用的哪家物流",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "多久发货",
+      "b": "下单后几天能寄出",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "包邮吗",
+      "b": "要付运费吗",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "新疆能送到吗",
+      "b": "偏远地区发不发",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "可以指定顺丰吗",
+      "b": "我想发顺丰能不能备注",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "跨店满减怎么算",
+      "b": "满300减50是几个店凑的",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "定金膨胀是什么意思",
+      "b": "预付定金能抵多少",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "优惠券能和满减一起用吗",
+      "b": "店铺券和跨店优惠可以叠加不",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "凑单没到门槛会怎样",
+      "b": "满减差一点没到能补吗",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "预售什么时候发货",
+      "b": "定金款的货几号寄",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "帮我查一下订单到哪了",
+      "b": "看看我的单子发货没有",
+      "intent": "ACTION_ORDER"
+    },
+    {
+      "a": "订单 10023 现在什么状态",
+      "b": "10023 这单走到哪一步了",
+      "intent": "ACTION_ORDER"
+    },
+    {
+      "a": "我的快递到哪了",
+      "b": "帮我看下物流轨迹",
+      "intent": "ACTION_LOGISTICS"
+    },
+    {
+      "a": "这单签收了吗",
+      "b": "查一下有没有人代收",
+      "intent": "ACTION_LOGISTICS"
+    },
+    {
+      "a": "我想改收货地址",
+      "b": "地址填错了帮我换一下",
+      "intent": "ACTION_ADDRESS"
+    },
+    {
+      "a": "把收件人换成李某",
+      "b": "收货电话改成 13800001234",
+      "intent": "ACTION_ADDRESS"
+    },
+    {
+      "a": "我要申请退款",
+      "b": "帮我把这单退了吧",
+      "intent": "ACTION_REFUND"
+    },
+    {
+      "a": "这个订单能退吗",
+      "b": "我想发起退款申请",
+      "intent": "ACTION_REFUND"
+    },
+    {
+      "a": "生鲜不新鲜可以赔吗",
+      "b": "菜有点蔫了符合理赔条件吗",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "无理由退货从哪天开始算",
+      "b": "七天是从签收还是发货开始",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "什么时候能发出",
+      "b": "今天拍明天能发货吗",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "满减活动到几号结束",
+      "b": "大促优惠什么时候截止",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "帮我看看这单的钱退回来没",
+      "b": "查一下我的退款进度",
+      "intent": "ACTION_REFUND"
+    },
+    {
+      "a": "包裹现在在哪个城市",
+      "b": "物流走到哪了帮我看看",
+      "intent": "ACTION_LOGISTICS"
+    },
+    {
+      "a": "订单还没付款能改地址吗",
+      "b": "没发货前想换个收货地",
+      "intent": "ACTION_ADDRESS"
+    },
+    {
+      "a": "我的单子发了没",
+      "b": "帮忙看下订单发货状态",
+      "intent": "ACTION_ORDER"
+    },
+    {
+      "a": "坏了一个苹果怎么赔",
+      "b": "部分坏果是按比例赔吗",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "退回来的商品质检要多久",
+      "b": "退货寄到后多久处理退款",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "能发国际吗",
+      "b": "海外地址可以下单吗",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "定金可以退吗",
+      "b": "预售定金不给退是规定吗",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "买两件打折吗",
+      "b": "第二件半价是哪个活动",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "签收后发现破损还能报吗",
+      "b": "货坏了但已经签收了怎么理赔",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "退款会扣优惠券吗",
+      "b": "用了券的订单退货券还退不",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "默认发哪家快递",
+      "b": "能选快递公司吗",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "帮我查下这单金额对不对",
+      "b": "订单实付多少钱我想核对",
+      "intent": "ACTION_ORDER"
+    }
+  ],
+  "antonym": [
+    {
+      "a": "怎么申请退款",
+      "b": "为什么不给退款",
+      "intent": "ACTION_REFUND"
+    },
+    {
+      "a": "我要退款",
+      "b": "我不想退款只想换货",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "这个能退吗",
+      "b": "这个是不是不能退",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "什么时候发货",
+      "b": "为什么还没发货",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "可以修改地址吗",
+      "b": "为什么不能改地址",
+      "intent": "ACTION_ADDRESS"
+    },
+    {
+      "a": "生鲜坏了怎么赔",
+      "b": "生鲜坏了为什么不赔",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "满减怎么用",
+      "b": "满减为什么用不了",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "优惠券能叠加吗",
+      "b": "优惠券为什么不能叠加",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "支持七天无理由吗",
+      "b": "七天无理由为什么排除我这件",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "帮我取消订单",
+      "b": "帮我把订单恢复",
+      "intent": "ACTION_ORDER"
+    },
+    {
+      "a": "我要退货",
+      "b": "我撤回退货申请",
+      "intent": "ACTION_REFUND"
+    },
+    {
+      "a": "退款到账了吗",
+      "b": "退款还没提交呢",
+      "intent": "ACTION_REFUND"
+    },
+    {
+      "a": "能加急发货吗",
+      "b": "请不要发货先等等",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "地址已经改好了吗",
+      "b": "地址还没提交别改",
+      "intent": "ACTION_ADDRESS"
+    },
+    {
+      "a": "签收了吗",
+      "b": "还没签收不要算时间",
+      "intent": "ACTION_LOGISTICS"
+    },
+    {
+      "a": "我要申请理赔",
+      "b": "我不申请理赔只投诉",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "定金能退吗",
+      "b": "定金为什么不退",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "可以换尺码吗",
+      "b": "尺码不能换是吗",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "运费谁承担",
+      "b": "运费不用我出是吗",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "订单还在处理吗",
+      "b": "订单已经关闭了吧",
+      "intent": "ACTION_ORDER"
+    },
+    {
+      "a": "帮我查物流",
+      "b": "别查物流了我要投诉",
+      "intent": "ACTION_LOGISTICS"
+    },
+    {
+      "a": "破损包赔是什么意思",
+      "b": "破损为什么不包赔",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "凑单满减划算吗",
+      "b": "凑单满减不划算不要了",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "退款进度怎么查",
+      "b": "退款被驳回了怎么办",
+      "intent": "ACTION_REFUND"
+    },
+    {
+      "a": "这个能退吗",
+      "b": "这个不能退吗",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "支持退货吗",
+      "b": "不支持退货吗",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "包邮吗",
+      "b": "不包邮吗",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "生鲜坏了赔吗",
+      "b": "生鲜坏了不赔吗",
+      "intent": "POLICY_FRESH"
+    }
+  ],
+  "cross_intent": [
+    {
+      "a": "生鲜坏了怎么赔",
+      "b": "生鲜坏了我要退款",
+      "intent_a": "POLICY_FRESH",
+      "intent_b": "ACTION_REFUND"
+    },
+    {
+      "a": "七天无理由怎么算",
+      "b": "帮我申请退款",
+      "intent_a": "POLICY_RETURN",
+      "intent_b": "ACTION_REFUND"
+    },
+    {
+      "a": "发什么快递",
+      "b": "我的快递到哪了",
+      "intent_a": "POLICY_SHIPPING",
+      "intent_b": "ACTION_LOGISTICS"
+    },
+    {
+      "a": "多久发货",
+      "b": "订单 10023 发了没",
+      "intent_a": "POLICY_SHIPPING",
+      "intent_b": "ACTION_ORDER"
+    },
+    {
+      "a": "跨店满减怎么用",
+      "b": "帮我改收货地址",
+      "intent_a": "POLICY_PROMO",
+      "intent_b": "ACTION_ADDRESS"
+    },
+    {
+      "a": "优惠券能叠加吗",
+      "b": "这单实付多少",
+      "intent_a": "POLICY_PROMO",
+      "intent_b": "ACTION_ORDER"
+    },
+    {
+      "a": "退货运费谁出",
+      "b": "物流费我要付吗",
+      "intent_a": "POLICY_RETURN",
+      "intent_b": "POLICY_SHIPPING"
+    },
+    {
+      "a": "怎么申请退款",
+      "b": "怎么查订单状态",
+      "intent_a": "ACTION_REFUND",
+      "intent_b": "ACTION_ORDER"
+    },
+    {
+      "a": "地址填错了",
+      "b": "手机号填错了能改吗",
+      "intent_a": "ACTION_ADDRESS",
+      "intent_b": "UNKNOWN"
+    },
+    {
+      "a": "我要转人工",
+      "b": "人工客服在吗",
+      "intent_a": "ESCALATE",
+      "intent_b": "ESCALATE"
+    },
+    {
+      "a": "生鲜理赔要照片吗",
+      "b": "退货要拍照吗",
+      "intent_a": "POLICY_FRESH",
+      "intent_b": "POLICY_RETURN"
+    },
+    {
+      "a": "定金膨胀规则",
+      "b": "预售发货时间",
+      "intent_a": "POLICY_PROMO",
+      "intent_b": "POLICY_SHIPPING"
+    },
+    {
+      "a": "帮我查物流",
+      "b": "帮我查订单",
+      "intent_a": "ACTION_LOGISTICS",
+      "intent_b": "ACTION_ORDER"
+    },
+    {
+      "a": "帮我改地址",
+      "b": "帮我退款",
+      "intent_a": "ACTION_ADDRESS",
+      "intent_b": "ACTION_REFUND"
+    },
+    {
+      "a": "坏果包赔吗",
+      "b": "坏果我要退一单",
+      "intent_a": "POLICY_FRESH",
+      "intent_b": "ACTION_REFUND"
+    },
+    {
+      "a": "包邮门槛多少",
+      "b": "满减门槛多少",
+      "intent_a": "POLICY_SHIPPING",
+      "intent_b": "POLICY_PROMO"
+    },
+    {
+      "a": "无理由能退几次",
+      "b": "退款审核要几天",
+      "intent_a": "POLICY_RETURN",
+      "intent_b": "ACTION_REFUND"
+    },
+    {
+      "a": "快递能送到村里吗",
+      "b": "物流为什么停在转运中心",
+      "intent_a": "POLICY_SHIPPING",
+      "intent_b": "ACTION_LOGISTICS"
+    },
+    {
+      "a": "换货怎么发起",
+      "b": "退款怎么发起",
+      "intent_a": "POLICY_RETURN",
+      "intent_b": "ACTION_REFUND"
+    },
+    {
+      "a": "订单能取消吗",
+      "b": "订单能改地址吗",
+      "intent_a": "ACTION_ORDER",
+      "intent_b": "ACTION_ADDRESS"
+    },
+    {
+      "a": "生鲜保鲜期多久",
+      "b": "水果坏了怎么赔",
+      "intent_a": "POLICY_FRESH",
+      "intent_b": "POLICY_FRESH"
+    },
+    {
+      "a": "满减和券哪个划算",
+      "b": "凑单差20元怎么办",
+      "intent_a": "POLICY_PROMO",
+      "intent_b": "POLICY_PROMO"
+    },
+    {
+      "a": "签收超期还能退吗",
+      "b": "为什么我的退款被拒",
+      "intent_a": "POLICY_RETURN",
+      "intent_b": "ACTION_REFUND"
+    },
+    {
+      "a": "物流信息不更新",
+      "b": "快递一般几天到",
+      "intent_a": "ACTION_LOGISTICS",
+      "intent_b": "POLICY_SHIPPING"
+    }
+  ],
+  "cross_tenant": [
+    {
+      "a": "生鲜坏了怎么赔",
+      "b": "生鲜坏了怎么赔",
+      "tenant_a": "T001",
+      "tenant_b": "T002",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "七天无理由怎么算",
+      "b": "无理由退货的七天从哪天开始",
+      "tenant_a": "T001",
+      "tenant_b": "T002",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "跨店满减怎么用",
+      "b": "满300减50怎么算",
+      "tenant_a": "T002",
+      "tenant_b": "T003",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "发什么快递",
+      "b": "默认发哪家物流",
+      "tenant_a": "T001",
+      "tenant_b": "T003",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "订单 10023 到哪了",
+      "b": "订单 10023 到哪了",
+      "tenant_a": "T001",
+      "tenant_b": "T002",
+      "intent": "ACTION_ORDER"
+    },
+    {
+      "a": "帮我改收货地址",
+      "b": "地址填错了帮我换一下",
+      "tenant_a": "T001",
+      "tenant_b": "T003",
+      "intent": "ACTION_ADDRESS"
+    },
+    {
+      "a": "我要申请退款",
+      "b": "帮我把这单退了",
+      "tenant_a": "T002",
+      "tenant_b": "T001",
+      "intent": "ACTION_REFUND"
+    },
+    {
+      "a": "我的快递到哪了",
+      "b": "查一下物流轨迹",
+      "tenant_a": "T003",
+      "tenant_b": "T001",
+      "intent": "ACTION_LOGISTICS"
+    },
+    {
+      "a": "冻品化冻了找谁",
+      "b": "冰淇淋到手软了算谁的",
+      "tenant_a": "T001",
+      "tenant_b": "T002",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "退货运费谁出",
+      "b": "寄回去的快递费要我承担吗",
+      "tenant_a": "T002",
+      "tenant_b": "T003",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "定金膨胀是什么意思",
+      "b": "预付定金能抵多少",
+      "tenant_a": "T003",
+      "tenant_b": "T001",
+      "intent": "POLICY_PROMO"
+    },
+    {
+      "a": "包邮吗",
+      "b": "要付运费吗",
+      "tenant_a": "T001",
+      "tenant_b": "T002",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "拆封了还能退吗",
+      "b": "包装开了支持退货不",
+      "tenant_a": "T002",
+      "tenant_b": "T001",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "退款多久到账",
+      "b": "钱几天能退回我卡上",
+      "tenant_a": "T003",
+      "tenant_b": "T002",
+      "intent": "POLICY_RETURN"
+    },
+    {
+      "a": "可以指定顺丰吗",
+      "b": "我想发顺丰能不能备注",
+      "tenant_a": "T001",
+      "tenant_b": "T003",
+      "intent": "POLICY_SHIPPING"
+    },
+    {
+      "a": "帮我查一下订单到哪了",
+      "b": "看看我的单子发货没有",
+      "tenant_a": "T002",
+      "tenant_b": "T003",
+      "intent": "ACTION_ORDER"
+    },
+    {
+      "a": "这个订单能退吗",
+      "b": "我想发起退款申请",
+      "tenant_a": "T001",
+      "tenant_b": "T002",
+      "intent": "ACTION_REFUND"
+    },
+    {
+      "a": "把收件人换成李某",
+      "b": "收货电话改成 13800001234",
+      "tenant_a": "T003",
+      "tenant_b": "T002",
+      "intent": "ACTION_ADDRESS"
+    },
+    {
+      "a": "螃蟹收到是死的",
+      "b": "死蟹怎么申请赔付",
+      "tenant_a": "T002",
+      "tenant_b": "T001",
+      "intent": "POLICY_FRESH"
+    },
+    {
+      "a": "优惠券能和满减一起用吗",
+      "b": "店铺券和跨店优惠可以叠加不",
+      "tenant_a": "T001",
+      "tenant_b": "T003",
+      "intent": "POLICY_PROMO"
+    }
+  ]
+}

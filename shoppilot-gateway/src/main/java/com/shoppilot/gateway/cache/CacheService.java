@@ -6,6 +6,8 @@ import com.shoppilot.gateway.knowledge.RuleChunk;
 import com.shoppilot.tool.Intent;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -25,6 +27,8 @@ import java.util.Optional;
  */
 @Component
 public class CacheService {
+
+    private static final Logger log = LoggerFactory.getLogger(CacheService.class);
 
     public enum Layer {
         NONE, L1, L2,
@@ -63,6 +67,7 @@ public class CacheService {
     private final Counter l1HitCounter;
     private final Counter l2HitCounter;
     private final Counter negativeHitCounter;
+    private final Counter polarityBlockedCounter;
 
     public CacheService(L1Cache l1, L2SemanticCache l2, EmbeddingClient embedding, GatewayProperties properties,
                         MeterRegistry registry) {
@@ -77,6 +82,8 @@ public class CacheService {
         this.l1HitCounter = Counter.builder("shoppilot_cache_hit_total").tag("layer", "L1").register(registry);
         this.l2HitCounter = Counter.builder("shoppilot_cache_hit_total").tag("layer", "L2").register(registry);
         this.negativeHitCounter = Counter.builder("shoppilot_cache_negative_hit_total").register(registry);
+        this.polarityBlockedCounter = Counter.builder("shoppilot_cache_l2_polarity_blocked_total")
+                .description("L2 余弦过阈值但极性不一致，被守卫拒绝复用的次数").register(registry);
     }
 
     public void recordRequest() {
@@ -113,10 +120,19 @@ public class CacheService {
         }
         for (Bucket bucket : buckets) {
             Optional<CacheEntry> entry = l2.search(vector, bucket.tenantId(), bucket.scope(), intent.name(), kbEpoch);
-            if (entry.isPresent() && entry.get().matches(intent, bucket.tenantId(), kbEpoch)) {
-                l2HitCounter.increment();
-                return new Lookup(Layer.L2, entry, vector, normalized, false);
+            if (entry.isEmpty() || !entry.get().matches(intent, bucket.tenantId(), kbEpoch)) {
+                continue;
             }
+            String reason = PolarityGuard.blocked(normalized, entry.get().query());
+            if (reason != null) {
+                // 同意图桶内的反义问法：0.95 实测拦不住（见 docs/threshold-calibration.md），由守卫兜住
+                polarityBlockedCounter.increment();
+                log.info("L2 语义命中被极性守卫拒绝: {} (cached={} incoming={})", reason,
+                        entry.get().query(), normalized);
+                continue;
+            }
+            l2HitCounter.increment();
+            return new Lookup(Layer.L2, entry, vector, normalized, false);
         }
         return new Lookup(Layer.NONE, Optional.empty(), vector, normalized, false);
     }
@@ -135,7 +151,8 @@ public class CacheService {
                 && citedRuleScopes.stream().allMatch(SCOPE_PLATFORM::equalsIgnoreCase);
         String bucketTenant = allPlatform ? RuleChunk.PLATFORM_TENANT : tenantId;
         String scope = allPlatform ? SCOPE_PLATFORM : SCOPE_SHOP;
-        return Optional.of(CacheEntry.of(answer, intent, bucketTenant, scope, kbEpoch, sourceRuleIds, modelId));
+        return Optional.of(CacheEntry.of(answer, intent, bucketTenant, scope, kbEpoch, sourceRuleIds, modelId,
+                lookup.normalizedQuery()));
     }
 
     /** 条目已在准入判定阶段算好，这里只做两写：L1 正文 + L2 向量定位。 */
