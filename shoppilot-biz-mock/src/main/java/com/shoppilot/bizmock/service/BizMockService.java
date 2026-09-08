@@ -28,6 +28,7 @@ import com.shoppilot.tool.view.ToolStatus;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -51,16 +52,19 @@ public class BizMockService {
     private final RefundRepository refundRepository;
     private final TicketRepository ticketRepository;
     private final FaultInjector faultInjector;
+    private final TransactionTemplate transactionTemplate;
 
     public BizMockService(OrderRepository orderRepository, LogisticsRepository logisticsRepository,
                           AddressHistoryRepository addressHistoryRepository, RefundRepository refundRepository,
-                          TicketRepository ticketRepository, FaultInjector faultInjector) {
+                          TicketRepository ticketRepository, FaultInjector faultInjector,
+                          TransactionTemplate transactionTemplate) {
         this.orderRepository = orderRepository;
         this.logisticsRepository = logisticsRepository;
         this.addressHistoryRepository = addressHistoryRepository;
         this.refundRepository = refundRepository;
         this.ticketRepository = ticketRepository;
         this.faultInjector = faultInjector;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @Transactional(readOnly = true)
@@ -137,7 +141,6 @@ public class BizMockService {
      * 退款幂等：先查已有记录，再靠 {@code (order_id, idempotency_token)} 唯一约束兜底。
      * 并发下两条同时插入时，第二条会抛 DataIntegrityViolationException，转为重放返回。
      */
-    @Transactional
     public ToolResponse<RefundView> applyRefund(String orderNo, ApplyRefundRequest request, String idempotencyToken) {
         faultInjector.applyDelay();
         if (faultInjector.shouldFail()) {
@@ -169,19 +172,26 @@ public class BizMockService {
             return ToolResponse.failure(ToolName.APPLY_REFUND.apiName(), ToolStatus.STATE_NOT_ALLOWED,
                     "退款金额不得超过订单实付金额", List.of());
         }
-        Refund saved;
+        // 插入必须独占一个事务：约束冲突后当前事务已被标记 rollback-only，
+        // 在同一个事务里 catch 住继续查会拿到半死的 Session，50 并发下直接炸给调用方
+        final String orderId = order.getId();
         try {
-            saved = refundRepository.save(new Refund(TenantContextHolder.tenantId(), order.getId(),
-                    order.getCustomerId(), amount, request.reason(), idempotencyToken, "PROCESSING", Instant.now()));
-            order.setStatus(OrderStatus.REFUNDING);
-            orderRepository.save(order);
+            Refund saved = transactionTemplate.execute(status -> {
+                Refund inserted = refundRepository.save(new Refund(TenantContextHolder.tenantId(), orderId,
+                        order.getCustomerId(), amount, request.reason(), idempotencyToken, "PROCESSING",
+                        Instant.now()));
+                order.setStatus(OrderStatus.REFUNDING);
+                orderRepository.save(order);
+                return inserted;
+            });
+            return ToolResponse.ok(ToolName.APPLY_REFUND.apiName(), toRefundView(saved));
         } catch (DataIntegrityViolationException raceWithConcurrentSubmit) {
-            return refundRepository.findByOrderIdAndIdempotencyToken(order.getId(), idempotencyToken)
-                    .map(replay -> replay(ToolName.APPLY_REFUND, replay))
-                    .orElseGet(() -> ToolResponse.failure(ToolName.APPLY_REFUND.apiName(), ToolStatus.IDEMPOTENT_REPLAY,
-                            "重复提交已被唯一约束拦截", List.of()));
+            return transactionTemplate.execute(status ->
+                    refundRepository.findByOrderIdAndIdempotencyToken(orderId, idempotencyToken)
+                            .map(winner -> replay(ToolName.APPLY_REFUND, winner))
+                            .orElseGet(() -> ToolResponse.failure(ToolName.APPLY_REFUND.apiName(),
+                                    ToolStatus.IDEMPOTENT_REPLAY, "重复提交已被唯一约束拦截", List.of())));
         }
-        return ToolResponse.ok(ToolName.APPLY_REFUND.apiName(), toRefundView(saved));
     }
 
     @Transactional

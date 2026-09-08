@@ -20,9 +20,14 @@ public class T0RuleLayer {
     private static final Pattern TRACKING_NO = Pattern.compile("(?i)\\b(?:[A-Z]{2}\\d{10,13}|\\d{12,15})\\b");
     private static final Pattern PHONE = Pattern.compile("(?<!\\d)1[3-9]\\d{9}(?!\\d)");
 
-    /** 第一人称 + 交易动作词：即使没有订单号也是业务办理。 */
-    private static final List<String> POSSESSIVE = List.of("我的", "我买的", "我订的", "帮我", "给我", "我这单", "这单", "该单");
-    private static final List<String> ACTION_VERBS = List.of("查", "看", "改", "换", "申请", "发起", "取消", "退给");
+    /**
+     * 第一人称限定词：出现即说明答案取决于"这一单"的具体状态，属于动态诉求。
+     *
+     * <p>刻意不再要求同时出现动作动词。"我的退货为什么被拒"没有任何动作词，
+     * 但它要的是自己那一单的结论，缓存一条通用政策话术回去就是串号。
+     * 代价是少拦一部分流量，这正是 ADR 0003 选的取舍方向。
+     */
+    private static final List<String> POSSESSIVE = List.of("我的", "我买的", "我订的", "帮我", "给我", "我这单", "这单", "该单", "我这边");
     private static final List<String> LOGISTICS_WORDS = List.of("物流", "快递到哪", "到哪", "签收", "运单", "轨迹", "发货没", "发了没");
     private static final List<String> REFUND_WORDS = List.of("退款", "退钱", "返款", "退回到");
     private static final List<String> ADDRESS_WORDS = List.of("地址", "收货人", "收件地址", "改址");
@@ -40,11 +45,11 @@ public class T0RuleLayer {
         boolean hasEntity = ORDER_NO.matcher(query).find()
                 || TRACKING_NO.matcher(query).find()
                 || PHONE.matcher(query).find();
-        boolean possessiveAction = containsAny(query, POSSESSIVE) && containsAny(query, ACTION_VERBS);
+        boolean personalCase = containsAny(query, POSSESSIVE);
 
-        if (hasEntity || possessiveAction) {
+        if (hasEntity || personalCase) {
             Intent action = actionIntent(query);
-            // 扫到实体或"我的+动作"却认不出是哪个动作时，仍按业务办理处理：宁可多打模型
+            // 扫到实体或第一人称却认不出是哪个动作时，仍按业务办理处理：宁可多打模型
             return Optional.of(TriageResult.dynamic(action, "T0", hasEntity));
         }
 

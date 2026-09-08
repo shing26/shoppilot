@@ -36,13 +36,18 @@ public class JwtService {
     }
 
     public String issue(String tenantId, String customerId) {
+        return issue(tenantId, customerId, TTL);
+    }
+
+    /** 测试缝：签发一个指定有效期的 token，用于验证过期即拒。生产路径只用无参版本。 */
+    public String issue(String tenantId, String customerId, Duration ttl) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(customerId)
                 .claim("tid", tenantId)
                 .claim("cid", customerId)
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plus(TTL)))
+                .expiration(Date.from(now.plus(ttl)))
                 .signWith(key)
                 .compact();
     }
