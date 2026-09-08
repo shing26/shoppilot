@@ -88,6 +88,14 @@
           <!-- 从仓库根启动：政策语料、.env、日志路径都以根目录为基准 -->
           <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
         </configuration>
+        <executions>
+          <execution>
+            <!-- 产出可执行 fat jar：启动脚本优先 java -jar，避免 JVM 挂在 Maven 进程下被连带终止 -->
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

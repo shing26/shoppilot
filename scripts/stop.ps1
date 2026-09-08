@@ -1,6 +1,7 @@
 ﻿# 只停本项目占用的端口，绝不碰别的项目的进程。
-param([int[]]$Ports = @(8082, 8091))
-foreach ($port in $Ports) {
+param([string]$Ports = '8082,8091')
+$portList = $Ports -split ',' | ForEach-Object { [int]$_ }
+foreach ($port in $portList) {
     $owners = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess
     foreach ($procId in ($owners | Select-Object -Unique)) {
         if ($procId) {

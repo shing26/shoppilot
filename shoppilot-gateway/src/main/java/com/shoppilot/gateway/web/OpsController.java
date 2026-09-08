@@ -8,6 +8,7 @@ import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.llm.LlmFaultInjector;
 import com.shoppilot.gateway.llm.TokenBudget;
+import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.tool.Intent;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
@@ -52,10 +54,12 @@ public class OpsController {
     private final CacheService cacheService;
     private final KbEpoch kbEpoch;
     private final TokenBudget tokenBudget;
+    private final HybridRetriever retriever;
 
     public OpsController(HttpClient http, GatewayProperties properties, BizMockClient bizMockClient,
                          ObjectMapper mapper, LlmFaultInjector llmFaultInjector, CacheService cacheService,
-                         KbEpoch kbEpoch, TokenBudget tokenBudget) {
+                         KbEpoch kbEpoch, TokenBudget tokenBudget,
+                         HybridRetriever retriever) {
         this.http = http;
         this.properties = properties;
         this.bizMockClient = bizMockClient;
@@ -64,6 +68,7 @@ public class OpsController {
         this.cacheService = cacheService;
         this.kbEpoch = kbEpoch;
         this.tokenBudget = tokenBudget;
+        this.retriever = retriever;
     }
 
     /** 本店工单队列，按当前身份的租户隔离。 */
@@ -188,6 +193,29 @@ public class OpsController {
     private boolean requireOps(String opsToken) {
         GatewayProperties.Ops ops = properties.ops();
         return ops.enabled() && ops.token() != null && ops.token().equals(opsToken);
+    }
+
+    /**
+     * 检索质量对比探针：同一次召回里分别取 dense / lexical / fused 三种序，
+     * 供 {@code scripts/retrieval_compare.py} 生成 ticket 08 的 dense-only 对比表。
+     */
+    @GetMapping("/retrieval")
+    public ResponseEntity<String> retrievalProbe(
+            @RequestHeader(value = "X-Ops-Token", required = false) String opsToken,
+            @RequestParam("query") String query,
+            @RequestParam(value = "intent", required = false) String intent,
+            @RequestParam(value = "limit", defaultValue = "10") int limit) {
+        if (!requireOps(opsToken)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("{\"error\":\"invalid or disabled ops token\"}");
+        }
+        try {
+            var diagnosis = retriever.diagnose(query, TenantContext.current().tenantId(),
+                    intent == null || intent.isBlank() ? null : Intent.valueOf(intent),
+                    Math.max(1, Math.min(20, limit)));
+            return ResponseEntity.ok(mapper.writeValueAsString(diagnosis));
+        } catch (Exception failure) {
+            return ResponseEntity.ok("{\"error\":\"" + failure.getClass().getSimpleName() + "\"}");
+        }
     }
 
     /**

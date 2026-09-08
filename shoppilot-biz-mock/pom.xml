@@ -58,6 +58,14 @@
         <configuration>
           <jvmArguments>-Xmx256m</jvmArguments>
         </configuration>
+        <executions>
+          <execution>
+            <!-- 产出可执行 fat jar，见 shoppilot-gateway/pom.xml 同处注释 -->
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

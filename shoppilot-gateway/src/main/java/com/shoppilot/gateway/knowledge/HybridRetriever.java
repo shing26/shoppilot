@@ -47,19 +47,66 @@ public class HybridRetriever {
     public Result retrieve(String query, String tenantId, Intent intent) {
         long epoch = kbEpoch.current();
         List<String> visibleTenants = List.of(tenantId, RuleChunk.PLATFORM_TENANT);
-
-        List<Scored> dense = timed(denseTimer, () -> denseRecall(query, visibleTenants, intent, epoch));
-        List<Scored> lexical = timed(lexicalTimer, () -> lexicalRecall(query, visibleTenants, intent, epoch));
+        Recalls recalls = recall(query, visibleTenants, intent, epoch);
+        List<Scored> dense = recalls.dense();
+        List<Scored> lexical = recalls.lexical();
 
         // 意图过滤过严导致召回为空时退回不带意图的检索：宁可噪声高，不可答不出
         if (dense.isEmpty() && lexical.isEmpty() && intent != null && intent.cacheAdmissible()) {
-            dense = timed(denseTimer, () -> denseRecall(query, visibleTenants, null, epoch));
-            lexical = timed(lexicalTimer, () -> lexicalRecall(query, visibleTenants, null, epoch));
+            Recalls relaxed = recall(query, visibleTenants, null, epoch);
+            dense = relaxed.dense();
+            lexical = relaxed.lexical();
         }
 
         List<Retrieved> fused = rrf(dense, lexical);
         return new Result(fused.subList(0, Math.min(config.fusedTopK(), fused.size())),
                 dense.size(), lexical.size(), epoch);
+    }
+
+    private Recalls recall(String query, List<String> visibleTenants, Intent intent, long epoch) {
+        List<Scored> dense = timed(denseTimer, () -> denseRecall(query, visibleTenants, intent, epoch));
+        List<Scored> lexical = timed(lexicalTimer, () -> lexicalRecall(query, visibleTenants, intent, epoch));
+        return new Recalls(dense, lexical);
+    }
+
+    /**
+     * 检索质量对比用：把两路召回的原始名次如实吐出来，供 {@code scripts/retrieval_compare.py}
+     * 生成 dense-only 与 hybrid 的 top-K 差异表（ticket 08 验收项）。
+     *
+     * <p>刻意走"一次检索、两种排法"而不是加一个 dense-only 开关再跑两遍：
+     * 跑两遍会各自触发一次向量入库与一次意图兜底重试，两行数据不可比；
+     * 从同一次召回结果里分别取序，比较的才只是融合这一步带来的差别。
+     */
+    public Diagnosis diagnose(String query, String tenantId, Intent intent, int limit) {
+        long epoch = kbEpoch.current();
+        List<String> visibleTenants = List.of(tenantId, RuleChunk.PLATFORM_TENANT);
+        Recalls recalls = recall(query, visibleTenants, intent, epoch);
+        List<Scored> dense = recalls.dense();
+        List<Scored> lexical = recalls.lexical();
+        boolean usedFallback = false;
+        if (dense.isEmpty() && lexical.isEmpty() && intent != null && intent.cacheAdmissible()) {
+            Recalls relaxed = recall(query, visibleTenants, null, epoch);
+            dense = relaxed.dense();
+            lexical = relaxed.lexical();
+            usedFallback = true;
+        }
+        return new Diagnosis(topIds(dense, limit), topIds(lexical, limit),
+                topIdsFromFused(rrf(dense, lexical), limit), dense.size(), lexical.size(), epoch, usedFallback);
+    }
+
+    private static List<String> topIds(List<Scored> scored, int limit) {
+        return scored.stream().map(Scored::ruleId).limit(limit).toList();
+    }
+
+    private static List<String> topIdsFromFused(List<Retrieved> fused, int limit) {
+        return fused.stream().map(Retrieved::ruleId).limit(limit).toList();
+    }
+
+    private record Recalls(List<Scored> dense, List<Scored> lexical) {
+    }
+
+    public record Diagnosis(List<String> denseTop, List<String> lexicalTop, List<String> fusedTop,
+                            int denseHits, int lexicalHits, long kbEpoch, boolean intentFilterRelaxed) {
     }
 
     private List<Scored> denseRecall(String query, List<String> visibleTenants, Intent intent, long epoch) {
