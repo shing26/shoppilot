@@ -49,9 +49,11 @@ pwsh -NoProfile -File scripts/start-gateway.ps1 -Profile local
 ```
 
 三种运行模式（ADR 0001）：`local` = Ollama `qwen2.5:3b`（默认，演示与降级验证）、
-`dev` = DashScope `qwen-plus`（工具调用准确率评测，需要 `Copy-Item .env.example .env` 填 key）、
-`perf` = `MockLLMClient` 固定延迟（压测，只衡量网关编排层）。换模式：
-`pwsh -File scripts/start-gateway.ps1 -Profile dev`。
+`dev` = DashScope `qwen-plus`（工具调用准确率评测，需要 `Copy-Item .env.example .env` 填
+`SHOPPILOT_LLM_API_KEY`）、`perf` = `MockLLMClient` 固定延迟（压测，只衡量网关编排层）。
+换模式：`pwsh -File scripts/start-gateway.ps1 -Profile dev`。
+`.env` 由启动脚本读进来注入服务进程（Spring Boot 自己不认 `.env`），
+已经导出到环境里的同名变量优先，所以 CI 与实验脚本不需要 `.env` 也能覆盖配置。
 
 </details>
 

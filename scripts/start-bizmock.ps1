@@ -15,13 +15,16 @@ $logDir = Join-Path $root "logs"
 $out = Join-Path $logDir "bizmock.out"
 $errFile = Join-Path $logDir "bizmock.err"
 $pidFile = Join-Path $logDir "bizmock.pid"
+# .env 注入内部服务凭证等；显式参数（池大小）优先级更高
+$envVars = @{}
+foreach ($pair in (Get-ShoppilotDotEnv $root).GetEnumerator()) { $envVars[$pair.Key] = $pair.Value }
+if ($PoolSize) { $envVars['SHOPPILOT_BIZMOCK_POOL_SIZE'] = $PoolSize }
 $jar = Get-ChildItem (Join-Path $root "shoppilot-biz-mock\target") -Filter "shoppilot-biz-mock-*.jar" `
     -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
 
 if ($jar) {
     $argsList = @("-Xmx$Xmx", "-Dfile.encoding=UTF-8", "-jar", $jar.FullName)
     if ($SeedOrders -gt 0) { $argsList += "--shoppilot.bizmock.seed.orders=$SeedOrders" }
-    $envVars = if ($PoolSize) { @{ SHOPPILOT_BIZMOCK_POOL_SIZE = $PoolSize } } else { @{} }
     $cmdPid = Start-ShoppilotService -Name "bizmock" -WorkingDirectory $root `
         -FilePath $java -ArgumentList $argsList -StandardOutput $out -Environment $envVars
 } else {
@@ -31,7 +34,7 @@ if ($jar) {
     $mvnArgs = @("-B", "-ntp", "-o", "-pl", "shoppilot-biz-mock", "spring-boot:run")
     if ($PoolSize) { $env:SHOPPILOT_BIZMOCK_POOL_SIZE = $PoolSize }
     $cmdPid = Start-ShoppilotService -Name "bizmock" -WorkingDirectory $root `
-        -FilePath "mvn.cmd" -ArgumentList $mvnArgs -StandardOutput $out
+        -FilePath "mvn.cmd" -ArgumentList $mvnArgs -StandardOutput $out -Environment $envVars
 }
 Set-Content -Path $pidFile -Value $cmdPid -Encoding ascii
 # 把池大小落盘：看门狗重启时读它，否则池实验中途 biz-mock 被拉回来会静默回到默认 30，

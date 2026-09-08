@@ -13,6 +13,9 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 $env:JAVA_HOME = if ($env:SHOPPILOT_JDK) { $env:SHOPPILOT_JDK } else { 'E:\java\jdk21' }
 $env:MAVEN_OPTS = '-Duser.language=en -Duser.country=US'
+# JVM 侧 -Dfile.encoding=UTF-8 输出的是 UTF-8 字节，PowerShell 默认按控制台代码页（本机 cp936）
+# 解码，日志里的中文就变成乱码。改控制台编码而不是改 JVM：入库与服务的输出都走这里。
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 function Test-Port([int]$p) {
     return (Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0

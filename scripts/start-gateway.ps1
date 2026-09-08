@@ -19,12 +19,15 @@ $fileSuffix = if ($Profile) { $Profile -replace '[^A-Za-z0-9._-]', '+' } else { 
 $out = Join-Path $logDir "gateway-$fileSuffix.out"
 $errFile = Join-Path $logDir "gateway-$fileSuffix.err"
 $pidFile = Join-Path $logDir "gateway-$fileSuffix.pid"
+# .env 里的键（API key、内部凭证）注入 launcher 环境；已在进程环境里的值不覆盖
+$envVars = @{}
+foreach ($pair in (Get-ShoppilotDotEnv $root).GetEnumerator()) { $envVars[$pair.Key] = $pair.Value }
+if ($Profile) { $envVars['SPRING_PROFILES_ACTIVE'] = $Profile }
 $jar = Get-ChildItem (Join-Path $root "shoppilot-gateway\target") -Filter "shoppilot-gateway-*.jar" `
     -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
 
 if ($jar) {
     $argsList = @("-Xmx$Xmx", "-Dfile.encoding=UTF-8", "-jar", $jar.FullName)
-    $envVars = if ($Profile) { @{ SPRING_PROFILES_ACTIVE = $Profile } } else { @{} }
     $cmdPid = Start-ShoppilotService -Name "gateway-$fileSuffix" -WorkingDirectory $root `
         -FilePath $java -ArgumentList $argsList -StandardOutput $out -Environment $envVars
 } else {
@@ -32,7 +35,6 @@ if ($jar) {
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
     $mvnArgs = @("-B", "-ntp", "-o", "-pl", "shoppilot-gateway", "spring-boot:run")
-    $envVars = if ($Profile) { @{ SPRING_PROFILES_ACTIVE = $Profile } } else { @{} }
     $cmdPid = Start-ShoppilotService -Name "gateway-$fileSuffix" -WorkingDirectory $root `
         -FilePath "mvn.cmd" -ArgumentList $mvnArgs -StandardOutput $out -Environment $envVars
 }
