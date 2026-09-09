@@ -114,6 +114,7 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
 ```
 INTAKE      验签 -> TenantContext；归一化；实体正则扫描
 TRIAGE      T0 规则 -> T1 向量质心 -> T2 模型（仅不确定时），10 意图，动作优先
+            显式「转人工」在 T0 定案：不碰 embedding，向量服务超时也转得出去（ADR 0017）
             不确定即不准入缓存（fail-closed）
 CACHE_READ  仅政策意图：L1 精确哈希（零向量化）-> miss 才向量化 -> L2 语义
             key = MD5(tenantId + scope + intent + kbEpoch + normalizedQuery)
@@ -152,7 +153,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | L2 路径吞吐 | 报天花板与归因 | **22.8-27.1 QPS**（每请求真打 bge-m3）vs 1141 QPS（有进程内向量缓存），差 **约 40 倍** | profile `perf,no-embedding-cache`，远程向量化调用≈请求数；生产侧解法见 ADR 0011：embedding 拆独立批处理服务 + 向量缓存命中率当一等指标 | `ladder-l2-perf-20260909-012151-l2emb.csv` |
 | 虚拟线程收益 | 开关两组 | 400 并发 **+64%**、800 并发 **+65%**；100 并发 -3%、200 并发 -3% | 同模型同并发，只关 `spring.threads.virtual.enabled` + 200 平台线程池 | `ladder-l1-perf,no-virtual-20260909-011351-novirtual.csv` |
 | Token 节约率 | 关缓存基线对比 | **62.4%**（1096.8 → 412.3 token/请求）；拆开：穿透合并单独省 50.3%，缓存再省 24.4% | perf 模式 `shoppilot_llm_tokens_total` 差值/请求数，三档只差防线开关；token 由 Mock 按模板估算 | `ladder-l1-perf,nocache,nosf-…`、`ladder-l1-perf,nocache-…`、`ladder-l1-perf-…-cacheton.csv` |
-| 工具调用准确率 | 分意图选对工具与填对参数各 ≥95% | **local 模式已测**（POLICY 100%、ACTION_ORDER 72.2/75.0%、LOGISTICS 88.9/87.5%、ADDRESS 66.7/60.0%、REFUND 66.7/62.5%、ESCALATE 61.1%、UNKNOWN 83.3%，格式为"选对工具/填对参数"）；**dev 模式待补** | 180 条人工校对用例（10 意图 × 18），对抗样本实测 40%；缺槽位的期望是追问而不是猜 | `eval/results/tool-eval-20260908-141504-local{-summary.csv,.csv,-meta.json}` |
+| 工具调用准确率 | 分意图选对工具与填对参数各 ≥95% | **local 模式已测**（POLICY 100%、ACTION_ORDER 72.2/75.0%、LOGISTICS 88.9/87.5%、ADDRESS 66.7/60.0%、REFUND 66.7/62.5%、ESCALATE 88.9%、UNKNOWN 83.3%，格式为"选对工具/填对参数"）；**dev 模式待补** | 180 条人工校对用例（10 意图 × 18），对抗样本实测 40%；缺槽位的期望是追问而不是猜。ESCALATE 行取自 ADR 0017 之后的重跑（显式转人工改在 T0 定案，61.1% -> 88.9%），其余行与 09-08 那次逐格对比：7 行完全一致，3 格因 3B 非确定性变动 | `eval/results/tool-eval-20260909-092638-local{-summary.csv,.csv,-meta.json}`（上一次 `…20260908-141504…`） |
 | 语义缓存阈值 | 0.85-0.99 扫描 + 反义对不互命中 | 0.95 工作点**召回实测 0**；同桶反义最大余弦 **0.9682**，由极性守卫兜 | 118 组对抗对，向量层与系统层分开报 | `docs/threshold-calibration.md`、`docs/threshold-sweep.csv` |
 | 混合检索质量 | hybrid 优于 dense-only | 16/16 与 16/16：**该语料上两者打平**，dense 已全中 | 同一次检索里两路前 5 对期望文档的命中名次 | `docs/retrieval-comparison.md` |
 | HikariCP 饱和点 | 记录饱和点与调池前后差异 | 池 2/10/30 三档 QPS 差 **≤1.2%**；池=2 时 pending 峰值 39、获取均值 6.5 ms，池=10 起 pending 全程 0 → **任务书"默认 10 连接先于 CPU 饱和"未被实测支持** | 流量模型 `biz`（100% 业务办理），每档 45 s，池大小经 `hikaricp.connections.max` 反读确认 | `ladder-biz-perf-20260909-033940-pool2.csv` 等三份 |
@@ -192,6 +193,23 @@ slot_ask | fallback | duplicate_submit | rate_limited
 用哪家模型无关（越权与幂等发生在业务系统与仓储层），把它们绑在需要外部 API key 的模式上反而更弱。
 需要 DashScope key 的是承诺项里的"工具调用准确率"，这一条**尚未补测**。
 
+### 承诺项十条的逐条结论
+
+PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因就算交付），下面把"达成/未达成"逐条写明。
+
+| 承诺项 | 判据 | 结论 |
+| --- | --- | --- |
+| 热点拦截率 | ≥80% | **未达成**：74.0%（L1 主导口径）/ 78.2%（任务书 80% 热点口径），原因见上一节，不换口径刷绿 |
+| 命中路径 TP99 | <30 ms | **低并发达成**：200 并发 22 ms；100 并发 32 ms 已贴线，400 起 90→970 ms，同机发压把拐点提前 |
+| 未命中 TTFT | <500 ms | **未达成**：P50 592 ms，其中 Mock 首字固定占 300 ms；同机 500 长连接 |
+| 工具调用准确率 | 选对工具与填对参数各 ≥95% | **未达成**：local 模式 qwen2.5:3b 选对工具最低 66.7%、填对参数最低 60.0%（都在 ADDRESS/REFUND 两个动作意图上；POLICY 四行 100%）；dev 模式待用真实模型复测 |
+| 大促吞吐 | ≥1200 QPS 且错误率 <0.1% | **未达成**：1013 QPS@800，错误率全程 0；拐点由网关与发压机共同决定 |
+| L2 路径定性 | 报出天花板并归因 | **达成**：27.1 QPS（每请求真打 bge-m3）vs 1141 QPS，约 40 倍，归因到向量化调用次数≈请求数 |
+| 虚拟线程收益 | 开关两组数据 | **达成**：400/800 并发 +64%/+65%，100/200 并发 -3%/-3%，低并发档负收益照登 |
+| Token 节约率 | 关缓存基线对比 | **达成**：62.4%（1096.8 → 412.3 token/请求），三档只差防线开关，perf 模式估算口径注明 |
+| 实测数字诚实 | 表旁标口径与来源文件 | **达成**：上表每行都有口径列与 `loadtest/results/`、`eval/results/`、`docs/` 下的具体产物 |
+| 可复现性 | 新机器一条命令起栈跑通演示 | **同机达成、干净机器未验**：`scripts/run-acceptance.ps1` 一条命令跑完构建到演示全部步骤 |
+
 ## 已知限制（不藏）
 
 - **H2 内嵌库在写密集路径上是瓶颈**；50 并发同 token 的退款实测 1 行 + 49 个重放，但换 MySQL 才是生产形态。
@@ -220,10 +238,17 @@ slot_ask | fallback | duplicate_submit | rate_limited
   本机还有一条约束：服务在跑的时候 `mvn package` / `mvnw verify` 会被 fat jar 文件锁挡住
   （`Unable to rename ...jar to ...jar.original`），改完代码要先 `scripts/stop.ps1` 再构建；
   `mvn -o test` 不受影响。
+- **缓存写回是异步的**（`writeBackExecutor` 独立线程池，不让用户等 Qdrant 落盘），所以首答返回
+  与缓存可见之间有毫秒级窗口。同一毫秒级的重复请求由 singleflight 合并兜住，但"首答刚回来就问
+  第二遍"仍可能各打一次模型。验收脚本因此等 L2 点位可见再问第二次（`verify-hit-zero-llm.ps1`、
+  `verify_l2_filters.py`），而不是赌调度时序——这条曾经就是一次真·偶发失败暴露出来的。
 - **biz-mock 整个进程消失时，降级帧里没有工单号**：工单存储就在 biz-mock（ADR 0009），
   `FallbackService.escalate()` 只能留下 warn 日志，网关侧没有本地暂存队列可补投。
   依赖只慢不挂（`failRate=1.0`）的场景工单照样能落，所以这是"下游彻底没了"这一格的缺口，
   PLAN 对 ticket 10 的判据（返回降级语义而非 500）仍然成立。
+- **换说法的转人工仍依赖向量服务**：字面「转人工 / 人工客服」在 T0 定案，embedding 超时也转得出去（ADR 0017）；
+  「叫你们经理过来处理」这类 paraphrase 只有 T1 质心认得，embedding 不可用时按 fail-closed 交给模型定案。
+  最低可用线是"字面喊人一定转得出去"，不是"任何说法都不依赖外部服务"。
 - **Qdrant 容器 healthcheck 长期报 `unhealthy`**（容器内 wget 访问 `/readyz` 超时），实测读写正常。
 - **本机 `mvn` 与 `mvnw` 的本地仓库不同**：`mvn` 走 `E:\maven_repository`，wrapper 走 `~/.m2`。
   离线复现时统一加 `-Dmaven.repo.local=E:\maven_repository`，干净机器联网首跑无此问题。
@@ -264,7 +289,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 ## 复现
 
 ```powershell
-# 单元与架构测试（57 项）
+# 单元与架构测试（63 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -290,6 +315,28 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1            # 构建 + 起栈 + 
 pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，只跑活体验收
 ```
 
+```
+step        exit  note          # 2026-09-09 09:50-09:55 同机全量跑（profile=local）
+stop          0  2s            # 释放 fat jar 文件锁
+build         0  28s           # mvnw verify：3 + 10 + 50 = 63 项
+unit          0  26s           # mvn -o test 同一批，离线可跑
+stack         0  69s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
+plan          0  72s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
+hitzero       0   8s           # 命中路径零模型、零远程向量化
+action        0   7s           # 查得到 / 问得出 / 越不了权
+idem          0   9s           # 并发同 token + 状态前置校验
+fallback      0  26s           # 七种降级原因 + 工单反查
+ratelimit     0   1s           # 同步 429 与 SSE rate_limited
+polarity      0  26s           # 同桶反义在守卫层被拒
+l2            0   7s           # tenant/scope/intent/kb_epoch 四条 must-filter
+console       0  19s           # Playwright 15 项
+demo          0  11s           # 三条演示
+```
+
+总耗时 311s。`stack` 69s + `demo` 11s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
+那条动作本来就要一个没参与的人来跑，机器只能证明到这儿。每一步还各要求一条"只有跑到结尾才会出现"
+的日志标记（`Expect`）：这台机器把 `mvnw.cmd` 中途带走时它返回 0，只看退出码会假绿。
+
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
 | 01 | `run-acceptance.ps1` 的 stop / build / unit / stack 四步（`mvnw verify` + `mvn -o test` + `up.ps1`）；`verify-plan-actions.ps1` 第 01 段判"三中间件在跑、两服务健康 UP" |
@@ -310,7 +357,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，�
 | 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>.csv` 与 `-summary.csv` |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py` |
-| 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo` |
+| 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`（同机实测：起栈 69s、三条演示 11s） |
 
 各 ticket 的实现决策与"当时能答上来的三个追问"记在 `.scratch/shoppilot-mvp/issues/`，
 汇总清单：`python scripts/collect_interview_questions.py` → [docs/interview-qa.md](docs/interview-qa.md)。
