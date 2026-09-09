@@ -1,0 +1,106 @@
+{
+  "mode": "local",
+  "model": "qwen2.5:3b",
+  "cases": 180,
+  "limit": 0,
+  "promptTokens": 176433,
+  "completionTokens": 10670,
+  "estimatedPerCaseTokens": 1034,
+  "dailyTokenBudget": 200000,
+  "tokensUsedBeforeRun": 0,
+  "concurrency": 2,
+  "startedAt": "20260909-092638",
+  "requestErrors": 0,
+  "summary": {
+    "ACTION_ADDRESS": {
+      "intent": "ACTION_ADDRESS",
+      "cases": 18,
+      "tool_accuracy": "66.7%",
+      "args_accuracy": "60.0%",
+      "slotask_accuracy": "77.8%",
+      "fabricated_cases": 2,
+      "overall_accuracy": "38.9%"
+    },
+    "ACTION_LOGISTICS": {
+      "intent": "ACTION_LOGISTICS",
+      "cases": 18,
+      "tool_accuracy": "88.9%",
+      "args_accuracy": "87.5%",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "77.8%"
+    },
+    "ACTION_ORDER": {
+      "intent": "ACTION_ORDER",
+      "cases": 18,
+      "tool_accuracy": "72.2%",
+      "args_accuracy": "75.0%",
+      "slotask_accuracy": "88.9%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "61.1%"
+    },
+    "ACTION_REFUND": {
+      "intent": "ACTION_REFUND",
+      "cases": 18,
+      "tool_accuracy": "66.7%",
+      "args_accuracy": "62.5%",
+      "slotask_accuracy": "94.4%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "50.0%"
+    },
+    "ESCALATE": {
+      "intent": "ESCALATE",
+      "cases": 18,
+      "tool_accuracy": "88.9%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "83.3%",
+      "fabricated_cases": 1,
+      "overall_accuracy": "44.4%"
+    },
+    "POLICY_FRESH": {
+      "intent": "POLICY_FRESH",
+      "cases": 18,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "POLICY_PROMO": {
+      "intent": "POLICY_PROMO",
+      "cases": 18,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "POLICY_RETURN": {
+      "intent": "POLICY_RETURN",
+      "cases": 18,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "94.4%",
+      "fabricated_cases": 1,
+      "overall_accuracy": "94.4%"
+    },
+    "POLICY_SHIPPING": {
+      "intent": "POLICY_SHIPPING",
+      "cases": 18,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "UNKNOWN": {
+      "intent": "UNKNOWN",
+      "cases": 18,
+      "tool_accuracy": "83.3%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "83.3%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "83.3%"
+    }
+  }
+}

@@ -68,6 +68,7 @@ public class CacheService {
     private final Counter l2HitCounter;
     private final Counter negativeHitCounter;
     private final Counter polarityBlockedCounter;
+    private final Counter embedUnavailableCounter;
 
     public CacheService(L1Cache l1, L2SemanticCache l2, EmbeddingClient embedding, GatewayProperties properties,
                         MeterRegistry registry) {
@@ -84,6 +85,10 @@ public class CacheService {
         this.negativeHitCounter = Counter.builder("shoppilot_cache_negative_hit_total").register(registry);
         this.polarityBlockedCounter = Counter.builder("shoppilot_cache_l2_polarity_blocked_total")
                 .description("L2 余弦过阈值但极性不一致，被守卫拒绝复用的次数").register(registry);
+        // 拿不到查询向量时 L1 与 L2 的写回会一起落空（prepareWrite 要求 queryVector）。
+        // 这条分支原来只有一个静默 catch，出事时看不出来；打点加 warn 补上归因。
+        this.embedUnavailableCounter = Counter.builder("shoppilot_cache_embed_unavailable_total")
+                .description("缓存路径拿不到查询向量、本次 L1/L2 写回落空的次数").register(registry);
     }
 
     public void recordRequest() {
@@ -113,9 +118,13 @@ public class CacheService {
         try {
             vector = precomputedVector != null ? precomputedVector : embedding.embed(rawQuery);
         } catch (RuntimeException embeddingUnavailable) {
+            embedUnavailableCounter.increment();
+            log.warn("缓存向量化失败，本次请求 L1/L2 写回落空: {}", embeddingUnavailable.getMessage());
             return new Lookup(Layer.NONE, Optional.empty(), null, normalized, false);
         }
         if (vector == null) {
+            embedUnavailableCounter.increment();
+            log.warn("缓存向量化返回空向量，本次请求 L1/L2 写回落空");
             return new Lookup(Layer.NONE, Optional.empty(), null, normalized, false);
         }
         for (Bucket bucket : buckets) {

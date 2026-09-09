@@ -5,6 +5,7 @@ target/
 .vscode/
 .env
 .env.local
+.env.*-backup
 *.log
 logs/
 .mvn/wrapper/maven-wrapper.jar

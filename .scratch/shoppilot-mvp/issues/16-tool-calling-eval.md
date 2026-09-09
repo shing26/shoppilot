@@ -41,3 +41,6 @@ python scripts/run_tool_eval.py                      # 全量 180 条
 ```
 
 明细 `eval/results/tool-eval-20260908-141504-local.csv`，分意图汇总同名 `-summary.csv`，运行环境 `-meta.json`。
+
+**2026-09-09 重跑（`tool-eval-20260909-092638-local.*`）**：ADR 0017 把显式转人工下沉到 T0 之后，ESCALATE 行 选对工具 61.1% -> 88.9%、综合 11.1% -> 44.4%。其余逐格比对：ACTION_ADDRESS / ACTION_ORDER / ACTION_REFUND 与四条 POLICY 完全一致，只有 ACTION_LOGISTICS（结构化追问 94.4% -> 100.0%、猜槽位 1 -> 0）与 UNKNOWN（77.8% -> 83.3%、猜槽位 1 -> 0）两行因 3B 非确定性变化。本轮 180 条请求失败 0 条，但服务端同期记到 99 次 embedding 超时（`shoppilot_embedding_failure_total`）——按 ADR 0007 走 fail-closed 进模型、稠密召回单路独扛，POLICY 四行的选对工具仍全为 100%，这只说明降级路径没把答案打断，不代表 embedding 健康。
+

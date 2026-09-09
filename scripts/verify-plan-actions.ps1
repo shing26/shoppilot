@@ -270,7 +270,13 @@ if ($WithRestarts) {
 
     Write-Host "`n=== ticket 14：模型端点指向不存在地址 ===" -ForegroundColor Cyan
     $envFile = Join-Path $root '.env'
-    if (Test-Path $envFile) { throw '仓库里已有 .env，先移开再跑这条（它会改写服务配置）' }
+    $envBackup = Join-Path $root '.env.plan-actions-backup'
+    # 这一条要改写服务配置，而 .env 里可能是真的 DashScope key：先整体挪走再复原，
+    # 而不是要求人肉移开——否则"填过 .env 的机器"反而跑不了验收。
+    if (Test-Path $envFile) {
+        if (Test-Path $envBackup) { throw "残留的 $envBackup 还在，先确认它是不是上次中断留下的 .env 备份" }
+        Move-Item -LiteralPath $envFile -Destination $envBackup
+    }
     try {
         Set-Content -Path $envFile -Value 'SHOPPILOT_OLLAMA_URL=http://127.0.0.1:59999' -Encoding ascii
         & (Join-Path $root 'scripts\stop.ps1') -Ports '8082' | Out-Null
@@ -289,7 +295,8 @@ if ($WithRestarts) {
         $queue = @(Invoke-Ops 'GET' '/api/v1/support/ops/tickets' $null | ForEach-Object { $_.id })
         Assert-True ($deadTicket -ne '' -and ($queue -contains $deadTicket)) "工单 $deadTicket 能从队列查回"
     } finally {
-        [IO.File]::Delete($envFile)
+        if (Test-Path $envFile) { [IO.File]::Delete($envFile) }
+        if (Test-Path $envBackup) { Move-Item -LiteralPath $envBackup -Destination $envFile }
         & (Join-Path $root 'scripts\stop.ps1') -Ports '8082' | Out-Null
         Start-Sleep -Seconds 2
         & (Join-Path $root 'scripts\start-gateway.ps1') -Profile local | Out-Null

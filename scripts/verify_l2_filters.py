@@ -9,6 +9,7 @@
 """
 import json
 import sys
+import time
 import urllib.request
 
 GATEWAY = "http://127.0.0.1:8082"
@@ -48,6 +49,16 @@ def search(vector, filters):
     return http(f"{QDRANT}/collections/{COLLECTION}/points/search", payload).get("result", [])
 
 
+def counter(name):
+    """读网关计数器；没注册（一次都没发生过）时按 0 算。"""
+    try:
+        body = http(f"{GATEWAY}/actuator/metrics/{name}")
+    except Exception:
+        return 0.0
+    values = [m.get("value") for m in body.get("measurements", []) if m.get("statistic") == "COUNT"]
+    return float(values[0]) if values else 0.0
+
+
 def main() -> int:
     failures = []
 
@@ -65,13 +76,30 @@ def main() -> int:
     check("缓存已清空（L1 与 L2 一起）", flushed.get("l1KeysDeleted", -1) >= 0, str(flushed))
 
     query = "生鲜类商品理赔要在多长时间内申请"
-    miss = ask(tok, query, "l2-filter-probe")
+    # 会话号每次换新：探针必须独立，不能带着上一次跑剩下的对话历史进来。
+    embed_before = counter("shoppilot_cache_embed_unavailable_total")
+    miss = ask(tok, query, f"l2-filter-{int(time.time())}")
     check("首次提问写回了缓存答案", bool(miss.get("answer")) and miss.get("cacheLayer") == "NONE",
           f"intent={miss.get('intent')}")
+    # CACHE_WRITE 那一步的 detail 会直接说明写回为什么没发生：
+    # skipped:no-write-target = 拿不到查询向量（Ollama 向量化失败时就是这样，见 README 已知限制），
+    # rejected:xxx = 写回资格判定拦下。裸报"0 条"会让人以为是 Qdrant 的问题。
+    write_step = next((s.get("detail", "?") for s in (miss.get("trace") or [])
+                       if s.get("state") == "CACHE_WRITE"), "无 CACHE_WRITE 步骤")
 
-    points = http(f"{QDRANT}/collections/{COLLECTION}/points/scroll",
-                  {"limit": 8, "with_vector": True, "with_payload": True})["result"]["points"]
-    check("L2 向量已落到 Qdrant", len(points) >= 1, f"{len(points)} 条")
+    # 写回跑在网关的独立线程池上（AgentStateMachine#writeBackExecutor：不让用户等缓存落盘），
+    # 首答返回与 Qdrant 可见之间有毫秒级窗口，所以这里等一个有界窗口而不是抓一次就判失败。
+    points = []
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        points = http(f"{QDRANT}/collections/{COLLECTION}/points/scroll",
+                      {"limit": 8, "with_vector": True, "with_payload": True})["result"]["points"]
+        if points:
+            break
+        time.sleep(0.2)
+    embed_after = counter("shoppilot_cache_embed_unavailable_total")
+    check("L2 向量已落到 Qdrant", len(points) >= 1,
+          f"{len(points)} 条，cache_write={write_step}，向量化失败次数 {embed_before} -> {embed_after}")
     if not points:
         print(f"\n{len(failures)} 项未通过")
         return 1

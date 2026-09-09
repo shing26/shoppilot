@@ -44,26 +44,66 @@ if (-not $pwsh) {
 # 每步只声明一次：Kind 决定用 -File 还是直接可执行文件。
 $steps = [ordered]@{
     stop      = @{ Kind = 'ps1'; Cmd = 'scripts\stop.ps1'; Arg = @(); Need = $true; Skip = $SkipBuild }
-    build     = @{ Kind = 'mvnw'; Cmd = 'verify'; Arg = @(); Need = $true; Skip = $SkipBuild }
-    unit      = @{ Kind = 'mvn'; Cmd = 'test'; Arg = @('-o'); Need = $true; Skip = $SkipBuild }
-    stack     = @{ Kind = 'ps1'; Cmd = 'scripts\up.ps1'; Arg = @(@('-Profile', $Profile) + $(if ($SkipIngest) { @('-SkipIngest') } else { @() })); Need = $true; Skip = $SkipStack }
+    build     = @{ Kind = 'mvnw'; Cmd = 'verify'; Arg = @(); Need = $true; Skip = $SkipBuild; Expect = @('BUILD SUCCESS') }
+    unit      = @{ Kind = 'mvn'; Cmd = 'test'; Arg = @('-o'); Need = $true; Skip = $SkipBuild; Expect = @('BUILD SUCCESS') }
+    stack     = @{ Kind = 'ps1'; Cmd = 'scripts\up.ps1'; Arg = @(@('-Profile', $Profile) + $(if ($SkipIngest) { @('-SkipIngest') } else { @() })); Need = $true; Skip = $SkipStack; Expect = @('栈已就绪') }
     plan      = @{ Kind = 'ps1'; Cmd = 'scripts\verify-plan-actions.ps1'; Arg = @('-WithRestarts'); Need = $true; Skip = $false }
-    hitzero   = @{ Kind = 'ps1'; Cmd = 'scripts\verify-hit-zero-llm.ps1'; Arg = @(); Need = $true; Skip = $false }
-    action    = @{ Kind = 'ps1'; Cmd = 'scripts\verify-action-loop.ps1'; Arg = @(); Need = $true; Skip = $false }
-    idem      = @{ Kind = 'ps1'; Cmd = 'scripts\verify-idempotency.ps1'; Arg = @(); Need = $true; Skip = $false }
-    fallback  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-fallback.ps1'; Arg = @(); Need = $true; Skip = $false }
-    ratelimit = @{ Kind = 'ps1'; Cmd = 'scripts\verify-ratelimit.ps1'; Arg = @(); Need = $true; Skip = $false }
-    polarity  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-polarity.ps1'; Arg = @(); Need = $true; Skip = $false }
-    l2        = @{ Kind = 'py'; Cmd = 'scripts\verify_l2_filters.py'; Arg = @(); Need = $true; Skip = $false }
-    console   = @{ Kind = 'node'; Cmd = 'scripts\verify-console.mjs'; Arg = @(); Need = $true; Skip = $false }
-    demo      = @{ Kind = 'ps1'; Cmd = 'scripts\demo.ps1'; Arg = @(); Need = $true; Skip = $false }
+    hitzero   = @{ Kind = 'ps1'; Cmd = 'scripts\verify-hit-zero-llm.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('全部通过：命中路径零模型调用') }
+    action    = @{ Kind = 'ps1'; Cmd = 'scripts\verify-action-loop.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('业务办理闭环验收通过') }
+    idem      = @{ Kind = 'ps1'; Cmd = 'scripts\verify-idempotency.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('state check rejected it') }
+    fallback  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-fallback.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('queue size:') }
+    ratelimit = @{ Kind = 'ps1'; Cmd = 'scripts\verify-ratelimit.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('rate_limited') }
+    polarity  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-polarity.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('验收通过') }
+    l2        = @{ Kind = 'py'; Cmd = 'scripts\verify_l2_filters.py'; Arg = @(); Need = $true; Skip = $false; Expect = @('全部通过：L2') }
+    console   = @{ Kind = 'node'; Cmd = 'scripts\verify-console.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('console checks passed') }
+    demo      = @{ Kind = 'ps1'; Cmd = 'scripts\demo.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('演示结束') }
 }
 
 $results = @()
 $started = Get-Date
+
+function Test-Ready {
+    foreach ($port in 8082, 8091) {
+        $up = try {
+            (Invoke-RestMethod "http://127.0.0.1:$port/actuator/health/readiness" -TimeoutSec 3).status -eq 'UP'
+        } catch { $false }
+        if (-not $up) { return $false }
+    }
+    return $true
+}
+
+function Wait-Ready([int]$seconds) {
+    $deadline = (Get-Date).AddSeconds($seconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-Ready) { return $true }
+        Start-Sleep -Seconds 3
+    }
+    return $false
+}
+
+# 这台 16 G 机器会把空闲中的网关 JVM 无日志带走（README 已知限制）。验收跑到一半服务没了，
+# 后面每一步都报红，看起来像代码坏了，其实是环境问题：先探健康，不健康就拉回来，
+# 拉不回来把这一步单独记成"栈没救回来"，不让它伪装成断言失败。
+function Invoke-HealthGate {
+    if (Wait-Ready 10) { return $true }
+    Write-Host '  栈不健康，先用 up.ps1 -SkipIngest 拉起来' -ForegroundColor Yellow
+    & $pwsh -NoProfile -File (Join-Path $root 'scripts\up.ps1') -SkipIngest -Profile $Profile `
+        *> (Join-Path $outDir 'recover.log')
+    return (Wait-Ready 300)
+}
+
+# pwsh -File 传进来的数组参数其实是一整串 "plan,hitzero,l2"，不自己拆就一个都匹配不上，
+# 于是矩阵里零步骤、最后一行还打印"全部步骤通过"。两条一起堵：自己拆，且零步骤算失败。
+$want = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+foreach ($name in $want) {
+    if (-not $steps.Contains($name)) {
+        Write-Host "-Only 里有不认识的名字：$name（可用：$($steps.Keys -join ', ')）" -ForegroundColor Red
+        exit 2
+    }
+}
 foreach ($name in $steps.Keys) {
     $step = $steps[$name]
-    if ($Only.Count -gt 0 -and $name -notin $Only) { continue }
+    if ($want.Count -gt 0 -and $name -notin $want) { continue }
     if ($step.Skip) {
         Write-Host "`n--- $name 跳过（开关关着）" -ForegroundColor DarkGray
         $results += [pscustomobject]@{ Step = $name; Exit = '-'; Note = 'skipped' }
@@ -74,6 +114,11 @@ foreach ($name in $steps.Keys) {
     if ($step.Kind -in @('ps1', 'py', 'node') -and -not (Test-Path (Join-Path $root $step.Cmd))) {
         Write-Host "`n--- $name 找不到 $($step.Cmd)" -ForegroundColor Red
         $results += [pscustomobject]@{ Step = $name; Exit = 99; Note = 'missing file' }
+        continue
+    }
+    if ($step.Need -and $name -notin @('stop', 'build', 'unit', 'stack') -and -not (Invoke-HealthGate)) {
+        Write-Host '  栈没救回来，这一步不算断言失败，单独标记' -ForegroundColor Red
+        $results += [pscustomobject]@{ Step = $name; Exit = 98; Note = 'stack not recoverable' }
         continue
     }
     $log = Join-Path $outDir "$name.log"
@@ -102,7 +147,17 @@ foreach ($name in $steps.Keys) {
     }
     $sw.Stop()
     $code = $LASTEXITCODE
+    # 光看退出码不够：这台机器会把 mvnw.cmd 中途带走，而它被带走时返回 0，
+    # 日志停在 "T E S T S" 却没有 BUILD SUCCESS——记成 PASS 就是假绿。
+    # 所以每一步再要求各有一条"只有跑到结尾才会出现"的日志标记，缺失即失败。
+    $missing = @()
+    if ($code -eq 0 -and $step.Expect) {
+        $logText = [string](Get-Content $log -Raw -Encoding UTF8 -ErrorAction SilentlyContinue)
+        $missing = @($step.Expect | Where-Object { $logText.IndexOf($_, [StringComparison]::Ordinal) -lt 0 })
+        if ($missing.Count -gt 0) { $code = 97 }
+    }
     $note = if ($null -eq $code) { 'no exit code' } elseif ($code -eq 0) { 'ok' } else { "exit $code" }
+    if ($missing.Count -gt 0) { $note += ' / 日志缺结尾标记: ' + ($missing -join ' | ') }
     $color = if ($code -eq 0) { 'Green' } else { 'Red' }
     Write-Host ("  {0}  {1}  {2:N0}s" -f $(if ($code -eq 0) { 'PASS' } else { 'FAIL' }), $note, $sw.Elapsed.TotalSeconds) -ForegroundColor $color
     Get-Content $log -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Last 6 | ForEach-Object { Write-Host "    | $_" }
@@ -110,6 +165,10 @@ foreach ($name in $steps.Keys) {
 }
 
 Write-Host "`n=== 验收矩阵（总耗时 $([int]$((Get-Date) - $started).TotalSeconds)s）===" -ForegroundColor Cyan
+if ($results.Count -eq 0) {
+    Write-Host "没有任何步骤被执行——检查 -Only / -SkipBuild / -SkipStack 的组合（可用步骤：$($steps.Keys -join ', ')）" -ForegroundColor Red
+    exit 2
+}
 $results | Format-Table -AutoSize | Out-String -Width 120 | ForEach-Object { Write-Host $_ }
 $failed = @($results | Where-Object { $_.Exit -ne 0 -and $_.Exit -ne '-' })
 if ($failed.Count -gt 0) {

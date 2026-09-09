@@ -50,6 +50,22 @@ Assert-True ($first.intent -like "POLICY_*") "未命中时已定案政策意图�
 Assert-True ($first.cacheLayer -eq "NONE") "首次提问不进缓存（$($first.cacheLayer)）"
 Assert-True (@($first.citations).Count -gt 0) "未命中答案带非空 citations（$(@($first.citations).Count) 条）"
 
+# 写回跑在独立线程池上（AgentStateMachine 用 writeBackExecutor，不让用户等缓存落盘），
+# 所以首答返回与缓存可见之间有毫秒级窗口。这里等 Qdrant 出现 L2 点位再问第二次：
+# CacheService#writeBack 里 L1.put 排在 l2.store 之前，L2 可见即 L1 必已写好——
+# 等的是真信号，不是随手 sleep；开头已经 flush 过，看到的点位只可能来自本次首答。
+$settle = (Get-Date).AddSeconds(8)
+$l2Points = 0
+while ((Get-Date) -lt $settle) {
+    $l2Points = try {
+        (Invoke-RestMethod -Method Post "http://127.0.0.1:16333/collections/answer_cache/points/count" `
+            -ContentType "application/json" -Body '{"exact":true}' -TimeoutSec 5).result.count
+    } catch { 0 }
+    if ($l2Points -gt 0) { break }
+    Start-Sleep -Milliseconds 200
+}
+Assert-True ($l2Points -gt 0) "异步写回已落到 Qdrant L2（$l2Points 条）"
+
 $llm2 = Metric "shoppilot_llm_calls_total"
 $emb2 = Metric "shoppilot_embedding_calls_total?tag=result:remote"
 $second = Ask $query "zero-llm-probe" "$stamp-b"
