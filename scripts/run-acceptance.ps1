@@ -43,6 +43,10 @@ if (-not $pwsh) {
 
 # 每步只声明一次：Kind 决定用 -File 还是直接可执行文件。
 $steps = [ordered]@{
+    # 门禁自己也是代码，也会写错。2026-09-10 我把一个非法管道（`try{}catch{} | Where-Object`）提交了进去，
+    # 那是整条链的第一环，语法不过它什么都跑不了——而那要等到下一次跑门禁才看得见。
+    # 花零点几秒先解析一遍 scripts\ 下所有 .ps1，别用十几分钟的失败来当语法检查。
+    syntax    = @{ Kind = 'ps1'; Cmd = 'scripts\check-ps-syntax.ps1'; Arg = @(); Need = $false; Skip = $false; Expect = @('SYNTAX CHECK DONE') }
     stop      = @{ Kind = 'ps1'; Cmd = 'scripts\stop.ps1'; Arg = @(); Need = $true; Skip = $SkipBuild }
     build     = @{ Kind = 'mvnw'; Cmd = 'verify'; Arg = @(); Need = $true; Skip = $SkipBuild; Expect = @('BUILD SUCCESS') }
     unit      = @{ Kind = 'mvn'; Cmd = 'test'; Arg = @('-o'); Need = $true; Skip = $SkipBuild; Expect = @('BUILD SUCCESS') }
@@ -77,7 +81,9 @@ $started = Get-Date
 # 工作树干不干净必须在**开跑之前**问：门禁自己会写 logs/、eval/results/、docs/console.png，
 # 跑完之后永远是"脏"的，那个字就没有意义了。run11 记的是 commit f3ff880，可它真正测的是当时
 # 还没提交的工作树（compose 健康检查与这两个脚本的改动都在里面）——"全绿"要说清绿在哪一份代码上。
-$dirtyAtStart = @(try { & git -C $root status --porcelain 2>$null } catch { @() } | Where-Object { $_ })
+# 注意：try{}catch{} 是语句，不能直接接管道（"An empty pipe element is not allowed" 会在解析期就炸）。
+$dirtyAtStart = @()
+try { $dirtyAtStart = @(& git -C $root status --porcelain 2>$null | Where-Object { $_ }) } catch { $dirtyAtStart = @() }
 $treeAtStart = if ($dirtyAtStart.Count -eq 0) { 'clean' } else { "dirty（$($dirtyAtStart.Count) 个未提交改动）" }
 
 function Test-Ready {
