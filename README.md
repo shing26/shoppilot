@@ -147,8 +147,10 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | --- | --- | --- | --- | --- |
 | 缓存总拦截率 | ≥80% | **73.2%-74.0%** | (L1+L2+穿透合并)/有效请求，计数器差值；L1 主导模型，100-1600 并发 | `ladder-l1-perf-20260908-231233-final.csv` |
 | 同上（任务书口径） | ≥80% | **77.8%-78.2%** | 80% 热点重复 + 10% 业务 + 10% 长尾 | `ladder-mix80-perf-20260908-233023-final.csv` |
-| 命中路径 TP99 | <30 ms | **32 / 22 / 90 / 480 / 840 / 970 ms**（100/200/400/800/1200/1600 并发） | 派生事件 `cache[hitpath]` 分位数；该路径模型与远程向量化增量恒为 0 | 同上 + `verify-hit-zero-llm.ps1` |
-| 未命中 TTFT | <500 ms | **592 / 743 / 2436 ms**（P50/P90/P99，500 长连接） | 服务端收请求→首个 token 帧，不含网络往返；Mock 首字本身 300 ms | `sse-ttft-20260909-001822-500-perf.csv` |
+| 命中路径 TP99 | <30 ms | **32 / 22 / 90 / 480 / 840 / 970 ms**（100/200/400/800/1200/1600 并发）；SSE 侧独立复核 P99 45 / 48 / 123 / 603 ms（50/100/200/500 长连接） | 派生事件 `cache[hitpath]` 分位数；该路径模型与远程向量化增量恒为 0。SSE 复核是客户端口径，含环回与线程调度，比服务端略高属正常 | 同上 + `verify-hit-zero-llm.ps1` + `sse-ttft-*-sweepmix.csv` |
+| 未命中 TTFT（知识路径） | <500 ms | **未达成**：P50 690 ms（1 并发串行）→ 1031 / 1036 / 1049 ms（50 / 100 / 200 并发）→ 1499 ms（500 并发） | 客户端发请求→第一个 `event: token` 帧；样本只取 `meta.cacheLayer=NONE` 且非动作意图（`scripts/run_sse_ttft.py` 分桶）；perf 的 Mock 首字固定占 300 ms | `sse-ttft-20260909-151606-1-attrib.csv`、`sse-ttft-20260909-144654-50-sweepmix.csv` 等 4 份 |
+| 未命中 TTFT（动作路径） | 不设判据 | P50 1146 / 1148 / 1160 / 1634 ms（50→500 并发） | 动作意图按设计要走两轮工具调用，perf 下每轮 Mock 各 300 ms，与 500 ms 不是同一预算，故单列不并入上一条 | 同上（`action_*` 列） |
+| 未命中 TTFT 的归因 | 报出谁花的 | 服务端 TTFT 均值 725 ms = Mock 首字下限 300 + 本机单条新问句向量化 311 + 稠密检索 4.8 + 词法检索 5.8 + **编排余量 104 ms** | 单连接串行、网关刚重启（服务端计时器按进程累计）；向量化那一步服务端没有计时器包住，由探针实测 | `ttft-attribution-20260909-151609-1conn.csv`、`probe_embedding_latency.py` |
 | 吞吐极限 | ≥1200 QPS 且错误率<0.1% | **1013 QPS**@800（L1 主导）/ **1141 QPS**@400（L2 主导），错误率 0% | `qps_scope=chat-only`，Locust 4 进程同机发压 | `ladder-l1-…-final.csv`、`ladder-l2-…-l2.csv` |
 | L2 路径吞吐 | 报天花板与归因 | **23.8-64.8 QPS**（每请求真打 bge-m3）vs 同档 845-1141 QPS（有进程内向量缓存），同并发差 **18-36 倍** | profile `perf,no-embedding-cache`，`embed_cached` 全程 0、远程向量化≈非命中请求数（L1 命中不需要向量）；生产侧解法见 ADR 0011：embedding 拆独立批处理服务 + 向量缓存命中率当一等指标 | `ladder-l2-perf,no-embedding-cache-20260909-133010-l2emb.csv` |
 | 虚拟线程收益 | 开关两组 | 400 并发 **+64%**、800 并发 **+65%**；100 并发 -3%、200 并发 -3% | 同模型同并发，只关 `spring.threads.virtual.enabled` + 200 平台线程池 | `ladder-l1-perf,no-virtual-20260909-011351-novirtual.csv` |
@@ -163,9 +165,17 @@ slot_ask | fallback | duplicate_submit | rate_limited
 
 ![压测曲线：QPS 拐点与分位数时延](docs/loadtest-curves.png)
 
-图由 `python scripts/plot_loadtest_curves.py` 生成，读的是 `loadtest/results/` 里同一批阶梯 CSV。
+阶梯图由 `python scripts/plot_loadtest_curves.py` 生成，读的是 `loadtest/results/` 里同一批阶梯 CSV。
 左图对数轴上三条带缓存的曲线在 1000 QPS 附近压平；往下依次是关掉虚拟线程（615）、向量服务停用（482），
 最下面那条"每请求真打一次 bge-m3"只有 24-65 QPS——这三条落差就是编排之外的东西吃掉的性能。
+
+![SSE 首字时延分桶扫描](docs/ttft-sweep.png)
+
+首字图由 `python scripts/plot_ttft_sweep.py` 生成，读 `loadtest/results/sse-ttft-*-sweep{mix,miss}.csv`。
+左栏三条线各自的形状就是结论：**未命中那条几乎是水平线**（1031→1049 ms），说明它慢不是因为排队，
+而是每个请求自己就值这么多毫秒；命中那条在 200 并发内贴着 11-21 ms，到 500 并发才抬到 492 ms——
+同机争抢只解释最后那一点。右栏是"每次都是全新问法"：向量化在本机 Ollama 上排队，
+100 并发起首字直接进秒级（P50 10.4 s），这条就是 ADR 0011 那句话的图像版。
 
 未达成的三条（拦截率、吞吐、TTFT）归因写在一起，不逐行重复：
 
@@ -176,8 +186,17 @@ slot_ask | fallback | duplicate_submit | rate_limited
 - **吞吐 1013 而不是 1200**：发压机（Locust 4 进程）与被压网关在同一台 16 G 笔记本上，
   峰值档 CPU 采样 94-98%、最低空闲内存 0.0 GB，拐点由两边共同决定。网关侧错误率全程 0，
   虚拟线程对照组在 800 并发下反而只有 615 QPS。这条要在真机上复核需要一个独立发压节点。
-- **TTFT 592 ms 而不是 <500 ms**：500 条长连接同样由同机发起，Mock 首字延迟自己就占 300 ms，
-  剩下 292 ms 是排队与调度；同机限制同上一条。
+- **未命中 TTFT 690-1049 ms 而不是 <500 ms**：这条判据先要有一个能谈的口径。旧产物那条 592 ms 是
+  "第一个 SSE 分片"，而服务端在检索与模型之前就推 `status`/`meta` 帧，并且把命中与未命中混在同一个
+  分位数里——两个问题都在 `scripts/run_sse_ttft.py` 里改掉了（首字只认 `event: token`，并按
+  `meta.cacheLayer` 与 `meta.intent` 分桶）。拆开后：未命中知识路径 1 并发串行 690 ms，
+  50-200 并发 1031-1049 ms 基本不随并发变，500 并发才抬到 1499 ms。
+  归因（`scripts/ttft_attribution.py`，服务端计时器口径）：725 ms 均值里 Mock 首字固定下限占 300 ms、
+  本机 bge-m3 单条新问句向量化占 311 ms（`scripts/probe_embedding_latency.py` 实测，服务端没有计时器包住这一步）、
+  稠密 + 词法检索合计 10 ms，**剩 104 ms 才是网关编排自己花的**。
+  也就是说 500 ms 这条线在"perf 的 Mock + 单机 CPU 跑 embedding"这个形态下**光靠固定项就过不去**（300+311=611 ms），
+  要达成得把向量化挪出请求关键路径（ADR 0011 的独立批处理服务），或在 dev 口径下用云端模型与云端向量重测——
+  PLAN 本来就写明 dev 模式只报实测不承诺。把 Mock 首字下限调小能让表变绿，但那不是系统变快，不做。
 
 ## 验收对照
 
@@ -202,11 +221,11 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 | --- | --- | --- |
 | 热点拦截率 | ≥80% | **未达成**：74.0%（L1 主导口径）/ 78.2%（任务书 80% 热点口径），原因见上一节，不换口径刷绿 |
 | 命中路径 TP99 | <30 ms | **低并发达成**：200 并发 22 ms；100 并发 32 ms 已贴线，400 起 90→970 ms，同机发压把拐点提前 |
-| 未命中 TTFT | <500 ms | **未达成**：P50 592 ms，其中 Mock 首字固定占 300 ms；同机 500 长连接 |
+| 未命中 TTFT | <500 ms | **未达成**：未命中知识路径 P50 690 ms（1 并发串行）/ 1031-1049 ms（50-200 并发）/ 1499 ms（500 并发）。归因后不是编排慢：300 ms 是 Mock 首字下限、311 ms 是单机 CPU 跑一条新问句的 bge-m3 向量化，网关自己只占 104 ms；判据在该形态下光靠固定项就到不了 500 ms |
 | 工具调用准确率 | 选对工具与填对参数各 ≥95% | **未达成**：local 模式 qwen2.5:3b 选对工具最低 66.7%、填对参数最低 60.0%（都在 ADDRESS/REFUND 两个动作意图上；POLICY 四行 100%）；dev 路径已用本机 OpenAI 兼容端点跑通（同一 3B 模型换传输层，不是云端数字），云端 qwen-plus 仍待 key 复测 |
 | 大促吞吐 | ≥1200 QPS 且错误率 <0.1% | **未达成**：1013 QPS@800，错误率全程 0；拐点由网关与发压机共同决定 |
 | L2 路径定性 | 报出天花板并归因 | **达成**：23.76 / 38.10 / 64.82 QPS @ 100/200/400（每请求真打 bge-m3）vs 同档 845 / 1124 / 1141 QPS，差 18-36 倍，归因到远程向量化调用次数≈非命中请求数 |
-| 向量服务停用的代价 | 报降级曲线并归因 | 冷缓存 136 / 265 / 482 QPS（对照组 296 / 580 / 976），纯缓存拦截率归 0、总拦截靠穿透合并撑在 21.8%-37.4%；错误率 0，p99 1200-1300 ms。有存量时另测：L1 命中 608/1123/2035 次、纯缓存拦截 7.3% | profile `perf,no-ollama`：只把 `embedding.base-url` 指到空端口，等价于 Ollama 进程停用且不外溢；两道写回门各挡了什么见 ADR 0018 | `ladder-l1-perf,no-ollama-20260909-123509-noollama.csv` |
+| 向量服务停用的代价 | 报降级曲线并归因 | **达成**：冷缓存 136 / 265 / 482 QPS（对照组 296 / 580 / 976），纯缓存拦截率归 0、总拦截靠穿透合并撑在 21.8%-37.4%；错误率 0，p99 1200-1300 ms。有存量时另测：L1 命中 608/1123/2035 次、纯缓存拦截 7.3%。口径：profile `perf,no-ollama` 只把 `embedding.base-url` 指到空端口，等价于 Ollama 进程停用且不外溢；两道写回门各挡了什么见 ADR 0018；证据 `ladder-l1-perf,no-ollama-20260909-123509-noollama.csv` |
 | 虚拟线程收益 | 开关两组数据 | **达成**：400/800 并发 +64%/+65%，100/200 并发 -3%/-3%，低并发档负收益照登 |
 | Token 节约率 | 关缓存基线对比 | **达成**：62.4%（1096.8 → 412.3 token/请求），三档只差防线开关，perf 模式估算口径注明 |
 | 实测数字诚实 | 表旁标口径与来源文件 | **达成**：上表每行都有口径列与 `loadtest/results/`、`eval/results/`、`docs/` 下的具体产物 |
@@ -300,6 +319,11 @@ pwsh -NoProfile -File scripts/run_experiment_suite.ps1 -Only l1,sse       # 只�
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1 -Only noollama -Steps 100,200,400   # 向量服务停用那一格，约 5 分钟
 python scripts/build_loadtest_report.py --strict                          # 由产物生成 docs/loadtest-report.md
 python scripts/plot_loadtest_curves.py                                    # 画 docs/loadtest-curves.png（需 matplotlib）
+# 首字时延（TTFT）：分桶扫描 + 归因，两支都要网关先起在 perf
+pwsh -NoProfile -File scripts/run_ttft_sweep.ps1 -Levels 50,100,200,500    # 8 臂约 11 分钟，脚本自己重启网关并回读 llmMode
+python scripts/ttft_attribution.py --duration 45                           # 单连接串行 + 服务端计时器分解（须刚重启）
+python scripts/probe_embedding_latency.py --samples 12                     # 本机 bge-m3 单条向量化耗时（同句 vs 新问法）
+python scripts/plot_ttft_sweep.py                                          # 画 docs/ttft-sweep.png（需 matplotlib）
 # 验收脚本（对着活体服务跑）
 pwsh -NoProfile -File scripts/verify-hit-zero-llm.ps1   # 命中路径零模型、零远程向量化
 pwsh -NoProfile -File scripts/verify-action-loop.ps1    # 查得到 / 问得出 / 越不了权（12 项）
@@ -320,26 +344,30 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，�
 ```
 
 ```
-step        exit  note          # 2026-09-09 13:08-13:14 同机全量跑（profile=local）
+step        exit  note          # 2026-09-09 15:29-15:36 同机全量跑（profile=local）
 stop          0   3s           # 释放 fat jar 文件锁
-build         0  55s           # mvnw verify：3 + 10 + 69 = 82 项
-unit          0  40s           # mvn -o test 同一批，离线可跑
-stack         0  73s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
-plan          0  74s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
-hitzero       0   8s           # 命中路径零模型、零远程向量化
+build         0  45s           # mvnw verify：3 + 10 + 69 = 82 项
+unit          0  39s           # mvn -o test 同一批，离线可跑
+report        0   0s           # build_loadtest_report.py --strict：生成物与压测产物一致，缺证据即红
+stack         0  78s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
+plan          0  80s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
+hitzero       0   9s           # 命中路径零模型、零远程向量化
 action        0   7s           # 查得到 / 问得出 / 越不了权
-idem          0   9s           # 并发同 token + 状态前置校验
-fallback      0  26s           # 七种降级原因 + 工单反查
+idem          0  10s           # 并发同 token + 状态前置校验
+fallback      0  33s           # 七种降级原因 + 工单反查
 ratelimit     0   1s           # 同步 429 与 SSE rate_limited
-polarity      0  26s           # 同桶反义在守卫层被拒
-l2            0   7s           # tenant/scope/intent/kb_epoch 四条 must-filter
-console       0  20s           # Playwright 15 项
+polarity      0  40s           # 同桶反义在守卫层被拒
+l2            0  12s           # tenant/scope/intent/kb_epoch 四条 must-filter
+console       1   3s           # 第一次：chrome-headless-shell 启动即退（本机内存压力下的已知抖动）
+console       0  25s           # 重跑 15/15 通过（不是改代码改出来的，同一次二进制）
 demo          0  12s           # 三条演示
 ```
 
-总耗时 359s，用例数从 63 涨到 82（新增的 19 项都在 dev 生成路径与缓存写回这两块）。`stack` 73s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
+总耗时 373s（含 console 那次失败），用例数从 63 涨到 82（新增的 19 项都在 dev 生成路径与缓存写回这两块）。`stack` 78s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
 那条动作本来就要一个没参与的人来跑，机器只能证明到这儿。每一步还各要求一条"只有跑到结尾才会出现"
 的日志标记（`Expect`）：这台机器把 `mvnw.cmd` 中途带走时它返回 0，只看退出码会假绿。
+新增的 `report` 步是同一个道理的另一面：README 说"表格由脚本生成"，那就让门禁去验这句话，
+产物缺一份、生成文档与 CSV 对不上，都在这一步红掉。
 
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
@@ -380,9 +408,9 @@ shoppilot-gateway/     网关：状态机、三级意图判定、两级缓存、
 shoppilot-biz-mock/    业务中台：orders / logistics / coupons / refunds / tickets，@TenantId 行级隔离
 shoppilot-tool-api/    纯契约 jar：10 意图枚举 + Function Schema + 工具 DTO（网关与 biz-mock 共用）
 loadtest/              locustfile（四种流量模型）与 results/（保留 ladder-*.csv 与 env-*.json）
-docs/adr/              16 份架构决策记录，正文里每处 ADR 编号都能点进去
+docs/adr/              19 份架构决策记录，正文里每处 ADR 编号都能点进去
 docs/                  阈值标定、意图标定、检索对比、压测报告、面试问答清单
 knowledge/             30 篇政策语料
-scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、报告生成
+scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、TTFT 扫描与归因、报告生成
 CHARTER.md  PLAN.md  CONTEXT.md
 ```

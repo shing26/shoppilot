@@ -46,6 +46,7 @@ POOL_GROUPS = [
 ]
 
 SSE_FILE = "sse-ttft-20260909-001822-500-perf.csv"
+ATTRIBUTION_GLOB = "ttft-attribution-*.csv"
 
 LADDER_COLUMNS = [
     ("users", "并发"),
@@ -120,6 +121,127 @@ def token_block():
     return baseline, sf, on
 
 
+SSE_COLUMNS = [
+    ("arm", "臂"), ("connections", "长连接"), ("ok", "完成流"), ("failed", "失败流"),
+    ("hit_n", "命中n"), ("hit_ttft_p50_ms", "命中P50"), ("hit_ttft_p99_ms", "命中P99"),
+    ("knowledge_n", "知识n"), ("knowledge_ttft_p50_ms", "知识P50"),
+    ("knowledge_ttft_p90_ms", "知识P90"), ("knowledge_ttft_p99_ms", "知识P99"),
+    ("action_ttft_p50_ms", "动作P50"), ("heap_peak_mb", "堆峰值MB"),
+]
+
+
+def sse_rows(pattern, arm):
+    rows = []
+    for path in sorted(RESULTS.glob(pattern), key=lambda p: int(p.name.split("-")[-3])):
+        row = dict(rows_of(path)[0])
+        row["arm"] = arm
+        rows.append(row)
+    return rows
+
+
+def sse_block(missing):
+    lines = [
+        "## SSE 长连接：TTFT 随并发怎么变（分桶重测）",
+        "",
+        "测法 `pwsh -File scripts/run_ttft_sweep.ps1 -Levels 50,100,200,500 -Duration 60`："
+        "每档先清 L1（mix 臂再串行预热 24 条），然后 N 条长连接各持一条持续 60 s，读完整流再重连。",
+        "两臂：`miss` 每次提问加随机字母后缀尽量打成未命中（实测仍有少量被 L2 以 >=0.95 收走，"
+        "表里按服务端实际命中的层报，不按设计意图报）；`mix` 是自然流量。",
+        "分桶口径：`命中` = `meta.cacheLayer` ∈ {L1,L2,FLIGHT}；`知识` = 未命中且非动作意图；"
+        "`动作` = 未命中且 `ACTION_*`（按设计要走两轮工具调用，perf 下每轮 Mock 各 300 ms）。",
+        "TTFT 口径：客户端发出请求 → 第一个 `event: token` 帧，含环回与客户端线程调度。",
+        "",
+        "![SSE TTFT sweep by path and by novelty](ttft-sweep.png)",
+        "",
+        "图由 `python scripts/plot_ttft_sweep.py` 生成。",
+        "",
+    ]
+    rows = sse_rows("sse-ttft-*-sweepmix.csv", "mix") + sse_rows("sse-ttft-*-sweepmiss.csv", "miss")
+    if not rows:
+        missing.append("sse-ttft-*-sweep{mix,miss}.csv")
+        lines += ["（缺产物：跑 `pwsh -File scripts/run_ttft_sweep.ps1`）", ""]
+        return lines
+    lines += ["证据：`loadtest/results/sse-ttft-*-sweep{mix,miss}.csv` — "
+              "mix 臂的命中 P50 是 11 / 11 / 21 / 492 ms（50→500 并发）：200 并发内不随并发变，"
+              "500 并发那一点整条曲线一起抬，是同机争抢；知识桶 1031→1049 ms 几乎水平，"
+              "说明未命中的代价是每个请求自己的固定开销，不是排队。"
+              "miss 臂的命中列不是 L1 命中，是加了随机后缀仍被 L2 以 >=0.95 收走的那批，"
+              "它们的 P50 反而更高（2340-4814 ms）——那次命中之前照样付了一回远程向量化。", ""]
+    lines += render(rows, SSE_COLUMNS) + [""]
+    lines += ["旧口径留档（首帧、且命中与未命中混在一起算，已不能作为未命中 TTFT 的证据）：", ""]
+    legacy_path = RESULTS / SSE_FILE
+    if legacy_path.exists():
+        legacy = rows_of(legacy_path)
+        lines += render(legacy, [
+            ("connections", "长连接数"), ("duration_s", "秒"), ("streams", "完成流数"),
+            ("failed", "失败流"), ("ttft_p50_ms", "TTFT P50"), ("ttft_p90_ms", "TTFT P90"),
+            ("ttft_p99_ms", "TTFT P99"), ("ttft_max_ms", "TTFT 最大"),
+            ("heap_peak_mb", "堆峰值 MB"),
+        ])
+    else:
+        missing.append(SSE_FILE)
+        lines.append("（缺文件）")
+    lines.append("")
+    return lines
+
+
+ATTRIBUTION_COLUMNS = [
+    ("term", "项"), ("count", "样本"), ("avg_ms", "均值 ms"), ("max_ms", "最大 ms"), ("note", "说明"),
+]
+
+
+def attribution_block(missing):
+    path = find_latest(ATTRIBUTION_GLOB)
+    lines = [
+        "## 未命中 TTFT 归因：那七百多毫秒是谁花的",
+        "",
+        "测法 `python scripts/ttft_attribution.py --duration 45`（**必须先把网关重启到 perf**，"
+        "服务端计时器从进程启动起累计，不重启就分不清是哪一轮的）。"
+        "单条长连接串行打强制未命中的知识问句：没有排队就没有争抢，"
+        "客户端量到的首字约等于服务端串起来的每一段工作之和。",
+        "",
+    ]
+    if path is None:
+        missing.append(ATTRIBUTION_GLOB)
+        lines += ["（缺产物：跑 `python scripts/ttft_attribution.py`）", ""]
+        return lines
+    lines += ["证据：`loadtest/results/" + path.name + "` — 分段数字如下，"
+              "残差才是网关编排自己花的。", ""]
+    rows = rows_of(path)
+    # 最后两行是派生量（配置值与减法结果），没有"最大值"这个统计口径；产物里写的是 0，这里按原意置空
+    for row in rows:
+        if row.get("term") in ("mock_first_token_floor", "orchestration_residual"):
+            row["max_ms"] = ""
+        if row.get("term") == "mock_first_token_floor":
+            row["count"] = ""
+    lines += render(rows, ATTRIBUTION_COLUMNS) + [""]
+    value = {row["term"]: float(row["avg_ms"]) for row in rows if row.get("avg_ms")}
+    needed = ("shoppilot_ttft_seconds", "shoppilot_retrieve_dense_seconds",
+              "shoppilot_retrieve_lexical_seconds", "embedding_novel_probe")
+    if all(key in value for key in needed):
+        residual = value["shoppilot_ttft_seconds"] - (300.0 + value["embedding_novel_probe"]
+                                                      + value["shoppilot_retrieve_dense_seconds"]
+                                                      + value["shoppilot_retrieve_lexical_seconds"])
+        lines += [
+            f"读法：未命中知识路径的服务端 TTFT 均值 **{value['shoppilot_ttft_seconds']:.0f} ms**，"
+            f"其中 Mock 首字固定下限 300 ms、本机 bge-m3 单条新问句向量化 "
+            f"{value['embedding_novel_probe']:.0f} ms（服务端没有计时器包住这一步，"
+            f"由 `python scripts/probe_embedding_latency.py` 实测），"
+            f"稠密检索 {value['shoppilot_retrieve_dense_seconds']:.1f} ms 与词法检索 "
+            f"{value['shoppilot_retrieve_lexical_seconds']:.1f} ms 加起来不到 15 ms，"
+            f"剩下 **{residual:.0f} ms 才是状态机、提示词组装、RRF 与 SSE 写出的总和**。",
+            "",
+            "结论：500 ms 这条判据在本机的 perf 口径下**光靠固定项就到不了**"
+            f"（300 + {value['embedding_novel_probe']:.0f} = "
+            f"{300 + value['embedding_novel_probe']:.0f} ms，还没算检索与编排）。"
+            "要达成只有两条路：把向量化挪出请求关键路径（独立批处理服务或 GPU，见 ADR 0011），"
+            "或者用真实云端模型复核 dev 口径（PLAN 写明 dev 只报实测不承诺）。"
+            "把 Mock 首字下限调到 100 ms 能让数字变绿，但那不是系统变快，本表拒绝这种改法。",
+            "",
+        ]
+    return lines
+
+
 def main():
     strict = "--strict" in sys.argv
     missing = []
@@ -180,23 +302,8 @@ def main():
         out.append("")
         out.extend(render(rows_of(path), POOL_COLUMNS))
         out.append("")
-    sse_path = RESULTS / SSE_FILE
-    out.append("## SSE 长连接：500 并发下的 TTFT 与堆占用")
-    out.append("")
-    out.append("证据：`loadtest/results/" + SSE_FILE + "` — 与阶梯完全不同的测法："
-               "500 条长连接各持一条，量的是首帧时间，不与 QPS 混报。")
-    out.append("")
-    if sse_path.exists():
-        out.extend(render(rows_of(sse_path), [
-            ("connections", "长连接数"), ("duration_s", "秒"), ("streams", "完成流数"),
-            ("failed", "失败流"), ("ttft_p50_ms", "TTFT P50"), ("ttft_p90_ms", "TTFT P90"),
-            ("ttft_p99_ms", "TTFT P99"), ("ttft_max_ms", "TTFT 最大"),
-            ("heap_before_mb", "堆起始 MB"), ("heap_peak_mb", "堆峰值 MB"),
-        ]))
-    else:
-        missing.append(SSE_FILE)
-        out.append("（缺文件）")
-    out.append("")
+    out.extend(sse_block(missing))
+    out.extend(attribution_block(missing))
     out.append("## Token 节约率")
     out.append("")
     if not (RESULTS / MANIFEST[5][1]).exists():
@@ -248,6 +355,9 @@ def main():
                "池=30 在 50 并发档看到的 pending=6 同样属于这个冷启动窗口。")
     out.append("- **要让连接池成为约束，需要的是数据库变慢或模型变快**（缓存命中率更高、"
                "或者读路径全部走本地），而不是把池子调大。生产侧的下一步是给 biz-mock 换真实 MySQL 并复测这一组。")
+    out.append("- **未命中 TTFT 那条判据在 perf 口径下不可达，责任不在编排**：1 并发串行时服务端 TTFT 已经 725 ms，"
+               "其中 300 ms 是 Mock 首字下限、311 ms 是这台机器上单条新问句的 bge-m3 向量化，"
+               "网关编排余量 104 ms。分段数字见「未命中 TTFT 归因」一节。")
     out.append("")
     OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
     print("写出 docs/loadtest-report.md（" + str(len(out)) + " 行）")

@@ -46,6 +46,9 @@ $steps = [ordered]@{
     stop      = @{ Kind = 'ps1'; Cmd = 'scripts\stop.ps1'; Arg = @(); Need = $true; Skip = $SkipBuild }
     build     = @{ Kind = 'mvnw'; Cmd = 'verify'; Arg = @(); Need = $true; Skip = $SkipBuild; Expect = @('BUILD SUCCESS') }
     unit      = @{ Kind = 'mvn'; Cmd = 'test'; Arg = @('-o'); Need = $true; Skip = $SkipBuild; Expect = @('BUILD SUCCESS') }
+    # 报告是生成的，那就把"生成物与产物一致"也纳入门禁：手写文档一定会和 CSV 漂移，
+    # 而这份报告的全部价值就在于不漂。--strict 下缺任何一份证据就红。不需要活体服务。
+    report    = @{ Kind = 'py'; Cmd = 'scripts\build_loadtest_report.py'; Arg = @('--strict'); Need = $false; Skip = $false; Expect = @('写出 docs/loadtest-report.md') }
     stack     = @{ Kind = 'ps1'; Cmd = 'scripts\up.ps1'; Arg = @(@('-Profile', $Profile) + $(if ($SkipIngest) { @('-SkipIngest') } else { @() })); Need = $true; Skip = $SkipStack; Expect = @('栈已就绪') }
     plan      = @{ Kind = 'ps1'; Cmd = 'scripts\verify-plan-actions.ps1'; Arg = @('-WithRestarts'); Need = $true; Skip = $false }
     hitzero   = @{ Kind = 'ps1'; Cmd = 'scripts\verify-hit-zero-llm.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('全部通过：命中路径零模型调用') }

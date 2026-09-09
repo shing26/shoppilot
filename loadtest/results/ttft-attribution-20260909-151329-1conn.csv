@@ -1,0 +1,8 @@
+term,count,avg_ms,max_ms,note
+shoppilot_ttft_seconds,51,799.9,1413.1,首字（含 Mock 300ms 下限）
+shoppilot_retrieve_dense_seconds,40,5.9,20.1,稠密检索（含向量化 + Qdrant）
+shoppilot_retrieve_lexical_seconds,40,5.1,11.3,词法检索（ES）
+shoppilot_llm_latency_seconds,79,351.5,558.8,模型整轮（perf=Mock 固定 500ms）
+embedding_novel_probe,8,309.0,341.2,本机 bge-m3 单条新问句向量化（无服务端计时器，探针实测）
+mock_first_token_floor,0,300.0,300.0,perf MockLLM 固定首字下限（配置值，非实测）
+orchestration_residual,51,179.9,0.0,服务端 TTFT 减掉已知项之后的余量：状态机 + 提示词组装 + RRF + SSE 写出 + 采样误差
