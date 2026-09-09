@@ -69,6 +69,7 @@ public class CacheService {
     private final Counter negativeHitCounter;
     private final Counter polarityBlockedCounter;
     private final Counter embedUnavailableCounter;
+    private final Counter l1OnlyWriteBackCounter;
 
     public CacheService(L1Cache l1, L2SemanticCache l2, EmbeddingClient embedding, GatewayProperties properties,
                         MeterRegistry registry) {
@@ -85,10 +86,14 @@ public class CacheService {
         this.negativeHitCounter = Counter.builder("shoppilot_cache_negative_hit_total").register(registry);
         this.polarityBlockedCounter = Counter.builder("shoppilot_cache_l2_polarity_blocked_total")
                 .description("L2 余弦过阈值但极性不一致，被守卫拒绝复用的次数").register(registry);
-        // 拿不到查询向量时 L1 与 L2 的写回会一起落空（prepareWrite 要求 queryVector）。
-        // 这条分支原来只有一个静默 catch，出事时看不出来；打点加 warn 补上归因。
+        // 拿不到查询向量只意味着 L2 这一层用不上：L1 的 key 是 MD5(租户+意图+纪元+归一化问法)，
+        // 本来就不需要向量。以前这里连带把 L1 写回也掐了，那是把 L2 的前置条件写在了两层共用的入口上。
+        // 注意拆掉这道门并不等于"向量服务挂了缓存还在积累"：同一场故障里稠密召回也会 0 命中，
+        // 写回会先被 ADR 0006 的"检索未降级"资格拒掉。端到端实测与两道门的分工见 ADR 0018。
         this.embedUnavailableCounter = Counter.builder("shoppilot_cache_embed_unavailable_total")
-                .description("缓存路径拿不到查询向量、本次 L1/L2 写回落空的次数").register(registry);
+                .description("缓存路径拿不到查询向量、本次 L2 检索与向量写回落空的次数").register(registry);
+        this.l1OnlyWriteBackCounter = Counter.builder("shoppilot_cache_writeback_l1_only_total")
+                .description("检索未降级但拿不到查询向量、只写 L1 正文不写 L2 向量的写回次数").register(registry);
     }
 
     public void recordRequest() {
@@ -119,12 +124,13 @@ public class CacheService {
             vector = precomputedVector != null ? precomputedVector : embedding.embed(rawQuery);
         } catch (RuntimeException embeddingUnavailable) {
             embedUnavailableCounter.increment();
-            log.warn("缓存向量化失败，本次请求 L1/L2 写回落空: {}", embeddingUnavailable.getMessage());
+            log.warn("缓存向量化失败，本次请求 L2 检索与向量写回落空（L1 不受影响）: {}",
+                    embeddingUnavailable.getMessage());
             return new Lookup(Layer.NONE, Optional.empty(), null, normalized, false);
         }
         if (vector == null) {
             embedUnavailableCounter.increment();
-            log.warn("缓存向量化返回空向量，本次请求 L1/L2 写回落空");
+            log.warn("缓存向量化返回空向量，本次请求 L2 检索与向量写回落空（L1 不受影响）");
             return new Lookup(Layer.NONE, Optional.empty(), null, normalized, false);
         }
         for (Bucket bucket : buckets) {
@@ -149,11 +155,14 @@ public class CacheService {
     /**
      * 写回落哪个桶由本次引用的规则块决定：全部是平台级条款才允许跨店共享。
      * 只要掺了一条本店规则，就写进本店桶，避免把店铺细则说成平台统一口径。
+     *
+     * <p>向量缺失不拦写回：条目本身（正文 + 意图 + 桶 + 归一化问法）够 L1 用了，
+     * 缺的只是 L2 那一份定位。
      */
     public Optional<CacheEntry> prepareWrite(String tenantId, Intent intent, long kbEpoch, Lookup lookup,
                                              String answer, List<String> citedRuleScopes,
                                              List<String> sourceRuleIds, String modelId) {
-        if (lookup.queryVector() == null || lookup.normalizedQuery() == null || lookup.normalizedQuery().isEmpty()) {
+        if (lookup.normalizedQuery() == null || lookup.normalizedQuery().isEmpty()) {
             return Optional.empty();
         }
         boolean allPlatform = citedRuleScopes != null && !citedRuleScopes.isEmpty()
@@ -164,10 +173,20 @@ public class CacheService {
                 lookup.normalizedQuery()));
     }
 
-    /** 条目已在准入判定阶段算好，这里只做两写：L1 正文 + L2 向量定位。 */
+    /**
+     * 条目已在准入判定阶段算好，这里做两写：L1 正文 + L2 向量定位。
+     *
+     * <p>没有向量时只写 L1 并打点——静默跳过整次写回会让"向量服务挂了"伪装成"缓存没命中"，
+     * 后者在监控上看起来像流量结构变了，排查方向完全不同。
+     */
     public void writeBack(CacheEntry entry, Lookup lookup) {
         String key = l1.key(entry.tenantId(), entry.intent(), entry.kbEpoch(), lookup.normalizedQuery());
         l1.put(key, entry);
+        if (lookup.queryVector() == null) {
+            l1OnlyWriteBackCounter.increment();
+            log.warn("无查询向量，本次只写 L1（L2 定位落空）: intent={} key={}", entry.intent(), key);
+            return;
+        }
         l2.store(lookup.queryVector(), key, entry);
     }
 

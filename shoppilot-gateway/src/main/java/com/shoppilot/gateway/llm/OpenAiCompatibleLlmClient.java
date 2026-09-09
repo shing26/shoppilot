@@ -59,8 +59,7 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
 
     @Override
     public LlmTypes.Reply stream(LlmTypes.Request request, Consumer<String> tokenSink) {
-        StringBuilder accumulated = new StringBuilder();
-        int[] usage = new int[2];
+        StreamState state = new StreamState(tokenSink);
         try {
             String body = mapper.writeValueAsString(payload(request, true));
             HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(config.baseUrl() + "/chat/completions"))
@@ -75,9 +74,9 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
                 throw LlmException.unavailable("模型流式返回 " + response.statusCode(), null);
             }
             try (Stream<String> lines = response.body()) {
-                lines.forEach(line -> consume(line, tokenSink, accumulated, usage));
+                lines.forEach(state::consume);
             }
-            return new LlmTypes.Reply(accumulated.toString(), List.of(), usage[0], usage[1], null);
+            return state.build();
         } catch (LlmException known) {
             throw known;
         } catch (HttpTimeoutException timedOut) {
@@ -90,31 +89,6 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
     @Override
     public String mode() {
         return "dev";
-    }
-
-    private void consume(String line, Consumer<String> sink, StringBuilder accumulated, int[] usage) {
-        if (line == null || !line.startsWith("data:")) {
-            return;
-        }
-        String data = line.substring(5).trim();
-        if (data.isEmpty() || "[DONE]".equals(data)) {
-            return;
-        }
-        try {
-            JsonNode chunk = mapper.readTree(data);
-            JsonNode usageNode = chunk.path("usage");
-            if (!usageNode.isMissingNode()) {
-                usage[0] = usageNode.path("prompt_tokens").asInt(usage[0]);
-                usage[1] = usageNode.path("completion_tokens").asInt(usage[1]);
-            }
-            JsonNode delta = chunk.path("choices").path(0).path("delta").path("content");
-            if (delta.isTextual() && !delta.asText().isEmpty()) {
-                accumulated.append(delta.asText());
-                sink.accept(delta.asText());
-            }
-        } catch (Exception unparsableHeartbeat) {
-            // 心跳与注释行按协议本就该被忽略
-        }
     }
 
     private Map<String, Object> payload(LlmTypes.Request request, boolean stream) {
@@ -170,17 +144,8 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         if (toolCalls.isArray()) {
             for (JsonNode call : toolCalls) {
                 JsonNode function = call.path("function");
-                Map<String, Object> arguments = new LinkedHashMap<>();
-                String rawArguments = function.path("arguments").asText("");
-                if (!rawArguments.isBlank()) {
-                    try {
-                        arguments = mapper.readValue(rawArguments, Map.class);
-                    } catch (Exception malformedArguments) {
-                        arguments = Map.of("_unparsable", rawArguments);
-                    }
-                }
                 calls.add(new LlmTypes.ToolCall(call.path("id").asText("call-" + calls.size()),
-                        function.path("name").asText(), arguments));
+                        function.path("name").asText(), argumentsOf(function.path("arguments").asText(""))));
             }
         }
         JsonNode usage = root.path("usage");
@@ -188,10 +153,119 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
                 usage.path("prompt_tokens").asInt(0), usage.path("completion_tokens").asInt(0), root.toString());
     }
 
+    /**
+     * 工具参数解析：非空却解析不出来时，原文留在 {@code _unparsable} 里。
+     *
+     * <p>不能静默变成空参数——那会把"模型给了参数但形状不对"伪装成"模型没给参数"，
+     * 前者该看 prompt，后者该走追问槽位，排查方向完全相反。
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> argumentsOf(String rawArguments) {
+        if (rawArguments == null || rawArguments.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return mapper.readValue(rawArguments, Map.class);
+        } catch (Exception malformedArguments) {
+            return Map.of("_unparsable", rawArguments);
+        }
+    }
+
     private static String truncate(String value) {
         if (value == null) {
             return "";
         }
         return value.length() <= 300 ? value : value.substring(0, 300);
+    }
+
+    /** 一次流式响应要攒的东西：正文增量、按 index 分槽的工具调用增量、尾部 usage。 */
+    private final class StreamState {
+
+        private final Consumer<String> sink;
+        private final StringBuilder text = new StringBuilder();
+        private final List<ToolCallBuilder> calls = new ArrayList<>();
+        private final int[] usage = new int[2];
+
+        private StreamState(Consumer<String> sink) {
+            this.sink = sink;
+        }
+
+        private void consume(String line) {
+            if (line == null || !line.startsWith("data:")) {
+                return;
+            }
+            String data = line.substring(5).trim();
+            if (data.isEmpty() || "[DONE]".equals(data)) {
+                return;
+            }
+            try {
+                JsonNode chunk = mapper.readTree(data);
+                JsonNode usageNode = chunk.path("usage");
+                if (!usageNode.isMissingNode()) {
+                    usage[0] = usageNode.path("prompt_tokens").asInt(usage[0]);
+                    usage[1] = usageNode.path("completion_tokens").asInt(usage[1]);
+                }
+                JsonNode deltas = chunk.path("choices").path(0).path("delta");
+                String piece = deltas.path("content").asText("");
+                if (!piece.isEmpty()) {
+                    text.append(piece);
+                    sink.accept(piece);
+                }
+                JsonNode callDeltas = deltas.path("tool_calls");
+                if (callDeltas.isArray()) {
+                    accumulateToolCalls(callDeltas);
+                }
+            } catch (Exception unparsableHeartbeat) {
+                // 心跳与注释行按协议本就该被忽略
+            }
+        }
+
+        private LlmTypes.Reply build() {
+            List<LlmTypes.ToolCall> assembled = new ArrayList<>();
+            for (int i = 0; i < calls.size(); i++) {
+                ToolCallBuilder call = calls.get(i);
+                assembled.add(new LlmTypes.ToolCall(
+                        call.id == null ? "call-" + i : call.id,
+                        call.name == null ? "" : call.name,
+                        argumentsOf(call.arguments.toString())));
+            }
+            return new LlmTypes.Reply(text.toString(), assembled, usage[0], usage[1], null);
+        }
+
+        private void accumulateToolCalls(JsonNode deltas) {
+            for (JsonNode call : deltas) {
+                int index = call.path("index").asInt(calls.size());
+                while (calls.size() <= index) {
+                    calls.add(new ToolCallBuilder());
+                }
+                calls.get(index).absorb(call);
+            }
+        }
+    }
+
+    /**
+     * 单个工具调用的增量累加器。
+     *
+     * <p>id 与 name 只在首块出现，arguments 是 JSON 文本被切碎后的逐段拼接——
+     * 少拼一个逗号就变成 unparsable，所以这里只做拼接，解析留到最后一次做。
+     */
+    private static final class ToolCallBuilder {
+
+        private String id;
+        private String name;
+        private final StringBuilder arguments = new StringBuilder();
+
+        private void absorb(JsonNode call) {
+            String callId = call.path("id").asText("");
+            if (!callId.isEmpty()) {
+                id = callId;
+            }
+            JsonNode function = call.path("function");
+            String fnName = function.path("name").asText("");
+            if (!fnName.isEmpty()) {
+                name = fnName;
+            }
+            arguments.append(function.path("arguments").asText(""));
+        }
     }
 }

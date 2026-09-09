@@ -123,8 +123,35 @@ public class OpsController {
         view.put("llmMode", properties.llm().mode());
         // 评测脚本要记录"这组数字是哪个模型跑出来的"，以及跑之前预算还剩多少（ADR 0012）
         view.put("llmModel", activeModelName());
+        // 只记模型名不够：dev 模式指向哪个端点决定了这组数字是云端真模型还是本地兼容端点
+        view.put("llmBaseUrl", activeBaseUrl());
         view.put("tokensUsedToday", tokenBudget.usedToday());
         view.put("dailyTokenBudget", properties.llm().dailyTokenBudget());
+        return view;
+    }
+
+    /**
+     * 实验开关回读（ticket 18 压测矩阵）。
+     *
+     * <p>起因：YAML 里一次缩进手误把 {@code no-embedding-cache} 的属性挂到了 {@code spring:} 下面，
+     * profile 照样"生效"、健康检查照样 UP，但那组压测数据已经和对照组完全相同——日志层面的
+     * profile 断言挡不住这种失败。压测脚本必须先回读这份实际生效值，再决定要不要跑。
+     *
+     * <p>{@code virtualThreadRequest} 读的是"处理这个请求的线程是不是虚拟线程"，比读配置更接近真相。
+     */
+    @GetMapping("/switches")
+    public Map<String, Object> switches() {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("llmMode", properties.llm().mode());
+        view.put("llmBaseUrl", activeBaseUrl());
+        view.put("virtualThreadRequest", Thread.currentThread().isVirtual());
+        view.put("cacheEnabled", properties.cache().enabled());
+        view.put("singleflightEnabled", properties.cache().singleflightEnabled());
+        view.put("semanticThreshold", properties.cache().semanticThreshold());
+        view.put("embeddingBaseUrl", properties.embedding().baseUrl());
+        view.put("embeddingModel", properties.embedding().model());
+        view.put("embeddingInProcessCache", properties.embedding().inProcessCache());
+        view.put("ratelimitOverrideTenantQuota", properties.ratelimit().overrideTenantQuota());
         return view;
     }
 
@@ -137,6 +164,18 @@ public class OpsController {
             return llm.localModel();
         }
         return "MockLLM";
+    }
+
+    /** 当前模式真正在打的端点（不含 key）。perf 没有外部端点，直接写 mock。 */
+    private String activeBaseUrl() {
+        GatewayProperties.Llm llm = properties.llm();
+        if (llm.dev()) {
+            return llm.baseUrl();
+        }
+        if (llm.local()) {
+            return llm.localBaseUrl();
+        }
+        return "mock://none";
     }
 
     /**

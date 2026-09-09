@@ -51,7 +51,9 @@ shoppilot:
     model: ${SHOPPILOT_LLM_MODEL:qwen-plus}
     temperature: 0.2
     connect-timeout: 3s
-    read-timeout: 20s
+    # 默认 20s 是按云端 API 定的；指向慢端点（例如本地 OpenAI 兼容服务）时要能放宽，
+    # 否则非流式的工具规划轮会成片报 TIMEOUT，测出来的数字属于超时而不是模型能力。
+    read-timeout: ${SHOPPILOT_LLM_READ_TIMEOUT:20s}
     # ADR 0012：dev 模式 token 日预算熔断
     daily-token-budget: 200000
     local-base-url: ${SHOPPILOT_OLLAMA_URL:http://127.0.0.1:11434}
@@ -200,6 +202,19 @@ shoppilot:
     # 关掉 EmbeddingClient 的进程内向量缓存，让命中路径也暴露出真实的向量化调用。
     # 这是归因实验：L2 曲线的天花板到底来自编排还是本地 bge-m3 推理，只有这一组能分开。
     in-process-cache: false
+
+---
+spring:
+  config:
+    activate:
+      on-profile: no-ollama
+shoppilot:
+  embedding:
+    # 归因实验（ticket 18 的"压测期间模型服务停用"那一格）：把向量服务指到无人监听的端口，
+    # 连接立即被拒，等价于 Ollama 整个进程没了——但只影响本系统，不碰别人共用的 11434。
+    # perf 已把生成侧换成 MockLLM，所以这一组量的是"模型与向量服务都不在"时网关自身的天花板，
+    # 以及 ADR 0018 要守的性质：L1 还要不要继续积累。
+    base-url: http://127.0.0.1:59999
 
 ---
 spring:
