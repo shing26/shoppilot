@@ -16,7 +16,7 @@
 - [x] Token 节约率：`cache.enabled=false` 重放同一 trace 得基线，再与开启缓存的消耗对比
 - [x] 压测每请求生成新幂等 token，否则写操作全被判重复提交
 - [x] 记录 HikariCP 连接池饱和点（默认 10 连接会先于 CPU 饱和），调池后复测并写明前后差异
-- [ ] 压测期间 Ollama 停用；每轮结果与运行环境（CPU、堆、版本）一起落盘，保证可复现
+- [x] 压测期间 Ollama 停用；每轮结果与运行环境（CPU、堆、版本）一起落盘，保证可复现
 
 ## Handoff notes
 
@@ -52,6 +52,24 @@ python scripts/plot_loadtest_curves.py                          # docs/loadtest-
 画图脚本一开始用 `split(",")` 读 CSV，被 `profile=perf,no-virtual` 这种带引号的逗号值坑出过一条 QPS=0 的假曲线，
 已改成 `csv.DictReader` 并把这条写进注释——图上冒出的假数据比没有图更糟。
 
-**未勾项说明**
+**"压测期间模型服务停用"这一格怎么做到（2026-09-09 补）**
 
-`压测期间 Ollama 停用` 与架构冲突，按字面做不到：perf 模式确实把**生成模型**换成 `MockLLMClient`（外网 LLM 全程不参与），但 `bge-m3` 也跑在 Ollama 上，意图 T1 质心与 L2 缓存读取必须真 embedding。把 Ollama 停掉就只能改用 mock 向量，`l2` 曲线立刻失去意义。本轮实际状态是：`l1`/`mix80` 曲线 `embed_remote_delta` 为 0（向量全部命中进程内缓存），只有 `no-embedding-cache` 那两条曲线在打远端 bge-m3。
+按字面去停 Ollama 做不到，也不该做：`:11434` 是这台机器上共用的服务，别的进程在用；就算停了，故障还波及发压机自己，对照组与实验组之间会混进"两边抢同一台机器"的噪声。真正要量的东西是"向量服务不可用时网关怎样"，那就把它做成一个 profile：`no-ollama` 只把 `shoppilot.embedding.base-url` 指到 `127.0.0.1:59999`，连接立刻被拒，对网关而言与 Ollama 进程消失完全等价，而故障不外溢。
+
+起进程之后不看日志算数：`run_experiment_suite.ps1` 每组都要从 `/api/v1/support/ops/switches` 回读**实际生效**的开关（`embeddingBaseUrl / cacheEnabled / singleflightEnabled / embeddingInProcessCache / virtualThreadRequest`），对不上就地中止。加这道守卫是因为备料本格时踩到一个真实缺陷——`application.yml` 里一次缩进手误把 `no-embedding-cache` 的属性挂到了 `spring:` 下面，profile 生效、健康检查 UP、日志里 profile 断言也通过，但开关原封不动，整组数据会静默作废。这种失败在日志里看不见，只会在数据里烂掉，所以断言必须在属性这一侧。
+
+实测（`perf,no-ollama`、`l1` 流量模型、4 workers、60s/步，与 A 组同模型同并发；证据 `loadtest/results/ladder-l1-perf,no-ollama-20260909-123509-noollama.csv` 与同名 `env-*.json`）：
+
+1. 吞吐 136.20 / 265.05 / 481.73 QPS @ 100 / 200 / 400 并发，A 组同条件是 296 / 580 / 976，即向量服务停用要吃掉一半以上吞吐。错误率 0，p99 稳在 1200-1300ms，MockLLM 的固定时延封顶，系统降级不停摆。
+2. `embed_unavailable_delta` 4276 / 8477 / 15564：缓存层每次都拿不到向量，L2 检索与向量定位全部落空。
+3. **`writeback_l1_only_delta` 恒为 0，这是本格最有价值的读数。** 把"写回必须有向量"这道门拆掉之后（ADR 0018），端到端缓存仍然停止积累，因为挡在前面的是另一道门：向量不可用 → 稠密召回 0 命中 → `degraded=true` → ADR 0006 的写回资格判定直接拒绝。单条请求的 trace 就写着 `RETRIEVE dense=0 lexical=20 fused=5 degraded=true` 与 `CACHE_WRITE rejected:degraded`。我们没有为了把数字做回去而放宽它——那等于把只有一路召回支撑的答案固化 6 小时、服务恢复后继续复用，正是 ADR 0006 立这条门要防的污染。
+4. 存量与新进要分开报。flush 之前那轮（11:43）实测纯缓存拦截率 7.34% / 6.84% / 6.91%、`l1_delta` 608 / 1123 / 2035：已在 Redis 里的热答案照常命中，命中 p50 8ms；flush 之后三轮（12:16 / 12:24 / 12:35）纯缓存拦截率均为 0。所以向量服务停用的真实后果是"停止积累新答案"，不是"缓存立刻失效"。拦截总量还在 21.8% / 29.6% / 37.4% 那条线上，是穿透合并在独扛。
+5. 同一臂连跑四轮：warm 140.07 / 274.66 / 491.48，cold 137.46 / 265.25 / 476.90、135.04 / 265.58 / 475.13、136.20 / 265.05 / 481.73 QPS，后三轮两两差 ≤1%，本格的可复现性一并交掉。
+
+**复现（本格）**
+
+```
+pwsh -File scripts/run_experiment_suite.ps1 -Only noollama -Steps 100,200,400
+```
+
+脚本自己负责停-起-回读-跑，并在结束时把网关恢复到 `perf`。

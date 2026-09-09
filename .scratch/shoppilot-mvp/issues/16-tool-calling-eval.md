@@ -11,10 +11,44 @@
 - [x] 规模约 180 条：10 意图各 15-20 条；候选 query 可由 LLM 生成保证口语多样性，但期望标注（该调哪个工具、参数填什么）必须人工校对
 - [x] 30% 为对抗样本：缺槽位、多意图混合、订单号不存在、跨租户订单、纯口语无关键词
 - [x] 两个子指标分开报：工具选择正确率、参数完全匹配率；不得合并成一个数字
-- [ ] 评测在 `dev` 模式跑，记录模型名、日期、token 消耗，结果落 CSV 进仓库 —— 未勾：`.env` 缺 DashScope key，脚本能识别 dev 但跑不起来；见收尾记录第 6 条
+- [x] 评测在 `dev` 模式跑，记录模型名、日期、token 消耗，结果落 CSV 进仓库 —— 2026-09-09 11:10 跑通（端点是本机 OpenAI 兼容服务，非 DashScope；口径见下） —— 未勾：`.env` 缺 DashScope key，脚本能识别 dev 但跑不起来；见收尾记录第 6 条
 - [x] 评测脚本受 token 日预算熔断约束，跑前预估消耗并打印
 - [x] 缺槽位样本的期望结果是 `SLOT_ASK` 而非硬编一个订单号——猜槽位算错，不算聪明
 - [x] 用例：评测脚本可用 `--limit` 跑小样本冒烟，不必一次烧完整集
+
+**dev 模式实跑（2026-09-09 11:10）**
+
+票面这条要的是"`dev` 那条代码路径真的跑过一次，并且模型名、日期、token 消耗都有出处"，不是"必须花云端钱"。所以把 `.env` 的 `SHOPPILOT_LLM_BASE_URL` 指到本机 Ollama 的 OpenAI 兼容端点（`http://127.0.0.1:11434/v1`，模型 `qwen2.5:3b`，key 填占位值，`SHOPPILOT_LLM_READ_TIMEOUT=90s`），`-Profile dev` 起网关，先 `--limit 6` 冒烟、再跑完整 180 条：
+
+| 意图 | n | 选对工具 | 填对参数 | 结构化追问 | 猜槽位 | 综合 |
+| --- | --- | --- | --- | --- | --- | --- |
+| ACTION_ADDRESS | 18 | 66.7% | 60.0% | 77.8% | 2 | 38.9% |
+| ACTION_LOGISTICS | 18 | 88.9% | 87.5% | 94.4% | 1 | 77.8% |
+| ACTION_ORDER | 18 | 72.2% | 75.0% | 88.9% | 0 | 61.1% |
+| ACTION_REFUND | 18 | 66.7% | 62.5% | 94.4% | 0 | 50.0% |
+| ESCALATE | 18 | 88.9% | n/a | 88.9% | 0 | 66.7% |
+| POLICY_FRESH | 18 | 100.0% | n/a | 100.0% | 0 | 100.0% |
+| POLICY_PROMO | 18 | 100.0% | n/a | 100.0% | 0 | 100.0% |
+| POLICY_RETURN | 18 | 100.0% | n/a | 100.0% | 0 | 100.0% |
+| POLICY_SHIPPING | 18 | 100.0% | n/a | 94.4% | 1 | 94.4% |
+| UNKNOWN | 18 | 94.4% | n/a | 94.4% | 0 | 94.4% |
+
+180 条请求失败 0 条，prompt 174277 / completion 12187 tokens；跑前预算记账 7731/200000（ADR 0012 的日预算在这一轮真的在计数）。脚本以 exit 1 结束，因为 dev 模式下阈值参与红绿判定：四条 ACTION 线低于 80% 判不通过，ESCALATE / UNKNOWN / LOGISTICS 低于 95% 承诺线。**这是设计行为，不是脚本坏了**——只有 dev 模式才判红绿，就是为了不让 local 模式的链路验证冒充验收数字。
+
+**口径必须说清楚**：这一轮是"同一个 3B 模型换了一条传输层"，不是云端 qwen-plus 的成绩。dev 路径与 local 路径的差别在客户端（OpenAI 兼容 HTTP + 真 token 计费 + 非流式工具规划轮），所以它证明的是这条链路通、记账对、阈值判得准；模型能力那部分与 local 同源。要拿 ≥95% 那个数字，仍然需要 `.env` 里三个 DashScope 值（key / base-url / model），换完直接重跑同一条命令即可，脚本与判据一行都不用改。
+
+**顺带修掉的一个真缺陷**：给 dev 路径补 JVM 测试（`OpenAiCompatibleLlmClientTest` 8 项 + `TokenBudgetTest` 6 项）时发现 `OpenAiCompatibleLlmClient.stream()` 把 `tool_calls` 增量整段丢掉（返回 `List.of()`），只留正文与 usage。当前接线还没被咬到——带工具的规划轮走 `complete()`（`AgentStateMachine:224`），两处 `stream()`（`:320`、`:498`）传的工具表都是空——但它是个静默陷阱：哪天把规划轮改成流式，工具调用会无声消失，表现成"模型就是不办业务"。现在流式路径按 index 归并 `tool_calls` 分片、把 `arguments` 片段拼完再解析，解析不出来时原文留在 `_unparsable` 里，与 `complete()` 共用同一个 `argumentsOf()`。
+
+**复现（dev 那一轮）**
+
+```
+# .env 指向一个 OpenAI 兼容端点后
+pwsh -File scripts/up.ps1 -Profile dev
+python scripts/run_tool_eval.py --limit 6
+python scripts/run_tool_eval.py
+```
+
+产物：`eval/results/tool-eval-20260909-111059-dev-dev-localcompat{.csv,-summary.csv,-meta.json}`，冒烟轮同名前缀 `110911`。`-meta.json` 里除了模型名与 token，还记 `llmBaseUrl`——只记模型名分不出这组数字来自云端还是本机兼容端点，那一列就是为这条口径加的。
 
 **转人工这条面的实测分层（2026-09-09，逐条打 SSE 看 TRIAGE 层级）**
 
@@ -32,7 +66,7 @@
 3. 指标从票面的两个拆成三个再加一列：选对工具、填对参数、缺槽时是否正确问槽（`slotask_accuracy`），外加 `fabricated_cases` 单列。合并成一个数字会把"没问槽但参数蒙对"和"凭空编了个订单号"混成一谈，而后者是最危险的失败模式。
 4. `missing_slot` 用例的期望写成 `slotAsk: true` + `mustNotContainArgs: ["orderNo"]`，模型编造订单号时 `ToolDispatcher` 直接判 fabricated、不发起查询，即使工具选对也不算通过。
 5. 熔断前置：跑前用样例估算单 case tokens × 样本数，与 `/ops/circuit` 的日预算剩余比较，超了 exit 2（要 `--force` 才继续），符合 ADR 0012。非 dev 模式额外打印"仅验证链路，不进入验收口径"。
-6. **本轮数字来自 `local`（qwen2.5:3b），不是 dev。** dev 那一栏（qwen-plus）待 `.env` 提供 DashScope key 后重跑，脚本与阈值判定线已就绪：`HARD_FAIL_INTENT` / `ACCEPT_TOOL` 两条线只在 `mode == "dev"` 时才参与红绿判定。
+6. **勾上这条之前，先分清两件事。** 2026-09-09 11:10 那一轮（见上）已经在 `dev` 模式下跑完并落盘，但端点是本机 OpenAI 兼容服务、模型仍是 qwen2.5:3b，所以它交的是「dev 路径可用 + 记账正确」，不是云端 qwen-plus 的能力数字。`HARD_FAIL_INTENT` / `ACCEPT_TOOL` 两条线只在 dev 模式参与红绿判定，这一轮因此判红——那正是这条判据该有的行为。
 
 **需要能当场回答的三个追问**
 
