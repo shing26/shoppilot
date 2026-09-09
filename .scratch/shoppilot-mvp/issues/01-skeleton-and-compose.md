@@ -27,12 +27,14 @@
 5. **Maven wrapper 用 `only-script` 分发**（`mvnw` / `mvnw.cmd` / `.mvn/wrapper/maven-wrapper.properties`，锁 3.9.14），干净机器上 `./mvnw verify` 会自己取 Maven。
 6. **`.env.example` 只列变量不列值**，`.gitignore` 覆盖 `.env`、`target/`、H2 数据文件、`.venv-loadtest/`、`loadtest/results/locust-*`（保留 `ladder-*.csv` 与 `env-*.json` 两份可复核产物）。
 7. **`up.ps1` 等 biz-mock readiness 的上限是 300 s，不是 180 s。** 空机上 5 万单 seed 实测 8.3 s，但门禁全量跑时 seed 与知识库入库（90 块 × 向量化 + ES/Qdrant 写入）并行抢同一台 16 G 机器，实测把 `stack` 步顶到 249 s 红过一次。300 s 是给并行阶段留了约 20 倍实测余量，不是把超时调成"永远够"——真卡住时它照样会在 300 s 处红，并且红在"等 readiness"这一行，不会伪装成服务起不来。
+8. **中间件用 `container_name` 钉死成 `shoppilot-redis|qdrant|es`，代价是"一台机器一个检出"。** 钉名字是为了让 README 与排障手册里写的 `docker logs shoppilot-es` 和 `docker ps` 里看到的名字是同一份。代价到 2026-09-10 才撞上：容器名在 Docker 里全局唯一，而 compose 的项目名按目录算，所以第二个检出（干净检出检查用的 `D:\ShopPilot-cleancheck`）哪怕原栈只是"停着没删"也会报 `The container name "/shoppilot-es" is already in use`。改法是明确边界而不是改名字：`down.ps1 -Containers` 从"只 stop"改成 stop + `compose rm`（数据在命名卷里，删容器不删数据），`clean_clone_check.ps1` 的前置检查在容器还在跑时直接红、停着时替你把名字腾出来。
 
 **你需要能当场回答的三个追问**
 
 - *Q：为什么 ES 用 7.17 而不是 8.x？* A：8.x 强制 HTTPS + 客户端版本协商，本机内存预算下多一层安全握手不值当；7.17 的 `_search` + BM25 就是这个项目要用的全部能力，闭源特性一个没用。
 - *Q：Redis 设了 `allkeys-lru`，缓存被驱逐了怎么办？* A：语义缓存的正确性不依赖 Redis 驻留——L1 被驱逐等价于一次 miss，走穿透路径重新生成并写回。真正不能丢的是幂等记录，那部分有 biz-mock 的 DB 唯一约束兜底（ticket 12）。
 - *Q：`./mvnw` 在你机器上跑得起来吗？* A：能，但要注意本机 `mvn` 的全局 `conf/settings.xml` 把 `localRepository` 指到了 `E:\maven_repository`，而 wrapper 用的是默认 `~/.m2/repository`。离线复现时加 `-Dmaven.repo.local=E:\maven_repository` 即可对齐；干净机器联网首跑不需要这个。
+- *Q：两个检出为什么不能并存？容器名不是 compose 自己管的吗？* A：项目名是 compose 按目录算的，但 `container_name` 一旦写死就是 Docker 全局唯一的容器名，两套检出抢同一个名字，而且"停着"不等于"释放"。我保留钉死的名字（换来的是 README 里那几行命令直接可用），把冲突做成脚本里的显式前提：`down.ps1 -Containers` 现在 stop + rm 腾名字，`clean_clone_check.ps1` 前置检查还会查那三个宿主端口有没有被占用、并把空闲物理内存打出来——克隆起来的第二套全栈在这台 16 G 机器上本身就是失败源。
 
 **验证记录（2026-09-05）**
 

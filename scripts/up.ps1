@@ -36,8 +36,14 @@ function Wait-For([scriptblock]$check, [string]$what, [int]$seconds) {
 
 Write-Host '[1/6] 中间件容器' -ForegroundColor Cyan
 docker compose up -d | Out-Host
-foreach ($pair in @(@(16379, 'Redis'), @(16333, 'Qdrant'), @(19200, 'Elasticsearch'))) {
-    if (-not (Wait-For { Test-Port $pair[0] } "$($pair[1]) :$($pair[0])" 120)) { throw "$($pair[1]) 没起来，看 docker logs shoppilot-$($pair[1].ToLower())" }
+if ($LASTEXITCODE -ne 0) {
+    # 干净检出最常撞的一行是 The container name "/shoppilot-es" is already in use：
+    # compose 文件钉死了容器名，而名字在 Docker 里全局唯一，所以"另一个检出只是停着没删"也会挡住起栈。
+    # 数据都在命名卷里，删容器不丢数据；down.ps1 -Containers 现在就是 stop + rm。
+    throw 'docker compose up -d 失败。若报 already in use：被另一个检出（或原仓库）留下的停止中的容器占了名字，跑 pwsh -NoProfile -File scripts/down.ps1 -Containers 移除后重试。'
+}
+foreach ($triple in @(@(16379, 'Redis', 'shoppilot-redis'), @(16333, 'Qdrant', 'shoppilot-qdrant'), @(19200, 'Elasticsearch', 'shoppilot-es'))) {
+    if (-not (Wait-For { Test-Port $triple[0] } "$($triple[1]) :$($triple[0])" 120)) { throw "$($triple[1]) 没起来，看 docker logs $($triple[2])" }
 }
 
 Write-Host '[2/6] 本地模型（bge-m3 供 embedding，qwen2.5:3b 供 local 模式生成）' -ForegroundColor Cyan
@@ -53,10 +59,13 @@ if (Get-Command ollama -ErrorAction SilentlyContinue) {
 }
 
 Write-Host '[3/6] 构建' -ForegroundColor Cyan
-$jars = @('shoppilot-gateway', 'shoppilot-biz-mock') | ForEach-Object {
-    Get-ChildItem (Join-Path $root "$_\target") -Filter ($_ + '-*.jar') -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch 'sources|original' } | Select-Object -First 1
+function Find-FatJars {
+    @('shoppilot-gateway', 'shoppilot-biz-mock') | ForEach-Object {
+        Get-ChildItem (Join-Path $root "$_\target") -Filter ($_ + '-*.jar') -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch 'sources|original' } | Select-Object -First 1
+    }
 }
+$jars = Find-FatJars
 if ($SkipBuild -and $jars.Count -eq 2) {
     Write-Host '  OK 用现成的 jar（-SkipBuild）'
 } else {
@@ -67,6 +76,17 @@ if ($SkipBuild -and $jars.Count -eq 2) {
         & mvn.cmd -B -ntp -DskipTests package @($MvnArgs -split ' ' | Where-Object { $_ })
         if ($LASTEXITCODE -ne 0) { throw '构建失败' }
     }
+}
+# 退出码为 0 不等于产物齐。2026-09-10 那次干净检出检查里，克隆目录空闲只有 1.5 GB，
+# Maven 的 JVM 在 reactor 中途被打断，biz-mock 的 fat jar 根本没打出来；start-bizmock.ps1
+# 找不到 jar 就退回 `mvn spring-boot:run`，在已经缺内存的机器上再多开一个 JVM，
+# 于是失败点变成"biz-mock 300 s 没 readiness"——离真因隔了两步、还看不出关系。
+# 所以在这里就红，红在"产物不齐"这一行，并把唯一的补救动作写出来。
+$built = Find-FatJars
+if ($built.Count -lt 2) {
+    $have = @($built | ForEach-Object { $_.Directory.Parent.Name })
+    $missing = @('shoppilot-gateway', 'shoppilot-biz-mock') | Where-Object { $_ -notin $have }
+    throw ("构建没有产出 fat jar（缺：{0}）。这台机器上多半是内存不够把 Maven 的 JVM 打断了；" -f ($missing -join ', ')) + '重跑 scripts/up.ps1 即可（每一步都可重入）。'
 }
 
 Write-Host '[4/6] 业务 Mock 中台（seed 5 万订单，与入库并行）' -ForegroundColor Cyan

@@ -258,6 +258,27 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 - **perf 模式的 token 数由 Mock 按提示模板估算**，62.4% 的节约率要在 dev 模式重放同一流量模型复核真实计费 token。
 - **网关侧没有 JVM 内端到端用例**：端到端验证靠 `scripts/verify-*.ps1` 打活体服务（真跨进程），
   代价是 `mvn test` 不覆盖它；`@SpringBootTest` 只在 biz-mock 侧。
+
+## 干净检出检查（可复现性的机器侧证据）
+
+```
+pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
+```
+
+`git clone` 出 HEAD → 在克隆目录照 README 跑 `up.ps1 -Profile local`（空数据卷，走完整入库）→ 跑 `demo.ps1` 三条演示
+→ 结论与完整输出落 `logs/clean-clone-check-<时间戳>.log`。脚本不删任何目录。
+它验的是"提交进去的东西够不够"，而不是"我这台配了两小时的机器能不能跑"——这两件事在本项目里至少撞过四次
+（fat jar 文件锁、`.env` 里的 embedding 模型名、固定的容器名、以及下面那条内存前提）。
+
+两个前提写在脚本的前置检查里，它会红给你看而不是硬跑：
+
+- **原栈必须停干净**：`container_name` 是钉死的（`shoppilot-redis|qdrant|es`），而容器名在 Docker 里全局唯一、
+  compose 项目名却按目录算，所以第二个检出撞上"只是停着没删"的原栈容器就会起不来。`down.ps1 -Containers` 现在
+  是 stop + rm，专门用来腾名字；数据在命名卷里，删容器不删数据。
+- **一台 16 G 机器同时只能有一套全栈**：克隆起来的是第二套 ES(1 G) + Qdrant(512 M) + 两个 JVM，
+  而机上还跑着别的项目。2026-09-10 那次空闲 1.5 GB，`mvn` 构建的 JVM 直接被弄死，
+  `[4/6]` 找不到 fat jar 退回 `mvn spring-boot:run`，biz-mock 300 s 没起来。所以前置检查会打印空闲内存，
+  并且 `up` 允许重试一次——每一步都可重入，第二次构建产物与已入库的数据卷都在，正好绕开最挤的那一分钟。
   本机还有一条约束：服务在跑的时候 `mvn package` / `mvnw verify` 会被 fat jar 文件锁挡住
   （`Unable to rename ...jar to ...jar.original`），改完代码要先 `scripts/stop.ps1` 再构建；
   `mvn -o test` 不受影响。

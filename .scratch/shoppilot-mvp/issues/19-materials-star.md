@@ -26,6 +26,7 @@
 4. 面试问答清单由脚本生成（`scripts/collect_interview_questions.py`），不手抄。手抄会在复制过程中悄悄改掉措辞，而面试里最重要的就是我当场说的话和当时记的话是同一份；缺收尾记录的 ticket 会在清单末尾显式列名，不藏。
 5. "考虑过但否决的方案"写了 10 条（票面要 6 条），多出的 4 条是实施中真发生的方向纠正：embedding 冷缓存踩踏、"降到 0.90 换召回"、接厂商 SDK、Redis 不可用时拒绝写操作。
 6. `up.ps1` / `demo.ps1` 按"没参与过的人只照 README 操作"写：中间件 → 入库 → 两个服务 → 冒烟，脚本内按依赖等 health 端点，端口全部走 `shoppilot.*` 段避开本机其他项目。
+7. 可复现性那条承诺不靠"我这台跑过"充数：加 `scripts/clean_clone_check.ps1`，`git clone` 出 HEAD、在克隆目录里照 README 起栈（空数据卷，走完整入库）再跑三条演示，结论与全量输出落 `logs/clean-clone-check-*.log`。它第一晚就抓到三件事，其中两件是检查器自己的：`container_name` 全局唯一让第二个检出撞死在起栈第一步（见 ticket 01 决策 8）；`up.ps1`/`demo.ps1` 的成功行是 `Write-Host` 打的，走 information 流，而 `Run-Step` 只并 `2>&1`，于是"栈已就绪 + 三条演示全过"被判成 FAIL——量具先修（`*>&1`）再谈结论，这和 ticket 19 的 TTFT 先修量具是同一条纪律；剩下那件是真前提：克隆起来的第二套全栈要 1.5 GB 起步，机上空闲 1.5 GB 时 `mvn` 的 JVM 会被弄死、`[4/6]` 找不到 fat jar 退回 `mvn spring-boot:run`、biz-mock 300 s 起不来，所以前置检查打印空闲内存、`up` 允许重试一次（每步可重入，重试不是把红洗成绿，日志里两次尝试都在）。
 
 **需要能当场回答的三个追问**
 
@@ -39,6 +40,7 @@
 pwsh -File scripts/down.ps1
 pwsh -File scripts/up.ps1        # 一条命令起中间件 + 入库 + 两个服务 + 冒烟
 pwsh -File scripts/demo.ps1      # 三条演示
+pwsh -File scripts/clean_clone_check.ps1 -Teardown   # 可复现性：克隆 HEAD 起栈 + 三条演示，结论落 logs/
 python scripts/collect_interview_questions.py
 ```
 

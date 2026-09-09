@@ -3,7 +3,7 @@
 生成方式：`python scripts/collect_interview_questions.py`。
 每题答案直接取自当时写下的收尾记录，不做事后润色——答不上来的就是当时没想清楚的。
 
-共 63 问，覆盖 19 个 ticket。
+共 64 问，覆盖 19 个 ticket。
 
 用法：每条先只看问题，自己答 30 秒，再对答案。答不出细节的题回去读对应 ticket。
 
@@ -21,6 +21,10 @@ A：语义缓存的正确性不依赖 Redis 驻留——L1 被驱逐等价于一
 **Q：`./mvnw` 在你机器上跑得起来吗？**
 
 A：能，但要注意本机 `mvn` 的全局 `conf/settings.xml` 把 `localRepository` 指到了 `E:\maven_repository`，而 wrapper 用的是默认 `~/.m2/repository`。离线复现时加 `-Dmaven.repo.local=E:\maven_repository` 即可对齐；干净机器联网首跑不需要这个。
+
+**Q：两个检出为什么不能并存？容器名不是 compose 自己管的吗？**
+
+A：项目名是 compose 按目录算的，但 `container_name` 一旦写死就是 Docker 全局唯一的容器名，两套检出抢同一个名字，而且"停着"不等于"释放"。我保留钉死的名字（换来的是 README 里那几行命令直接可用），把冲突做成脚本里的显式前提：`down.ps1 -Containers` 现在 stop + rm 腾名字，`clean_clone_check.ps1` 前置检查还会查那三个宿主端口有没有被占用、并把空闲物理内存打出来——克隆起来的第二套全栈在这台 16 G 机器上本身就是失败源。
 
 
 ## Ticket 02 — mock jwt identity

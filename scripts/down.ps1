@@ -20,7 +20,10 @@ if (Test-Path $watchdog) {
 
 if ($Containers) {
     docker compose stop | Out-Host
-    Write-Host '中间件容器已停止（数据卷保留，docker compose rm 才清）'
+    # 停而不移除不够：compose 文件用 container_name 钉死了容器名，而容器名在 Docker 里全局唯一。
+    # 只 stop 的话，另一个检出（比如干净检出检查）会撞上 "already in use" 而起不来。
+    docker compose rm -f | Out-Host
+    Write-Host '中间件容器已移除；命名数据卷保留（up.ps1 会原样挂回旧数据）'
 } else {
     Write-Host '中间件容器保持运行；要一起停用 -Containers'
 }
