@@ -212,6 +212,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 四条否决项的判据模式写的是 `dev`，实际证据取自 `local`/`perf` 与 JVM 用例。理由：这四条防线的正确性与
 用哪家模型无关（越权与幂等发生在业务系统与仓储层），把它们绑在需要外部 API key 的模式上反而更弱。
 需要 DashScope key 的只剩承诺项里的"工具调用准确率"那一格：dev 那条代码路径已经用本机 OpenAI 兼容端点跑通并落盘（模型名、端点、token 记账、180 条明细都在 `eval/results/`），但**云端 qwen-plus 的能力数字仍未测**，换掉 `.env` 里三个值重跑同一条命令即可，脚本与判据一行都不用改。
+当天那三件手工活（三行配置、日预算、切 dev 再切回 local）由 `scripts/run-dev-eval.ps1` 收着：它先自查配置齐不齐、缺预算就把那一行写进 `.env`、把网关切到 dev 并回读 `/ops/circuit` 确认，然后**停下来**——加 `-Run` 才真发请求，跑完无论成败都把网关放回 local（挂着真 key 的 dev 网关是个花钱的陷阱）。
 补一句当天会撞到的事：完整集 180 条约耗 19 万 token，而 ADR 0012 的日预算默认 20 万，所以评测当天要同时设 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET`（`.env.example` 给了 260000 的示例值）；不设的话脚本会在跑前用剩余预算做投影并 `exit 2`，不会跑到一半被熔断留半份数据。
 
 ### 承诺项十条的逐条结论
@@ -365,6 +366,9 @@ pwsh -NoProfile -File scripts/verify-idempotency.ps1    # 并发同 token 与状
 pwsh -NoProfile -File scripts/verify-ratelimit.ps1      # 同步 429 与 SSE rate_limited
 pwsh -NoProfile -File scripts/verify-polarity.ps1       # 反义对不互命中（要求 local/dev 模式）
 node scripts/verify-console.mjs                         # 调试台 15 项（Playwright）
+# dev 评测（唯一要云端 key 的一格）：默认只自查与摆位置，不发任何计费请求
+pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12        # 干跑：查配置、报缺什么
+pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12 -Run   # 真跑 12 条；去掉 -Limit 是 180 条全量
 ```
 
 ### 逐 ticket 验收动作 → 覆盖命令
