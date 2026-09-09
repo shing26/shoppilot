@@ -74,6 +74,11 @@ $steps = [ordered]@{
 
 $results = @()
 $started = Get-Date
+# 工作树干不干净必须在**开跑之前**问：门禁自己会写 logs/、eval/results/、docs/console.png，
+# 跑完之后永远是"脏"的，那个字就没有意义了。run11 记的是 commit f3ff880，可它真正测的是当时
+# 还没提交的工作树（compose 健康检查与这两个脚本的改动都在里面）——"全绿"要说清绿在哪一份代码上。
+$dirtyAtStart = @(try { & git -C $root status --porcelain 2>$null } catch { @() } | Where-Object { $_ })
+$treeAtStart = if ($dirtyAtStart.Count -eq 0) { 'clean' } else { "dirty（$($dirtyAtStart.Count) 个未提交改动）" }
 
 function Test-Ready {
     foreach ($port in 8082, 8091) {
@@ -191,11 +196,14 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $runLog = Join-Path $root "logs\acceptance-run-$stamp.log"
 $commit = try { @(& git -C $root rev-parse --short HEAD 2>$null | Select-Object -First 1)[0].Trim() } catch { 'unknown' }
 if (-not $commit) { $commit = 'unknown' }
+# 光记 commit 不够：run11 那次记的是 f3ff880，可它真正测的是当时**还没提交**的工作树（compose 健康检查、
+# 这两个脚本的改动都在里面）。"全绿"必须说清绿在哪一份代码上，所以顺手记工作树干不干净。
 $total = [int]((Get-Date) - $started).TotalSeconds
 @(
-    "run-acceptance  profile=$Profile  commit=$commit"
+    "run-acceptance  profile=$Profile  commit=$commit  开跑时工作树=$treeAtStart"
     ("开始 {0:yyyy-MM-dd HH:mm:ss}  结束 {1:yyyy-MM-dd HH:mm:ss}  总耗时 ${total}s" -f $started, (Get-Date))
     "逐步日志目录 $outDir"
+    $(if ($dirtyAtStart.Count -gt 0) { '开跑时未提交的改动：' + ($dirtyAtStart -join ' | ') } else { $null })
     ''
     ('{0,-10} {1,5}  {2}' -f 'step', 'exit', 'note')
     ($results | ForEach-Object { '{0,-10} {1,5}  {2}' -f $_.Step, $_.Exit, $_.Note })
