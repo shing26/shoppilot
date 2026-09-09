@@ -30,6 +30,8 @@
 
 8. 门禁自己也要留证据：`run-acceptance.ps1` 现在把矩阵写成 `logs/acceptance-run-<时间戳>.log`（拿 `$results` 生成，不回抓 `Write-Host`）。起因是 run2..run8 那几份日志全靠人手工 Tee，run9 漏了，于是"16 步全绿"在机器上找不到落点。同一轮还揪出两个门禁毛病：`verify-plan-actions.ps1` 里重启 biz-mock 后那一等仍是 180 s，而 `up.ps1` 里同一个等待早就因为同样的资源争抢提到 300 s——**同一个常量写两份，改就只改对一半**；以及这一步失败之后健康门立刻跑 `up.ps1 -SkipIngest`，用 `>` 重开同一个 `bizmock.out`，把"为什么没起来"的现场覆盖掉。现在等待失败会先打印端口在不在听、launcher 进程活不活、日志最后 8 行再返回失败。run10 那一次到底是慢还是被弄死不假装归因（现场已毁），run11 同一等 80 s 全绿。
 
+9. 门禁自己也得有门禁：`syntax` 是全矩阵的第一步，解析 `scripts\` 下全部 `.ps1`，任何语法错都在十几分钟的构建之前 1 s 内红掉。加它不是预防性的洁癖——2026-09-10 我往 `run-acceptance.ps1` 里提交了一版**根本解析不过**的代码（`@(try{…}catch{…} | Where-Object …)`，PowerShell 不许从 try/catch 直接开管道），于是整条链一步都执行不了，而这要等到下一次跑门禁才看得见。改完只 diff 不解析，是我这一天里第二次犯同一类错（第一次是 `Run-Step` 抓不到 `Write-Host`）：两次都是"检查别人的工具，自己没被检查"。
+
 **需要能当场回答的三个追问**
 
 1. "README 上的数字你自己当场能复现吗？" —— 每个数字旁边就是文件名，抽查任意一行能落到 `loadtest/results/` 或 `eval/results/` 的具体 CSV/JSON，同批 `-meta.json` 记了 git commit、容器内存、空闲内存。复现不到同一量级我会先说不达标，而不是先解释。

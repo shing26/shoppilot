@@ -234,7 +234,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 | 虚拟线程收益 | 开关两组数据 | **达成**：400/800 并发 +64%/+65%，100/200 并发 -3%/-3%，低并发档负收益照登 |
 | Token 节约率 | 关缓存基线对比 | **达成**：62.4%（1096.8 → 412.3 token/请求），三档只差防线开关，perf 模式估算口径注明 |
 | 实测数字诚实 | 表旁标口径与来源文件 | **达成**：上表每行都有口径列与 `loadtest/results/`、`eval/results/`、`docs/` 下的具体产物 |
-| 可复现性 | 新机器一条命令起栈跑通演示 | **同机干净检出达成、异机未验**：`scripts/clean_clone_check.ps1` 把 HEAD 克隆出来、在空数据卷上照 README 起栈并跑通三条演示（PASS 记录 `logs/clean-clone-check-20260910-034422.log`）；`scripts/run-acceptance.ps1` 一条命令跑完构建到演示全部 16 步 |
+| 可复现性 | 新机器一条命令起栈跑通演示 | **同机干净检出达成、异机未验**：`scripts/clean_clone_check.ps1` 把 HEAD 克隆出来、在空数据卷上照 README 起栈并跑通三条演示（PASS 记录 `logs/clean-clone-check-20260910-034422.log`）；`scripts/run-acceptance.ps1` 一条命令跑完语法门到评测全部 17 步 |
 
 ## 已知限制（不藏）
 
@@ -383,28 +383,31 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，�
 ```
 
 ```
-step        exit  note          # 2026-09-10 05:05-05:13 同机全量跑（profile=local），16 步全绿
+step        exit  note          # 2026-09-10 05:30-05:38 同机全量跑（profile=local，开跑时工作树 clean @930698a），17 步全绿
+syntax        0   1s           # 解析 scripts\ 下 24 个 .ps1：门禁自己也得过语法门（见本节末）
 stop          0   2s           # 释放 fat jar 文件锁
-build         0  52s           # mvnw verify：3 + 10 + 84 = 97 项
+build         0  51s           # mvnw verify：3 + 10 + 84 = 97 项
 unit          0  48s           # mvn -o test 同一批，离线可跑
 report        0   0s           # build_loadtest_report.py --strict：生成物与压测产物一致，缺证据即红
-stack         0  74s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
+stack         0  72s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
 plan          0  80s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
-hitzero       0   9s           # 命中路径零模型、零远程向量化
-action        0   7s           # 查得到 / 问得出 / 越不了权
+hitzero       0   8s           # 命中路径零模型、零远程向量化
+action        0   6s           # 查得到 / 问得出 / 越不了权
 idem          0   9s           # 并发同 token + 状态前置校验
 fallback      0  26s           # 七种降级原因 + 工单反查
 ratelimit     0   1s           # 同步 429 与 SSE rate_limited
 polarity      0  26s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
-l2            0   8s           # tenant/scope/intent/kb_epoch 四条 must-filter
-console       0  21s           # Playwright 15 项
+l2            0   7s           # tenant/scope/intent/kb_epoch 四条 must-filter
+console       0  20s           # Playwright 15 项
 demo          0  12s           # 三条演示
 eval          0 114s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）
 ```
 
 矩阵现在由脚本自己落盘（`logs/acceptance-run-<时间戳>.log`，本机不入库）：run2..run8 那几份是人手工 Tee 出来的，
-run9 就漏了，于是"16 步全绿"这句话一度在机器上找不到落点。现在它拿 `$results` 生成，不去回抓 `Write-Host`。
-总耗时 488s，用例数从 63 涨到 97（新增的分布在 dev 生成路径、缓存写回与向量化重试、以及下面第 5 条那个 flush 竞态）。`stack` 74s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
+run9 就漏了，于是"全绿"这句话一度在机器上找不到落点。现在它拿 `$results` 生成，不去回抓 `Write-Host`，
+并且记的是**开跑时**的工作树状态（跑完之后永远是脏的——这一步自己会写 `logs/`、`eval/results/`、`docs/console.png`）：
+上面那一行的落点是 `logs/acceptance-run-20260910-053815.log`，头两行写着 `commit=930698a 开跑时工作树=clean`。
+总耗时 483s，用例数从 63 涨到 97（新增的分布在 dev 生成路径、缓存写回与向量化重试、以及下面第 5 条那个 flush 竞态）。`stack` 72s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
 那条动作本来还要一个没参与的人来跑，现在这一段机器自己代跑了：`scripts/clean_clone_check.ps1` 把 HEAD 克隆到空目录、
 在**空数据卷**上照 README 起栈、跑通三条演示（`logs/clean-clone-check-20260910-034422.log`，`up` 118s + `demo` 105s，
 克隆目录里连 `.env` 都没有）。机器能证明的就是"干净检出"这一级，**换人换机仍然没证**——这台机器上还跑着别的项目的容器。
@@ -448,6 +451,11 @@ run9 就漏了，于是"16 步全绿"这句话一度在机器上找不到落点�
 至于 run10 那一次到底是慢还是被 OS 弄死，**不假装已经归因**：现场已经被那次恢复动作毁了，run11 这一等 80 s
 全绿；下一次再红，三份现场会当场把它分开。
 
+最后一条不算假红，是门禁把自己写坏了：加"记工作树状态"那一步时我写了 `@(try {…} catch {…} | Where-Object …)`，
+PowerShell 不允许从 try/catch 直接开管道，整脚本 parse 失败——**提交进去的是一版什么都跑不了的门禁**，
+而语法错只有等下一次执行才看得见（我改完只看了 diff，没跑解析）。现在 `syntax` 排在所有步骤之前，
+解析 `scripts\` 下全部 `.ps1`；反例实测过：把那个非法管道临时塞进去，它立刻报"文件:行 + 原因"并 exit 1。
+
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
 | 01 | `run-acceptance.ps1` 的 stop / build / unit / stack 四步（`mvnw verify` + `mvn -o test` + `up.ps1`）；`verify-plan-actions.ps1` 第 01 段判"三中间件在跑、两服务健康 UP" |
@@ -465,7 +473,7 @@ run9 就漏了，于是"16 步全绿"这句话一度在机器上找不到落点�
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-051201-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-053620-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
 | 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 69s / 13s |
