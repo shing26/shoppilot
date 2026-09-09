@@ -38,9 +38,28 @@ public class T0RuleLayer {
     private static final List<String> RETURN_WORDS = List.of("无理由", "退货", "换货", "退换", "七天", "7天", "退款政策", "能退吗", "可以退吗");
     private static final List<String> SHIPPING_POLICY_WORDS = List.of("发什么快递", "哪家快递", "多久发货", "几天发货", "什么时候发货", "包邮", "偏远");
 
+    /**
+     * 显式转人工词表。
+     *
+     * <p>这类诉求必须在最便宜的规则层定案，不能依赖向量检索。理由不是省钱：
+     * 转人工是可用性兜底，而 T1 质心层依赖 embedding 服务，大促期间它一旦超时，
+     * 判定会按 fail-closed 降级成"不确定"并交给模型定案（2026-09-09 压测后
+     * 验收脚本第 7 条就是这样失败的——用户明确喊转人工，却先花了 25 秒等大模型）。
+     * "人要不要来"这件事不该由一个会抖的外部依赖决定。
+     */
+    private static final List<String> ESCALATE_WORDS = List.of("转人工", "转个人", "人工客服", "真人客服", "人工服务", "转接人工", "人工介入");
+    /** 紧邻关键词前的否定/取消词：用于"别转人工""不想转人工"这类反义提问。 */
+    private static final List<String> ESCALATE_NEGATIONS = List.of("不", "别", "莫", "没", "无需", "取消", "拒绝", "退出");
+    /** 否定词只看关键词前这么长的窗口，单位是字符。2 足够覆盖"不想/不要/别再/别"。 */
+    private static final int ESCALATE_NEGATION_WINDOW = 2;
+
     public Optional<TriageResult> classify(String query) {
         if (query == null || query.isBlank()) {
             return Optional.empty();
+        }
+        if (explicitEscalation(query)) {
+            // 先于实体与第一人称判定："90001 这单搞错了，转人工" 要的是人，不是订单查询
+            return Optional.of(TriageResult.dynamic(Intent.ESCALATE, "T0", false));
         }
         boolean hasEntity = ORDER_NO.matcher(query).find()
                 || TRACKING_NO.matcher(query).find()
@@ -104,6 +123,37 @@ public class T0RuleLayer {
     private static boolean containsAny(String text, List<String> needles) {
         for (String needle : needles) {
             if (text.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 是否显式要求人工：命中词表且紧邻窗口内没有否定词。
+     *
+     * <p>整句判否定会漏掉"这个不合规，转人工"，而漏判的代价是用户喊了人工却没人来；
+     * 只看紧邻窗口则两头都保住。
+     */
+    static boolean explicitEscalation(String query) {
+        for (String needle : ESCALATE_WORDS) {
+            int from = 0;
+            int idx;
+            while ((idx = query.indexOf(needle, from)) >= 0) {
+                if (!negatedEscalation(query, idx)) {
+                    return true;
+                }
+                from = idx + needle.length();
+            }
+        }
+        return false;
+    }
+
+    private static boolean negatedEscalation(String query, int keywordStart) {
+        int from = Math.max(0, keywordStart - ESCALATE_NEGATION_WINDOW);
+        String prefix = query.substring(from, keywordStart);
+        for (String negation : ESCALATE_NEGATIONS) {
+            if (prefix.contains(negation)) {
                 return true;
             }
         }

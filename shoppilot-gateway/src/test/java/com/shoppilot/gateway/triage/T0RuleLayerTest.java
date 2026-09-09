@@ -73,4 +73,39 @@ class T0RuleLayerTest {
     void staysSilentWhenUnsure() {
         assertThat(layer.classify("你们这个平台还行吧")).isEmpty();
     }
+
+    @ParameterizedTest
+    @CsvSource({
+            "转人工",
+            "我要转个人工",
+            "叫你们人工客服来",
+            "这个问题机器人解决不了吧，转接人工",
+    })
+    @DisplayName("显式转人工在 T0 定案：判定不依赖 embedding，模型或向量服务挂了也能转出去")
+    void explicitEscalationSettlesAtT0(String query) {
+        var result = layer.classify(query).orElseThrow();
+
+        assertThat(result.intent()).isEqualTo(Intent.ESCALATE);
+        assertThat(result.layer()).isEqualTo("T0");
+        assertThat(result.cacheAdmissible()).isFalse();
+    }
+
+    @Test
+    @DisplayName("显式转人工优先于实体与第一人称")
+    void escalationBeatsEntityAndPossessive() {
+        assertThat(layer.classify("90001 这单搞错了，转人工").orElseThrow().intent())
+                .isEqualTo(Intent.ESCALATE);
+        assertThat(layer.classify("我要投诉，给我转人工").orElseThrow().intent())
+                .isEqualTo(Intent.ESCALATE);
+    }
+
+    @Test
+    @DisplayName("否定形式的转人工不触发转人工，且否定词只看紧邻窗口")
+    void negatedEscalationDoesNotFire() {
+        assertThat(layer.classify("别转人工，我就要机器人回")).isEmpty();
+        assertThat(layer.classify("我不想转人工，先说清楚规则")).isEmpty();
+        // 中间隔了逗号也要判成转人工：整句扫否定词会把这句漏掉
+        assertThat(layer.classify("这个不合规，转人工").orElseThrow().intent())
+                .isEqualTo(Intent.ESCALATE);
+    }
 }

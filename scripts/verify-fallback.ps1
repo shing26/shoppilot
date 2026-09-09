@@ -55,7 +55,11 @@ function Assert-Reason([string]$name, [string]$expected, [string]$raw) {
     $script:Results += [pscustomobject]@{ Reason = $expected; Trigger = $name; TicketId = $fb.ticketId; Pass = $ok }
     $color = if ($ok) { 'Green' } else { 'Red' }
     $shown = if ($fb.reason) { $fb.reason } else { '(no fallback)' }
-    Write-Host ("  {0,-22} reason={1,-18} ticket={2,-26} {3}" -f $name, $shown, $fb.ticketId, $(if ($ok) { 'PASS' } else { 'FAIL' })) -ForegroundColor $color
+    # 把判定层级一起打出来：2026-09-09 第 7 条挂过一次，原因不在建单而在 embedding 超时
+    # 让 T1 质心层失效、请求改走模型。只看 reason 空不空，这种问题要翻半天日志。
+    $triage = [regex]::Match($raw, '"detail":"(layer=[^"]*)"').Groups[1].Value
+    if (-not $triage) { $triage = 'layer=-' }
+    Write-Host ("  {0,-22} {1,-46} reason={2,-18} ticket={3,-26} {4}" -f $name, $triage, $shown, $fb.ticketId, $(if ($ok) { 'PASS' } else { 'FAIL' })) -ForegroundColor $color
 }
 
 function Reset-AllFaults {

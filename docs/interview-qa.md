@@ -3,7 +3,7 @@
 生成方式：`python scripts/collect_interview_questions.py`。
 每题答案直接取自当时写下的收尾记录，不做事后润色——答不上来的就是当时没想清楚的。
 
-共 57 问，覆盖 19 个 ticket。
+共 58 问，覆盖 19 个 ticket。
 
 用法：每条先只看问题，自己答 30 秒，再对答案。答不出细节的题回去读对应 ticket。
 
@@ -216,6 +216,10 @@ A：熔断器分别套在模型调用链和业务调用链上，恢复时间差�
 **Q：限流合并工单，会不会漏掉真实的大面积限流事故？**
 
 A：不会漏，只是不重复开单。工单里带 `(tenant, customer)`，另有 `shoppilot_rate_limited_total` 计数器按维度打点，Grafana 看的是计数而不是工单条数。工单是"有人需要被跟进"的凭证，不是监控指标。
+
+**Q：用户喊转人工，依赖的 embedding 服务挂了怎么办？**
+
+A：字面显式表达在 T0 定案，不碰 embedding 也不碰模型，这是事故后补的最低可用线（ADR 0017）；换说法的求助（"叫你们经理过来"）仍走 T1/T2，embedding 超时就 fail-closed 进模型定案，模型也没了才落到 LLM_* 那几种 reason。三层各自兜一段，不承诺任何说法都不依赖服务，这句话写进 README 已知限制。
 
 
 ## Ticket 15 — debug console
