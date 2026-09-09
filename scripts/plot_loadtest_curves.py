@@ -25,7 +25,7 @@ CURVES = [
     ("L1-dominant", "ladder-l1-perf-20260908-231233-final.csv"),
     ("mix80 (charter shape)", "ladder-mix80-perf-20260908-233023-final.csv"),
     ("L2-dominant", "ladder-l2-perf-20260909-000535-l2.csv"),
-    ("L2, embedding per request", "ladder-l2-perf-20260909-012151-l2emb.csv"),
+    ("L2, embedding per request", "ladder-l2-perf,no-embedding-cache-20260909-133010-l2emb.csv"),
     ("L1, platform threads", "ladder-l1-perf,no-virtual-20260909-011351-novirtual.csv"),
     # 向量服务停用（ticket 18 最后一格）：同模型同并发，只是 embedding 不可用。
     # 图上这条与 L1-dominant 的间距就是"向量服务是大促单点"这件事的形状。

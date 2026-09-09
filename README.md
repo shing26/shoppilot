@@ -150,7 +150,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | 命中路径 TP99 | <30 ms | **32 / 22 / 90 / 480 / 840 / 970 ms**（100/200/400/800/1200/1600 并发） | 派生事件 `cache[hitpath]` 分位数；该路径模型与远程向量化增量恒为 0 | 同上 + `verify-hit-zero-llm.ps1` |
 | 未命中 TTFT | <500 ms | **592 / 743 / 2436 ms**（P50/P90/P99，500 长连接） | 服务端收请求→首个 token 帧，不含网络往返；Mock 首字本身 300 ms | `sse-ttft-20260909-001822-500-perf.csv` |
 | 吞吐极限 | ≥1200 QPS 且错误率<0.1% | **1013 QPS**@800（L1 主导）/ **1141 QPS**@400（L2 主导），错误率 0% | `qps_scope=chat-only`，Locust 4 进程同机发压 | `ladder-l1-…-final.csv`、`ladder-l2-…-l2.csv` |
-| L2 路径吞吐 | 报天花板与归因 | **22.8-27.1 QPS**（每请求真打 bge-m3）vs 1141 QPS（有进程内向量缓存），差 **约 40 倍** | profile `perf,no-embedding-cache`，远程向量化调用≈请求数；生产侧解法见 ADR 0011：embedding 拆独立批处理服务 + 向量缓存命中率当一等指标 | `ladder-l2-perf-20260909-012151-l2emb.csv` |
+| L2 路径吞吐 | 报天花板与归因 | **23.8-64.8 QPS**（每请求真打 bge-m3）vs 同档 845-1141 QPS（有进程内向量缓存），同并发差 **18-36 倍** | profile `perf,no-embedding-cache`，`embed_cached` 全程 0、远程向量化≈非命中请求数（L1 命中不需要向量）；生产侧解法见 ADR 0011：embedding 拆独立批处理服务 + 向量缓存命中率当一等指标 | `ladder-l2-perf,no-embedding-cache-20260909-133010-l2emb.csv` |
 | 虚拟线程收益 | 开关两组 | 400 并发 **+64%**、800 并发 **+65%**；100 并发 -3%、200 并发 -3% | 同模型同并发，只关 `spring.threads.virtual.enabled` + 200 平台线程池 | `ladder-l1-perf,no-virtual-20260909-011351-novirtual.csv` |
 | Token 节约率 | 关缓存基线对比 | **62.4%**（1096.8 → 412.3 token/请求）；拆开：穿透合并单独省 50.3%，缓存再省 24.4% | perf 模式 `shoppilot_llm_tokens_total` 差值/请求数，三档只差防线开关；token 由 Mock 按模板估算 | `ladder-l1-perf,nocache,nosf-…`、`ladder-l1-perf,nocache-…`、`ladder-l1-perf-…-cacheton.csv` |
 | 工具调用准确率 | 分意图选对工具与填对参数各 ≥95% | **local 模式已测**（POLICY 100%、ACTION_ORDER 72.2/75.0%、LOGISTICS 88.9/87.5%、ADDRESS 66.7/60.0%、REFUND 66.7/62.5%、ESCALATE 88.9%、UNKNOWN 83.3%，格式为"选对工具/填对参数"）；**dev 模式已跑通**（09-09 11:10，端点=本机 OpenAI 兼容服务、模型仍是 qwen2.5:3b，分意图数字与 local 同源；这一轮脚本按 dev 判据判红，见 ticket 16） | 180 条人工校对用例（10 意图 × 18），对抗样本实测 40%；缺槽位的期望是追问而不是猜。ESCALATE 行取自 ADR 0017 之后的重跑（显式转人工改在 T0 定案，61.1% -> 88.9%），其余行与 09-08 那次逐格对比：7 行完全一致，3 格因 3B 非确定性变动 | `eval/results/tool-eval-20260909-092638-local{-summary.csv,.csv,-meta.json}`、dev 那一轮 `tool-eval-20260909-111059-dev-dev-localcompat*` |
@@ -163,8 +163,9 @@ slot_ask | fallback | duplicate_submit | rate_limited
 
 ![压测曲线：QPS 拐点与分位数时延](docs/loadtest-curves.png)
 
-图由 `python scripts/plot_loadtest_curves.py` 生成，读的是 `loadtest/results/` 里同一批阶梯 CSV；
-左图对数轴上三条曲线在 1000 QPS 附近压平，而"每请求真打一次 bge-m3"那条只有 20 多 QPS。
+图由 `python scripts/plot_loadtest_curves.py` 生成，读的是 `loadtest/results/` 里同一批阶梯 CSV。
+左图对数轴上三条带缓存的曲线在 1000 QPS 附近压平；往下依次是关掉虚拟线程（615）、向量服务停用（482），
+最下面那条"每请求真打一次 bge-m3"只有 24-65 QPS——这三条落差就是编排之外的东西吃掉的性能。
 
 未达成的三条（拦截率、吞吐、TTFT）归因写在一起，不逐行重复：
 
@@ -204,7 +205,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 | 未命中 TTFT | <500 ms | **未达成**：P50 592 ms，其中 Mock 首字固定占 300 ms；同机 500 长连接 |
 | 工具调用准确率 | 选对工具与填对参数各 ≥95% | **未达成**：local 模式 qwen2.5:3b 选对工具最低 66.7%、填对参数最低 60.0%（都在 ADDRESS/REFUND 两个动作意图上；POLICY 四行 100%）；dev 路径已用本机 OpenAI 兼容端点跑通（同一 3B 模型换传输层，不是云端数字），云端 qwen-plus 仍待 key 复测 |
 | 大促吞吐 | ≥1200 QPS 且错误率 <0.1% | **未达成**：1013 QPS@800，错误率全程 0；拐点由网关与发压机共同决定 |
-| L2 路径定性 | 报出天花板并归因 | **达成**：27.1 QPS（每请求真打 bge-m3）vs 1141 QPS，约 40 倍，归因到向量化调用次数≈请求数 |
+| L2 路径定性 | 报出天花板并归因 | **达成**：23.76 / 38.10 / 64.82 QPS @ 100/200/400（每请求真打 bge-m3）vs 同档 845 / 1124 / 1141 QPS，差 18-36 倍，归因到远程向量化调用次数≈非命中请求数 |
 | 向量服务停用的代价 | 报降级曲线并归因 | 冷缓存 136 / 265 / 482 QPS（对照组 296 / 580 / 976），纯缓存拦截率归 0、总拦截靠穿透合并撑在 21.8%-37.4%；错误率 0，p99 1200-1300 ms。有存量时另测：L1 命中 608/1123/2035 次、纯缓存拦截 7.3% | profile `perf,no-ollama`：只把 `embedding.base-url` 指到空端口，等价于 Ollama 进程停用且不外溢；两道写回门各挡了什么见 ADR 0018 | `ladder-l1-perf,no-ollama-20260909-123509-noollama.csv` |
 | 虚拟线程收益 | 开关两组数据 | **达成**：400/800 并发 +64%/+65%，100/200 并发 -3%/-3%，低并发档负收益照登 |
 | Token 节约率 | 关缓存基线对比 | **达成**：62.4%（1096.8 → 412.3 token/请求），三档只差防线开关，perf 模式估算口径注明 |
@@ -357,10 +358,10 @@ demo          0  12s           # 三条演示
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>.csv` 与 `-summary.csv` |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py` |
-| 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`（同机实测：起栈 69s、三条演示 11s） |
+| 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`（同机实测：起栈 73s、三条演示 12s） |
 
 各 ticket 的实现决策与"当时能答上来的三个追问"记在 `.scratch/shoppilot-mvp/issues/`，
 汇总清单：`python scripts/collect_interview_questions.py` → [docs/interview-qa.md](docs/interview-qa.md)。

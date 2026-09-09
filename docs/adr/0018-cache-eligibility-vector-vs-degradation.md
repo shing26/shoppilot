@@ -6,7 +6,7 @@ Considered Options（已否决）：给 L2 塞零向量或随机向量占位—�
 
 Consequences:
 - ADR 0006 的写回资格清单由本 ADR 收窄一项：`能拿到查询向量` 不再是资格，`检索未降级` 仍然是。前者是缓存层的实现细节，后者是答案质量。
-- 向量服务停用时的两条信号要分开读，别再混成一条。`shoppilot_cache_embed_unavailable_total` 增长，说明 L2 检索与向量定位落空；`shoppilot_cache_writeback_l1_only_total` 实测为 0，这是预期而不是缺陷——向量拿不到时稠密召回同时失败，写回在资格判定处就被 `degraded` 拒掉了。后一个计数器是哨兵：它一旦开始增长，说明出现了"检索健康但缓存拿不到向量"的新路径，值得单独排查。
+- 向量服务停用时的两条信号要分开读，别再混成一条。`shoppilot_cache_embed_unavailable_total` 增长，说明 L2 检索与向量定位落空；`shoppilot_cache_writeback_l1_only_total` 在整场停用里为 0——这不是缺陷，而是它前面还有一道门：向量拿不到时稠密召回同时失败，写回在资格判定处就被 `degraded` 拒掉了。但后一个计数器不是摆设，D 组（`perf,no-embedding-cache`，每请求真打 bge-m3）把它跑出来了：100 并发那档 `embed_unavailable_delta` 22、`writeback_l1_only_delta` 13——向量服务没死、只是被压到超时时，缓存那一次 embed 超时了，而稍后稠密召回那一次成功，于是答案非降级、向量却不存在。这 13 条正是拆门的意义所在：不拆的话它们连 L1 正文都进不去。
 - 代价量化成两组曲线（`perf,no-ollama`、`l1` 流量模型、4 workers、60s/步，与同机 `perf` 的 A 组对比），分开报是因为“缓存里有没有存量”是这一层唯一还在服务的东西。
   - 冷缓存（先 flush 再压）：136.20 / 265.05 / 481.73 QPS @ 100 / 200 / 400 并发，纯缓存拦截率 0，拦截总量 21.8% / 29.6% / 37.4% 全靠穿透合并独扛（`ladder-l1-perf,no-ollama-20260909-123509-noollama.csv`）。
   - 有存量：Redis 里已有的 L1 条目照常命中（`l1_delta` 608 / 1123 / 2035、命中 p50 8ms），纯缓存拦截率 7.34% / 6.84% / 6.91%（`ladder-l1-perf,no-ollama-20260909-114341-noollama.csv`）。停用的是“积累新答案”，不是“复用已有答案”。
