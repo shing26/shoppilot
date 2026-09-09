@@ -76,6 +76,31 @@ Write-Host "  同句再问一次 -> cache=$($repeat.cacheLayer)"
 $script:writtenBack = $repeat.cacheLayer -in @("L1", "L2", "FLIGHT")
 Assert-True $writtenBack "源问法已写回（第二次命中 $($repeat.cacheLayer)）—— L2 里现在有一条 POLICY_RETURN 向量"
 
+# 上面那句其实没说中要害：L1 命中只证明正文写回了，不证明 L2 里有向量。ADR 0018 之后写回允许只落 L1
+# （向量化失败不挡 L1 写回），而探针 A 要量的极性守卫只在"从 L2 复用之前"才生效。
+# 09-09 16:57 那次全量验收就是这么红的：那一刻向量化失败，写回走成 L1-only，L2 空着，
+# 守卫自然一次都没触发，日志却写成"极性守卫拦下了这次 L2 命中 FAIL"——把环境问题报成防线失效。
+# 所以先用同极性近义问法确认 L2 里真有条目；拿不到就重打几次源问法（每次都会重试写回与向量化），
+# 仍然不行就以另一个退出码单独收场，不污染下面那组断言的语义。
+$l2Probe = "这个能退么"
+$preconditionOk = $false
+foreach ($attempt in 1..3) {
+    $check = Invoke-Chat $token $l2Probe "conv-polarity-pre-$attempt"
+    Write-Host "  前置探针「$l2Probe」第 $attempt 次 -> cache=$($check.cacheLayer)"
+    if ($check.cacheLayer -eq "L2") { $preconditionOk = $true; break }
+    Invoke-Chat $token $source "conv-polarity-src-retry-$attempt" | Out-Null
+    Start-Sleep -Seconds 2
+}
+if (-not $preconditionOk) {
+    # 两种成因都实测过：向量不可用时写回要么只落 L1（ADR 0018 拆掉向量门之后），
+    # 要么被 ADR 0006 的"检索未降级"资格整个拒掉（稠密召回同时失败时），后者连 L1 都没有。
+    Write-Host "`n前置不成立：L2 里没有源条目（写回只落了 L1，或整条被降级资格拒掉；两者都指向那一刻向量不可用）。" -ForegroundColor Red
+    Write-Host "极性守卫只在从 L2 复用之前才生效，这个前提没了就没有可判的东西；下面的断言不作为防线失效的证据。"
+    Write-Host "处置：确认向量服务在跑（默认 :11434），然后重跑本脚本；这一步红不代表防线失效。"
+    exit 3
+}
+Assert-True $true "L2 里确实有一条 $($first.intent) 向量（同极性近义问法命中 L2）—— 极性守卫的前提成立"
+
 Write-Host "`n== 探针 A：「这个不能退吗」（同为 POLICY_RETURN，余弦 0.9799，准入层放行） =="
 $probeA = Invoke-Chat $token "这个不能退吗" "conv-polarity-a"
 Write-Host "  intent=$($probeA.intent)  triage=$($probeA.triageLayer)  cache=$($probeA.cacheLayer)"

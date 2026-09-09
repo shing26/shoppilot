@@ -26,6 +26,7 @@
 4. **虚拟线程开关从第一天就在配置里**（`spring.threads.virtual.enabled`），并预留 `no-virtual` profile 关掉它。ticket 18 的对比实验要求"不改代码就能切换"，临时加开关的实验不可信。
 5. **Maven wrapper 用 `only-script` 分发**（`mvnw` / `mvnw.cmd` / `.mvn/wrapper/maven-wrapper.properties`，锁 3.9.14），干净机器上 `./mvnw verify` 会自己取 Maven。
 6. **`.env.example` 只列变量不列值**，`.gitignore` 覆盖 `.env`、`target/`、H2 数据文件、`.venv-loadtest/`、`loadtest/results/locust-*`（保留 `ladder-*.csv` 与 `env-*.json` 两份可复核产物）。
+7. **`up.ps1` 等 biz-mock readiness 的上限是 300 s，不是 180 s。** 空机上 5 万单 seed 实测 8.3 s，但门禁全量跑时 seed 与知识库入库（90 块 × 向量化 + ES/Qdrant 写入）并行抢同一台 16 G 机器，实测把 `stack` 步顶到 249 s 红过一次。300 s 是给并行阶段留了约 20 倍实测余量，不是把超时调成"永远够"——真卡住时它照样会在 300 s 处红，并且红在"等 readiness"这一行，不会伪装成服务起不来。
 
 **你需要能当场回答的三个追问**
 

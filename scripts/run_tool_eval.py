@@ -216,7 +216,20 @@ def main() -> int:
     if args.only_intent:
         cases = [c for c in cases if c["intent"] == args.only_intent]
     if args.limit:
-        cases = cases[:args.limit]
+        # 用例集是按意图分组的（每意图 18 条），直接取前 N 条只会覆盖一两个意图，冒烟就白跑了。
+        # 轮流从每个意图取，N 条里十个意图都有份。
+        by_intent = {}
+        for case in cases:
+            by_intent.setdefault(case["intent"], []).append(case)
+        picked = []
+        rank = 0
+        while len(picked) < args.limit and any(rank < len(bucket) for bucket in by_intent.values()):
+            for intent in sorted(by_intent):
+                bucket = by_intent[intent]
+                if rank < len(bucket) and len(picked) < args.limit:
+                    picked.append(bucket[rank])
+            rank += 1
+        cases = picked
 
     headers = {"X-Ops-Token": args.ops_token,
                "Authorization": "Bearer " + mock_token(args.base, "T001", "C001")}
@@ -324,6 +337,8 @@ def main() -> int:
 
     for failure in failures:
         print("FAIL  " + failure)
+    # 验收门禁靠这行 ASCII 标记判断"真的跑到底了"：这台机器上退出码为 0 不代表跑完
+    print(f"EVAL DONE cases={len(rows)} errors={errors} mode={mode} limit={args.limit}")
     return 1 if failures else 0
 
 

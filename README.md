@@ -311,7 +311,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 ## 复现
 
 ```powershell
-# 单元与架构测试（82 项）
+# 单元与架构测试（85 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -344,30 +344,44 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，�
 ```
 
 ```
-step        exit  note          # 2026-09-09 15:29-15:36 同机全量跑（profile=local）
+step        exit  note          # 2026-09-09 17:16-17:24 同机全量跑（profile=local），16 步全绿
 stop          0   3s           # 释放 fat jar 文件锁
-build         0  45s           # mvnw verify：3 + 10 + 69 = 82 项
-unit          0  39s           # mvn -o test 同一批，离线可跑
+build         0  39s           # mvnw verify：3 + 10 + 72 = 85 项
+unit          0  36s           # mvn -o test 同一批，离线可跑
 report        0   0s           # build_loadtest_report.py --strict：生成物与压测产物一致，缺证据即红
-stack         0  78s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
-plan          0  80s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
-hitzero       0   9s           # 命中路径零模型、零远程向量化
+stack         0  69s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
+plan          0  83s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
+hitzero       0   8s           # 命中路径零模型、零远程向量化
 action        0   7s           # 查得到 / 问得出 / 越不了权
-idem          0  10s           # 并发同 token + 状态前置校验
-fallback      0  33s           # 七种降级原因 + 工单反查
+idem          0   9s           # 并发同 token + 状态前置校验
+fallback      0  26s           # 七种降级原因 + 工单反查
 ratelimit     0   1s           # 同步 429 与 SSE rate_limited
-polarity      0  40s           # 同桶反义在守卫层被拒
-l2            0  12s           # tenant/scope/intent/kb_epoch 四条 must-filter
-console       1   3s           # 第一次：chrome-headless-shell 启动即退（本机内存压力下的已知抖动）
-console       0  25s           # 重跑 15/15 通过（不是改代码改出来的，同一次二进制）
-demo          0  12s           # 三条演示
+polarity      0  28s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
+l2            0   8s           # tenant/scope/intent/kb_epoch 四条 must-filter
+eval          0 122s           # 24 条按意图分层的评测链路冒烟（阈值只在 dev 模式生效）
+console       0  24s           # Playwright 15 项
+demo          0  13s           # 三条演示
 ```
 
-总耗时 373s（含 console 那次失败），用例数从 63 涨到 82（新增的 19 项都在 dev 生成路径与缓存写回这两块）。`stack` 78s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
+总耗时 475s，用例数从 63 涨到 85（新增的分布在 dev 生成路径、缓存写回与向量化重试这三块）。`stack` 69s + `demo` 13s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
 那条动作本来就要一个没参与的人来跑，机器只能证明到这儿。每一步还各要求一条"只有跑到结尾才会出现"
 的日志标记（`Expect`）：这台机器把 `mvnw.cmd` 中途带走时它返回 0，只看退出码会假绿。
 新增的 `report` 步是同一个道理的另一面：README 说"表格由脚本生成"，那就让门禁去验这句话，
 产物缺一份、生成文档与 CSV 对不上，都在这一步红掉。
+
+这一版矩阵是修完三处**门禁自身的假红**之后跑出来的，三处都留了代码，不是重跑到绿为止：
+
+- `stack` 曾以 249 s 红过一次：biz-mock 的 5 万单 seed 与入库（90 块 × 向量化 + ES/Qdrant 写入）并行抢这台
+  16 G 机器，180 s 的 readiness 等待不够。空机上 seed 实测 8.3 s，所以 `up.ps1` 把这一等提到 300 s——
+  是给并行阶段留实测 20 倍余量，不是把超时调成"永远够"。
+- 同一轮里入库还红过一次：Ollama 自己的推理子进程被回收后重启，那几秒上游回 400，第 50 多块失败就把整场入库带崩。
+  离线入库没有时延预算，`EmbeddingClient.embedWarmup` 改成最多 3 次、间隔 2 s，并记
+  `shoppilot_embedding_warmup_retry_total`；**运行期 `embed()` 明确不重试**（那里重试等于把一次抖动放大成
+  击穿 TTFT 的排队）。这条取舍由 `EmbeddingWarmupRetryTest` 三条用例钉住：预热重试到成功、一直失败则按上限放弃、
+  运行期一次就抛。
+- `polarity` 曾以"极性守卫 FAIL"红过一次，实际是那一刻向量化失败、写回只落了 L1（ADR 0018），
+  L2 空着，守卫根本没有可判的东西。脚本现在先用同极性近义问法确认 L2 里真有条目，拿不到就重打三次源问法，
+  仍不成立就 `exit 3` 并写明"这一步红不代表防线失效"。这条前置在 `local,no-ollama` 下实测过：exit 3 与提示都如期。
 
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
@@ -386,10 +400,10 @@ demo          0  12s           # 三条演示
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里 |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260909-173810-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
-| 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py` |
-| 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`（同机实测：起栈 73s、三条演示 12s） |
+| 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
+| 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 69s / 13s |
 
 各 ticket 的实现决策与"当时能答上来的三个追问"记在 `.scratch/shoppilot-mvp/issues/`，
 汇总清单：`python scripts/collect_interview_questions.py` → [docs/interview-qa.md](docs/interview-qa.md)。

@@ -27,6 +27,7 @@
 5. **embedding 恒为本地 `bge-m3` 1024 维，经 Ollama**（ADR 0001）。入库与在线检索必须同模型同维度，换模型等于换向量空间，混用会让缓存与检索同时失效。
 6. **Ollama 未启动时脚本给出可执行提示而非堆栈**：`请先运行 ollama serve 与 ollama pull bge-m3`。这类"接手就能跑通"的报错文案是项目可用性的一部分。
 7. **`kb_epoch` 由脚本在成功入库后推进**，作为缓存纪元：政策一改，旧答案整纪元作废（ticket 06/09 的失效机制靠它，不靠 TTL）。
+8. **离线入库的向量化允许重试，在线检索不允许。** Ollama 的推理子进程被系统回收又重启的那几秒，上游会回 400；整场入库跑到第 50 多块时就被这一次抖动带崩过。`EmbeddingClient.embedWarmup` 因此最多试 3 次、间隔 2 s，并计 `shoppilot_embedding_warmup_retry_total`；运行期的 `embed()` 一次失败就抛，因为那里重试等于把一次抖动放大成击穿 TTFT 的排队（`EmbeddingWarmupRetryTest` 三条用例把这条不对称钉住）。
 
 **你需要能当场回答的三个追问**
 

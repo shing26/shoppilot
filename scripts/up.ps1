@@ -86,7 +86,10 @@ if (-not $SkipIngest) {
 
 Write-Host '[6/6] 网关' -ForegroundColor Cyan
 # readiness 组：seed 5 万订单期间就是 503 OUT_OF_SERVICE，避免"health 已 UP 但库里还没数据"的抢跑
-if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8091/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } 'biz-mock :8091' 180)) {
+# 180 s 不够：09-09 16:33 那次全量验收里，biz-mock 的 seed 与 [5/6] 的入库（90 块 × 向量化 + ES/Qdrant 写入）
+# 并行抢同一台 16 G 机器，3 分钟还没 UP，这一步直接红——而服务本身没坏，后面靠健康门又拉回来了。
+# 空机上 seed 实测 8.3 s，所以这里不是把超时调到"永远够"，是给并行阶段留出实测 20 倍余量。
+if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8091/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } 'biz-mock :8091' 300)) {
     throw 'biz-mock 未就绪，看 logs\bizmock.out'
 }
 & (Join-Path $root 'scripts\start-gateway.ps1') -Profile $Profile | Out-Null

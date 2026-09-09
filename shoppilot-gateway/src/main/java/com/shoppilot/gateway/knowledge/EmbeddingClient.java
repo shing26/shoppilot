@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.config.GatewayProperties;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -30,7 +32,15 @@ import java.util.concurrent.TimeoutException;
 @Component
 public class EmbeddingClient {
 
+    private static final Logger log = LoggerFactory.getLogger(EmbeddingClient.class);
     private static final int CACHE_MAX = 20000;
+    /**
+     * 预热与入库的尝试次数。Ollama 的推理子进程会被系统回收后再拉起，那几秒里上游会回 400
+     * 或直接把连接掐断——一次瞬时失败不该废掉整场离线入库（09-09 16:57 那次全量验收的 stack
+     * 步就是这么红的）。运行期请求不享受这个重试，理由见 {@link #embed(String)} 的时延预算。
+     */
+    private static final int WARMUP_ATTEMPTS = 3;
+    private static final long WARMUP_BACKOFF_MILLIS = 2_000L;
 
     private final HttpClient http;
     private final ObjectMapper mapper;
@@ -39,6 +49,7 @@ public class EmbeddingClient {
     private final Counter remoteCounter;
     private final Counter cacheHitCounter;
     private final Counter dedupeMergedCounter;
+    private final Counter warmupRetryCounter;
     private final Map<String, float[]> cache = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<float[]>> inflight = new ConcurrentHashMap<>();
 
@@ -54,6 +65,9 @@ public class EmbeddingClient {
                 .tag("result", "in-process-cache").register(registry);
         this.dedupeMergedCounter = Counter.builder("shoppilot_embedding_calls_total")
                 .tag("result", "singleflight-merge").register(registry);
+        this.warmupRetryCounter = Counter.builder("shoppilot_embedding_warmup_retry_total")
+                .description("离线预热/入库路径上的向量化重试次数（运行期请求不重试）")
+                .register(registry);
     }
 
     public float[] embed(String text) {
@@ -117,7 +131,31 @@ public class EmbeddingClient {
      * 否则一次向量化卡住就会击穿 TTFT 预算。
      */
     public float[] embedWarmup(String text) {
-        return request(text == null ? "" : text.trim(), config.warmupTimeout());
+        String normalized = text == null ? "" : text.trim();
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= WARMUP_ATTEMPTS; attempt++) {
+            try {
+                return request(normalized, config.warmupTimeout());
+            } catch (RuntimeException failure) {
+                last = failure;
+                if (attempt == WARMUP_ATTEMPTS) {
+                    break;
+                }
+                warmupRetryCounter.increment();
+                log.warn("向量化第 {}/{} 次尝试失败，{} ms 后重试：{}",
+                        attempt, WARMUP_ATTEMPTS, WARMUP_BACKOFF_MILLIS, failure.getMessage());
+                sleepQuietly(WARMUP_BACKOFF_MILLIS);
+            }
+        }
+        throw last;
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** 压测与降级演练用：绕开 embedding 推理，只测编排层。 */
