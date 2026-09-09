@@ -1,0 +1,26 @@
+{
+  "mode": "dev",
+  "model": "qwen2.5:3b",
+  "llmBaseUrl": "http://127.0.0.1:11434/v1",
+  "cases": 6,
+  "limit": 6,
+  "promptTokens": 5749,
+  "completionTokens": 343,
+  "estimatedPerCaseTokens": 1039,
+  "dailyTokenBudget": 200000,
+  "tokensUsedBeforeRun": 0,
+  "concurrency": 2,
+  "startedAt": "20260909-110911",
+  "requestErrors": 0,
+  "summary": {
+    "POLICY_RETURN": {
+      "intent": "POLICY_RETURN",
+      "cases": 6,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "83.3%",
+      "fabricated_cases": 1,
+      "overall_accuracy": "83.3%"
+    }
+  }
+}

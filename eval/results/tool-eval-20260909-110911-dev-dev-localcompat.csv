@@ -1,0 +1,7 @@
+id,intent,kind,query,tenant,customer,expect_tool,expect_args,expect_slot,error,prompt_tokens,completion_tokens,latency_ms,rate_limit_retries,fallback,intent_actual,triage_layer,cache_layer,tool_ok,args_scored,args_ok,slot_structured_ok,asked_ok,fabricated,escalate_ok,admission_ok,status_ok,checks_ok,actual_tool,actual_args,args_detail,tool_status,slot_actual,asked_in_prose
+P-RET-01,POLICY_RETURN,normal,七天无理由是从签收那天开始算吗,T001,C001,,{},False,,1191,47,7143,0,,POLICY_RETURN,T0,NONE,True,False,,True,True,,True,True,True,True,,{},,,False,True
+P-RET-02,POLICY_RETURN,normal,无理由退货的运费谁承担,T001,C001,,{},False,,1136,61,6210,0,,POLICY_RETURN,T0,NONE,True,False,,True,True,,True,True,True,True,,{},,,False,False
+P-RET-03,POLICY_RETURN,normal,拆封使用过的商品还能七天无理由吗,T001,C001,,{},False,,1198,67,14462,0,,POLICY_RETURN,T0,NONE,True,False,,True,True,,True,True,True,True,,{},,,False,False
+P-RET-04,POLICY_RETURN,normal,换货之后还能再退吗,T001,C001,,{},False,,1092,48,14449,0,,POLICY_RETURN,T0,NONE,True,False,,True,True,,True,True,True,True,,{},,,False,False
+P-RET-05,POLICY_RETURN,normal,退款一般几个工作日到账,T001,C001,,{},False,,0,0,16193,0,,ACTION_LOGISTICS,SLOT,NONE,True,False,,False,False,model_invented_orderNo,True,True,True,False,,{},,,True,True
+P-RET-06,POLICY_RETURN,normal,哪些商品不支持无理由退货,T001,C001,,{},False,,1132,120,14409,0,,POLICY_RETURN,T0,NONE,True,False,,True,True,,True,True,True,True,,{},,,False,True

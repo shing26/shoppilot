@@ -44,6 +44,11 @@ COUNTERS = {
     # embedding 的合并与负缓存抑制：中间件抖动时这两列不为 0，才说明踩踏防线真的生效了
     "embed_merged": ["shoppilot_embedding_calls_total?tag=result:singleflight-merge"],
     "negative_suppressed": ["shoppilot_cache_negative_suppressed_total"],
+    # 向量服务停用时两道门各挡了什么，要能从 CSV 直接读出来，不用翻网关日志：
+    # embed_unavailable 是缓存层拿不到向量的次数；writeback_l1_only 在 ADR 0018 的实测里恒为 0，
+    # 因为写回先被 ADR 0006 的"检索未降级"资格挡下了——它 nonzero 才说明出现了新的旁路。
+    "embed_unavailable": ["shoppilot_cache_embed_unavailable_total"],
+    "writeback_l1_only": ["shoppilot_cache_writeback_l1_only_total"],
     # Token 节约率 = 1 - 实际发出的 token / 关缓存同 trace 发出的 token，两组都要读得到
     "tokens": ["shoppilot_llm_tokens_total"],
 }
@@ -86,6 +91,29 @@ def gateway_healthy(base: str) -> bool:
             return json.loads(response.read().decode("utf-8")).get("status") == "UP"
     except Exception:
         return False
+
+
+PROFILE_NOTES = [
+    ("perf", "perf profile 下调限流配额（见 application.yml 的 perf 段）；生成侧为 MockLLM 固定延迟"),
+    ("no-ollama", "no-ollama profile 把向量服务指到空端口，等价于 Ollama 进程停用："
+                  "L2 检索与向量写回落空，新写回另被 ADR 0006 的『检索未降级』资格挡下，见 ADR 0018"),
+    ("no-embedding-cache", "no-embedding-cache profile 关掉进程内向量缓存，每个请求真打一次 bge-m3"),
+    ("nocache", "nocache profile 关掉两级缓存，用于 token 基线"),
+    ("nosf", "nosf profile 连带关掉穿透合并，这一档才是零防线基线"),
+    ("no-virtual", "no-virtual profile 关掉虚拟线程，改用 200 平台线程池"),
+]
+
+
+def profile_notes(profile: str):
+    """环境记录里的口径说明必须跟着 profile 走。
+
+    原来这段 note 是硬编码的"embedding 仍为真实 bge-m3"，在 no-ollama 那一组里正好说反——
+    环境快照是数字的唯一出处，写错口径比不写更糟。
+    """
+    notes = [note for key, note in PROFILE_NOTES if key in profile]
+    if "no-ollama" not in profile:
+        notes.append("embedding 为真实 bge-m3（本机 Ollama）")
+    return notes
 
 
 def env_record():
@@ -392,9 +420,11 @@ def run_step(base, users, spawn, duration, model, out_prefix, workers=1, bizmock
         "llm_delta": round(after["llm"] - before["llm"]),
         "embed_remote_delta": round(after["embed_remote"] - before["embed_remote"]),
         "embed_cached_delta": round(after["embed_cached"] - before["embed_cached"]),
-        "embed_merged_delta": round(after["embed_merged"] - before["embed_merged"]),
-        "negative_suppressed_delta": round(after["negative_suppressed"] - before["negative_suppressed"]),
-        "tokens_delta": round(after["tokens"] - before["tokens"]),
+    "embed_merged_delta": round(after["embed_merged"] - before["embed_merged"]),
+    "negative_suppressed_delta": round(after["negative_suppressed"] - before["negative_suppressed"]),
+    "embed_unavailable_delta": round(after["embed_unavailable"] - before["embed_unavailable"]),
+    "writeback_l1_only_delta": round(after["writeback_l1_only"] - before["writeback_l1_only"]),
+    "tokens_delta": round(after["tokens"] - before["tokens"]),
     })
     if probe:
         stats.update(probe.summary())
@@ -459,11 +489,12 @@ def main() -> int:
     ladder = RESULTS / f"ladder-{tag}.csv"
     fields = ["users", "workers", "per_worker_users", "model", "profile",
               "request_count", "failure_count", "qps", "p50", "p95",
-              "p99", "max", "requests_delta", "admitted_delta", "ratelimited_delta",
-              "valid_requests_delta", "l1_delta", "l2_delta",
-              "flight_delta", "llm_delta", "embed_remote_delta", "embed_cached_delta",
-              "embed_merged_delta", "negative_suppressed_delta",
-              "tokens_delta",
+        "p99", "max", "requests_delta", "admitted_delta", "ratelimited_delta",
+        "valid_requests_delta", "l1_delta", "l2_delta",
+        "flight_delta", "llm_delta", "embed_remote_delta", "embed_cached_delta",
+        "embed_merged_delta", "negative_suppressed_delta",
+        "embed_unavailable_delta", "writeback_l1_only_delta",
+        "tokens_delta",
               "interception_total", "interception_cache_only", "interception_admitted",
               "rate_limited_nonzero",
               "cpu_mean_pct", "cpu_max_pct", "freemem_min_gb",
@@ -490,8 +521,7 @@ def main() -> int:
         "locustWorkers": args.workers, "stepsCsv": str(ladder.name),
         "durationPerStepS": args.duration, "steps": rows, "env": env_record(),
         "counters": COUNTERS,
-        "note": ("perf profile 下调限流配额（见 application.yml perf 段）；"
-                 "生成侧为 MockLLM 固定延迟，embedding 仍为真实 bge-m3"),
+        "note": "；".join(profile_notes(args.profile or "")),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"\n阶梯结果 {ladder.relative_to(REPO)}")

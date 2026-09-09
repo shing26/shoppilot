@@ -33,6 +33,10 @@ MANIFEST = [
      "缓存关、合并开：把两级防线的贡献拆开"),
     ("H 组：Token 全开对照", "ladder-l1-perf-20260909-011215-cacheton.csv",
      "与 F/G 同并发同模型的开启态"),
+    ("L 组：向量服务停用（压测期间 Ollama 没了）",
+     "ladder-l1-perf,no-ollama-20260909-123509-noollama.csv",
+     "profile perf,no-ollama：只把 shoppilot.embedding.base-url 指到空端口，稠密召回与 L2 同时失能，"
+     "量降级后的吞吐、拦截率与两道写回门各挡了什么（ADR 0018）"),
 ]
 
 POOL_GROUPS = [
@@ -129,6 +133,8 @@ def main():
         "",
         "- **模式**：`perf`。生成侧为 `MockLLMClient` 固定延迟（首字 300 ms、整段 500 ms），",
         "  embedding 为**真实** bge-m3（经本机 Ollama）。因此吞吐衡量的是网关编排层，不含模型推理（ADR 0001）。",
+        "  例外是 L 组：那一组用 `no-ollama` profile 把向量服务指到空端口，"
+        "embedding 不可用是它的自变量，不是背景条件（见 ADR 0018）。",
         "- **QPS**：只统计四条真实请求组（hot/para/action/long），不含鉴权握手与派生事件，见 `run_loadtest.py` 的 `qps_scope=chat-only`。",
         "- **拦截率**：`(L1命中 + L2命中 + 穿透合并) / 有效咨询请求`，分母已减去被限流请求；",
         "  命中数来自网关侧 Micrometer 计数器差值，不是流量模型里的百分比。",

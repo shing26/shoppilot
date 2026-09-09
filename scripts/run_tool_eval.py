@@ -209,6 +209,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="只打印预估与口径，不发请求")
     parser.add_argument("--force", action="store_true", help="跳过预算熔断预检")
     parser.add_argument("--ops-token", default="dev-ops-token")
+    parser.add_argument("--tag", default="", help="输出文件名后缀，区分同模式不同端点（如 dev-localcompat）")
     args = parser.parse_args()
 
     cases = [json.loads(line) for line in CASES.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -221,11 +222,12 @@ def main() -> int:
                "Authorization": "Bearer " + mock_token(args.base, "T001", "C001")}
     circuit = http_json(f"{args.base}/api/v1/support/ops/circuit", headers=headers)
     mode, model = circuit.get("llmMode"), circuit.get("llmModel")
+    llm_base = circuit.get("llmBaseUrl") or "unknown"
     used, budget = int(circuit.get("tokensUsedToday") or 0), int(circuit.get("dailyTokenBudget") or 0)
 
     per_case_tokens = estimate_per_case_tokens(cases)
     projected = per_case_tokens * len(cases)
-    print(f"模式={mode} 模型={model} 样本={len(cases)} 并发={args.concurrency}")
+    print(f"模式={mode} 模型={model} 端点={llm_base} 样本={len(cases)} 并发={args.concurrency}")
     print(f"单条平均消耗预估 {per_case_tokens} tokens -> 本轮预计 {projected} tokens")
     if mode == "dev" and budget > 0:
         remaining = max(0, budget - used)
@@ -285,14 +287,17 @@ def main() -> int:
                 print(f"  {done}/{len(cases)}")
 
     rows.sort(key=lambda r: r["id"])
-    detail_path = RESULTS / f"tool-eval-{stamp}-{mode}.csv"
+    # 文件名里带上端点类别：dev 指向本地 OpenAI 兼容端点与指向 DashScope 是两组完全不同的证据，
+    # 只靠 meta 里的 mode 字段区分，翻 results 目录时会把两者混为一谈。
+    slug = f"{mode}-{args.tag}" if args.tag else mode
+    detail_path = RESULTS / f"tool-eval-{stamp}-{slug}.csv"
     with detail_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
     summary, failures = summarize(rows, mode)
-    summary_path = RESULTS / f"tool-eval-{stamp}-{mode}-summary.csv"
+    summary_path = RESULTS / f"tool-eval-{stamp}-{slug}-summary.csv"
     with summary_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(summary[0].keys()))
         writer.writeheader()
@@ -307,8 +312,9 @@ def main() -> int:
     errors = sum(1 for r in rows if r["error"])
     print(f"\n合计 {len(rows)} 条，请求失败 {errors} 条，prompt {total_prompt} / completion {total_completion} tokens")
     print(f"明细 {detail_path.relative_to(REPO)}；汇总 {summary_path.relative_to(REPO)}")
-    RESULTS.joinpath(f"tool-eval-{stamp}-{mode}-meta.json").write_text(json.dumps({
-        "mode": mode, "model": model, "cases": len(rows), "limit": args.limit,
+    RESULTS.joinpath(f"tool-eval-{stamp}-{slug}-meta.json").write_text(json.dumps({
+        "mode": mode, "model": model, "llmBaseUrl": llm_base,
+        "cases": len(rows), "limit": args.limit,
         "promptTokens": total_prompt, "completionTokens": total_completion,
         "estimatedPerCaseTokens": per_case_tokens, "dailyTokenBudget": budget,
         "tokensUsedBeforeRun": used, "concurrency": args.concurrency,
