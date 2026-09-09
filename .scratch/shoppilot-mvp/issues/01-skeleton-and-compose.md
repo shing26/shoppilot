@@ -29,6 +29,8 @@
 7. **`up.ps1` 等 biz-mock readiness 的上限是 300 s，不是 180 s。** 空机上 5 万单 seed 实测 8.3 s，但门禁全量跑时 seed 与知识库入库（90 块 × 向量化 + ES/Qdrant 写入）并行抢同一台 16 G 机器，实测把 `stack` 步顶到 249 s 红过一次。300 s 是给并行阶段留了约 20 倍实测余量，不是把超时调成"永远够"——真卡住时它照样会在 300 s 处红，并且红在"等 readiness"这一行，不会伪装成服务起不来。
 8. **中间件用 `container_name` 钉死成 `shoppilot-redis|qdrant|es`，代价是"一台机器一个检出"。** 钉名字是为了让 README 与排障手册里写的 `docker logs shoppilot-es` 和 `docker ps` 里看到的名字是同一份。代价到 2026-09-10 才撞上：容器名在 Docker 里全局唯一，而 compose 的项目名按目录算，所以第二个检出（干净检出检查用的 `D:\ShopPilot-cleancheck`）哪怕原栈只是"停着没删"也会报 `The container name "/shoppilot-es" is already in use`。改法是明确边界而不是改名字：`down.ps1 -Containers` 从"只 stop"改成 stop + `compose rm`（数据在命名卷里，删容器不删数据），`clean_clone_check.ps1` 的前置检查在容器还在跑时直接红、停着时替你把名字腾出来。
 
+9. **Qdrant 的健康检查在 2026-09-10 之前从来没成功过一次，而原因不是超时。** 当时写的是 `CMD-SHELL wget -qO- http://127.0.0.1:6333/readyz`，容器长期报 `unhealthy`，我把原因记成"`/readyz` 在 wget 下超时"——那是猜的。真跑一次 `docker exec shoppilot-qdrant command -v wget curl` 就露底了：这个镜像里两个客户端都没有（`rc=127`），所以那条检查从第一天起就必然失败，而"读写正常"恰恰证明它什么都没测到。镜像里有 `bash`，于是用它的 `/dev/tcp` 手搓一次 `GET /readyz` 并断言 200，`docker inspect` 立刻转 `healthy`。**恒红的健康检查比没有健康检查更糟**：它教会人的是"这个红色可以忽略"，于是真坏的那一次也没人会看。
+
 **你需要能当场回答的三个追问**
 
 - *Q：为什么 ES 用 7.17 而不是 8.x？* A：8.x 强制 HTTPS + 客户端版本协商，本机内存预算下多一层安全握手不值当；7.17 的 `_search` + BM25 就是这个项目要用的全部能力，闭源特性一个没用。
@@ -36,6 +38,8 @@
 - *Q：`./mvnw` 在你机器上跑得起来吗？* A：能，但要注意本机 `mvn` 的全局 `conf/settings.xml` 把 `localRepository` 指到了 `E:\maven_repository`，而 wrapper 用的是默认 `~/.m2/repository`。离线复现时加 `-Dmaven.repo.local=E:\maven_repository` 即可对齐；干净机器联网首跑不需要这个。
 - *Q：两个检出为什么不能并存？容器名不是 compose 自己管的吗？* A：项目名是 compose 按目录算的，但 `container_name` 一旦写死就是 Docker 全局唯一的容器名，两套检出抢同一个名字，而且"停着"不等于"释放"。我保留钉死的名字（换来的是 README 里那几行命令直接可用），把冲突做成脚本里的显式前提：`down.ps1 -Containers` 现在 stop + rm 腾名字，`clean_clone_check.ps1` 前置检查还会查那三个宿主端口有没有被占用、并把空闲物理内存打出来——克隆起来的第二套全栈在这台 16 G 机器上本身就是失败源。
 
+- *Q：你的中间件健康检查真的在检查东西吗？* A：Qdrant 那条以前没有——它恒红，因为镜像里根本没有 wget/curl，`CMD-SHELL` 每次都 127。2026-09-10 换成 `bash` 的 `/dev/tcp` 手搓 `GET /readyz` 断言 200，才第一次转绿。教训不在 Docker，在"红了一周的东西没人去问为什么红"：现在我对任何健康检查的第一问都是"它失败的时候长什么样"，能稳定失败的检查才有资格说它成功。
+
 **验证记录（2026-09-05）**
 
-`docker compose up -d` 三容器起来；两服务 `/actuator/health` 均 UP；`mvn -o verify` 全绿。Qdrant 容器 healthcheck 长期报 `unhealthy`（`/readyz` 在其内部 wget 下超时），实测读写正常，已记入 README 已知限制。
+`docker compose up -d` 三容器起来；两服务 `/actuator/health` 均 UP；`mvn -o verify` 全绿。Qdrant 容器 healthcheck 长期报 `unhealthy`，当时记成"`/readyz` 在其内部 wget 下超时"——**这个归因是错的**：镜像里没有 wget 也没有 curl（`rc=127`），那条检查从第一天起就必然失败。2026-09-10 改用 `bash` 的 `/dev/tcp` 之后 `docker inspect` 报 `healthy`，README 已知限制里那条随之删掉（见决策 9）。

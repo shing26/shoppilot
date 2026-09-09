@@ -22,7 +22,10 @@ services:
     volumes:
       - qdrant-data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:6333/readyz || exit 1"]
+      # 这个镜像里没有 wget 也没有 curl（command not found，rc=127），所以原来那条健康检查
+      # 从第一天起就没成功过一次：容器永远标 unhealthy，而读写全正常。恒红的健康检查只会教人
+      # 忽略红色。镜像里有 bash，就用 bash 的 /dev/tcp 手搓一次 GET /readyz 并断言 200。
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /readyz HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q 200' || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20

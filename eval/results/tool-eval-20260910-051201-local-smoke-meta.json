@@ -4,13 +4,13 @@
   "llmBaseUrl": "http://127.0.0.1:11434",
   "cases": 24,
   "limit": 24,
-  "promptTokens": 23430,
-  "completionTokens": 1627,
-  "estimatedPerCaseTokens": 1063,
+  "promptTokens": 21981,
+  "completionTokens": 1789,
+  "estimatedPerCaseTokens": 1055,
   "dailyTokenBudget": 200000,
-  "tokensUsedBeforeRun": 0,
+  "tokensUsedBeforeRun": 3469,
   "concurrency": 2,
-  "startedAt": "20260910-035902",
+  "startedAt": "20260910-051201",
   "requestErrors": 0,
   "summary": {
     "ACTION_ADDRESS": {
@@ -56,7 +56,7 @@
       "args_accuracy": "n/a",
       "slotask_accuracy": "100.0%",
       "fabricated_cases": 0,
-      "overall_accuracy": "50.0%"
+      "overall_accuracy": "100.0%"
     },
     "POLICY_FRESH": {
       "intent": "POLICY_FRESH",

@@ -305,7 +305,6 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 - **换说法的转人工仍依赖向量服务**：字面「转人工 / 人工客服」在 T0 定案，embedding 超时也转得出去（ADR 0017）；
   「叫你们经理过来处理」这类 paraphrase 只有 T1 质心认得，embedding 不可用时按 fail-closed 交给模型定案。
   最低可用线是"字面喊人一定转得出去"，不是"任何说法都不依赖外部服务"。
-- **Qdrant 容器 healthcheck 长期报 `unhealthy`**（容器内 wget 访问 `/readyz` 超时），实测读写正常。
 - **本机 `mvn` 与 `mvnw` 的本地仓库不同**：`mvn` 走 `E:\maven_repository`，wrapper 走 `~/.m2`。
   离线复现时统一加 `-Dmaven.repo.local=E:\maven_repository`，干净机器联网首跑无此问题。
 
@@ -381,26 +380,28 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，�
 ```
 
 ```
-step        exit  note          # 2026-09-10 03:52-04:01 同机全量跑（profile=local），16 步全绿
-stop          0   3s           # 释放 fat jar 文件锁
-build         0  57s           # mvnw verify：3 + 10 + 84 = 97 项
-unit          0  47s           # mvn -o test 同一批，离线可跑
-report        0   1s           # build_loadtest_report.py --strict：生成物与压测产物一致，缺证据即红
-stack         0  79s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
-plan          0  84s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
+step        exit  note          # 2026-09-10 05:05-05:13 同机全量跑（profile=local），16 步全绿
+stop          0   2s           # 释放 fat jar 文件锁
+build         0  52s           # mvnw verify：3 + 10 + 84 = 97 项
+unit          0  48s           # mvn -o test 同一批，离线可跑
+report        0   0s           # build_loadtest_report.py --strict：生成物与压测产物一致，缺证据即红
+stack         0  74s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
+plan          0  80s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
 hitzero       0   9s           # 命中路径零模型、零远程向量化
 action        0   7s           # 查得到 / 问得出 / 越不了权
-idem          0  10s           # 并发同 token + 状态前置校验
-fallback      0  29s           # 七种降级原因 + 工单反查
+idem          0   9s           # 并发同 token + 状态前置校验
+fallback      0  26s           # 七种降级原因 + 工单反查
 ratelimit     0   1s           # 同步 429 与 SSE rate_limited
-polarity      0  28s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
+polarity      0  26s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
 l2            0   8s           # tenant/scope/intent/kb_epoch 四条 must-filter
-console       0  22s           # Playwright 15 项
-demo          0  13s           # 三条演示
-eval          0 132s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）
+console       0  21s           # Playwright 15 项
+demo          0  12s           # 三条演示
+eval          0 114s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）
 ```
 
-总耗时 530s，用例数从 63 涨到 97（新增的分布在 dev 生成路径、缓存写回与向量化重试、以及下面第 5 条那个 flush 竞态）。`stack` 79s + `demo` 13s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
+矩阵现在由脚本自己落盘（`logs/acceptance-run-<时间戳>.log`，本机不入库）：run2..run8 那几份是人手工 Tee 出来的，
+run9 就漏了，于是"16 步全绿"这句话一度在机器上找不到落点。现在它拿 `$results` 生成，不去回抓 `Write-Host`。
+总耗时 488s，用例数从 63 涨到 97（新增的分布在 dev 生成路径、缓存写回与向量化重试、以及下面第 5 条那个 flush 竞态）。`stack` 74s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
 那条动作本来还要一个没参与的人来跑，现在这一段机器自己代跑了：`scripts/clean_clone_check.ps1` 把 HEAD 克隆到空目录、
 在**空数据卷**上照 README 起栈、跑通三条演示（`logs/clean-clone-check-20260910-034422.log`，`up` 118s + `demo` 105s，
 克隆目录里连 `.env` 都没有）。机器能证明的就是"干净检出"这一级，**换人换机仍然没证**——这台机器上还跑着别的项目的容器。
@@ -436,6 +437,14 @@ eval          0 132s           # 24 条按意图分层的评测链路冒烟（�
   它验的是"调了哪个方法"，不是"发出去什么请求"。所以补了 `QdrantRestClientWireTest`（7 项）对着假 Qdrant 钉住
   请求 URL 与非 2xx 的分类，404 与 409 的响应体都是从真机原样抄回来的。
 
+还有一件不算是"假红"、但同样是门禁自己的毛病：run10 的 `plan` 步红在"重启 biz-mock 后等 readiness"，
+而 `up.ps1` 里同一句等待早就因为同样的争抢提到 300 s 了——**同一个常量在两处各写一份，改就只改对一半**，
+这里还是 180 s。更要命的是死因查不了：这一步一失败，门禁的健康门立刻跑 `up.ps1 -SkipIngest`，它用 `>`
+重开同一个 `logs/bizmock.out`，把"为什么没起来"的现场整个覆盖掉，最后只剩一句"readiness 不是 UP"。
+现在两处对齐 300 s，并且等待失败时先打印端口是否在听、launcher 进程还活不活、日志最后 8 行，再返回失败。
+至于 run10 那一次到底是慢还是被 OS 弄死，**不假装已经归因**：现场已经被那次恢复动作毁了，run11 这一等 80 s
+全绿；下一次再红，三份现场会当场把它分开。
+
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
 | 01 | `run-acceptance.ps1` 的 stop / build / unit / stack 四步（`mvnw verify` + `mvn -o test` + `up.ps1`）；`verify-plan-actions.ps1` 第 01 段判"三中间件在跑、两服务健康 UP" |
@@ -453,7 +462,7 @@ eval          0 132s           # 24 条按意图分层的评测链路冒烟（�
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-035902-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-051201-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
 | 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 69s / 13s |

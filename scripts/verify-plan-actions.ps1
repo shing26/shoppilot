@@ -110,7 +110,9 @@ foreach ($svc in @(@('8082', '网关'), @('8091', 'biz-mock'))) {
     $status = (Invoke-RestMethod "http://127.0.0.1:$($svc[0])/actuator/health" -TimeoutSec 10).status
     Assert-True ($status -eq 'UP') "$($svc[1]) health=UP（实际 $status）"
 }
-# Qdrant 容器的 healthcheck 长期误报 unhealthy（README 已知限制），所以按接口实际可用性判
+# 中间件一律按接口实际可用性判，不看 docker 给容器打的 health 标签：Qdrant 那条 healthcheck
+# 曾经恒红（镜像里根本没有 wget，2026-09-10 换成 bash 的 /dev/tcp 才真在跑，见 ticket 01 决策 9）。
+# 就算它现在绿着也仍然按接口判——"容器说自己健康"和"它答不答 /collections"是两件事。
 $esHealth = (Invoke-RestMethod 'http://127.0.0.1:19200/_cluster/health' -TimeoutSec 10).status
 $qdOk = (Invoke-RestMethod 'http://127.0.0.1:16333/collections' -TimeoutSec 10).status
 Assert-True ($esHealth -in @('green', 'yellow')) "ES 集群健康 $esHealth"
@@ -225,7 +227,24 @@ Assert-True ($admittedModelCalls -eq 0 -or $triageDelta -gt 0) `
     "准入请求产生的模型调用（$admittedModelCalls 次）都能由 T0/T1 未定案升级（$triageDelta 次）解释"
 
 Write-Host "`n=== summary ===" -ForegroundColor Cyan
-function Wait-ServiceUp([int]$port, [string]$label, [int]$seconds = 180) {
+function Show-DownEvidence([int]$port, [string]$pidFile, [string]$logFile) {
+    # 等不到 readiness 时最没用的输出就是一句"不是 UP"。更糟的是这一步之后门禁的健康门会跑
+    # up.ps1 -SkipIngest，它用 > 重开同一个日志文件，那次真失败的现场就没了——2026-09-10 的
+    # run10 正是这样丢了 biz-mock 的现场，只剩"没起来"一句话。所以在返回失败之前，先把端口、
+    # launcher 进程是否存活、日志尾巴三份现场打出来。
+    $launcher = if (Test-Path $pidFile) { (Get-Content $pidFile -Raw).Trim() } else { '无 pid 文件' }
+    $alive = $false
+    if ($launcher -match '^\d+$') { $alive = [bool](Get-Process -Id ([int]$launcher) -ErrorAction SilentlyContinue) }
+    Write-Host ("  现场：端口 {0} 监听={1}  launcher={2} 存活={3}" -f $port, (Test-Port $port), $launcher, $alive) -ForegroundColor Yellow
+    if (Test-Path $logFile) {
+        Write-Host "  日志最后 8 行（$([IO.Path]::GetFileName($logFile))）：" -ForegroundColor Yellow
+        Get-Content $logFile -Encoding UTF8 -Tail 8 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    | $_" }
+    }
+}
+
+# 默认 300 s，与 up.ps1 里那一等对齐（ticket 01 决策 7）：空机上 5 万单 seed 实测 8-17 s，
+# 但这一步跑在整台机器最挤的时候，180 s 实测红过一次（run10 的 plan 步）。
+function Wait-ServiceUp([int]$port, [string]$label, [int]$seconds = 300, [string]$pidFile = '', [string]$logFile = '') {
     $deadline = (Get-Date).AddSeconds($seconds)
     while ((Get-Date) -lt $deadline) {
         # readiness 组：Spring Boot 在 ApplicationRunner（biz-mock 的 5 万单 seed、网关的建集合+预热）
@@ -234,6 +253,7 @@ function Wait-ServiceUp([int]$port, [string]$label, [int]$seconds = 180) {
         if ($up) { return $true }
         Start-Sleep -Seconds 3
     }
+    if ($pidFile -or $logFile) { Show-DownEvidence -port $port -pidFile $pidFile -logFile $logFile }
     return $false
 }
 
@@ -262,7 +282,8 @@ if ($WithRestarts) {
         Write-Host '  注意：biz-mock 进程整体消失时工单无处可落（已知限制，见 README）' -ForegroundColor Yellow
     }
     & (Join-Path $root 'scripts\start-bizmock.ps1') | Out-Null
-    Assert-True (Wait-ServiceUp 8091 'biz-mock') 'biz-mock 重新起来且 seed 跑完（readiness=UP）'
+    Assert-True (Wait-ServiceUp 8091 'biz-mock' 300 (Join-Path $root 'logs\bizmock.pid') (Join-Path $root 'logs\bizmock.out')) `
+        'biz-mock 重新起来且 seed 跑完（readiness=UP）'
     $statsAfter = Invoke-Ops 'GET' '/api/v1/support/ops/stats' $null
     Write-Host "  重启后 orders=$($statsAfter.orders)"
     Assert-True ($statsAfter.orders -eq $statsBefore.orders) `
@@ -282,7 +303,8 @@ if ($WithRestarts) {
         & (Join-Path $root 'scripts\stop.ps1') -Ports '8082' | Out-Null
         Start-Sleep -Seconds 2
         & (Join-Path $root 'scripts\start-gateway.ps1') -Profile local | Out-Null
-        Assert-True (Wait-ServiceUp 8082 '网关') "指向死端点的网关自己起来了（模型不可用不等于服务起不来）"
+        Assert-True (Wait-ServiceUp 8082 '网关' 300 (Join-Path $root 'logs\gateway-local.pid') (Join-Path $root 'logs\gateway-local.out')) `
+            "指向死端点的网关自己起来了（模型不可用不等于服务起不来）"
         Invoke-Ops 'POST' '/api/v1/support/ops/cache/flush' $null | Out-Null
         $deadTok = Get-Token 'T001' 'C001'
         $deadEvents = Invoke-ChatStream $deadTok (New-ProbeQuery '生鲜坏了怎么赔') 'plan-14-llmdead'
@@ -300,7 +322,8 @@ if ($WithRestarts) {
         & (Join-Path $root 'scripts\stop.ps1') -Ports '8082' | Out-Null
         Start-Sleep -Seconds 2
         & (Join-Path $root 'scripts\start-gateway.ps1') -Profile local | Out-Null
-        Assert-True (Wait-ServiceUp 8082 '网关') '已恢复默认配置并重启网关'
+        Assert-True (Wait-ServiceUp 8082 '网关' 300 (Join-Path $root 'logs\gateway-local.pid') (Join-Path $root 'logs\gateway-local.out')) `
+            '已恢复默认配置并重启网关'
     }
 }
 if ($failures.Count -gt 0) {

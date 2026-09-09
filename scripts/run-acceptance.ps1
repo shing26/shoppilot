@@ -184,9 +184,28 @@ if ($results.Count -eq 0) {
 }
 $results | Format-Table -AutoSize | Out-String -Width 120 | ForEach-Object { Write-Host $_ }
 $failed = @($results | Where-Object { $_.Exit -ne 0 -and $_.Exit -ne '-' })
+# 矩阵不能只活在某个终端里。run2..run8 那几份日志是人手工 Tee 出来的，run9 就漏了，
+# 于是"16 步全绿"这句话在机器上找不到落点。现在由脚本按 $results 自己生成记录——
+# 注意是拿数据生成，不是回抓 Write-Host 的输出流，那正是干净检出检查上一轮栽的地方。
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$runLog = Join-Path $root "logs\acceptance-run-$stamp.log"
+$commit = try { @(& git -C $root rev-parse --short HEAD 2>$null | Select-Object -First 1)[0].Trim() } catch { 'unknown' }
+if (-not $commit) { $commit = 'unknown' }
+$total = [int]((Get-Date) - $started).TotalSeconds
+@(
+    "run-acceptance  profile=$Profile  commit=$commit"
+    ("开始 {0:yyyy-MM-dd HH:mm:ss}  结束 {1:yyyy-MM-dd HH:mm:ss}  总耗时 ${total}s" -f $started, (Get-Date))
+    "逐步日志目录 $outDir"
+    ''
+    ('{0,-10} {1,5}  {2}' -f 'step', 'exit', 'note')
+    ($results | ForEach-Object { '{0,-10} {1,5}  {2}' -f $_.Step, $_.Exit, $_.Note })
+    ''
+    $(if ($failed.Count -eq 0) { "全部步骤通过（$($results.Count) 步）" } else { "失败步骤：$(($failed | ForEach-Object { $_.Step }) -join ', ')" })
+) | Out-File -FilePath $runLog -Encoding utf8
 if ($failed.Count -gt 0) {
     Write-Host ("失败步骤: " + (($failed | ForEach-Object { $_.Step }) -join ', ')) -ForegroundColor Red
+    Write-Host "矩阵记录：$runLog"
     exit 1
 }
-Write-Host "全部步骤通过，日志在 $outDir" -ForegroundColor Green
+Write-Host "全部步骤通过，日志在 $outDir ；矩阵记录 $runLog" -ForegroundColor Green
 exit 0

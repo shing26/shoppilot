@@ -28,6 +28,8 @@
 6. `up.ps1` / `demo.ps1` 按"没参与过的人只照 README 操作"写：中间件 → 入库 → 两个服务 → 冒烟，脚本内按依赖等 health 端点，端口全部走 `shoppilot.*` 段避开本机其他项目。
 7. 可复现性那条承诺不靠"我这台跑过"充数：加 `scripts/clean_clone_check.ps1`，`git clone` 出 HEAD、在克隆目录里照 README 起栈（空数据卷，走完整入库）再跑三条演示，结论与全量输出落 `logs/clean-clone-check-*.log`。它第一晚就抓到三件事，其中两件是检查器自己的：`container_name` 全局唯一让第二个检出撞死在起栈第一步（见 ticket 01 决策 8）；`up.ps1`/`demo.ps1` 的成功行是 `Write-Host` 打的，走 information 流，而 `Run-Step` 只并 `2>&1`，于是"栈已就绪 + 三条演示全过"被判成 FAIL——量具先修（`*>&1`）再谈结论，这和 ticket 19 的 TTFT 先修量具是同一条纪律；剩下那件是真前提：克隆起来的第二套全栈要 1.5 GB 起步，机上空闲 1.5 GB 时 `mvn` 的 JVM 会被弄死、`[4/6]` 找不到 fat jar 退回 `mvn spring-boot:run`、biz-mock 300 s 起不来，所以前置检查打印空闲内存、`up` 允许重试一次（每步可重入，重试不是把红洗成绿，日志里两次尝试都在）。
 
+8. 门禁自己也要留证据：`run-acceptance.ps1` 现在把矩阵写成 `logs/acceptance-run-<时间戳>.log`（拿 `$results` 生成，不回抓 `Write-Host`）。起因是 run2..run8 那几份日志全靠人手工 Tee，run9 漏了，于是"16 步全绿"在机器上找不到落点。同一轮还揪出两个门禁毛病：`verify-plan-actions.ps1` 里重启 biz-mock 后那一等仍是 180 s，而 `up.ps1` 里同一个等待早就因为同样的资源争抢提到 300 s——**同一个常量写两份，改就只改对一半**；以及这一步失败之后健康门立刻跑 `up.ps1 -SkipIngest`，用 `>` 重开同一个 `bizmock.out`，把"为什么没起来"的现场覆盖掉。现在等待失败会先打印端口在不在听、launcher 进程活不活、日志最后 8 行再返回失败。run10 那一次到底是慢还是被弄死不假装归因（现场已毁），run11 同一等 80 s 全绿。
+
 **需要能当场回答的三个追问**
 
 1. "README 上的数字你自己当场能复现吗？" —— 每个数字旁边就是文件名，抽查任意一行能落到 `loadtest/results/` 或 `eval/results/` 的具体 CSV/JSON，同批 `-meta.json` 记了 git commit、容器内存、空闲内存。复现不到同一量级我会先说不达标，而不是先解释。
