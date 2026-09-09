@@ -23,7 +23,9 @@ if ($Containers) {
     # 停而不移除不够：compose 文件用 container_name 钉死了容器名，而容器名在 Docker 里全局唯一。
     # 只 stop 的话，另一个检出（比如干净检出检查）会撞上 "already in use" 而起不来。
     docker compose rm -f | Out-Host
-    Write-Host '中间件容器已移除；命名数据卷保留（up.ps1 会原样挂回旧数据）'
+    # ES 与 Qdrant 的数据在命名卷里，删容器不删数据；Redis 没有卷，本来就是可丢的缓存层，
+    # 移除容器等于把 L1 清空——重连后第一次提问是冷启动，这是预期行为而不是事故。
+    Write-Host '中间件容器已移除：ES/Qdrant 的命名数据卷保留，Redis 无卷（L1 缓存随之清空）'
 } else {
     Write-Host '中间件容器保持运行；要一起停用 -Containers'
 }
