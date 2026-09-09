@@ -67,6 +67,7 @@ python scripts/run_tool_eval.py
 4. `missing_slot` 用例的期望写成 `slotAsk: true` + `mustNotContainArgs: ["orderNo"]`，模型编造订单号时 `ToolDispatcher` 直接判 fabricated、不发起查询，即使工具选对也不算通过。
 5. 熔断前置：跑前用样例估算单 case tokens × 样本数，与 `/ops/circuit` 的日预算剩余比较，超了 exit 2（要 `--force` 才继续），符合 ADR 0012。非 dev 模式额外打印"仅验证链路，不进入验收口径"。
 6. **勾上这条之前，先分清两件事。** 2026-09-09 11:10 那一轮（见上）已经在 `dev` 模式下跑完并落盘，但端点是本机 OpenAI 兼容服务、模型仍是 qwen2.5:3b，所以它交的是「dev 路径可用 + 记账正确」，不是云端 qwen-plus 的能力数字。`HARD_FAIL_INTENT` / `ACCEPT_TOOL` 两条线只在 dev 模式参与红绿判定，这一轮因此判红——那正是这条判据该有的行为。
+7. **默认日预算与本票的验收动作撞车，这件事要算出来给人看。** 完整集 180 条、单条实测约 1.1k token，一轮约 19 万，而 ADR 0012 的默认值是 20 万——也就是说默认配置刚好只够跑一次自己的验收动作，当天只要先前有过任何 dev 调用（哪怕一轮 24 条冒烟就是 2.5 万）就必然撞线。脚本的处置是对的：跑前用 `/ops/circuit` 的剩余额度做投影，不够就 `exit 2`，要 `--force` 才放行，所以不会出现"跑到第 120 条被熔断、只留下一堆半份数据"。缺的是**出路**：`daily-token-budget` 原先在 `application.yml` 里写死，而这个文件里每一个可调项都有 `SHOPPILOT_*` 环境变量的口子。现在改成 `${SHOPPILOT_LLM_DAILY_TOKEN_BUDGET:200000}`，跑评测当天显式抬高（`.env.example` 给了 260000 的示例），抬预算这件事留在配置里、有环境记录可查，而不是留在一次代码改动里。实测：把该变量设为 12345 起网关，`/ops/circuit` 回 `dailyTokenBudget=12345`；撤掉后回到 200000。
 
 **需要能当场回答的三个追问**
 

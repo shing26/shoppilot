@@ -40,16 +40,29 @@ public class QdrantRestClient {
 
     public void ensureCollection(String collection, int dimension, List<String> keywordFields,
                                  List<String> integerFields) {
+        // 这里故意不做"先 GET 判存在"：判完再建是两次往返，中间插入的另一次 flush 会让两边都以为对方建好了。
+        // 直接 PUT，把"已存在"当成就绪状态，见 createCollection。
+        createCollection(collection, dimension);
+        createIndexes(collection, keywordFields, integerFields);
+    }
+
+    private void createCollection(String collection, int dimension) {
         Map<String, Object> vectors = new LinkedHashMap<>();
         vectors.put("size", dimension);
         vectors.put("distance", "Cosine");
-        Map<String, Object> body = Map.of("vectors", vectors);
-        // 不存在的 collection 是 404，不是异常；拿 send() 的返回值判存在会把"没有"当成"坏了"
-        if (collectionExists(collection)) {
-            log.debug("collection {} 已存在", collection);
-        } else {
-            send("PUT", "/collections/" + collection, body);
+        // wait=true：建表要等落定。不带它，PUT 返回时表可能还没就绪，flush 之后紧跟的第一次检索会撞进来
+        HttpResponse<String> response = sendRaw("PUT", "/collections/" + collection + "?wait=true",
+                Map.of("vectors", vectors));
+        if (response.statusCode() == 409) {
+            // "已存在"对 ensure 语义来说就是目标达成：启动时表本来就在，或者并发的那路先建好了
+            log.debug("collection {} 已存在，跳过建表", collection);
+        } else if (response.statusCode() / 100 != 2) {
+            throw new IllegalStateException("Qdrant PUT /collections/" + collection + " -> "
+                    + response.statusCode() + " " + response.body());
         }
+    }
+
+    private void createIndexes(String collection, List<String> keywordFields, List<String> integerFields) {
         for (String field : keywordFields) {
             createIndex(collection, field, "keyword");
         }
@@ -57,6 +70,17 @@ public class QdrantRestClient {
             // kb_epoch 存的是数字，按 keyword 建索引会建出一个空索引，纪元过滤反而全表扫
             createIndex(collection, field, "integer");
         }
+    }
+
+    /**
+     * 这个失败是"表还没建出来"还是"存储坏了"？两者对使用者的语义完全不同：前者等于空缓存，
+     * 该安静地当 miss；后者才值得 WARN。Qdrant 的不存在是 404 + "Not found: Collection"，
+     * 走的是 {@link #send} 抛出的信息串。
+     */
+    public static boolean isMissingCollection(Throwable failure) {
+        String message = failure.getMessage();
+        return message != null
+                && (message.contains("Not found: Collection") || message.contains("doesn't exist"));
     }
 
     private void createIndex(String collection, String field, String dataType) {
@@ -120,9 +144,18 @@ public class QdrantRestClient {
         }
     }
 
-    /** 整表清空用删表重建，不用 delete-by-filter：Qdrant 不接受空 filter，硬凑一个恒真条件太脆。 */
+    /**
+     * 整表清空用删表重建，不用 delete-by-filter：Qdrant 不接受空 filter，硬凑一个恒真条件太脆，
+     * 而"说要清空却漏下带旧答案的点"在本项目里是缓存投毒，比多一次往返严重得多。
+     *
+     * <p>{@code wait=true} 是必须的：不带它，DELETE 只是"已受理"，表在几毫秒后才真的消失。
+     * 即便如此，删与建之间仍有一段"表确实不存在"的窗口，落在里面的 L2 检索会拿 404——本机把 flush
+     * 与 6 路并发问答混打 12 轮，窗口漏出 48 行「L2 检索失败，按未命中处理」。本来可以并成一步的
+     * {@code recreate=true} 在 Qdrant 1.12.4 上不生效（表存在时照样 409；新版 Table API 路径直接 404），
+     * 所以这个窗口留着，由读路径按"空缓存"分类并自愈补建，见 {@link #isMissingCollection}。
+     */
     public boolean deleteCollection(String collection) {
-        HttpResponse<String> response = sendRaw("DELETE", "/collections/" + collection, null);
+        HttpResponse<String> response = sendRaw("DELETE", "/collections/" + collection + "?wait=true", null);
         // 404 = 表本来就不存在，对"清空"这个语义来说就是成功
         return response.statusCode() / 100 == 2 || response.statusCode() == 404;
     }
@@ -155,16 +188,6 @@ public class QdrantRestClient {
         List<Map<String, Object>> must = new ArrayList<>();
         equality.forEach((key, value) -> must.add(Map.of("key", key, "match", Map.of("value", value))));
         return must.isEmpty() ? Map.of() : Map.of("must", must);
-    }
-
-    private boolean collectionExists(String collection) {
-        try {
-            HttpResponse<String> response = sendRaw("GET", "/collections/" + collection, null);
-            return response.statusCode() / 100 == 2;
-        } catch (RuntimeException transportFailure) {
-            throw new IllegalStateException("Qdrant 不可达 " + collection + ": " + transportFailure.getMessage(),
-                    transportFailure);
-        }
     }
 
     private HttpResponse<String> sendRaw(String method, String path, Object body) {

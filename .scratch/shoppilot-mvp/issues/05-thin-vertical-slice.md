@@ -28,6 +28,7 @@
 4. **T0 规则层先行，判定不确定即 `dynamic`（fail-closed）。** 本切片只做 T0：实体正则（订单号 `\\d{5,8}`、运单号、手机号）+ 关键词表 + 所有格动作词表。宁可少缓存，不可错缓存。
 5. **政策答案模板禁止断言式个性化结论。** 涉及"你是否适用"时输出引导语（ADR 0003），因为检索到的规则块不等于用户订单的真实状态。
 6. **模型依赖三模式（ADR 0001/0012）**：`dev` 走 DashScope OpenAI 兼容端点（不引厂商 SDK）、`local` 走 Ollama `qwen2.5:3b`、`perf` 走 `MockLlmClient`（`perf-first-token-latency: 300ms` / `perf-total-latency: 500ms`）。token 日预算默认 200000，超限走 `LLM_BUDGET_EXCEEDED`。
+   预算值可经 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET` 覆盖（`application.yml` 里这是最后一个写死的数值，而 180 条完整评测一轮就要约 19 万，撞线时如果没有配置口子，唯一的出路就是改仓库里的文件——那是把运维动作伪装成代码改动，详见 ticket 16 第 7 条）。
 7. **首版调试页只有 60 行原生 JS**（`fetch()` + `ReadableStream` 收 POST SSE，`innerText` 追加），用来当场暴露浏览器编码与流式切包问题；ticket 15 的完整控制台替换了它，同一份 `static/index.html`。
 
 **你需要能当场回答的三个追问**

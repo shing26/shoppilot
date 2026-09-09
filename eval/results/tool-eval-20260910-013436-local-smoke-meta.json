@@ -1,0 +1,107 @@
+{
+  "mode": "local",
+  "model": "qwen2.5:3b",
+  "llmBaseUrl": "http://127.0.0.1:11434",
+  "cases": 24,
+  "limit": 24,
+  "promptTokens": 23518,
+  "completionTokens": 2005,
+  "estimatedPerCaseTokens": 977,
+  "dailyTokenBudget": 200000,
+  "tokensUsedBeforeRun": 0,
+  "concurrency": 2,
+  "startedAt": "20260910-013436",
+  "requestErrors": 0,
+  "summary": {
+    "ACTION_ADDRESS": {
+      "intent": "ACTION_ADDRESS",
+      "cases": 3,
+      "tool_accuracy": "66.7%",
+      "args_accuracy": "66.7%",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "66.7%"
+    },
+    "ACTION_LOGISTICS": {
+      "intent": "ACTION_LOGISTICS",
+      "cases": 3,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "100.0%",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "ACTION_ORDER": {
+      "intent": "ACTION_ORDER",
+      "cases": 3,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "100.0%",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "ACTION_REFUND": {
+      "intent": "ACTION_REFUND",
+      "cases": 3,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "100.0%",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "ESCALATE": {
+      "intent": "ESCALATE",
+      "cases": 2,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "50.0%"
+    },
+    "POLICY_FRESH": {
+      "intent": "POLICY_FRESH",
+      "cases": 2,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "POLICY_PROMO": {
+      "intent": "POLICY_PROMO",
+      "cases": 2,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "POLICY_RETURN": {
+      "intent": "POLICY_RETURN",
+      "cases": 2,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "POLICY_SHIPPING": {
+      "intent": "POLICY_SHIPPING",
+      "cases": 2,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "UNKNOWN": {
+      "intent": "UNKNOWN",
+      "cases": 2,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "n/a",
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    }
+  }
+}

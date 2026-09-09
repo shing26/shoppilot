@@ -55,7 +55,10 @@ shoppilot:
     # 否则非流式的工具规划轮会成片报 TIMEOUT，测出来的数字属于超时而不是模型能力。
     read-timeout: ${SHOPPILOT_LLM_READ_TIMEOUT:20s}
     # ADR 0012：dev 模式 token 日预算熔断
-    daily-token-budget: 200000
+    # 默认 20 万，但必须可覆盖：ticket 16 的完整评测集是 180 条，单条实测约 1.1k token，
+    # 一轮就要 ~19 万，正好贴着默认值。这种情况下唯一能改预算的办法应该是设环境变量，
+    # 而不是为了让验收动作跑起来去动仓库里的配置文件。
+    daily-token-budget: ${SHOPPILOT_LLM_DAILY_TOKEN_BUDGET:200000}
     local-base-url: ${SHOPPILOT_OLLAMA_URL:http://127.0.0.1:11434}
     local-model: ${SHOPPILOT_LOCAL_LLM_MODEL:qwen2.5:3b}
     perf-first-token-latency: 300ms

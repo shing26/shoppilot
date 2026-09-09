@@ -58,14 +58,18 @@ $steps = [ordered]@{
     ratelimit = @{ Kind = 'ps1'; Cmd = 'scripts\verify-ratelimit.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('rate_limited') }
     polarity  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-polarity.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('验收通过') }
     l2        = @{ Kind = 'py'; Cmd = 'scripts\verify_l2_filters.py'; Arg = @(); Need = $true; Skip = $false; Expect = @('全部通过：L2') }
+    console   = @{ Kind = 'node'; Cmd = 'scripts\verify-console.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('console checks passed') }
+    demo      = @{ Kind = 'ps1'; Cmd = 'scripts\demo.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('演示结束') }
     # PLAN 第 16 行的验收动作写的是"冒烟后跑完整集"，完整集要 dev 模式与真实 key，
     # 冒烟这一半却是机器现在就能覆盖的：24 条按意图轮流取（--limit 已改成分层抽样，
     # 直接取前 24 条只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份。
     # 这一格量的是评测链路通不通（schema 下发、工具选择、参数抽取、CSV 落盘），
     # 阈值判定只在 dev 模式生效，所以 local 下它绿不代表准确率达标——那是另一行承诺项。
+    # 放在最后一步不是排版偏好：它自己打 24 轮模型 + 检索，122 s 里把本机 Ollama 压到向量化超时，
+    # 紧跟着的 console 那条"未命中路径要渲染成多帧打字机"就量到了被拖短的答案（09-09 18:16 那轮
+    # 只出 3 帧，判红；同一断言在空一点的机器上是 6 帧）。让重负载排在浏览器形状断言之前，
+    # 是给门禁自己制造假红。
     eval      = @{ Kind = 'py'; Cmd = 'scripts\run_tool_eval.py'; Arg = @('--limit', '24', '--tag', 'smoke'); Need = $true; Skip = $false; Expect = @('EVAL DONE') }
-    console   = @{ Kind = 'node'; Cmd = 'scripts\verify-console.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('console checks passed') }
-    demo      = @{ Kind = 'ps1'; Cmd = 'scripts\demo.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('演示结束') }
 }
 
 $results = @()
