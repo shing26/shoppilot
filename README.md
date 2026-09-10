@@ -157,7 +157,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | L2 路径吞吐 | 报天花板与归因 | **23.8-64.8 QPS**（每请求真打 bge-m3）vs 同档 845-1141 QPS（有进程内向量缓存），同并发差 **18-36 倍** | profile `perf,no-embedding-cache`，`embed_cached` 全程 0、远程向量化≈非命中请求数（L1 命中不需要向量）；生产侧解法见 ADR 0011：embedding 拆独立批处理服务 + 向量缓存命中率当一等指标 | `ladder-l2-perf,no-embedding-cache-20260909-133010-l2emb.csv` |
 | 虚拟线程收益 | 开关两组 | 400 并发 **+64%**、800 并发 **+65%**；100 并发 -3%、200 并发 -3% | 同模型同并发，只关 `spring.threads.virtual.enabled` + 200 平台线程池 | `ladder-l1-perf,no-virtual-20260909-011351-novirtual.csv` |
 | Token 节约率 | 关缓存基线对比 | **62.4%**（1096.8 → 412.3 token/请求）；拆开：穿透合并单独省 50.3%，缓存再省 24.4% | perf 模式 `shoppilot_llm_tokens_total` 差值/请求数，三档只差防线开关；token 由 Mock 按模板估算 | `ladder-l1-perf,nocache,nosf-…`、`ladder-l1-perf,nocache-…`、`ladder-l1-perf-…-cacheton.csv` |
-| 工具调用准确率 | 分意图选对工具与填对参数各 ≥95% | **dev 模式实测（DashScope `qwen-plus`，180 条）**：修复前 选对工具 157/180 = 87.2%、填对参数 46/63 = 73.0%（ADDRESS 66.7%、ORDER 72.2%、REFUND 72.2%）；按这一轮暴露的四组缺陷修完（工具集不再按子意图裁到单个、可选参数改默认值、改地址支持部分更新、"承诺办理却没调工具"加一次纠偏轮，见 ticket 16）之后 **选对工具 168/180 = 93.3%、填对参数 57/63 = 90.5%**。分意图（选对工具/填对参数）：POLICY 四行 100%、LOGISTICS 100/100%、ADDRESS 94.4/93.3%、REFUND 94.4/93.8%、ESCALATE 88.9%、UNKNOWN 83.3%、**ORDER 72.2/75.0%（最低行，原因见"已知限制"）** | 180 条人工校对用例（10 意图 × 18），对抗样本实测 40%；缺槽位的期望是追问而不是猜。模式口径：dev = 云端 qwen-plus；local 的 3B 数字留在 ticket 16 作对照，不混进这一格。POLICY 四行与 LOGISTICS 行取自全量那一轮（这两组的 `fallback` 列逐条为空），其余五行按意图补跑——全量那一轮跑到第 137 条把 ADR 0012 的日预算用完，剩下 43 条一律 `LLM_BUDGET_EXCEEDED` 转人工，不进统计；ACTION_ORDER 行在全量与补跑里逐格一致，说明它不是抖动 | `tool-eval-20260910-075747-dev*`（全量：修复前基线另见 `071643-dev*`）、补跑 5 份 `tool-eval-20260910-080[6-9]*-dev-budgetfix*` |
+| 工具调用准确率 | 分意图选对工具与填对参数各 ≥95% | **dev 模式实测（DashScope `qwen-plus`，180 条）**：修复前 选对工具 157/180 = 87.2%、填对参数 46/63 = 73.0%（ADDRESS 66.7%、ORDER 72.2%、REFUND 72.2%）；按这一轮暴露的四组缺陷修完（工具集不再按子意图裁到单个、可选参数改默认值、改地址支持部分更新、"承诺办理却没调工具"加一次纠偏轮，见 ticket 16）之后 **选对工具 168/180 = 93.3%、填对参数 57/63 = 90.5%**。分意图（选对工具/填对参数）：POLICY 四行 100%、LOGISTICS 100/100%、ADDRESS 94.4/93.3%、REFUND 94.4/93.8%、ESCALATE 88.9%、UNKNOWN 83.3%、**ORDER 72.2/75.0%（最低行，原因见"已知限制"）**。<br>9-11 把 72.2% 那一行归因收口（ADR 0021）：结论是 **gold 边界太窄，不是工具契约错**——`expect.tool` 允许写成合格答案集，只放开有「对偶矛盾」的 4 条，同一份明细离线重算（零额度）得 **选对工具 93.3% → 95.6%（168 → 172/180）、ORDER 行 72.2% → 94.4%**。两套读数并列：旧那套是当时口径下的真值，抹掉它读者就没法核对改动范围。对偶 4 组共 8 个 id：`ACT-ORD-09`↔`ACT-LOG-09`、`ACT-ORD-11`↔`ACT-LOG-11`、`ACT-ORD-16`↔`ACT-LOG-15`、`ACT-ORD-17`↔`ACT-LOG-17`；差异集合由 `--rescore-expected-diff` 机器断言恰好这 4 条，其余 176 条逐格一致。<br>填对参数那一格改按三分法报条数，不给单一比率：63 条带期望参数的样本里 **57 条旧 gold 命中且参数真比对过（全对）**，3 条（`ACT-ORD-09/16/17`）放开后合格工具已打出、但明细当年只存了旧 gold 那个工具的入参，要重跑才判得了，另 3 条工具仍未命中天然不可比对（旧判据把这 6 条一并算成"填错参数"，即工具选择的双算，见 ADR 0021 第二段）。新判据下分意图仍有 **5 行未达 95%** | 180 条人工校对用例（10 意图 × 18），对抗样本实测 40%；缺槽位的期望是追问而不是猜。模式口径：dev = 云端 qwen-plus；local 的 3B 数字留在 ticket 16 作对照，不混进这一格。POLICY 四行与 LOGISTICS 行取自全量那一轮（这两组的 `fallback` 列逐条为空），其余五行按意图补跑——全量那一轮跑到第 137 条把 ADR 0012 的日预算用完，剩下 43 条一律 `LLM_BUDGET_EXCEEDED` 转人工，不进统计；ACTION_ORDER 行在全量与补跑里逐格一致，说明它不是抖动。95.6% 那一套是"新判据 + 同一份 09-10 实测明细重算"，不是"新判据下重跑实测"；两条路判据同源（同一个 `judge()`），只差采样 | `tool-eval-20260910-075747-dev*`（全量：修复前基线另见 `071643-dev*`）、补跑 5 份 `tool-eval-20260910-080[6-9]*-dev-budgetfix*`；重算产物 `tool-eval-20260911-042142-rescore.csv`；取证 `python scripts/verify_eval_judge.py` |
 | 语义缓存阈值 | 0.85-0.99 扫描 + 反义对不互命中 | 0.95 工作点**召回实测 0**；同桶反义最大余弦 **0.9682**，由极性守卫兜 | 118 组对抗对，向量层与系统层分开报 | `docs/threshold-calibration.md`、`docs/threshold-sweep.csv` |
 | 混合检索质量 | hybrid 优于 dense-only | 16/16 与 16/16：**该语料上两者打平**，dense 已全中 | 同一次检索里两路前 5 对期望文档的命中名次 | `docs/retrieval-comparison.md` |
 | HikariCP 饱和点 | 记录饱和点与调池前后差异 | 池 2/10/30 三档 QPS 差 **≤1.2%**；池=2 时 pending 峰值 39、获取均值 6.5 ms，池=10 起 pending 全程 0 → **任务书"默认 10 连接先于 CPU 饱和"未被实测支持** | 流量模型 `biz`（100% 业务办理），每档 45 s，池大小经 `hikaricp.connections.max` 反读确认 | `ladder-biz-perf-20260909-033940-pool2.csv` 等三份 |
@@ -230,6 +230,10 @@ reason 去验第七种降级形态，于是七步全绿的一轮被判成作废�
 当天那三件手工活（三行配置、日预算、切 dev 再切回 local）由 `scripts/run-dev-eval.ps1` 收着：它先自查配置齐不齐、缺预算就把那一行写进 `.env`、把网关切到 dev 并回读 `/ops/circuit` 确认，然后**停下来**——加 `-Run` 才真发请求，跑完无论成败都把网关放回 local（挂着真 key 的 dev 网关是个花钱的陷阱）。
 补一句当天会撞到的事：完整集 180 条**实测约 26.7 万 token**（prompt 251,036 + completion 16,103，见 `tool-eval-20260910-075747-dev-meta.json`；修复前那一轮 21.4 万），不是原先估的 19 万——工具集从“按子意图裁到单个”改成“动作意图下发四个工具”之后每条 prompt 涨了约三分之一。ADR 0012 的日预算默认 20 万，所以评测当天要同时设 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET`（`.env.example` 给了 260000 的示例值，按实测这个示例值不够一次全量：当天临时提到 80 万/110 万跑完再调回 260000）；不设的话脚本会在跑前用剩余预算做投影并 `exit 2`，不会跑到一半被熔断留半份数据。
 
+9-11 补记（同一格的第二段读数）：最低行 72.2% 已做归因收口，走的是**重标 gold 而不是合并工具**，
+零额度离线重算出 93.3% → 95.6%；判据、两套读数与被否决的方案记在 ADR 0021，
+下一节承诺项那一格的结论没因此改动。
+
 ### 承诺项十条的逐条结论
 
 PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因就算交付），下面把"达成/未达成"逐条写明。
@@ -239,7 +243,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 | 热点拦截率 | ≥80% | **未达成**：74.0%（L1 主导口径）/ 78.2%（任务书 80% 热点口径），原因见上一节，不换口径刷绿 |
 | 命中路径 TP99 | <30 ms | **低并发达成**：200 并发 22 ms；100 并发 32 ms 已贴线，400 起 90→970 ms，同机发压把拐点提前 |
 | 未命中 TTFT | <500 ms | **未达成**：未命中知识路径 P50 690 ms（1 并发串行）/ 1031-1049 ms（50-200 并发）/ 1499 ms（500 并发）。归因后不是编排慢：300 ms 是 Mock 首字下限、311 ms 是单机 CPU 跑一条新问句的 bge-m3 向量化，网关自己只占 104 ms；判据在该形态下光靠固定项就到不了 500 ms |
-| 工具调用准确率 | 选对工具与填对参数各 ≥95% | **未达成**：dev 模式 `qwen-plus` 修完四组缺陷后 选对工具 93.3%、填对参数 90.5%（同口径修复前 87.2% / 73.0%）。最低行 ACTION_ORDER 72.2%：18 条里错 5 条，4 条是 `到哪了`、`是不是已经发出去了` 这类标注边界——gold 要 `queryOrderDetail`，模型给 `queryLogistics`，两个工具都能答上用户，全量与补跑逐格一致，不是抖动；第 5 条是"改地址+问状态"双诉求只办了后者。四条 POLICY 与 LOGISTICS 全 100%，ADDRESS 与 REFUND 各 94.4% |
+| 工具调用准确率 | 选对工具与填对参数各 ≥95% | **未达成**：dev 模式 `qwen-plus` 修完四组缺陷后 选对工具 93.3%、填对参数 90.5%（同口径修复前 87.2% / 73.0%）。最低行 ACTION_ORDER 72.2%：18 条里错 5 条，4 条是 `到哪了`、`是不是已经发出去了` 这类标注边界——gold 要 `queryOrderDetail`，模型给 `queryLogistics`，两个工具都能答上用户，全量与补跑逐格一致，不是抖动；第 5 条是"改地址+问状态"双诉求只办了后者。四条 POLICY 与 LOGISTICS 全 100%，ADDRESS 与 REFUND 各 94.4%。<br>9-11 把这 4 条按「对偶矛盾」放开合格答案集后离线重算，选对工具 **93.3% → 95.6%**、ORDER 行 72.2% → 94.4%（ADR 0021），**这一格仍是未达成，而且不是因为数字不够高**：判据的量纲是分意图各自 ≥95%，新判据下仍有 5 行未达线（ORDER / ADDRESS / REFUND 各 94.4%、ESCALATE 88.9%、UNKNOWN 83.3%）。聚合那格并列两套读数，正是为了不让 95.6% 被单独引用成"过了" |
 | 大促吞吐 | ≥1200 QPS 且错误率 <0.1% | **未达成**：1013 QPS@800，错误率全程 0；拐点由网关与发压机共同决定 |
 | L2 路径定性 | 报出天花板并归因 | **达成**：23.76 / 38.10 / 64.82 QPS @ 100/200/400（每请求真打 bge-m3）vs 同档 845 / 1124 / 1141 QPS，差 18-36 倍，归因到远程向量化调用次数≈非命中请求数 |
 | 向量服务停用的代价 | 报降级曲线并归因 | **达成**：冷缓存 136 / 265 / 482 QPS（对照组 296 / 580 / 976），纯缓存拦截率归 0、总拦截靠穿透合并撑在 21.8%-37.4%；错误率 0，p99 1200-1300 ms。有存量时另测：L1 命中 608/1123/2035 次、纯缓存拦截 7.3%。口径：profile `perf,no-ollama` 只把 `embedding.base-url` 指到空端口，等价于 Ollama 进程停用且不外溢；两道写回门各挡了什么见 ADR 0018；证据 `ladder-l1-perf,no-ollama-20260909-123509-noollama.csv` |
@@ -269,10 +273,21 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
   "新省 + 旧市 + 新详址"。两道防线：schema 与 Prompt 都写死"用户提到了就必须照抄"（修后三条里两条全对），
   以及办理成功后必须按工具返回的**合并后完整地址**复述给用户——复述不能阻止漏填，但能让用户当场看见哪一段没变，
   而不是以为改好了。云端 `qwen-plus` 那一轮没有这个形态（ADDRESS 14/15 参数全对，无一条把提到过的字段留空）。
-- **动作意图之间的子路由与标注边界**：`到哪了`、`是不是已经发出去了` 这类问句，gold 标的是查订单，模型给的是查物流，
-  dev 评测里 ACTION_ORDER 行 72.2% 的 5 条 miss 有 4 条是这个边界（全量与补跑逐格一致，不是抖动）。
-  合并这两个查询工具、或改标注集的判读，都能把这四条收掉，但那是在动判据口径，两条都没做，数字按实测登出来。
-  第 5 条是"改地址 + 问状态"双诉求，模型只办了后半句。
+- **动作意图之间的子路由与标注边界（9-11 按重标收口，合并工具否决）**：`到哪了`、`是不是已经发出去了` 这类问句，
+  gold 标的是查订单，模型给的是查物流，dev 评测里 ACTION_ORDER 行 72.2% 的 5 条 miss 有 4 条是这个边界
+  （全量与补跑逐格一致，不是抖动）。当时写的处置是"两条都不做、数字按实测登出来"；9-11 做了其中一条——
+  **改标注集的判读**：`expect.tool` 允许写成合格答案集，且只放开有「对偶矛盾」的 4 条，8 个 id 钉在指标表那一格，
+  选对工具 93.3% → 95.6%（ADR 0021）。**合并 `queryOrderDetail` 与 `queryLogistics` 这条路明确否决**：
+  两桶合一之后"模型能不能分清查状态与查物流"再也没有读数，那是删掉判据而不是通过判据；
+  何况 `ACTION_LOGISTICS` 18 条全选对、反方向 0 犹豫，模型侧本来就没有"分不清"的证据。
+  剩下的限制照登：95.6% 是"新判据 + 09-10 明细离线重算"而不是重跑实测；参数子指标那 3 条（`ACT-ORD-09/16/17`）
+  要重跑才判得了；第 5 条"改地址 + 问状态"双诉求 miss 未放开。
+- **评分器（量具）自己有过三处缺陷，9-11 一并修掉**：参数子指标在期望工具未命中时拿空字典去比，把工具选错
+  二次计成"填错参数"；越权断言 `status_ok` 在期望工具没打出来时静默给 True，`ACT-ORD-16/17` 的 `NOT_FOUND`
+  从没被观测过；`mustNotLeak` 只写在 gold 里、评分器从不读，而且旧标记一实现就会假红——「数码」是 T001 的店名
+  而不是被查订单的字段，「`90001 的`」是正常拒答去空白后的子串，品类名与快递商名是全局共享词表也不能当标记。
+  现在的兜法：判据收进唯一一份 `judge()`，活体跑测与离线重算共用它；`--selfcheck` 14 条夹具在任何请求之前执行、
+  红则 `exit 2`；`python scripts/verify_eval_judge.py` 22 条断言给这三处缺陷各做一次变异反证。逐条见 ADR 0021 第二段。
 - **显式转人工的字面词表还是窄**：ADR 0017 收了 7 个变体，`要真人给我答复`、`接一个能拍板的客服` 不在里面，
   dev 评测里这两句掉进"未定案 → 模型自己挑工具 → 反问订单号"，ESCALATE 行 88.9% 的 2 条 miss 就是它们。
   扩词表要连带 `T0RuleLayerTest` 的否定词窗口一起看（`不是真人`、`别找客服` 不能被吞进去），属于要人拍板的调整。
@@ -533,7 +548,7 @@ PowerShell 不允许从 try/catch 直接开管道，整脚本 parse 失败——
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-203334-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-203334-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（22 条断言：三处评分缺陷的变异反证、标注校验器防呆、生成物字节稳定、判据只有一份、EOL、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（14 条夹具，真跑前执行）；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
 | 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 69s / 13s |
@@ -555,7 +570,7 @@ shoppilot-gateway/     网关：状态机、三级意图判定、两级缓存、
 shoppilot-biz-mock/    业务中台：orders / logistics / coupons / refunds / tickets，@TenantId 行级隔离
 shoppilot-tool-api/    纯契约 jar：10 意图枚举 + Function Schema + 工具 DTO（网关与 biz-mock 共用）
 loadtest/              locustfile（四种流量模型）与 results/（保留 ladder-*.csv 与 env-*.json）
-docs/adr/              20 份架构决策记录，正文里每处 ADR 编号都能点进去
+docs/adr/              21 份架构决策记录，正文里每处 ADR 编号都能点进去
 docs/                  阈值标定、意图标定、检索对比、压测报告、面试问答清单
 knowledge/             30 篇政策语料
 scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、TTFT 扫描与归因、报告生成

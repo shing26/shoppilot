@@ -1,0 +1,181 @@
+id,intent,kind,query,expect_tool,actual_tool,old_tool_ok,new_tool_ok,tool_changed,old_args_ok,new_args_ok,new_args_scored,new_args_comparable,old_status_ok,new_status_ok,new_leaked,new_unverifiable,new_checks_ok
+ACT-ADR-01,ACTION_ADDRESS,normal,90004 这单收货人改成张伟，电话 13800001234，地址浙江省杭州市西湖区文三路100号,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-02,ACTION_ADDRESS,normal,把 90001 的地址改成 江苏省南京市鼓楼区中山路200号，收件人李娜，电话 13900002345,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-03,ACTION_ADDRESS,normal,90004 收货信息换一下：王强 13700003456 广东省深圳市南山区科技园南路8号,modifyDeliveryAddress,"queryOrderDetail,modifyDeliveryAddress",True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-04,ACTION_ADDRESS,normal,订单 90001 改地址，刘洋，13600004567，四川省成都市武侯区天府大道500号,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-05,ACTION_ADDRESS,normal,90004 这单寄到 湖北省武汉市洪山区珞喻路100号，收件人陈静，电话 13500005678,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-06,ACTION_ADDRESS,normal,90001 收货电话改成 13400006789，其他不变，还是赵敏，北京市朝阳区朝阳区建国路1号,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-07,ACTION_ADDRESS,missing_slot,我想改收货地址,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,False,,False,False,True,True,,,True
+ACT-ADR-08,ACTION_ADDRESS,missing_slot,地址填错了帮我换一下,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,False,,False,False,True,True,,,True
+ACT-ADR-09,ACTION_ADDRESS,missing_slot,90004 这单地址不对，改一下,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-10,ACTION_ADDRESS,missing_slot,90001 换成杭州的地址，西湖区文三路100号,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-11,ACTION_ADDRESS,missing_slot,90004 收件人换成李某，电话 13800001234,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-12,ACTION_ADDRESS,missing_slot,帮我把收货人姓名改一下,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,False,,False,False,True,True,,,True
+ACT-ADR-13,ACTION_ADDRESS,multi_intent,90002 这单帮我改地址到上海浦东新区世纪大道100号，收件人孙丽 13300007890，顺便看看物流,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-14,ACTION_ADDRESS,multi_intent,90001 改地址并且退款吧，新地址 广东省广州市天河区体育西路5号 周敏 13200008901,applyRefund,modifyDeliveryAddress,False,False,False,False,,True,False,True,True,,args,False
+ACT-ADR-15,ACTION_ADDRESS,order_not_found,99999999 改地址，吴刚 13100009012 浙江省杭州市余杭区文一西路969号,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-16,ACTION_ADDRESS,order_not_found,订单 66666666 的收货地址改成 江苏省苏州市姑苏区平江路8号 郑洁 13000000123,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args,True
+ACT-ADR-17,ACTION_ADDRESS,cross_tenant,90004 改地址：冯磊 18800001111 福建省厦门市思明区湖滨南路2号,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args;leak,True
+ACT-ADR-18,ACTION_ADDRESS,cross_tenant,90001 这单地址换成 山东省青岛市市南区香港中路6号 蒋涛 18700002222,modifyDeliveryAddress,modifyDeliveryAddress,True,True,False,True,,True,False,True,True,,args;leak,True
+ACT-LOG-01,ACTION_LOGISTICS,normal,90002 的快递到哪了,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-02,ACTION_LOGISTICS,normal,帮我查下 90002 的物流轨迹,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-03,ACTION_LOGISTICS,normal,90003 签收了吗,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-04,ACTION_LOGISTICS,normal,订单 90002 用的哪家快递,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-05,ACTION_LOGISTICS,normal,90002 运单号是多少,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-06,ACTION_LOGISTICS,normal,90003 有没有人代收,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-07,ACTION_LOGISTICS,normal,90002 现在走到哪个节点了,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-08,ACTION_LOGISTICS,normal,查物流，订单 90003,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-09,ACTION_LOGISTICS,normal,90002 这单发了没,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-10,ACTION_LOGISTICS,normal,90003 的包裹到了麻烦告诉我一声，现在到哪了,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-11,ACTION_LOGISTICS,missing_slot,我的包裹现在到哪儿了,queryLogistics,queryLogistics,True,True,False,False,,False,False,True,True,,,True
+ACT-LOG-12,ACTION_LOGISTICS,missing_slot,帮我看下物流轨迹,queryLogistics,queryLogistics,True,True,False,False,,False,False,True,True,,,True
+ACT-LOG-13,ACTION_LOGISTICS,multi_intent,90002 到哪了，多久能到，超时了能退吗,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-14,ACTION_LOGISTICS,multi_intent,90003 签收了我还没拆，坏了怎么赔，先帮我看看物流,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-15,ACTION_LOGISTICS,order_not_found,99999999 的物流到哪了,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-16,ACTION_LOGISTICS,order_not_found,查一下 77777777 这单的轨迹,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-LOG-17,ACTION_LOGISTICS,cross_tenant,90002 的快递到哪了,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args;leak,True
+ACT-LOG-18,ACTION_LOGISTICS,cross_tenant,90003 签收了吗,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args;leak,True
+ACT-ORD-01,ACTION_ORDER,normal,90001 这单现在什么状态,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-02,ACTION_ORDER,normal,帮我查下订单 90002,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-03,ACTION_ORDER,normal,90004 付款了吗,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-04,ACTION_ORDER,normal,订单号 90003 麻烦看下进度,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-05,ACTION_ORDER,normal,90001 这单多少钱,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-06,ACTION_ORDER,normal,我买的那个 90002 是什么品类,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-07,ACTION_ORDER,normal,90004 这单还没付钱吧,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-08,ACTION_ORDER,normal,查一下 90003 的订单详情,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-09,ACTION_ORDER,normal,90002 这单是不是已经发出去了,queryOrderDetail|queryLogistics,queryLogistics,False,True,True,False,,True,False,True,True,,args,True
+ACT-ORD-10,ACTION_ORDER,normal,90001 现在能改地址吗,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-11,ACTION_ORDER,missing_slot,帮我看看我的单子到哪一步了,queryOrderDetail|queryLogistics,queryLogistics,False,True,True,False,,False,False,True,True,,,True
+ACT-ORD-12,ACTION_ORDER,missing_slot,我买的东西现在啥情况了,queryOrderDetail,queryOrderDetail,True,True,False,False,,False,False,True,True,,,True
+ACT-ORD-13,ACTION_ORDER,multi_intent,90001 这单帮我改个地址吧，另外现在是什么状态,modifyDeliveryAddress,queryOrderDetail,False,False,False,False,,True,False,True,True,,args,False
+ACT-ORD-14,ACTION_ORDER,multi_intent,90003 签收了吗？没签的话我要退款,queryLogistics,queryLogistics,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-15,ACTION_ORDER,order_not_found,99999999 这单你查得到吗,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args,True
+ACT-ORD-16,ACTION_ORDER,order_not_found,订单 88888888 现在到哪了,queryOrderDetail|queryLogistics,queryLogistics,False,True,True,False,,True,False,True,,,args;status,True
+ACT-ORD-17,ACTION_ORDER,cross_tenant,90001 这单到哪了,queryOrderDetail|queryLogistics,queryLogistics,False,True,True,False,,True,False,True,,,args;status;leak,True
+ACT-ORD-18,ACTION_ORDER,cross_tenant,帮我查订单 90002 的状态,queryOrderDetail,queryOrderDetail,True,True,False,True,,True,False,True,True,,args;leak,True
+ACT-RFD-01,ACTION_REFUND,normal,90001 这单我要退款，不想要了,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-02,ACTION_REFUND,normal,帮我申请退款，订单 90004，原因是拍错了,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-03,ACTION_REFUND,normal,90001 收到就是坏的，申请退款,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-04,ACTION_REFUND,normal,订单 90003 质量有问题要退款,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-05,ACTION_REFUND,normal,90004 退款，多买了,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-06,ACTION_REFUND,normal,90001 这单退了吧，尺码不合适,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-07,ACTION_REFUND,normal,申请退款 90002，物流太慢了,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-08,ACTION_REFUND,normal,90003 部分退款可以吗？退 50 元,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-09,ACTION_REFUND,normal,90004 这单帮我退款，理由写与描述不符,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-10,ACTION_REFUND,normal,订单 90001 全额退款,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-11,ACTION_REFUND,missing_slot,我要退款,applyRefund,applyRefund,True,True,False,False,,False,False,True,True,,,True
+ACT-RFD-12,ACTION_REFUND,missing_slot,帮我申请一下退款吧,applyRefund,applyRefund,True,True,False,False,,False,False,True,True,,,True
+ACT-RFD-13,ACTION_REFUND,multi_intent,90002 到哪了？太慢了直接给我退款,applyRefund,"queryLogistics,applyRefund",True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-14,ACTION_REFUND,multi_intent,90003 七天无理由怎么算？算完帮我退款,applyRefund,queryOrderDetail,False,False,False,False,,True,False,True,True,,args,False
+ACT-RFD-15,ACTION_REFUND,order_not_found,99999999 这单退款,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-16,ACTION_REFUND,order_not_found,订单 55555555 申请退款，坏了,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args,True
+ACT-RFD-17,ACTION_REFUND,cross_tenant,90001 这单退款,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args;leak,True
+ACT-RFD-18,ACTION_REFUND,cross_tenant,帮我退 90004 这单，不想要了,applyRefund,applyRefund,True,True,False,True,,True,False,True,True,,args;leak,True
+ESC-01,ESCALATE,normal,这个我不想跟机器说了，给我转个人,,,True,True,False,,,False,False,True,True,,,True
+ESC-02,ESCALATE,normal,叫你们经理过来处理,,,True,True,False,,,False,False,True,True,,,True
+ESC-03,ESCALATE,normal,这个问题我要真人给我答复,,queryOrderDetail,False,False,False,,,False,False,True,True,,,False
+ESC-04,ESCALATE,normal,我要投诉你们客服,,,True,True,False,,,False,False,True,True,,,True
+ESC-05,ESCALATE,normal,给我接一个能拍板的客服,,queryOrderDetail,False,False,False,,,False,False,True,True,,,False
+ESC-06,ESCALATE,normal,机器人答非所问，换个人来,,,True,True,False,,,False,False,True,True,,,True
+ESC-07,ESCALATE,normal,我要走消费者申诉渠道，先给我转人工,,,True,True,False,,,False,False,True,True,,,True
+ESC-08,ESCALATE,normal,别再自动回复了，我要人工,,,True,True,False,,,False,False,True,True,,,True
+ESC-09,ESCALATE,normal,这个损失你们必须有人负责，转接坐席,,,True,True,False,,,False,False,True,True,,,True
+ESC-10,ESCALATE,normal,我要找值班客服，晚上也行,,,True,True,False,,,False,False,True,True,,,True
+ESC-11,ESCALATE,normal,90001 这单你们搞错了，我不跟机器人掰扯，转人工,,,True,True,False,,,False,False,True,True,,,True
+ESC-12,ESCALATE,normal,打你们客服电话多少，我不想在这说,,,True,True,False,,,False,False,True,True,,,True
+ESC-13,ESCALATE,multi_intent,90002 物流太慢了，我要投诉，给我转个人处理,,,True,True,False,,,False,False,True,True,,,True
+ESC-14,ESCALATE,multi_intent,满减算错了我要求赔偿，机器人办不了就叫人,,,True,True,False,,,False,False,True,True,,,False
+ESC-15,ESCALATE,colloquial,算了算了，找个人跟我说句话吧,,,True,True,False,,,False,False,True,True,,,True
+ESC-16,ESCALATE,colloquial,你们这客服是活的吗,,,True,True,False,,,False,False,True,True,,,True
+ESC-17,ESCALATE,colloquial,别发了别发了，我要人,,,True,True,False,,,False,False,True,True,,,True
+ESC-18,ESCALATE,colloquial,这事没个活人说不清楚,,,True,True,False,,,False,False,True,True,,,False
+P-FRS-01,POLICY_FRESH,normal,生鲜收到坏果怎么理赔,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-02,POLICY_FRESH,normal,死蟹赔付标准是什么,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-03,POLICY_FRESH,normal,冻品化冻了算谁的责任,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-04,POLICY_FRESH,normal,生鲜报损要在签收后多久内提出,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-05,POLICY_FRESH,normal,生鲜适用七天无理由吗,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-06,POLICY_FRESH,normal,重量缺斤少两怎么赔,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-07,POLICY_FRESH,normal,水果变质了要提供照片吗,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-08,POLICY_FRESH,normal,生鲜理赔的赔付比例是多少,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-09,POLICY_FRESH,normal,冷链断链导致损坏怎么申诉,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-10,POLICY_FRESH,normal,生鲜到底能不能退货,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-11,POLICY_FRESH,normal,保鲜剂放少了导致变质算质量问题吗,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-12,POLICY_FRESH,normal,临期生鲜有专门标注吗,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-13,POLICY_FRESH,normal,水果不甜可以要求补偿吗,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-14,POLICY_FRESH,normal,水产到手是死的怎么申请赔付,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-15,POLICY_FRESH,normal,生鲜理赔款多久到账,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-16,POLICY_FRESH,colloquial,菜收到都烂了 这咋整,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-17,POLICY_FRESH,colloquial,冰淇淋到手软趴趴的 没人管吗,,,True,True,False,,,False,False,True,True,,,True
+P-FRS-18,POLICY_FRESH,colloquial,桃子有几个压坏了 能补点钱不,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-01,POLICY_PROMO,normal,跨店满减是怎么计算的,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-02,POLICY_PROMO,normal,定金膨胀的倍率是多少,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-03,POLICY_PROMO,normal,店铺优惠券能和跨店满减叠加吗,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-04,POLICY_PROMO,normal,凑单没到满减门槛会怎样,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-05,POLICY_PROMO,normal,价保申请的条件是什么,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-06,POLICY_PROMO,normal,秒杀商品每人限购几件,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-07,POLICY_PROMO,normal,会员券和大促券可以一起用吗,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-08,POLICY_PROMO,normal,用了满减的商品退款优惠怎么算,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-09,POLICY_PROMO,normal,尾款没付定金还能退吗,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-10,POLICY_PROMO,normal,平台红包和店铺优惠能同时抵扣吗,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-11,POLICY_PROMO,normal,满减的门槛是按实付还是按标价,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-12,POLICY_PROMO,normal,赠品占不占用满减额度,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-13,POLICY_PROMO,normal,大促价格比平时贵有补偿吗,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-14,POLICY_PROMO,normal,优惠券有效期过了能补发吗,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-15,POLICY_PROMO,normal,多张同店优惠券能叠加使用吗,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-16,POLICY_PROMO,colloquial,满三百减五十是几个店凑够才行,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-17,POLICY_PROMO,colloquial,先付的那笔钱后面能抵多少,,,True,True,False,,,False,False,True,True,,,True
+P-PRM-18,POLICY_PROMO,colloquial,券和满减到底哪个先算啊 看不懂,,,True,True,False,,,False,False,True,True,,,True
+P-RET-01,POLICY_RETURN,normal,七天无理由是从签收那天开始算吗,,,True,True,False,,,False,False,True,True,,,True
+P-RET-02,POLICY_RETURN,normal,无理由退货的运费谁承担,,,True,True,False,,,False,False,True,True,,,True
+P-RET-03,POLICY_RETURN,normal,拆封使用过的商品还能七天无理由吗,,,True,True,False,,,False,False,True,True,,,True
+P-RET-04,POLICY_RETURN,normal,换货之后还能再退吗,,,True,True,False,,,False,False,True,True,,,True
+P-RET-05,POLICY_RETURN,normal,退款一般几个工作日到账,,,True,True,False,,,False,False,True,True,,,True
+P-RET-06,POLICY_RETURN,normal,哪些商品不支持无理由退货,,,True,True,False,,,False,False,True,True,,,True
+P-RET-07,POLICY_RETURN,normal,赠品需要一起退回去吗,,,True,True,False,,,False,False,True,True,,,True
+P-RET-08,POLICY_RETURN,normal,退货以后发票怎么处理,,,True,True,False,,,False,False,True,True,,,True
+P-RET-09,POLICY_RETURN,normal,定制款商品能不能退,,,True,True,False,,,False,False,True,True,,,True
+P-RET-10,POLICY_RETURN,normal,大件商品是上门取件退货吗,,,True,True,False,,,False,False,True,True,,,True
+P-RET-11,POLICY_RETURN,normal,影响二次销售具体指什么情况,,,True,True,False,,,False,False,True,True,,,True
+P-RET-12,POLICY_RETURN,normal,退货运费险怎么理赔,,,True,True,False,,,False,False,True,True,,,True
+P-RET-13,POLICY_RETURN,normal,部分退款会影响剩下的售后吗,,,True,True,False,,,False,False,True,True,,,True
+P-RET-14,POLICY_RETURN,normal,退货地址在哪里查看,,,True,True,False,,,False,False,True,True,,,True
+P-RET-15,POLICY_RETURN,normal,质量问题退货是不是不用出运费,,,True,True,False,,,False,False,True,True,,,True
+P-RET-16,POLICY_RETURN,colloquial,买回来发现不合适 想问下能不能给退了啊,,,True,True,False,,,False,False,True,True,,,True
+P-RET-17,POLICY_RETURN,colloquial,东西还没拆 就后悔了 咋办,,,True,True,False,,,False,False,True,True,,,True
+P-RET-18,POLICY_RETURN,colloquial,寄回去的东西你们多久能确认收货,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-01,POLICY_SHIPPING,normal,默认发什么快递,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-02,POLICY_SHIPPING,normal,可以指定发顺丰吗,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-03,POLICY_SHIPPING,normal,满多少金额才包邮,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-04,POLICY_SHIPPING,normal,新疆西藏这些偏远地区发不发,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-05,POLICY_SHIPPING,normal,拍下之后多久发货啊,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-06,POLICY_SHIPPING,normal,大促期间发货时效会延长吗,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-07,POLICY_SHIPPING,normal,一个订单会分成几个包裹发,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-08,POLICY_SHIPPING,normal,签收前可以先验货吗,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-09,POLICY_SHIPPING,normal,物流信息多久更新一次,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-10,POLICY_SHIPPING,normal,支持到店自提吗,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-11,POLICY_SHIPPING,normal,港澳台地区能下单发货吗,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-12,POLICY_SHIPPING,normal,运费是下单时付还是到付,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-13,POLICY_SHIPPING,normal,生鲜是冷链发货吗,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-14,POLICY_SHIPPING,normal,周末会发货吗,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-15,POLICY_SHIPPING,normal,预售商品的发货时间怎么算,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-16,POLICY_SHIPPING,colloquial,我就想问下你们一般走哪家快递呀,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-17,POLICY_SHIPPING,colloquial,今天拍的话大概几天能到手上,,,True,True,False,,,False,False,True,True,,,True
+P-SHP-18,POLICY_SHIPPING,colloquial,村里能送到吗 还是得去镇上取,,,True,True,False,,,False,False,True,True,,,True
+UNK-01,UNKNOWN,colloquial,在吗,,,True,True,False,,,False,False,True,True,,,True
+UNK-02,UNKNOWN,colloquial,？？？,,,True,True,False,,,False,False,True,True,,,True
+UNK-03,UNKNOWN,colloquial,你好,,,True,True,False,,,False,False,True,True,,,True
+UNK-04,UNKNOWN,colloquial,随便看看,,,True,True,False,,,False,False,True,True,,,True
+UNK-05,UNKNOWN,colloquial,今天天气怎么样,,,True,True,False,,,False,False,True,True,,,True
+UNK-06,UNKNOWN,colloquial,给我讲个笑话,,queryOrderDetail,False,False,False,,,False,False,True,True,,,False
+UNK-07,UNKNOWN,colloquial,这个那个就是那个事,,,True,True,False,,,False,False,True,True,,,True
+UNK-08,UNKNOWN,colloquial,asdfghjkl,,,True,True,False,,,False,False,True,True,,,True
+UNK-09,UNKNOWN,colloquial,嗯,,,True,True,False,,,False,False,True,True,,,True
+UNK-10,UNKNOWN,colloquial,你们老板是谁,,,True,True,False,,,False,False,True,True,,,True
+UNK-11,UNKNOWN,colloquial,推荐个手机呗,,,True,True,False,,,False,False,True,True,,,True
+UNK-12,UNKNOWN,colloquial,能不能便宜点卖给我,,queryOrderDetail,False,False,False,,,False,False,True,True,,,False
+UNK-13,UNKNOWN,colloquial,我说的话你听懂了吗,,,True,True,False,,,False,False,True,True,,,True
+UNK-14,UNKNOWN,colloquial,这个怎么弄,,,True,True,False,,,False,False,True,True,,,True
+UNK-15,UNKNOWN,colloquial,asdf 123 测试,,,True,True,False,,,False,False,True,True,,,True
+UNK-16,UNKNOWN,colloquial,帮我写一首诗,,queryOrderDetail,False,False,False,,,False,False,True,True,,,False
+UNK-17,UNKNOWN,colloquial,你们几点下班,,,True,True,False,,,False,False,True,True,,,True
+UNK-18,UNKNOWN,colloquial,哦,,,True,True,False,,,False,False,True,True,,,True

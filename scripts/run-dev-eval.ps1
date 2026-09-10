@@ -7,6 +7,7 @@
 # 但默认不发起任何计费请求：加 -Run 才真跑。
 param(
     [int]$Limit = 0,
+    [string]$OnlyIntent = '',
     [switch]$Run
 )
 $ErrorActionPreference = 'Stop'
@@ -84,6 +85,9 @@ function Show-Circuit {
 
 $evalArgs = @('scripts/run_tool_eval.py')
 if ($Limit -gt 0) { $evalArgs += @('--limit', "$Limit") }
+# 按意图补跑是 dev 调度的常态（09-10 那轮预算熔断后就是这么凑齐矩阵的），
+# 但原先只透传 -Limit，票面写的"只重跑 ACTION_ORDER"根本到不了 python 侧。
+if ($OnlyIntent) { $evalArgs += @('--only-intent', $OnlyIntent) }
 Write-Host "评测命令：python $($evalArgs -join ' ')" -ForegroundColor Cyan
 if (-not $Run) {
     Write-Host '没加 -Run，所以到此为止：不改网关、不发计费请求。' -ForegroundColor Green

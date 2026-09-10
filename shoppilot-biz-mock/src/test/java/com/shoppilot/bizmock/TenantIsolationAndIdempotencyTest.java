@@ -83,6 +83,29 @@ class TenantIsolationAndIdempotencyTest {
                 .path("status").asText()).isEqualTo("NOT_FOUND");
     }
 
+    /**
+     * 两个读工具共用同一道归属闸门，所以要各验一次。
+     *
+     * <p>动机不是重复劳动：ticket 20 把「到哪了」这类问句的合格答案集放开成
+     * {queryOrderDetail, queryLogistics} 之后，越权探针可能由物流这一侧打出去，而评测侧
+     * 当年并未真正观测到这两条的 NOT_FOUND（判据在期望工具缺失时静默给 True，见 ADR 0021）。
+     * 归属校验下沉到 JVM 才钉得住。
+     *
+     * <p>正向只断"不是 NOT_FOUND"：10001 的状态由随机种子决定，未发货时它该回
+     * STATE_NOT_ALLOWED，而不是对归属者谎称查不到这单（ticket 03 修过这个谎）。
+     * 三条合起来使"归属谓词被拿掉"时这条用例必然变红。
+     */
+    @Test
+    @DisplayName("物流查询与订单详情共用归属闸门：换店、换人都归入 NOT_FOUND")
+    void logisticsSharesTheSameOwnershipGate() throws Exception {
+        assertThat(call("/api/tools/queryLogistics", "{\"orderNo\":\"10001\"}", "T001", "C001", null)
+                .path("status").asText()).isNotEqualTo("NOT_FOUND");
+        assertThat(call("/api/tools/queryLogistics", "{\"orderNo\":\"10001\"}", "T002", "C001", null)
+                .path("status").asText()).isEqualTo("NOT_FOUND");
+        assertThat(call("/api/tools/queryLogistics", "{\"orderNo\":\"10001\"}", "T001", "C002", null)
+                .path("status").asText()).isEqualTo("NOT_FOUND");
+    }
+
     @Test
     @DisplayName("订单存在但没有物流轨迹时不许回 NOT_FOUND；退款只报订单号也能落库")
     void logisticsNeverClaimsAnExistingOrderIsMissing() throws Exception {

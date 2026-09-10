@@ -50,3 +50,13 @@
 - *Q：参数进哈希之后，用户把同一句话再说一遍还算幂等吗？* A：算。同一句话 -> 同一组参数 -> 同一个派生 token，回放首次结果；这条由 `identicalPayloadReplaysTheFirstResult` 钉住。变的只是“参数不同”不再被误判成重试。
 - *Q：那用户连改三次地址，会不会留三条地址历史？* A：会，而且应该留——`address_history` 每次带 version 递增，这是审计链不是脏数据；防刷由 ticket 13 的令牌桶与同一订单的写锁承担，不该拿幂等键当限流用。
 - *Q：为什么门禁冒烟之前没发现？* A：因为幂等验收（`verify-idempotency.ps1`）用的是显式同 token 重放，走的正是客户端带 token 那条分支，派生分支从来没有 JVM 用例覆盖。这次是评测链路把“真实对话里客户端不带 token”的形态跑出来了。
+
+**追加决策（2026-09-11，ticket 20 判据收口）**
+
+9. **越权归属断言从评测侧下沉到本类的 JVM 用例**（全库 103 → 104）：`ACT-ORD-16/17` 两条越权样本的
+   `NOT_FOUND` 在评测侧从来没被真正观测过——旧判据在期望工具没打出来时静默给 True（ADR 0021 第二段）。
+   合格答案集放开成 `{queryOrderDetail, queryLogistics}` 之后，越权探针可能由物流那一侧打出去，
+   所以新增 `logisticsSharesTheSameOwnershipGate`：归属者拿到的状态 `isNotEqualTo("NOT_FOUND")`
+   （正向只断“不谎称查不到”，10001 的状态由随机种子决定，未发货时它该回 `STATE_NOT_ALLOWED`——
+   那个谎 ticket 03 修过）、换店 `NOT_FOUND`、换人 `NOT_FOUND`。两个读工具共用同一道 `findOwned()`
+   闸门，各钉一次，评测侧判不了的那一格因此有了免费且可重跑的替身。
