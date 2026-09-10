@@ -45,6 +45,7 @@ seed 连跑两次订单总数不变；A 店身份查 B 店订单返回"未在本
 8. **退款的 `reason` 与 `amountFen` 都是可选项，默认值落在 biz-mock 而不是 Prompt 里**：留空 = 实付全额 + `买家主观原因`。以前 `reason` 标必填，模型照实反问"请问退款原因"，而"报了订单号就该办"才是这条链路的正确行为；`requiredParams` 与 schema 同源（record component），改一处两边同时变。
 9. **`queryLogistics` 不许对存在的订单回 NOT_FOUND**：订单查到了却没有轨迹节点（退款中、刚出库）以前走 `notFound`，于是助手对顾客说"可能不是本店下单"——对自己的订单撒谎。现在回 `STATE_NOT_ALLOWED` 并带上订单号与当前状态，下一步指向 `queryOrderDetail`。这条是 dev 评测 ACT-ORD-17 抓到的。
 10. 以上三条由 `TenantIsolationAndIdempotencyTest.logisticsNeverClaimsAnExistingOrderIsMissing` 钉住（用例数 97 -> 98）：只报订单号的退款要落库成默认值，退款之后再查物流不得是 NOT_FOUND。
+11. **（同日稍后，门禁 eval 冒烟反推）决策 7 的“留空 = 不改这一项”有副作用，副作用由契约与复述兜，语义本身不撤销。** 地址四段可选之后，模型把用户明明说过的段留空就等于静默沿用旧值：门禁冒烟三条改地址实测两次漏 `city`、一次连 `district` 一起漏（同一句里省与详址都填对了，是 3B 的行为不是编排的锅）。两道防线：schema 描述与 SYSTEM_PROMPT 都写死“用户提到了就必须照抄，只有完全没提到才留空”（修后三条里两条全对），以及办理成功后必须按工具返回的**合并后完整地址**复述给用户——复述不阻止漏填，但让用户当场看见哪一段没变，而不是以为改好了。部分更新语义保留：“只换个收件人”是真实高频诉求，代价不该由它付。云端 `qwen-plus` 那一轮无此形态（ADDRESS 14/15 参数全对，无一条把提到过的字段留空）。
 
 **追加追问**
 

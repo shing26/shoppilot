@@ -37,3 +37,16 @@
 **验证记录（2026-09-08，local 模式 / qwen2.5:3b）**
 
 `scripts/verify-idempotency.ps1`：首次退款 `tool_executing -> tool_result`，refunds 0→1；同 token 重放 `duplicate_submit -> tool_result`，refunds 仍为 1；对 90002（SHIPPED）改址返回 `STATE_NOT_ALLOWED`，模型回复"订单状态为已发货（SHIPPED），此时无法修改收货地址"。`mvn test` 当时 35 项全绿（ticket 16/17 与 T1 标定后为 50 项：网关 39 + biz-mock 8 + tool-api 3）。
+
+**追加决策（2026-09-10，门禁 eval 冒烟反推）**
+
+8. **派生 token 必须带完整参数，只带 orderNo + reason 会把两次不同的办理算成同一次提交。** 决策 4 的原始写法在 6 小时 TTL 内让同一笔订单的第二次改地址直接回放第一次的结果：门禁冒烟三条 ACTION_ADDRESS 全部 `tool_status=IDEMPOTENT_REPLAY`，ACT-ADR-03 参数全对、助手却把 ACT-ADR-01 的地址（张伟 / 文三路100号）复述给正在改成王强的顾客，而系统根本没动——用户听到“已修改”，属于静默数据错误，不是体验问题。真实场景就是“地址填错了再改一次”。
+   现在 `resolveToken` 按 `(tenant, customer, action, 规范化全参数)` 派生：参数按 key 排序拼接、空白值不参与哈希，所以“city 传空串”与“city 不传”仍是同一次提交（3B 实测两种写法都有），而省市区详址任一不同就是新的一次提交。退款同理——旧写法 reason 参与哈希而 amountFen 不参与，“全额退没到账，改成退一半”会被上一次吞掉；真正的重复提交仍由 `uk_refund_idempotency` 与订单状态前置校验兜底。
+   钉住它的是新增的 `IdempotencyServiceTest`（5 项，网关 84 -> 89、全库 98 -> 103）：不同地址是两次提交、一字不差的第二遍回放首次结果、空串不分叉 token、幂等键含买家与动作、Redis 停机时 bypass 计数并照常执行。红绿都验过：把 `resolveToken` 换回旧派生式，`differentAddressPayloadsAreDifferentSubmissions` 立刻失败（IdempotencyServiceTest:83），换回新实现 5/5 通过。
+   顺带还一处文档债：README 的“写操作幂等”否决项一直把 `IdempotencyServiceTest` 列为证据，而这个测试此前在仓库里并不存在（幂等键语义此前只有 biz-mock 侧的 DB 约束用例覆盖）。现在这条引用是真的了。
+
+**追加追问**
+
+- *Q：参数进哈希之后，用户把同一句话再说一遍还算幂等吗？* A：算。同一句话 -> 同一组参数 -> 同一个派生 token，回放首次结果；这条由 `identicalPayloadReplaysTheFirstResult` 钉住。变的只是“参数不同”不再被误判成重试。
+- *Q：那用户连改三次地址，会不会留三条地址历史？* A：会，而且应该留——`address_history` 每次带 version 递增，这是审计链不是脏数据；防刷由 ticket 13 的令牌桶与同一订单的写锁承担，不该拿幂等键当限流用。
+- *Q：为什么门禁冒烟之前没发现？* A：因为幂等验收（`verify-idempotency.ps1`）用的是显式同 token 重放，走的正是客户端带 token 那条分支，派生分支从来没有 JVM 用例覆盖。这次是评测链路把“真实对话里客户端不带 token”的形态跑出来了。

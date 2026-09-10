@@ -216,7 +216,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 路径会在补上 key 之后随评测一起跑（`run-dev-eval.ps1` 跑的就是 dev 模式的网关）。
 那一格也已经在 2026-09-10 真跑过：`.env` 里补三行（key、base-url、`SHOPPILOT_LLM_MODEL=qwen-plus`），`scripts/run-dev-eval.ps1 -Run` 一条命令出分意图双子指标 CSV。93.3% / 90.5%，仍未达 95% 线，最低行 72.2% 的原因写在"已知限制"里；这一轮顺带抓到并修掉四处真实缺陷，逐条见 ticket 16。同一个晚上 ADR 0012 的日预算熔断也真触发了一次：全量那一轮到第 137 条把额度用完，剩下 43 条按 `LLM_BUDGET_EXCEEDED` 转人工并各自落了工单（明细 CSV 的 `fallback` 与工单号可查），这条防线在真实评测负载下的表现就此有了第一手证据，代价是那 43 条要按意图补跑。
 当天那三件手工活（三行配置、日预算、切 dev 再切回 local）由 `scripts/run-dev-eval.ps1` 收着：它先自查配置齐不齐、缺预算就把那一行写进 `.env`、把网关切到 dev 并回读 `/ops/circuit` 确认，然后**停下来**——加 `-Run` 才真发请求，跑完无论成败都把网关放回 local（挂着真 key 的 dev 网关是个花钱的陷阱）。
-补一句当天会撞到的事：完整集 180 条约耗 19 万 token，而 ADR 0012 的日预算默认 20 万，所以评测当天要同时设 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET`（`.env.example` 给了 260000 的示例值）；不设的话脚本会在跑前用剩余预算做投影并 `exit 2`，不会跑到一半被熔断留半份数据。
+补一句当天会撞到的事：完整集 180 条**实测约 26.7 万 token**（prompt 251,036 + completion 16,103，见 `tool-eval-20260910-075747-dev-meta.json`；修复前那一轮 21.4 万），不是原先估的 19 万——工具集从“按子意图裁到单个”改成“动作意图下发四个工具”之后每条 prompt 涨了约三分之一。ADR 0012 的日预算默认 20 万，所以评测当天要同时设 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET`（`.env.example` 给了 260000 的示例值，按实测这个示例值不够一次全量：当天临时提到 80 万/110 万跑完再调回 260000）；不设的话脚本会在跑前用剩余预算做投影并 `exit 2`，不会跑到一半被熔断留半份数据。
 
 ### 承诺项十条的逐条结论
 
@@ -252,6 +252,11 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 - **`local` 模式的 3B 模型倾向用自然语言追问槽位而不是发 function call**，动作用例的参数抽取准确率因此偏低；
   网关侧用"ACTION 意图 + 首轮没调工具 + 没产出业务事实时自己派生工具"兜住链路，
   但 `MODIFY_DELIVERY_ADDRESS` 的 7 个槽位仍交模型抽，正则方案实测会把能办的单子一路问成转人工。
+- **地址四段改成"留空 = 不改这一项"之后，3B 会把用户明明说过的段留空**：门禁冒烟三条改地址实测两次漏 `city`、
+  一次连 `district` 一起漏（同一句里 省/详址 都填对了）。biz-mock 侧这是**按设计**沿用旧值，于是新地址会拼成
+  "新省 + 旧市 + 新详址"。两道防线：schema 与 Prompt 都写死"用户提到了就必须照抄"（修后三条里两条全对），
+  以及办理成功后必须按工具返回的**合并后完整地址**复述给用户——复述不能阻止漏填，但能让用户当场看见哪一段没变，
+  而不是以为改好了。云端 `qwen-plus` 那一轮没有这个形态（ADDRESS 14/15 参数全对，无一条把提到过的字段留空）。
 - **动作意图之间的子路由与标注边界**：`到哪了`、`是不是已经发出去了` 这类问句，gold 标的是查订单，模型给的是查物流，
   dev 评测里 ACTION_ORDER 行 72.2% 的 5 条 miss 有 4 条是这个边界（全量与补跑逐格一致，不是抖动）。
   合并这两个查询工具、或改标注集的判读，都能把这四条收掉，但那是在动判据口径，两条都没做，数字按实测登出来。
@@ -357,7 +362,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元与架构测试（98 项）
+# 单元与架构测试（103 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -393,31 +398,31 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，�
 ```
 
 ```
-step        exit  note          # 2026-09-10 05:30-05:38 同机全量跑（profile=local，开跑时工作树 clean @930698a），17 步全绿
+step        exit  note          # 2026-09-10 09:54-10:03 同机全量跑（profile=local，开跑时工作树 clean @148c9ea），17 步全绿
 syntax        0   1s           # 解析 scripts\ 下 24 个 .ps1：门禁自己也得过语法门（见本节末）
-stop          0   2s           # 释放 fat jar 文件锁
-build         0  51s           # mvnw verify：3 + 10 + 84 = 97 项
+stop          0   3s           # 释放 fat jar 文件锁
+build         0  61s           # mvnw verify：3 + 11 + 89 = 103 项
 unit          0  48s           # mvn -o test 同一批，离线可跑
 report        0   0s           # build_loadtest_report.py --strict：生成物与压测产物一致，缺证据即红
-stack         0  72s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
-plan          0  80s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
+stack         0  74s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
+plan          0  86s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
 hitzero       0   8s           # 命中路径零模型、零远程向量化
 action        0   6s           # 查得到 / 问得出 / 越不了权
-idem          0   9s           # 并发同 token + 状态前置校验
-fallback      0  26s           # 七种降级原因 + 工单反查
+idem          0  10s           # 并发同 token + 状态前置校验
+fallback      0  29s           # 七种降级原因 + 工单反查
 ratelimit     0   1s           # 同步 429 与 SSE rate_limited
-polarity      0  26s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
-l2            0   7s           # tenant/scope/intent/kb_epoch 四条 must-filter
-console       0  20s           # Playwright 15 项
-demo          0  12s           # 三条演示
-eval          0 114s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）
+polarity      0  29s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
+l2            0   8s           # tenant/scope/intent/kb_epoch 四条 must-filter
+console       0  23s           # Playwright 15 项
+demo          0  15s           # 三条演示
+eval          0 137s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）
 ```
 
 矩阵现在由脚本自己落盘（`logs/acceptance-run-<时间戳>.log`，本机不入库）：run2..run8 那几份是人手工 Tee 出来的，
 run9 就漏了，于是"全绿"这句话一度在机器上找不到落点。现在它拿 `$results` 生成，不去回抓 `Write-Host`，
 并且记的是**开跑时**的工作树状态（跑完之后永远是脏的——这一步自己会写 `logs/`、`eval/results/`、`docs/console.png`）：
-上面那一行的落点是 `logs/acceptance-run-20260910-053815.log`，头两行写着 `commit=930698a 开跑时工作树=clean`。
-总耗时 483s，用例数从 63 涨到 97（新增的分布在 dev 生成路径、缓存写回与向量化重试、以及下面第 5 条那个 flush 竞态）。`stack` 72s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
+上面那一行的落点是 `logs/acceptance-run-20260910-100301.log`，头两行写着 `commit=148c9ea 开跑时工作树=clean`。
+总耗时 541s，用例数从 63 涨到 103（新增的分布在 dev 生成路径、缓存写回与向量化重试、下面第 5 条那个 flush 竞态、dev 评测抓到的"订单存在却回 NOT_FOUND"，以及门禁冒烟抓到的"派生幂等 token 不含地址参数"）。`stack` 74s + `demo` 15s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
 那条动作本来还要一个没参与的人来跑，现在这一段机器自己代跑了：`scripts/clean_clone_check.ps1` 把 HEAD 克隆到空目录、
 在**空数据卷**上照 README 起栈、跑通三条演示（`logs/clean-clone-check-20260910-034422.log`，`up` 118s + `demo` 105s，
 克隆目录里连 `.env` 都没有）。机器能证明的就是"干净检出"这一级，**换人换机仍然没证**——这台机器上还跑着别的项目的容器。
@@ -483,7 +488,7 @@ PowerShell 不允许从 try/catch 直接开管道，整脚本 parse 失败——
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-053620-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-100045-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
 | 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 69s / 13s |
