@@ -163,7 +163,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | HikariCP 饱和点 | 记录饱和点与调池前后差异 | 池 2/10/30 三档 QPS 差 **≤1.2%**；池=2 时 pending 峰值 39、获取均值 6.5 ms，池=10 起 pending 全程 0 → **任务书"默认 10 连接先于 CPU 饱和"未被实测支持** | 流量模型 `biz`（100% 业务办理），每档 45 s，池大小经 `hikaricp.connections.max` 反读确认 | `ladder-biz-perf-20260909-033940-pool2.csv` 等三份 |
 | 写操作幂等 | 100% | 50 并发同 token → 库里 1 行；绕过网关直插由 DB 唯一约束拒 | 幂等键四元组 + `uk_refund_idempotency` | `verify-idempotency.ps1`、`TenantIsolationAndIdempotencyTest` |
 | 降级路径 | 每种可复现且落工单 | **7/7** 帧内 ticketId 都能在工单队列里查回 | 故障注入全部经网关运维代理；脚本对每个工单号做队列反查 | `verify-fallback.ps1`、`FallbackReasonTest` |
-| 可复现性 | 新机器照 README 一条命令起栈并跑通三条演示 | **同机干净检出达成（10 分钟预算内），异机未验**：`git clone` HEAD → 空数据卷 + 无 `.env` → 冷构建 + seed 5 万单 + 90 块全量入库 → 三条演示逐条断言全过，端到端 **241 s**（预算 600 s：前置 4 + clone 18 + 起栈 113 + 演示 106） | 判据的收口方式是脚本自闭环而不是外部人肉测（ADR 0020）：`clean_clone_check.ps1` 在无环境状态的克隆目录里量两件事——端到端墙钟 ≤ 600 s，以及三条演示各自的预期输出逐条命中（① `cache=L1`、模型调用增量 0 次 ② A/B 店答案不同、伪造 token 401 ③ 工单 `reason=TOOL_UNAVAILABLE status=OPEN` 队列可查）。起栈每步可重入；克隆目录无 `.env`，说明 local 模式所需配置全在仓库内。**仍是同一台物理机、同一位作者**：换机未验，本机另有两个项目的容器在抢内存（本轮前置检查打到空闲 1 GB），见下方"干净检出检查" | `scripts/clean_clone_check.ps1`、`logs/clean-clone-check-20260910-175431.log`、`docs/adr/0020-coldstart-script-closes-reproducibility-criterion.md`、`scripts/up.ps1`、`scripts/demo.ps1` |
+| 可复现性 | 新机器照 README 一条命令起栈并跑通三条演示 | **从 GitHub 克隆那份达成（10 分钟预算内），异机未验**：`git clone` origin → 空数据卷 + 无 `.env` → 冷构建 + seed 5 万单 + 90 块全量入库 → 三条演示逐条断言全过，端到端 **205 s**（预算 600 s，被测那份 `3c99739` 与本地 HEAD 一致） | 判据的收口方式是脚本自闭环而不是外部人肉测（ADR 0020）：`clean_clone_check.ps1` 在无环境状态的克隆目录里量两件事——端到端墙钟 ≤ 600 s，以及三条演示各自的预期输出逐条命中（① `cache=L1`、模型调用增量 0 次 ② A/B 店答案不同、伪造 token 401 ③ 工单 `reason=TOOL_UNAVAILABLE status=OPEN` 队列可查）。**克隆源默认是 origin**：从本地路径克隆只证明硬盘上这一份，从 GitHub 克隆才证明推出去的那份够不够。起栈每步可重入；克隆目录无 `.env`，说明 local 模式所需配置全在仓库内。**仍是同一台物理机、同一位作者**：换机未验，本机另有两个项目的容器在抢内存，见下方"干净检出检查" | `scripts/clean_clone_check.ps1`、`logs/clean-clone-check-20260910-192007.log`、`docs/adr/0020-coldstart-script-closes-reproducibility-criterion.md`、`scripts/up.ps1`、`scripts/demo.ps1` |
 
 ![压测曲线：QPS 拐点与分位数时延](docs/loadtest-curves.png)
 
@@ -246,7 +246,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 | 虚拟线程收益 | 开关两组数据 | **达成**：400/800 并发 +64%/+65%，100/200 并发 -3%/-3%，低并发档负收益照登 |
 | Token 节约率 | 关缓存基线对比 | **达成**：62.4%（1096.8 → 412.3 token/请求），三档只差防线开关，perf 模式估算口径注明 |
 | 实测数字诚实 | 表旁标口径与来源文件 | **达成**：上表每行都有口径列与 `loadtest/results/`、`eval/results/`、`docs/` 下的具体产物 |
-| 可复现性 | 新机器一条命令起栈跑通演示 | **同机干净检出达成（10 分钟预算内）、异机未验**：`scripts/clean_clone_check.ps1` 把 HEAD 克隆到空目录、在空数据卷上照 README 起栈、逐条断言三条演示的预期输出，端到端 241 s（预算 600 s），落点 `logs/clean-clone-check-20260910-175431.log`；这一判据按 ADR 0020 由脚本自闭环收口，不再等外部人肉测，剩余缺口（同机、同作者）写在该 ADR 的 Consequences 里。`scripts/run-acceptance.ps1` 一条命令跑完语法门到评测全部 17 步 |
+| 可复现性 | 新机器一条命令起栈跑通演示 | **从 GitHub 克隆那份达成（10 分钟预算内）、异机未验**：`scripts/clean_clone_check.ps1` 默认从 `origin` 克隆到空目录、在空数据卷上照 README 起栈、逐条断言三条演示的预期输出，端到端 205 s（预算 600 s），落点 `logs/clean-clone-check-20260910-192007.log`；这一判据按 ADR 0020 由脚本自闭环收口，不再等外部人肉测，剩余缺口（同机、同作者）写在该 ADR 的 Consequences 里。`scripts/run-acceptance.ps1` 一条命令跑完语法门到评测全部 17 步 |
 
 ## 已知限制（不藏）
 
@@ -299,9 +299,16 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 `git clone` 出 HEAD → 在克隆目录照 README 跑 `up.ps1 -Profile local`（空数据卷，走完整入库）→ 跑 `demo.ps1` 三条演示
 → 结论与完整输出落 `logs/clean-clone-check-<时间戳>.log`。脚本不删任何目录。
 判据是两条硬指标（ADR 0020）：**端到端墙钟 ≤ 600 s**（前置检查、clone、起栈、三条演示全算），
-以及**三条演示各自的预期输出逐条命中**，缺一条即 FAIL。最近一次通过：
-`logs/clean-clone-check-20260910-175431.log`（HEAD `04ea5af`，4 + 18 + 113 + 106 = **241 s**，两步均第 1 次尝试即过，
-当时该机空闲物理内存 1 GB）。
+以及**三条演示各自的预期输出逐条命中**，缺一条即 FAIL。
+
+**克隆来源默认是 `origin`，不是本地路径**。仓库公开之后这一点才让判据成立：从 `D:\ShopPilot` 克隆只证明
+"硬盘上这份够不够"，从 GitHub 克隆才证明"推出去的那份够不够"，漏 push 一个文件时只有后者会红。
+结论行同时打 `本地 HEAD=` 与 `被测那份=`，两者不一致就说明我测的不是我推的东西（`-From <url>` 可显式指定）。
+
+最近一次通过：`logs/clean-clone-check-20260910-192007.log`（从 `origin` 克隆 `3c99739`，
+**205 s**，7 项预期输出逐条命中，本地 HEAD 与被测那份一致，当时该机空闲物理内存 3.1 GB）。
+上一轮 `logs/clean-clone-check-20260910-175431.log` 是从本地路径克隆 `04ea5af`（4 + 18 + 113 + 106 = 241 s，
+空闲内存 1 GB），两份都留着，因为判据本身在那一轮之后被改严了。
 它验的是"提交进去的东西够不够"，而不是"我这台配了两小时的机器能不能跑"——这两件事在本项目里至少撞过四次
 （fat jar 文件锁、`.env` 里的 embedding 模型名、固定的容器名、以及下面那条内存前提）。
 
@@ -429,34 +436,34 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，�
 ```
 
 ```
-step        exit  note          # 2026-09-10 11:43-11:51 同机全量跑（profile=local，开跑时工作树 clean @3fe7ddc），17 步全绿
+step        exit  note          # 2026-09-10 20:26-20:35 同机全量跑（profile=local，HEAD=3c99739；开跑时工作树 dirty，8 项逐条见下），17 步全绿
 syntax        0   1s           # 解析 scripts\ 下 25 个 .ps1：门禁自己也得过语法门（见本节末）
 stop          0   3s           # 释放 fat jar 文件锁
-build         0  52s           # mvnw verify：3 + 11 + 89 = 103 项
+build         0  53s           # mvnw verify：3 + 11 + 89 = 103 项
 unit          0  48s           # mvn -o test 同一批，离线可跑
 report        0   0s           # build_loadtest_report.py --strict：生成物与压测产物一致，缺证据即红
-stack         0  73s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
-plan          0  87s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
-hitzero       0  10s           # 命中路径零模型、零远程向量化
+stack         0  79s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
+plan          0  86s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
+hitzero       0   9s           # 命中路径零模型、零远程向量化
 action        0   6s           # 查得到 / 问得出 / 越不了权
 idem          0  10s           # 并发同 token + 状态前置校验
 fallback      0  27s           # 七种降级原因 + 工单反查
 ratelimit     0   1s           # 同步 429 与 SSE rate_limited
-polarity      0  29s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
-l2            0   8s           # tenant/scope/intent/kb_epoch 四条 must-filter（前提阶段会重试，见下）
-console       0  20s           # Playwright 15 项
-demo          0  12s           # 三条演示
-eval          0 132s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）
+polarity      0  28s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
+l2            0   9s           # tenant/scope/intent/kb_epoch 四条 must-filter（前提阶段会重试，见下）
+console       0  23s           # Playwright 15 项
+demo          0  13s           # 三条演示
+eval          0 124s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）
 ```
 
 矩阵现在由脚本自己落盘（`logs/acceptance-run-<时间戳>.log`，本机不入库）：run2..run8 那几份是人手工 Tee 出来的，
 run9 就漏了，于是"全绿"这句话一度在机器上找不到落点。现在它拿 `$results` 生成，不去回抓 `Write-Host`，
 并且记的是**开跑时**的工作树状态（跑完之后永远是脏的——这一步自己会写 `logs/`、`eval/results/`、`docs/console.png`）：
-上面那一行的落点是 `logs/acceptance-run-20260910-115143.log`，头两行写着 `commit=3fe7ddc 开跑时工作树=clean`。
-总耗时 520s，用例数从 63 涨到 103（新增的分布在 dev 生成路径、缓存写回与向量化重试、下面第 5 条那个 flush 竞态、dev 评测抓到的"订单存在却回 NOT_FOUND"，以及门禁冒烟抓到的"派生幂等 token 不含地址参数"）。`stack` 73s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
-那条动作本来还要一个没参与的人来跑，现在这一段机器自己代跑了：`scripts/clean_clone_check.ps1` 把 HEAD 克隆到空目录、
-在**空数据卷**上照 README 起栈、跑通三条演示，并量端到端墙钟（`logs/clean-clone-check-20260910-175431.log`：
-起栈 113s + 演示 106s，全程 241s，预算 600s；克隆目录里连 `.env` 都没有）。
+上面那一行的落点是 `logs/acceptance-run-20260910-203537.log`，头两行写着 `commit=3c99739 开跑时工作树=dirty（8 个未提交改动）`，并逐项列出：4 份文档（README、ticket 19、ADR 0020、生成的问答库）+ 1 份门禁自己产物（`docs/console.png`）+ 3 份上一轮 `eval` 步留下的冒烟产物，**没有一项是 Java 或脚本改动**。公开之后每一次全量跑都必然带着生成物的脏，所以这里记的是"脏的是什么"，不是"挑了一次干净的跑法来写"。
+总耗时 521s，用例数从 63 涨到 103（新增的分布在 dev 生成路径、缓存写回与向量化重试、下面第 5 条那个 flush 竞态、dev 评测抓到的"订单存在却回 NOT_FOUND"，以及门禁冒烟抓到的"派生幂等 token 不含地址参数"）。`stack` 79s + `demo` 13s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
+那条动作本来还要一个没参与的人来跑，现在这一段机器自己代跑了：`scripts/clean_clone_check.ps1` 从 `origin` 克隆那份到空目录、
+在**空数据卷**上照 README 起栈、跑通三条演示，并量端到端墙钟（`logs/clean-clone-check-20260910-192007.log`：
+全程 205s，预算 600s，被测那份与本地 HEAD 同为 `3c99739`；克隆目录里连 `.env` 都没有）。
 这一收口方式（脚本自闭环替代外部人肉测，判据=10 分钟预算 + 三条演示逐条断言）记在 ADR 0020 里。
 机器能证明的就是"干净检出 + 预算 + 三条防线各自可观测"这一级，**换人换机仍然没证**——同一台物理机上还跑着别的项目的容器。
 每一步还各要求一条"只有跑到结尾才会出现"的日志标记（`Expect`）：这台机器把 `mvnw.cmd` 中途带走时它返回 0，
@@ -476,7 +483,7 @@ run9 就漏了，于是"全绿"这句话一度在机器上找不到落点。现�
   运行期一次就抛。
 - `polarity` 曾以"极性守卫 FAIL"红过一次，实际是那一刻向量化失败、写回只落了 L1（ADR 0018），
   L2 空着，守卫根本没有可判的东西。脚本现在先用同极性近义问法确认 L2 里真有条目，拿不到就重打三次源问法，
-  仍不成立就 `exit 3` 并写明"这一步红不代表防线失效"。这条前置在 `local,no-ollama` 下实测过：exit 3 与提示都如期。
+  仍不成立就 `exit 3` 并写明"这一步红不代表防线失效"。这条前置先在 `local,no-ollama` 下人造验证，2026-09-10 19:29 那一轮（logs/acceptance-run-20260910-193757.log）**真的用上了**：整轮跑到这一步 exit 3，`shoppilot_cache_embed_unavailable_total` 在该进程里累计 8 次，而门禁其余 16 步全绿；栈还开着，紧接着单跑同一步 exit 0 通过：这一回探针是 `triage=T1 cache=L2`（`answer_cache` 里有 3 条），跑前 `embed_unavailable` 仍停在上一轮那 8.0，说明那一刻向量已经恢复。20:26 重跑整轮 17 步全绿。**没有一步断言被改过**，改的只是"前提不成立时不把它算成防线失效"。
 - `l2` 用同一个成因红过一次（11:18 那轮：`向量化失败次数 3.0 -> 4.0`、Qdrant 里 0 条），四条 must-filter
   一条都没被跑到，却被记成串号防线失效。它比 `polarity` 还缺一层：前提阶段没有重试。现在源问法最多重打三次，
   **每轮先 flush**（不 flush 就白重试——第二次提问直接命中 L1，根本不产生 CACHE_WRITE），三次仍拿不到向量且
@@ -526,7 +533,7 @@ PowerShell 不允许从 try/catch 直接开管道，整脚本 parse 失败——
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-114932-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260910-203334-local-smoke*`，10/10 意图各有 2-3 条）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
 | 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 69s / 13s |
