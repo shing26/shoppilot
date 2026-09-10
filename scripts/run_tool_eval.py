@@ -63,6 +63,17 @@ def normalize_value(value):
     return "" if value is None else re.sub(r"\s+", "", str(value))
 
 
+# 行政区划尾缀：北京市 == 北京、朝阳区 == 朝阳。长的候选必须排在短的前面，
+# 否则 内蒙古自治区 会被 区 吃掉尾巴。
+REGION_SUFFIX = re.compile(r"(特别行政区|自治区|自治州|地区|盟|省|市|区|县)$")
+REGION_KEYS = ("province", "city", "district")
+
+
+def normalize_region(value):
+    stripped = REGION_SUFFIX.sub("", normalize_value(value))
+    return stripped or normalize_value(value)
+
+
 def mock_token(base, tenant, customer):
     return http_json(f"{base}/auth/mock-token", {"tenantId": tenant, "customerId": customer})["token"]
 
@@ -114,12 +125,15 @@ def score_case(case, result):
     loose = set(expect.get("looseArgs") or [])
     expected_args = expect.get("args") or {}
     args_detail = []
+    # 地址三级按"同一个地方"判等：模型照用户原话写 北京市，标注按省级写 北京，
+    # 这种差异记成"填错参数"是评分错，不是系统错（dev 评测 ACT-ADR-06 实测）。
     for key, want in expected_args.items():
         got = actual_args.get(key)
+        same = normalize_region if key in REGION_KEYS else normalize_value
         if key in loose:
             if not normalize_value(got):
                 args_detail.append(f"{key}: 期望非空（自由文本，只查存在性）")
-        elif normalize_value(got) != normalize_value(want):
+        elif same(got) != same(want):
             args_detail.append(f"{key}: want={want} got={got}")
     args_scored = bool(expected_tool) and bool(expected_args)
     args_ok = (args_scored and not args_detail) if expected_tool else ""
@@ -169,6 +183,15 @@ def score_case(case, result):
         "tool_status": (link["status"] if link else ""),
         "slot_actual": slot_actual,
         "asked_in_prose": asked_in_prose,
+        # 没打工具的那条到底说了什么：判据要求"任一意图 < 80% 判不通过并写明原因"，
+        # 原因只能从模型原话里取，事后靠网关日志翻不回来（日志不落回复正文）。
+        "answer_excerpt": re.sub(r"\s+", " ", (result.get("answer") or ""))[:180],
+        # 状态机是否为"答应了但没动手"发出过纠偏轮：这条防线只在答案本来就不成立的请求上触发，
+        # 不记进明细就没人知道它救回了几条、又白烧了几次规划调用。
+        "corrective_round": any(
+            (s.get("state") == "PLAN" and (s.get("detail") or "").startswith("corrective="))
+            for s in (result.get("trace") or [])
+        ),
     }
 
 
@@ -285,7 +308,8 @@ def main() -> int:
                              "prompt_tokens": 0, "completion_tokens": 0,
                              "latency_ms": round(elapsed * 1000), "rate_limit_retries": retries,
                              "fallback": "", "intent_actual": "", "triage_layer": "",
-                             "cache_layer": "", "slot_actual": False, "asked_in_prose": False})
+                             "cache_layer": "", "slot_actual": False, "asked_in_prose": False,
+                             "answer_excerpt": "", "corrective_round": False})
             else:
                 scored = score_case(case, result)
                 rows.append({**base_row, "error": "",
@@ -343,17 +367,30 @@ def main() -> int:
 
 
 def estimate_per_case_tokens(cases):
-    """优先用上一次真实跑测的均值；没有历史就按 900 保守估。"""
+    """用上一次**同样规模**跑测的均值预测；没有历史就按 900 保守估。
+
+    必须按规模匹配：dev 评测定位问题时常用 --only-intent 只跑 18 条，那批样本的均值
+    偏高（动作意图带全量工具描述），拿它去预测 180 条全量就会给出 3007 tokens/条，
+    比真实值高一倍多，直接把预算预检卡死。预测器失真是预测器的问题，不是预算该绕过的理由，
+    所以这里换成同规模样本，而每请求的真实记账熔断（ADR 0012）一个字都没动。
+    """
+    wanted = len(cases)
     history = sorted(RESULTS.glob("tool-eval-*-meta.json")) if RESULTS.exists() else []
+    fallback = 0
     for meta in reversed(history):
         try:
             payload = json.loads(meta.read_text(encoding="utf-8"))
             total = payload.get("promptTokens", 0) + payload.get("completionTokens", 0)
-            if total and payload.get("cases"):
-                return round(total / payload["cases"])
+            ran = payload.get("cases") or 0
+            if not total or not ran:
+                continue
+            per_case = round(total / ran)
+            fallback = fallback or per_case
+            if abs(ran - wanted) <= max(1, wanted // 4):
+                return per_case
         except (json.JSONDecodeError, OSError):
             continue
-    return 900
+    return fallback or 900
 
 
 def summarize(rows, mode):

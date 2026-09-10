@@ -295,7 +295,11 @@ if ($WithRestarts) {
     # 这一条要改写服务配置，而 .env 里可能是真的 DashScope key：先整体挪走再复原，
     # 而不是要求人肉移开——否则"填过 .env 的机器"反而跑不了验收。
     if (Test-Path $envFile) {
-        if (Test-Path $envBackup) { throw "残留的 $envBackup 还在，先确认它是不是上次中断留下的 .env 备份" }
+        if (Test-Path $envBackup) {
+            # 走到这里说明上次跑中途断了：真 .env（补上 key 之后就是带 key 的那份）还躺在备份文件里，
+            # 而当前 .env 很可能只是本轮的冒烟占位。不自动覆盖，因为两种方向都会毁掉用户的配置。
+            throw "残留的 $envBackup 还在，多半是上次中断留下的 .env 备份（当前 .env 可能是冒烟占位）。先对照看一眼：`n  Get-Content `"$envBackup`"; Get-Content `"$envFile`"`n确认备份那份才是你的配置，就把它恢复回去再重跑：`n  Move-Item -LiteralPath `"$envBackup`" -Destination `"$envFile`" -Force"
+        }
         Move-Item -LiteralPath $envFile -Destination $envBackup
     }
     try {
