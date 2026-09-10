@@ -84,6 +84,30 @@ class TenantIsolationAndIdempotencyTest {
     }
 
     @Test
+    @DisplayName("订单存在但没有物流轨迹时不许回 NOT_FOUND；退款只报订单号也能落库")
+    void logisticsNeverClaimsAnExistingOrderIsMissing() throws Exception {
+        // 只给订单号的退款：reason 与 amountFen 都是可选项，biz-mock 侧必须补默认值，
+        // 否则网关判成"参数缺失"，顾客报过订单号还会被反问一遍（dev 评测 ACT-RFD-17 实测）。
+        RefundTarget target = findRefundableOrder();
+        String refundToken = "norefund-args-" + System.nanoTime();
+        JsonNode refund = call("/api/tools/applyRefund", "{\"orderNo\":\"" + target.orderNo() + "\"}",
+                target.tenantId(), target.customerId(), refundToken);
+        assertThat(refund.path("status").asText()).isEqualTo("OK");
+        // RefundView 不回传 reason，落库侧验默认值才算数
+        List<String> stored = jdbc.queryForList(
+                "select reason || '|' || amount_fen from refunds where order_id = ? and idempotency_token = ?",
+                String.class, target.orderNo(), refundToken);
+        assertThat(stored).containsExactly("买家主观原因|" + target.amountFen());
+
+        // 退款把订单推到 REFUNDING：既不是未发货那条 STATE_NOT_ALLOWED，也不会有轨迹节点。
+        // 这一步以前回 NOT_FOUND，助手因此对顾客说"可能不是本店下单"——同一句判据在 ACT-ORD-17 上抓到过。
+        JsonNode logistics = call("/api/tools/queryLogistics", "{\"orderNo\":\"" + target.orderNo() + "\"}",
+                target.tenantId(), target.customerId(), null);
+        assertThat(logistics.path("status").asText()).isNotEqualTo("NOT_FOUND");
+        assertThat(logistics.path("message").asText()).contains(target.orderNo());
+    }
+
+    @Test
     @DisplayName("并发 50 次同 token 退款只生成 1 条记录")
     void concurrentRefundWithSameTokenCreatesSingleRow() throws Exception {
         RefundTarget target = findRefundableOrder();

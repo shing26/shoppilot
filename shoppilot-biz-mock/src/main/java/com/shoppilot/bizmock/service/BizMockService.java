@@ -106,7 +106,11 @@ public class BizMockService {
         }
         List<LogisticsNode> nodes = logisticsRepository.findByOrderIdOrderBySeqAsc(order.getId());
         if (nodes.isEmpty()) {
-            return notFound(ToolName.QUERY_LOGISTICS);
+            // 订单在这里是查到了的，回 NOT_FOUND 会让助手对顾客说"可能不是本店下单"——那是撒谎。
+            // 退款中/刚出库还没落节点都会走到这里，说清状态并指向订单详情（dev 评测 ACT-ORD-17 实测）。
+            return ToolResponse.failure(ToolName.QUERY_LOGISTICS.apiName(), ToolStatus.STATE_NOT_ALLOWED,
+                    "订单 " + orderNo + " 当前状态为 " + order.getStatus() + "，暂无物流轨迹节点",
+                    List.of(ToolName.QUERY_ORDER_DETAIL.apiName()));
         }
         LogisticsNode first = nodes.get(0);
         LogisticsView view = new LogisticsView(order.getId(), first.getCpCode(), first.getCpName(), first.getTrackingNo(),
@@ -132,19 +136,25 @@ public class BizMockService {
         }
         AddressView before = new AddressView(order.getReceiverName(), order.getReceiverPhone(), order.getProvince(),
                 order.getCity(), order.getDistrict(), order.getDetailAddress());
-        order.setReceiverName(request.receiverName());
-        order.setReceiverPhone(request.receiverPhone());
-        order.setProvince(request.province());
-        order.setCity(request.city());
-        order.setDistrict(request.district());
-        order.setDetailAddress(request.detailAddress());
+        // 地址四段可以留空（"只换个收件人"这类高频诉求），留空 = 沿用原值；
+        // 写历史与回给模型的都是合并后的完整地址，避免半条地址落库。
+        String receiverName = keepIfBlank(request.receiverName(), order.getReceiverName());
+        String receiverPhone = keepIfBlank(request.receiverPhone(), order.getReceiverPhone());
+        String province = keepIfBlank(request.province(), order.getProvince());
+        String city = keepIfBlank(request.city(), order.getCity());
+        String district = keepIfBlank(request.district(), order.getDistrict());
+        String detailAddress = keepIfBlank(request.detailAddress(), order.getDetailAddress());
+        order.setReceiverName(receiverName);
+        order.setReceiverPhone(receiverPhone);
+        order.setProvince(province);
+        order.setCity(city);
+        order.setDistrict(district);
+        order.setDetailAddress(detailAddress);
         int version = order.bumpAddressVersion();
         orderRepository.save(order);
         addressHistoryRepository.save(new AddressHistory(TenantContextHolder.tenantId(), order.getId(),
-                request.receiverName(), request.receiverPhone(), request.province(), request.city(),
-                request.district(), request.detailAddress(), version, Instant.now()));
-        AddressView after = new AddressView(request.receiverName(), request.receiverPhone(), request.province(),
-                request.city(), request.district(), request.detailAddress());
+                receiverName, receiverPhone, province, city, district, detailAddress, version, Instant.now()));
+        AddressView after = new AddressView(receiverName, receiverPhone, province, city, district, detailAddress);
         return ToolResponse.ok(ToolName.MODIFY_DELIVERY_ADDRESS.apiName(), new ModifyAddressView(order.getId(), before, after, version));
     }
 
@@ -179,6 +189,8 @@ public class BizMockService {
         }
 
         long amount = request.amountFen() == null ? order.getAmountFen() : request.amountFen();
+        // reason 在 schema 里是可选的：用户只说"这单退款"时不该被反问原因，落一个业务上成立的默认值
+        String reason = keepIfBlank(request.reason(), "买家主观原因");
         if (amount > order.getAmountFen()) {
             return ToolResponse.failure(ToolName.APPLY_REFUND.apiName(), ToolStatus.STATE_NOT_ALLOWED,
                     "退款金额不得超过订单实付金额", List.of());
@@ -189,7 +201,7 @@ public class BizMockService {
         try {
             Refund saved = transactionTemplate.execute(status -> {
                 Refund inserted = refundRepository.save(new Refund(TenantContextHolder.tenantId(), orderId,
-                        order.getCustomerId(), amount, request.reason(), idempotencyToken, "PROCESSING",
+                        order.getCustomerId(), amount, reason, idempotencyToken, "PROCESSING",
                         Instant.now()));
                 order.setStatus(OrderStatus.REFUNDING);
                 orderRepository.save(order);
@@ -244,6 +256,11 @@ public class BizMockService {
             ticket.setStatus(target.name());
             return toTicketView(ticketRepository.save(ticket));
         });
+    }
+
+    /** 可选参数留空 = 不改这一项；退款原因的默认值见 applyRefund。 */
+    private static String keepIfBlank(String incoming, String current) {
+        return incoming == null || incoming.isBlank() ? current : incoming.trim();
     }
 
     /** 归属双条件的第二条件在这里；第一条件由 @TenantId 自动拼接。 */

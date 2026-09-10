@@ -123,16 +123,13 @@ public class ToolDispatcher {
         return missing;
     }
 
-    /** 追问文案：只问缺的那一个，不重复问已给的。 */
+    /** 追问文案：只问缺的那一个，不重复问已给的。金额与退款原因、地址四段都是可选项，不会走到追问。 */
     public String question(ToolName tool, List<String> missingSlots) {
         if (missingSlots.contains("orderNo")) {
             return "请提供您的订单号（例如 10023），我需要它才能为您查询或办理。";
         }
         if (tool == ToolName.MODIFY_DELIVERY_ADDRESS) {
-            return "还需要您补充新的收货信息：" + String.join("、", missingSlots) + "。";
-        }
-        if (tool == ToolName.APPLY_REFUND) {
-            return "请告诉我退款原因，我才能为您提交申请。";
+            return "还需要您补充收件信息：" + String.join("、", missingSlots) + "。";
         }
         return "还需要您补充：" + String.join("、", missingSlots) + "。";
     }

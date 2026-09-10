@@ -36,3 +36,16 @@
 **验证记录**
 
 `scripts/verify-action-loop.ps1`：`tool_executing` 与 `tool_result` 成对出现；不给订单号时触发 `slot_ask` 且不编造订单号；跨租户查询返回 NOT_FOUND 且响应体不含对方字段。`FallbackReasonTest`（带 fake biz-mock 驱动真实状态机）6 项覆盖 TOOL_UNAVAILABLE / SLOT_UNRESOLVED / INTENT_UNRESOLVED 等出口。2 轮上限本身由 `shoppilot_tool_round_exhausted_total` 计数与配置项 `max-tool-rounds: 2` 保证，**没有**针对它的 JVM 内单测——这是缺口，README 已知限制里写明。
+
+
+**追加决策（2026-09-10，dev 评测反推）**
+
+9. **动作意图不再把工具裁到单个，四个业务工具一起下发。** 原来定案成 `ACTION_ADDRESS` 就只给 `modifyDeliveryAddress`，T0 判成 `ACTION_ORDER` 的改地址请求因此连选对的机会都没有——dev 评测 180 条里 13 条是这么错的。政策意图与转人工仍然一个工具都不给（那是凭空编订单号的来源，见前面的实测）。
+10. **加一次"纠偏规划轮"：答应了但没动手的答案不接受。** 状态机记住写动作意图对应的工具（`ACTION_REFUND -> applyRefund`、`ACTION_ADDRESS -> modifyDeliveryAddress`），如果模型给的是纯文字回复而那个工具还没真的执行过，就追加一条 user 纠偏消息再规划一次，只纠一次，并打点 `shoppilot_write_nudge_total`。实测一轮救回 11/12 条（剩下的那条是"先查订单判断能不能退"的双诉求句）。
+11. **工具轮次上限仍是 2，ADR 0008 没动。** 纠偏多出来的是一次模型规划调用，不是第三个工具：`rounds` 只统计真正执行过的工具，纠偏后的那次 `applyRefund` 仍是第 2 轮。代价是这类请求多一跳模型时延（实测 1-2 s），换来的是"我说要退款它就真的退了"。
+
+**追加追问**
+
+- *Q：为什么不直接 `tool_choice=required` 逼模型必调工具？* A：那会打死合法的槽位追问。`我要退款` 没给订单号，正确行为是问，而不是拿一个编造的订单号去撞库——`required` 会把"绝不猜订单号"这条硬线换成"必须发一个调用"。现在仍然 `tool_choice=auto`，纠偏消息里也明说"必填参数确实缺失就照实向用户追问"。
+- *Q：纠偏轮会不会被模型用来再查一次别的工具、绕回老路？* A：轮次预算仍然封顶，第二次规划如果又发查询，`rounds` 到 2 就出循环，答案照常落地，只是没救回来；`shoppilot_write_nudge_total` 与评测明细里的 `corrective_round` 列让这种绕行为看得见。
+- *Q：为什么只对两个写操作做，读意图不查？* A：读意图答错的后果是信息不全，写意图答错的后果是顾客以为钱已经退了。这条防线守的是"承诺与事实不能分家"。

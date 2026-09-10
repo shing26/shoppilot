@@ -37,3 +37,16 @@
 **验证记录（2026-09-05）**
 
 seed 连跑两次订单总数不变；A 店身份查 B 店订单返回"未在本店找到该订单"，无 500、无空指针；`TenantIsolationAndIdempotencyTest` 覆盖越权与唯一约束。
+
+
+**追加决策（2026-09-10，dev 评测反推）**
+
+7. **改地址支持部分更新：留空 = 不改这一项。** `ModifyDeliveryAddressRequest` 的必填收到 `orderNo` + `receiverName` + `receiverPhone` 三项，地址四段改为可选，biz-mock 用 `keepIfBlank` 与原值合并之后再写 `address_history` 与回包，避免半条地址落库。理由是实测：`90004 收件人换成李某，电话 13800001234` 是最高频的真实诉求，旧写法要么逼用户重述整条地址（模型就改去反问），要么把 null 写进非空列。
+8. **退款的 `reason` 与 `amountFen` 都是可选项，默认值落在 biz-mock 而不是 Prompt 里**：留空 = 实付全额 + `买家主观原因`。以前 `reason` 标必填，模型照实反问"请问退款原因"，而"报了订单号就该办"才是这条链路的正确行为；`requiredParams` 与 schema 同源（record component），改一处两边同时变。
+9. **`queryLogistics` 不许对存在的订单回 NOT_FOUND**：订单查到了却没有轨迹节点（退款中、刚出库）以前走 `notFound`，于是助手对顾客说"可能不是本店下单"——对自己的订单撒谎。现在回 `STATE_NOT_ALLOWED` 并带上订单号与当前状态，下一步指向 `queryOrderDetail`。这条是 dev 评测 ACT-ORD-17 抓到的。
+10. 以上三条由 `TenantIsolationAndIdempotencyTest.logisticsNeverClaimsAnExistingOrderIsMissing` 钉住（用例数 97 -> 98）：只报订单号的退款要落库成默认值，退款之后再查物流不得是 NOT_FOUND。
+
+**追加追问**
+
+- *Q：地址四段都可选，会不会把一条空地址写进去？* A：不会。`receiverName` 与 `receiverPhone` 仍是必填，缺任一项在网关侧就 `SLOT_ASK`；四段留空在 biz-mock 侧是"沿用原值"，写历史与回包用的都是合并后的完整地址。
+- *Q：`reason` 默认为什么填在 biz-mock 而不是网关？* A：默认值是业务规则（哪种退款理由算主观），归业务系统所有；网关只负责把"模型没抽到这个字段"如实传下去。放在网关会让 Mock 中台的语义随编排层漂移。

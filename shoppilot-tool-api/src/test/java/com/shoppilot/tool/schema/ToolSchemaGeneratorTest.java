@@ -20,15 +20,17 @@ class ToolSchemaGeneratorTest {
 
         assertThat(properties).containsOnlyKeys(
                 "orderNo", "receiverName", "receiverPhone", "province", "city", "district", "detailAddress");
+        // 只强制"改谁的收货信息"：订单号 + 收件人 + 电话。地址四段留空表示该项不改（biz-mock 侧合并），
+        // 因为"只换个收件人"是高频真实诉求，要求用户重述整条地址才会被评测判成漏抽参数。
         assertThat((List<String>) schema.get("required"))
-                .containsExactly("orderNo", "receiverName", "receiverPhone", "province", "city", "district", "detailAddress");
+                .containsExactly("orderNo", "receiverName", "receiverPhone");
     }
 
     @Test
     void optionalParamsAreNotRequired() {
-        // amountFen 标了 required = false：留空表示全额退款，不应触发 SLOT_ASK
+        // amountFen 与 reason 都标了 required = false：留空分别表示全额退款与"买家主观原因"，不应触发 SLOT_ASK
         assertThat(ToolSchemaGenerator.requiredParams(ApplyRefundRequest.class))
-                .containsExactly("orderNo", "reason");
+                .containsExactly("orderNo");
     }
 
     @Test

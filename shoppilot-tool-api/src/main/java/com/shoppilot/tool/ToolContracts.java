@@ -28,23 +28,17 @@ public final class ToolContracts {
         return REQUEST_TYPES.get(tool);
     }
 
-    /** 全量 tools 描述，随每次模型请求下发（ADR 0007：不为分类单开一次请求）。 */
-    public static List<Map<String, Object>> functionDescriptors() {
+    /**
+     * 业务动作工具集：四个工具一起下发，由模型自己选。
+     *
+     * <p>原先按定案意图裁到单个工具，dev 模式实测（DashScope qwen-plus，180 条）把 T0 的
+     * 子意图误判直接放大成"选错工具"——判成 ACTION_ORDER 的改地址请求只拿到 queryOrderDetail，
+     * 模型没有犯错的机会。政策意图与转人工仍然一个工具都不给（那是凭空编订单号的来源）。
+     */
+    public static List<Map<String, Object>> actionDescriptors() {
         List<Map<String, Object>> descriptors = new java.util.ArrayList<>();
         for (ToolName tool : ToolName.values()) {
-            descriptors.add(ToolSchemaGenerator.functionDescriptor(tool, requestType(tool)));
-        }
-        return descriptors;
-    }
-
-    /** 按意图裁剪工具集：政策咨询链路不下发任何工具。 */
-    public static List<Map<String, Object>> functionDescriptorsFor(com.shoppilot.tool.Intent intent) {
-        List<Map<String, Object>> descriptors = new java.util.ArrayList<>();
-        if (intent == null || !intent.isAction()) {
-            return descriptors;
-        }
-        for (ToolName tool : ToolName.values()) {
-            if (tool.intent() == intent) {
+            if (tool.intent().isAction()) {
                 descriptors.add(ToolSchemaGenerator.functionDescriptor(tool, requestType(tool)));
             }
         }

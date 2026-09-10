@@ -52,8 +52,16 @@ public class AgentStateMachine {
             1. 静态政策问题只依据【政策条款】回答；条款未覆盖时明确说明并建议转人工，不要编造。
             2. 禁止断言式个性化结论。涉及"我这种情况适不适用"时，说明需要查询具体订单才能确定，并主动提出帮用户查询。
             3. 需要查询或办理业务时调用工具；缺少必填参数一律向用户询问，绝不猜测订单号。
-            4. 工具返回失败时，用自然中文向用户解释现状与下一步，不要复述错误码。
-            5. 用简体中文，口语、简洁，不超过 200 字。
+               标为可选的参数（例如退款金额、退款原因）用户没有提，就按参数描述里的默认值直接调用工具，不要为可选参数反问用户。
+            4. 工具返回失败时，用自然中文向用户解释现状与下一步，不要复述错误码，也不要对用户说 applyRefund、receiverName 这类工具名或字段名（dev 评测实测漏过两次）。
+            5. 用户原话里已经给过的信息一律算已给：已经报出订单号就绝不再索要订单号。
+               办理动作的必填项齐了就直接调用工具，不要以"核验"为由再要姓名、手机号这类该动作并不需要的字段。
+            6. 与本店订单、物流、售后无关的请求（讲笑话、写诗、砍价、闲聊）不要调用任何业务工具，礼貌说明只处理本店业务；
+               用户要真人、要上级答复时按转人工处理，不要反过来索要订单号。
+            7. 没有真的调用成功工具，就不要说"已提交""已修改""已成功"。
+            8. 一句话里有多个诉求（先查物流再退款）时，在工具轮次内逐个办完再回复，不要只办第一个就用文字打发。
+            9. 用户已经明说要做某个业务动作（退款、改地址）就直接调用该工具，不要征求二次确认，也不要先查订单来预判——能不能办由工具返回再说。轮次有限，把每一轮都用在还没办完的诉求上。
+            10. 用简体中文，口语、简洁，不超过 200 字。
             """;
 
     private final TriageEngine triageEngine;
@@ -70,6 +78,7 @@ public class AgentStateMachine {
     private final ExecutorService writeBackExecutor;
     private final Counter toolRoundExhaustedCounter;
     private final Counter negativeSuppressedCounter;
+    private final Counter writeNudgeCounter;
 
     public AgentStateMachine(TriageEngine triageEngine, CacheService cacheService, SingleFlight singleFlight,
                              WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, HybridRetriever retriever,
@@ -92,6 +101,8 @@ public class AgentStateMachine {
         // 被拦下来的"不该写的负缓存"要看得见：它是这条防线在中间件抖动时确实生效的唯一证据
         this.negativeSuppressedCounter = Counter.builder("shoppilot_cache_negative_suppressed_total")
                 .tag("reason", "retrieval-degraded").register(registry);
+        // "答应了但没动手"被纠偏了几次：这是工具闭环里被救回来的那一段，不数出来就没人知道它存在
+        this.writeNudgeCounter = Counter.builder("shoppilot_write_nudge_total").register(registry);
     }
 
     public AgentResult run(String query, String idempotencyToken, EventSink sink) {
@@ -215,6 +226,10 @@ public class AgentStateMachine {
         boolean toolUsed = false;
         List<LlmTypes.Reply> roundReplies = new ArrayList<>();
         int rounds = 0;
+        // 用户明确要求办理的写动作：状态机记得它必须真的执行过，一句文字承诺不算办完
+        ToolName expectedWrite = expectedWriteTool(intent);
+        boolean expectedWriteDone = false;
+        boolean nudged = false;
         LlmTypes.Reply lastReply = null;
         while (rounds < properties.agent().maxToolRounds()) {
             step(trace, sink, AgentState.PLAN, "round=" + rounds);
@@ -228,7 +243,19 @@ public class AgentStateMachine {
             }
             roundReplies.add(lastReply);
             if (!lastReply.wantsTool()) {
-                break;
+                if (expectedWrite == null || expectedWriteDone || nudged) {
+                    break;
+                }
+                // 模型用文字承诺了业务动作却没调用工具（dev 评测实测形态："我这就为您提交退款申请"之后直接收尾）。
+                // 只纠偏一次，且只在答案本来就不成立的请求上多花一次规划调用；工具轮次上限不变（ADR 0008）。
+                nudged = true;
+                writeNudgeCounter.increment();
+                step(trace, sink, AgentState.PLAN, "corrective=" + expectedWrite.apiName());
+                messages.add(LlmTypes.Message.assistant(lastReply.content(), List.of()));
+                messages.add(LlmTypes.Message.user("你刚才承诺了要办「" + expectedWrite.description() + "」，但没有调用对应工具。"
+                        + "现在直接调用 " + expectedWrite.apiName() + " 把它真的办掉，参数从上面的对话里取；"
+                        + "必填参数确实缺失就照实向用户追问，不要再复述计划。如果你判断这个动作本就不该做，请说明理由。"));
+                continue;
             }
             toolUsed = true;
             rounds++;
@@ -251,6 +278,9 @@ public class AgentStateMachine {
                         dispatch.tool() + " missing=" + dispatch.missingSlots()
                                 + " modelArgs=" + traceArgs(call.arguments()));
                 return ModelRun.solo(askSlot(session, tenantId, conversationId, dispatch, query, trace, sink));
+            }
+            if (dispatch.tool() == expectedWrite) {
+                expectedWriteDone = true;
             }
             step(trace, sink, AgentState.TOOL_EXEC,
                     dispatch.tool() + "=" + dispatch.status() + " modelArgs=" + traceArgs(call.arguments()));
@@ -517,17 +547,31 @@ public class AgentStateMachine {
     }
 
     /**
-     * 按意图裁剪工具集（ADR 0007）。
+     * 按意图决定下发哪些工具（ADR 0007：意图枚举是唯一驱动源）。
      *
-     * <p>政策咨询一律不下发工具：实测给了工具，小模型会凭空编一个订单号去查，
-     * 把一句政策咨询答成"查不到您的订单"。判定未定案时才全量下发，让工具选择本身充当意图证据。
+     * <p>政策咨询与转人工一律不下发工具：实测给了工具，小模型会凭空编一个订单号去查，
+     * 把一句政策咨询答成"查不到您的订单"。落到任一动作意图时下发全部四个业务工具，让工具选择本身充当
+     * 意图证据——dev 评测（DashScope qwen-plus，180 条）实测按子意图裁到单个工具，会把 T0 的路由误差
+     * 放大成选错工具：判成 ACTION_ORDER 的改地址请求只拿到 queryOrderDetail，模型没有选对的机会。
      */
     private List<Map<String, Object>> toolsFor(TriageResult triage) {
         Intent intent = triage.intent();
         if (intent == null || intent == Intent.UNKNOWN) {
-            return ToolContracts.functionDescriptors();
+            return ToolContracts.actionDescriptors();
         }
-        return intent.isAction() ? ToolContracts.functionDescriptorsFor(intent) : List.of();
+        return intent.isAction() ? ToolContracts.actionDescriptors() : List.of();
+    }
+
+    /** 只有两个写操作意图需要状态机记住"必须真的办掉"；查询类答错顶多是信息不全，不会造成业务后果。 */
+    private static ToolName expectedWriteTool(Intent intent) {
+        if (intent == null) {
+            return null;
+        }
+        return switch (intent) {
+            case ACTION_REFUND -> ToolName.APPLY_REFUND;
+            case ACTION_ADDRESS -> ToolName.MODIFY_DELIVERY_ADDRESS;
+            default -> null;
+        };
     }
 
     /** 包级可见只为让降级映射进用例（ticket 14）；三类模型失败必须各自映射到不同 reason。 */
