@@ -204,16 +204,26 @@ slot_ask | fallback | duplicate_submit | rate_limited
 
 | 否决项 | 判据 | 状态 | 证据 |
 | --- | --- | --- | --- |
-| 串号防线 | 跨租户同意图 0 次互命中；跨店查询不泄露 B 店字段 | **通过** | `verify_l2_filters.py`（租户/scope/意图/纪元四类过滤）、`verify-action-loop.ps1` 第 3 段、`verify-polarity.ps1` 8/8 |
-| 写操作幂等 | 并发 50 同 token 仅 1 条；Redis 停机由 DB 唯一约束兜 | **通过** | `verify-idempotency.ps1`、`IdempotencyServiceTest`、`TenantIsolationAndIdempotencyTest` |
-| 降级可复现 | 七种 reason 稳定触发且各有可查工单 | **通过** | `verify-fallback.ps1` 7/7、`FallbackReasonTest` |
-| 身份不可伪造 | 无 token/伪造/过期 401；body 或参数带 tenantId 被忽略并告警 | **通过** | `AuthFilterTest`、`demo.ps1 -Which isolation`、`IdentityArchitectureTest` |
+| 串号防线 | 跨租户同意图 0 次互命中；跨店查询不泄露 B 店字段 | **通过**（local 与 dev 都实测） | `verify_l2_filters.py`（租户/scope/意图/纪元四类过滤）、`verify-action-loop.ps1` 第 3 段、`verify-polarity.ps1` 8/8、dev 复核 `logs/dev-guardcheck-20260910-105633.log` |
+| 写操作幂等 | 并发 50 同 token 仅 1 条；Redis 停机由 DB 唯一约束兜 | **通过**（local 与 dev 都实测） | `verify-idempotency.ps1`、`IdempotencyServiceTest`、`TenantIsolationAndIdempotencyTest`、dev 复核同上 |
+| 降级可复现 | 七种 reason 稳定触发且各有可查工单 | **通过**（local 与 dev 都实测） | `verify-fallback.ps1` 7/7、`FallbackReasonTest`、dev 复核同上 |
+| 身份不可伪造 | 无 token/伪造/过期 401；body 或参数带 tenantId 被忽略并告警 | **通过**（local 与 dev 都实测） | `AuthFilterTest`、`demo.ps1 -Which isolation`、`IdentityArchitectureTest`、dev 复核同上 |
 
-四条否决项的判据模式写的是 `dev`，实际证据取自 `local`/`perf` 与 JVM 用例。理由：这四条防线的正确性与
-用哪家模型无关（越权与幂等发生在业务系统与仓储层），把它们绑在需要外部 API key 的模式上反而更弱。
-同一句"模式列与证据列不一致"也适用于可复现性那一行：起栈与三条演示是在 `local` 下验的（干净检出、空数据卷），
-因为 `dev` 要求仓库外的一份 `.env`，而"照 README 就能跑通"这件事恰恰不该依赖任何仓库外的配置。dev 下的同一条
-路径会在补上 key 之后随评测一起跑（`run-dev-eval.ps1` 跑的就是 dev 模式的网关）。
+四条否决项的判据模式写的是 `dev`，而 2026-09-10 之前证据只取自 `local`/`perf` 与 JVM 用例，当时给的理由是
+这四条防线的正确性与用哪家模型无关（越权与幂等发生在业务系统与仓储层）。这句话今天仍然成立，但它不再被拿来
+当"没测"的替代说法了：`scripts/run-dev-guardcheck.ps1 -Run` 把网关真的切进 dev，七道防线脚本
+（`hitzero` / `action` / `idem` / `fallback` / `polarity` / `l2` / `demo -Which isolation`）在云端 `qwen-plus` 下
+**全部通过**，落点 `logs/dev-guardcheck-20260910-105633.log`，本轮实花 46,305 tokens（`1,093,128 -> 1,139,433`）。
+
+"模式列与证据列不一致"这句话仍然适用于可复现性那一行：起栈与三条演示是在 `local` 下验的（干净检出、空数据卷），
+因为 `dev` 要求仓库外的一份 `.env`，而"照 README 就能跑通"这件事恰恰不该依赖任何仓库外的配置。
+
+这个复核脚本是今天现写的，因为它替掉的那句提示本身是错的：`run-dev-eval.ps1` 末尾原本推荐用
+`run-acceptance.ps1 -Profile dev -SkipBuild -SkipStack` 去做 dev 复核，而 `-Profile` 只喂给 `stack` 那一步，
+加了 `-SkipStack` 之后它谁也不影响——照着跑等于拿 local 网关签一张"dev 已复核"的字据。第二个坑是作废判定：
+第一版扫日志里的 `LLM_BUDGET_EXCEEDED` 关键词判"这轮被熔断饿死了"，可 `verify-fallback` 本来就要**注入**这个
+reason 去验第七种降级形态，于是七步全绿的一轮被判成作废（同一晚上更早的一轮倒是真空饿着：临时预算写成固定 40 万，
+而当天账上已经 103 万）。现在临时预算按"当天已用 + 余量"推导，作废只看账——整轮 token 增量为 0 才算饿。
 那一格也已经在 2026-09-10 真跑过：`.env` 里补三行（key、base-url、`SHOPPILOT_LLM_MODEL=qwen-plus`），`scripts/run-dev-eval.ps1 -Run` 一条命令出分意图双子指标 CSV。93.3% / 90.5%，仍未达 95% 线，最低行 72.2% 的原因写在"已知限制"里；这一轮顺带抓到并修掉四处真实缺陷，逐条见 ticket 16。同一个晚上 ADR 0012 的日预算熔断也真触发了一次：全量那一轮到第 137 条把额度用完，剩下 43 条按 `LLM_BUDGET_EXCEEDED` 转人工并各自落了工单（明细 CSV 的 `fallback` 与工单号可查），这条防线在真实评测负载下的表现就此有了第一手证据，代价是那 43 条要按意图补跑。
 当天那三件手工活（三行配置、日预算、切 dev 再切回 local）由 `scripts/run-dev-eval.ps1` 收着：它先自查配置齐不齐、缺预算就把那一行写进 `.env`、把网关切到 dev 并回读 `/ops/circuit` 确认，然后**停下来**——加 `-Run` 才真发请求，跑完无论成败都把网关放回 local（挂着真 key 的 dev 网关是个花钱的陷阱）。
 补一句当天会撞到的事：完整集 180 条**实测约 26.7 万 token**（prompt 251,036 + completion 16,103，见 `tool-eval-20260910-075747-dev-meta.json`；修复前那一轮 21.4 万），不是原先估的 19 万——工具集从“按子意图裁到单个”改成“动作意图下发四个工具”之后每条 prompt 涨了约三分之一。ADR 0012 的日预算默认 20 万，所以评测当天要同时设 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET`（`.env.example` 给了 260000 的示例值，按实测这个示例值不够一次全量：当天临时提到 80 万/110 万跑完再调回 260000）；不设的话脚本会在跑前用剩余预算做投影并 `exit 2`，不会跑到一半被熔断留半份数据。
@@ -386,6 +396,9 @@ node scripts/verify-console.mjs                         # 调试台 15 项（Pla
 # dev 评测（唯一要云端 key 的一格）：默认只自查与摆位置，不发任何计费请求
 pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12        # 干跑：查配置、报缺什么
 pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12 -Run   # 真跑 12 条；去掉 -Limit 是 180 条全量
+# 四条否决项的 dev 复核：同样默认干跑；-Run 会临时抬日预算、切 dev、跑完放回 local 并写回预算
+pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1            # 干跑：查配置、报这次会花多少余量
+pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七道防线（本轮实花约 4.6 万 tokens）
 ```
 
 ### 逐 ticket 验收动作 → 覆盖命令
@@ -399,7 +412,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，�
 
 ```
 step        exit  note          # 2026-09-10 09:54-10:03 同机全量跑（profile=local，开跑时工作树 clean @148c9ea），17 步全绿
-syntax        0   1s           # 解析 scripts\ 下 24 个 .ps1：门禁自己也得过语法门（见本节末）
+syntax        0   1s           # 解析 scripts\ 下 25 个 .ps1：门禁自己也得过语法门（见本节末）
 stop          0   3s           # 释放 fat jar 文件锁
 build         0  61s           # mvnw verify：3 + 11 + 89 = 103 项
 unit          0  48s           # mvn -o test 同一批，离线可跑

@@ -107,5 +107,7 @@ try {
     else { Write-Host '!! 网关没能放回 local，手动跑 scripts\start-gateway.ps1 -Profile local' -ForegroundColor Red }
 }
 Write-Host '产物在 eval\results\tool-eval-<时间>-dev*{.csv,-summary.csv,-meta.json}；把 README 那一格换成实测值再跑一次门禁。'
-Write-Host "顺手把四条否决项也在 dev 下复核（闭掉 README 里那条口径说明）：pwsh -NoProfile -File scripts/run-acceptance.ps1 -Profile dev -SkipBuild -SkipStack -Only plan,hitzero,action,idem,fallback,ratelimit,polarity,l2,demo"
+# 旧版这里推荐的是 `run-acceptance.ps1 -Profile dev -SkipStack`，那句话是错的：-Profile 只喂给 stack 步，
+# 加了 -SkipStack 它谁也不影响，照着跑等于拿 local 网关签一张"dev 已复核"的纸。换成真的会切模式的脚本。
+Write-Host "顺手把四条否决项也在 dev 下复核（闭掉 README 里那条口径说明）：pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run"
 exit $code
