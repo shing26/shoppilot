@@ -48,8 +48,8 @@
 ### 一、反刷分不变量
 
 1. 阈值常量一字未动：`git diff -U0 -- scripts/run_tool_eval.py` 里不含带 `ACCEPT_TOOL` 或 `HARD_FAIL_INTENT` 的增删行。
-2. 放开恰好 4 条且 id 固定：`git diff -- eval/cases-part2-action.jsonl` 中新增的 `"tool": [` 行数为 4，id 集合恰好 `{ACT-ORD-09, ACT-ORD-11, ACT-ORD-16, ACT-ORD-17}`。
-3. 三条多诉求样本未被顺手放开：`ACT-ORD-13`、`ACT-ADR-14`、`ACT-RFD-14` 不出现在 gold 的 diff 里。
+2. 放开恰好 4 条且 id 固定：`git diff -U0 -- eval/cases-part2-action.jsonl` 的增行里 `"tool":[` 出现 4 次，id 集合恰好 `{ACT-ORD-09, ACT-ORD-11, ACT-ORD-16, ACT-ORD-17}`。（序列化是紧凑的，冒号后没有空格；锚定 `"tool": [` 会数到 0。）
+3. 三条多诉求样本未被顺手放开：同一份 `git diff -U0` 的**增删行**里不含 `ACT-ORD-13`、`ACT-ADR-14`、`ACT-RFD-14`（必须带 `-U0` 且只看 `^[+-]` 行，否则上下文行会假报命中）。
 4. 评测集结构不变：`build_eval_set.py` 打印的 180 条、每意图 18 条、对抗样本 72/180 = 40% 三个数与改前逐字相同。
 5. 新判据下未达 95% 线的意图行数 >= 5；若为 0，视为在刷分，本轮不予接受。
 
@@ -124,6 +124,46 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 ```
 
 全量重跑的备用命令是同一支去掉 `-OnlyIntent`（180 条，约 26.7 万 token，会顶到 26 万日预算）。
+
+## 验收结果（2026-09-11，逐条对应上面 24 条）
+
+一、反刷分不变量
+1. 对 `HEAD~1` 的 `git diff -U0 -- scripts/run_tool_eval.py` grep `ACCEPT_TOOL`/`HARD_FAIL_INTENT`/`EVAL DONE` 的增删行：**0 命中**；`verify_eval_judge.py` 另断言两个常量仍是 0.95 / 0.80。
+2. `git diff HEAD~1 -U0 -- eval/cases-part2-action.jsonl` 的增行里 `"tool":[` **4 次**，id 依次 `ACT-ORD-09`、`ACT-ORD-11`、`ACT-ORD-16`、`ACT-ORD-17`。
+3. 同一份 diff 的增删行里 `ACT-ORD-13` / `ACT-ADR-14` / `ACT-RFD-14`：**0 命中**。
+4. `build_eval_set.py` 打印 180 条、10 意图各 18 条、`对抗样本 72/180 = 40.0%`，三个数与改前逐字相同。
+5. 新判据下未达 95% 的意图行 **5 行**（ADDRESS / ORDER / REFUND 各 94.4%、ESCALATE 88.9%、UNKNOWN 83.3%）。
+
+二、量具自证与变异验证
+6. `--selfcheck` 打印 `SCORER SELFCHECK ok=14`；夹具被破坏时 `exit 2` + `SCORER CHECK FAILED`（见下面 8-10 三条实测）。
+7. `python scripts/run_tool_eval.py --selfcheck --base http://127.0.0.1:59999`（空闲端口）退出码 **0** —— 前置断言在任何 HTTP 请求之前。
+8. 参数双算反证：临时副本里把 `args_ok` 改回旧语义 -> 副本 selfcheck **红**（`exit=2`），仓库 `git status` 实验前后一字不差。
+9. `status_ok` 真空反证：临时副本恢复 `and link` 旧写法 -> selfcheck **红**。
+10. 串号反证：临时副本让命中标记不再算硬失败 -> selfcheck **红**；夹具同时含「`查不到订单号 90001 的记录` + 标记 `演示买家`/`13800001234`」判不泄漏、答案正文出现 `演示买家` 判泄漏。
+11. `logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=14`，末行 `EVAL DONE cases=24 errors=0 mode=local limit=24`（同一份日志两条都在）。
+
+三、单一判据与不变性回归
+12. `rg -n "^\s+tool_ok = "` 命中 2 行（`run_tool_eval.py:152`、`:156`），都在 `judge()` 体内；`score_case()` 与 `rescore_details()` 无第三处判据赋值。
+13. `verify_eval_judge.py` 断言 `rescore_details()`（94 行）体内不含 `tool_ok` / `args_ok` / `status_ok` / `accepted_tools(` 任何判据原料：**PASS**。
+14. 6 份明细合并重算打印 `判据变动的样本：['ACT-ORD-09', 'ACT-ORD-11', 'ACT-ORD-16', 'ACT-ORD-17']`，带 `--rescore-expected-diff` 时退出码 **0**（差异集合一越界就非零）。
+15. `ACTION_ORDER 72.2% -> 94.4%`、聚合 `168/180 = 93.3% -> 172/180 = 95.6%`；`eval/results/tool-eval-20260911-042142-rescore.csv` 含 `new_unverifiable` 列（180 行 × 18 列）。
+16. 条数由明细列直接可数：`new_args_scored` 真值 **63** 条；其中旧 gold 命中 **57** 条、这些行的 `old_args_ok` 全为 True；未命中 **6** 条在旧判据下全被判"填错"；离线 `new_args_comparable` **0/63**（明细只存旧 gold 那个工具的入参）；`new_status_ok` 空值 **2** 条（`ACT-ORD-16`、`ACT-ORD-17`）。README 那一格按三分法写条数，全文不出现 `57/60` 或 `95.0%`。
+
+四、标注集与校验器
+17. `python scripts/build_eval_set.py` 退出码 0、无 `FAIL`、无新增 `WARN`；连跑两次 `eval/tool-cases.jsonl` 字节级相同（sha256 前 12 位 `5e315190c46c`），且仓库里那份与重新生成结果一致（"没人手改过生成物"那条断言）。
+18. 三条越权防呆反证各打中一条 `FAIL`：删 `mustNotLeak` -> `ACT-ORD-17 是越权样本却没带 mustNotLeak`；标记用买家自己报的订单号 -> `ACT-RFD-17 串号标记「90001」出现在自己的 query 里`；标记用品类名 -> `ACT-LOG-18 串号标记「服饰鞋包」是跨租户共享词`。
+19. `expect.tool` 列表的三种坏形态各一条 `FAIL`：空列表（`ACT-ORD-09`）、重复元素（`ACT-ORD-11`）、非法工具名（`ACT-ORD-16`）。18-19 共 5 条防呆由 `verify_eval_judge.py` 自动跑，注入全在临时副本上。
+
+五、JVM 越权补强
+20. `mvnw -o -pl shoppilot-biz-mock -am test -Dtest=TenantIsolationAndIdempotencyTest`：**Tests run: 6, Failures: 0, Errors: 0**（该类 5 -> 6）；门禁 `unit` 步 surefire 合计 **104**（3 + 12 + 89），BUILD SUCCESS。
+
+六、文档一致性与落点
+21. README 指标表、承诺项、已知限制三处均同时含 `93.3%` 与 `95.6%`（逐行机器验过）；8 个 id 全部可在正文 grep 到；承诺项那一格结论仍是「未达成」。
+22. `docs/adr/0021-action-order-gold-boundary-relabel-not-tool-merge.md` 存在、编号紧跟 0020、含「一、业务能力读数」与「二、量具缺陷归因」两节（读数段的结论不引用量具段数字，反之亦然）；ticket 16 有 `**追加决策（2026-09-11，ticket 20 判据收口）**`（22-25 四条）+ 三条追加追问；ticket 12 追加决策 9 记越权断言下沉。
+23. `python scripts/collect_interview_questions.py` 打印 `写出 docs\interview-qa.md：90 问，覆盖 20/20 个 ticket`，无「缺收尾记录的 ticket」；头部计数行与正文以 **Q 开头的条目数一致（90）。
+
+七、零额度与整体验收
+24. `GET /api/v1/support/ops/circuit` 的 `tokensUsedToday` 在跑完整套取证命令前后都是 **0**（DELTA = 0，`llmMode=local`、日预算 260000）。`run-dev-eval.ps1 -OnlyIntent ACTION_ORDER` 只干跑，停在 `没加 -Run，所以到此为止：不改网关、不发计费请求。`，并打印出真正会执行的 `python scripts/run_tool_eval.py --only-intent ACTION_ORDER`（补了 `-OnlyIntent` 透传才到得了这一行）。整轮 17 步门禁全绿：`logs/acceptance-run-20260911-050229.log`，头两行 `commit=8aea166 开跑时工作树=clean` / `总耗时 559s`，README 矩阵行与之一致。EOL 复查：`.py` / `.jsonl` 仍全 CRLF，Java、README、CONTEXT、ticket 16、本票仍 LF，ticket 12、PLAN、问答库仍 CRLF，无 BOM 变化；`git diff --stat` 每文件都是定向改动，无整文件重写。
 
 ## Handoff notes
 
