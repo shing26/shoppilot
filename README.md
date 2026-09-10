@@ -161,7 +161,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | HikariCP 饱和点 | 记录饱和点与调池前后差异 | 池 2/10/30 三档 QPS 差 **≤1.2%**；池=2 时 pending 峰值 39、获取均值 6.5 ms，池=10 起 pending 全程 0 → **任务书"默认 10 连接先于 CPU 饱和"未被实测支持** | 流量模型 `biz`（100% 业务办理），每档 45 s，池大小经 `hikaricp.connections.max` 反读确认 | `ladder-biz-perf-20260909-033940-pool2.csv` 等三份 |
 | 写操作幂等 | 100% | 50 并发同 token → 库里 1 行；绕过网关直插由 DB 唯一约束拒 | 幂等键四元组 + `uk_refund_idempotency` | `verify-idempotency.ps1`、`TenantIsolationAndIdempotencyTest` |
 | 降级路径 | 每种可复现且落工单 | **7/7** 帧内 ticketId 都能在工单队列里查回 | 故障注入全部经网关运维代理；脚本对每个工单号做队列反查 | `verify-fallback.ps1`、`FallbackReasonTest` |
-| 可复现性 | 新机器照 README 一条命令起栈并跑通三条演示 | **同机干净检出达成，异机未验**：`git clone` HEAD → 空数据卷 + 无 `.env` → `up.ps1 -Profile local` 一次通过（118 s，含冷构建、5 万单 seed、90 块全量入库）→ `demo.ps1` 三条演示全过（105 s） | 起栈脚本按"中间件→模型→构建→seed→入库→网关"顺序等 health，每步可重入；克隆目录里没有 `.env`，说明 local 模式所需配置全在仓库内。**仍是同一台物理机**：换机未验，本机另有两个项目的容器在抢内存，见下方"干净检出检查" | `scripts/clean_clone_check.ps1`、`logs/clean-clone-check-20260910-034422.log`、`scripts/up.ps1`、`scripts/demo.ps1` |
+| 可复现性 | 新机器照 README 一条命令起栈并跑通三条演示 | **同机干净检出达成（10 分钟预算内），异机未验**：`git clone` HEAD → 空数据卷 + 无 `.env` → 冷构建 + seed 5 万单 + 90 块全量入库 → 三条演示逐条断言全过，端到端 **241 s**（预算 600 s：前置 4 + clone 18 + 起栈 113 + 演示 106） | 判据的收口方式是脚本自闭环而不是外部人肉测（ADR 0020）：`clean_clone_check.ps1` 在无环境状态的克隆目录里量两件事——端到端墙钟 ≤ 600 s，以及三条演示各自的预期输出逐条命中（① `cache=L1`、模型调用增量 0 次 ② A/B 店答案不同、伪造 token 401 ③ 工单 `reason=TOOL_UNAVAILABLE status=OPEN` 队列可查）。起栈每步可重入；克隆目录无 `.env`，说明 local 模式所需配置全在仓库内。**仍是同一台物理机、同一位作者**：换机未验，本机另有两个项目的容器在抢内存（本轮前置检查打到空闲 1 GB），见下方"干净检出检查" | `scripts/clean_clone_check.ps1`、`logs/clean-clone-check-20260910-175431.log`、`docs/adr/0020-coldstart-script-closes-reproducibility-criterion.md`、`scripts/up.ps1`、`scripts/demo.ps1` |
 
 ![压测曲线：QPS 拐点与分位数时延](docs/loadtest-curves.png)
 
@@ -244,7 +244,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 | 虚拟线程收益 | 开关两组数据 | **达成**：400/800 并发 +64%/+65%，100/200 并发 -3%/-3%，低并发档负收益照登 |
 | Token 节约率 | 关缓存基线对比 | **达成**：62.4%（1096.8 → 412.3 token/请求），三档只差防线开关，perf 模式估算口径注明 |
 | 实测数字诚实 | 表旁标口径与来源文件 | **达成**：上表每行都有口径列与 `loadtest/results/`、`eval/results/`、`docs/` 下的具体产物 |
-| 可复现性 | 新机器一条命令起栈跑通演示 | **同机干净检出达成、异机未验**：`scripts/clean_clone_check.ps1` 把 HEAD 克隆出来、在空数据卷上照 README 起栈并跑通三条演示（PASS 记录 `logs/clean-clone-check-20260910-034422.log`）；`scripts/run-acceptance.ps1` 一条命令跑完语法门到评测全部 17 步 |
+| 可复现性 | 新机器一条命令起栈跑通演示 | **同机干净检出达成（10 分钟预算内）、异机未验**：`scripts/clean_clone_check.ps1` 把 HEAD 克隆到空目录、在空数据卷上照 README 起栈、逐条断言三条演示的预期输出，端到端 241 s（预算 600 s），落点 `logs/clean-clone-check-20260910-175431.log`；这一判据按 ADR 0020 由脚本自闭环收口，不再等外部人肉测，剩余缺口（同机、同作者）写在该 ADR 的 Consequences 里。`scripts/run-acceptance.ps1` 一条命令跑完语法门到评测全部 17 步 |
 
 ## 已知限制（不藏）
 
@@ -296,6 +296,10 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 
 `git clone` 出 HEAD → 在克隆目录照 README 跑 `up.ps1 -Profile local`（空数据卷，走完整入库）→ 跑 `demo.ps1` 三条演示
 → 结论与完整输出落 `logs/clean-clone-check-<时间戳>.log`。脚本不删任何目录。
+判据是两条硬指标（ADR 0020）：**端到端墙钟 ≤ 600 s**（前置检查、clone、起栈、三条演示全算），
+以及**三条演示各自的预期输出逐条命中**，缺一条即 FAIL。最近一次通过：
+`logs/clean-clone-check-20260910-175431.log`（HEAD `04ea5af`，4 + 18 + 113 + 106 = **241 s**，两步均第 1 次尝试即过，
+当时该机空闲物理内存 1 GB）。
 它验的是"提交进去的东西够不够"，而不是"我这台配了两小时的机器能不能跑"——这两件事在本项目里至少撞过四次
 （fat jar 文件锁、`.env` 里的 embedding 模型名、固定的容器名、以及下面那条内存前提）。
 
@@ -306,6 +310,12 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
   流，而 `Run-Step` 只并 `2>&1`，于是明明一次通过（栈起来了、三条演示全过）却被记成 FAIL。改成 `*>&1` 之后重跑，
   才拿到 `logs/clean-clone-check-20260910-034422.log` 里那次 `up` 118 s + `demo` 105 s 的一次通过。
   这与 ticket 19 的 TTFT 是同一条纪律：**量具先修，再谈结论**。
+- **判红之后发现判得太松**：同一次改动里把 `Run-Step` 从"命中任意一个标记"改成逐条断言（打印 `[x]/[ ]` 清单）。
+  旧写法下 `demo` 那步只要求出现"演示结束"，而那是 `demo.ps1` 最后一行无条件打的——三条演示哪怕只跑完一条、
+  或者两条防线静默失效，它也绿。现在的标记是"能证伪"的六个字段：`第一次打模型 [1-9] 次`、`第二次 cache=(L1|L2)`、
+  `模型调用增量 0 次`、`两次答案是否不同：True`、`伪造 token 直接 401`、`工单 …… reason=…… status=……`。
+- **计数器取不到时会白送一条断言**：`Get-Metric` 拿不到 actuator 指标返回 `-1`，首末两次 `-1` 相减也是 0，
+  "第二次没打模型"这条天生成立。补上"第一次真的打了模型"之后，指标端点故障会当场红，不会伪装成缓存生效。
 - **Maven 退出码为 0 不等于 fat jar 齐**：内存吃紧时它的 JVM 会在 reactor 中途被打断，`start-bizmock.ps1`
   找不到 jar 就退回再开一个 `mvn spring-boot:run`，失败点于是漂成"biz-mock 300 s 没 readiness"，离真因隔两步。
   `up.ps1` 现在在 `[3/6]` 之后直接断言两个 fat jar 存在，缺哪个就红在哪一行。
@@ -437,8 +447,10 @@ run9 就漏了，于是"全绿"这句话一度在机器上找不到落点。现�
 上面那一行的落点是 `logs/acceptance-run-20260910-115143.log`，头两行写着 `commit=3fe7ddc 开跑时工作树=clean`。
 总耗时 520s，用例数从 63 涨到 103（新增的分布在 dev 生成路径、缓存写回与向量化重试、下面第 5 条那个 flush 竞态、dev 评测抓到的"订单存在却回 NOT_FOUND"，以及门禁冒烟抓到的"派生幂等 token 不含地址参数"）。`stack` 73s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
 那条动作本来还要一个没参与的人来跑，现在这一段机器自己代跑了：`scripts/clean_clone_check.ps1` 把 HEAD 克隆到空目录、
-在**空数据卷**上照 README 起栈、跑通三条演示（`logs/clean-clone-check-20260910-034422.log`，`up` 118s + `demo` 105s，
-克隆目录里连 `.env` 都没有）。机器能证明的就是"干净检出"这一级，**换人换机仍然没证**——这台机器上还跑着别的项目的容器。
+在**空数据卷**上照 README 起栈、跑通三条演示，并量端到端墙钟（`logs/clean-clone-check-20260910-175431.log`：
+起栈 113s + 演示 106s，全程 241s，预算 600s；克隆目录里连 `.env` 都没有）。
+这一收口方式（脚本自闭环替代外部人肉测，判据=10 分钟预算 + 三条演示逐条断言）记在 ADR 0020 里。
+机器能证明的就是"干净检出 + 预算 + 三条防线各自可观测"这一级，**换人换机仍然没证**——同一台物理机上还跑着别的项目的容器。
 每一步还各要求一条"只有跑到结尾才会出现"的日志标记（`Expect`）：这台机器把 `mvnw.cmd` 中途带走时它返回 0，
 只看退出码会假绿。同一件事在干净检出检查上又红了一次，成功行是 `Write-Host` 打的，见"干净检出检查"一节。
 新增的 `report` 步是同一个道理的另一面：README 说"表格由脚本生成"，那就让门禁去验这句话，
@@ -528,7 +540,7 @@ shoppilot-gateway/     网关：状态机、三级意图判定、两级缓存、
 shoppilot-biz-mock/    业务中台：orders / logistics / coupons / refunds / tickets，@TenantId 行级隔离
 shoppilot-tool-api/    纯契约 jar：10 意图枚举 + Function Schema + 工具 DTO（网关与 biz-mock 共用）
 loadtest/              locustfile（四种流量模型）与 results/（保留 ladder-*.csv 与 env-*.json）
-docs/adr/              19 份架构决策记录，正文里每处 ADR 编号都能点进去
+docs/adr/              20 份架构决策记录，正文里每处 ADR 编号都能点进去
 docs/                  阈值标定、意图标定、检索对比、压测报告、面试问答清单
 knowledge/             30 篇政策语料
 scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、TTFT 扫描与归因、报告生成
