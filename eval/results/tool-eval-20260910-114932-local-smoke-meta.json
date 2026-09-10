@@ -4,13 +4,13 @@
   "llmBaseUrl": "http://127.0.0.1:11434",
   "cases": 24,
   "limit": 24,
-  "promptTokens": 50196,
-  "completionTokens": 1611,
-  "estimatedPerCaseTokens": 202,
+  "promptTokens": 50242,
+  "completionTokens": 1716,
+  "estimatedPerCaseTokens": 2159,
   "dailyTokenBudget": 260000,
-  "tokensUsedBeforeRun": 1030471,
+  "tokensUsedBeforeRun": 1139433,
   "concurrency": 2,
-  "startedAt": "20260910-100045",
+  "startedAt": "20260910-114932",
   "requestErrors": 0,
   "summary": {
     "ACTION_ADDRESS": {
