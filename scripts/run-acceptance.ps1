@@ -29,16 +29,20 @@ $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
 $outDir = Join-Path $root 'logs\acceptance'
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-$env:JAVA_HOME = if ($env:SHOPPILOT_JDK) { $env:SHOPPILOT_JDK } else { 'E:\java\jdk21' }
+$env:JAVA_HOME = Resolve-ShoppilotJdk
 $env:MAVEN_OPTS = '-Duser.language=en -Duser.country=US'
 # python 步骤（verify_l2_filters.py）经 cmd 重定向落盘时默认按控制台代码页 cp936 写，
 # 下面的尾部预览用 UTF-8 读就会花屏；显式要 UTF-8 后日志与预览都对。
 $env:PYTHONIOENCODING = 'utf-8'
 $pwsh = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
+if (-not $pwsh) { $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source }
 if (-not $pwsh) {
-    $pwsh = 'C:\Users\Shing\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe'
+    # 以前这里兜底到作者机器上一个 .cache 目录里的 pwsh.exe：那是把"我这台跑过"写进了门禁，
+    # 别人 clone 下来只会得到一个找不到的路径。缺就明确缺。
+    throw '需要 PowerShell 7（pwsh）在 PATH 里。装法：winget install Microsoft.PowerShell'
 }
 
 # 每步只声明一次：Kind 决定用 -File 还是直接可执行文件。

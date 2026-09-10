@@ -1,5 +1,9 @@
 ﻿# 供 start-gateway.ps1 / start-bizmock.ps1 dot-source。
 #
+# 现在 dot-source 它的还有 up.ps1 / ingest.ps1 / run-acceptance.ps1（为了 Resolve-ShoppilotJdk）。
+# 这个文件只放"两个以上脚本共同遵守的规则"，否则又是同一个常量写五份——本仓库已经在
+# readiness 超时上栽过一次"同一个常量两处各写一份，改就只改对一半"。
+#
 # 为什么不用 Start-Process：Start-Process 出来的子进程挂在调用方的作业对象里，
 # 会话被回收时整棵子进程树一起被终止——表现为网关起来一分钟后凭空消失、日志里没有异常、
 # 也没有 OutOfMemoryError。用 WMI 的 Win32_Process.Create 启动，父进程是 WmiPrvSE，
@@ -36,6 +40,55 @@ function Start-ShoppilotService {
         throw "以 WMI 启动 $Name 失败，ReturnValue=$($result.ReturnValue)"
     }
     return [int]$result.ProcessId
+}
+
+# 读仓库根的 .env（KEY=VALUE，# 开头为注释），返回要注入子进程的环境变量。
+function Get-JavaMajorVersion {
+    param([Parameter(Mandatory = $true)][string]$JavaExe)
+    if (-not (Test-Path -LiteralPath $JavaExe)) { return 0 }
+    $raw = try { (& $JavaExe -version 2>&1 | Select-Object -First 1) } catch { return 0 }
+    $m = [regex]::Match("$raw", 'version\s+"(\d+)(?:\.(\d+))?')
+    if (-not $m.Success) { return 0 }
+    $major = [int]$m.Groups[1].Value
+    # 老式版本号 "1.8.0" 的主版本在第二段
+    if ($major -eq 1 -and $m.Groups[2].Success) { return [int]$m.Groups[2].Value }
+    return $major
+}
+
+# 找一个可用的 JDK。项目要 Java 21（虚拟线程）。
+#
+# 为什么不让它写死某个人的绝对路径：五个启动脚本一度都以 "E:\java\jdk21" 兜底，
+# 于是 README 那句"一条命令起栈"只在作者那台恰好把 JDK 装在 E 盘的机器上成立；
+# 换一台机器它会把 JAVA_HOME 指向不存在的路径，然后在 mvnw 里以一句看不懂的话失败。
+# 顺序：SHOPPILOT_JDK（显式）→ JAVA_HOME → PATH 上的 java，三者都必须过版本校验，
+# 全都不合格就直接说人话报错，而不是带着坏路径往下跑二十分钟。
+# PATH 那一条一定要校验版本：作者这台机器 PATH 上的 java 是 JDK 18，拿它构建会炸在编译目标上。
+function Resolve-ShoppilotJdk {
+    param([int]$MinMajor = 21)
+    $candidates = @()
+    if ($env:SHOPPILOT_JDK) { $candidates += [pscustomobject]@{ Src = 'SHOPPILOT_JDK'; Home = $env:SHOPPILOT_JDK } }
+    if ($env:JAVA_HOME) { $candidates += [pscustomobject]@{ Src = 'JAVA_HOME'; Home = $env:JAVA_HOME } }
+    $onPath = (Get-Command java.exe -ErrorAction SilentlyContinue).Source
+    if ($onPath) {
+        $candidates += [pscustomobject]@{ Src = 'PATH'; Home = (Split-Path -Parent (Split-Path -Parent $onPath)) }
+    }
+    foreach ($c in $candidates) {
+        $exe = Join-Path (Join-Path $c.Home 'bin') 'java.exe'
+        if ((Get-JavaMajorVersion $exe) -ge $MinMajor) { return $c.Home }
+    }
+    $tried = if ($candidates.Count) { ($candidates | ForEach-Object { "$($_.Src)=$($_.Home)" }) -join ' | ' } else { '无' }
+    throw ("找不到 JDK {0}+（本项目要 Java {0}：虚拟线程）。已试过：{1}。" +
+        '请装一个 JDK {0}+ 并把 JAVA_HOME 指向它，或设 SHOPPILOT_JDK 指向它的安装目录。') -f $MinMajor, $tried
+}
+
+# PowerShell 7 的定位。同样是"别写死个人路径"：门禁一度兜底到
+# C:\Users\<某人>\.cache\... 下的 pwsh.exe，那台机器之外的读者只会拿到一个不存在的路径。
+function Resolve-ShoppilotPwsh {
+    foreach ($name in @('pwsh.exe', 'pwsh')) {
+        $src = (Get-Command $name -ErrorAction SilentlyContinue).Source
+        if ($src) { return $src }
+    }
+    throw '需要 PowerShell 7（pwsh）在 PATH 里，安装见 https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows'
 }
 
 # 读仓库根的 .env（KEY=VALUE，# 开头为注释），返回要注入子进程的环境变量。

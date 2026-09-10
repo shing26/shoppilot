@@ -2,7 +2,8 @@
 param([string]$Dir = "")
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$env:JAVA_HOME = if ($env:SHOPPILOT_JDK) { $env:SHOPPILOT_JDK } else { "E:\java\jdk21" }
+. (Join-Path $PSScriptRoot "lib-launch.ps1")
+$env:JAVA_HOME = Resolve-ShoppilotJdk
 $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
 if ($Dir) { $env:SHOPPILOT_KNOWLEDGE_DIR = $Dir }
 Push-Location $root

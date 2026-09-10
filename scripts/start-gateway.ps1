@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "lib-launch.ps1")
 $root = Split-Path -Parent $PSScriptRoot
-$jdk = if ($env:SHOPPILOT_JDK) { $env:SHOPPILOT_JDK } else { "E:\java\jdk21" }
+$jdk = Resolve-ShoppilotJdk
 $java = Join-Path (Join-Path $jdk "bin") "java.exe"
 $logDir = Join-Path $root "logs"
 $suffix = if ($Profile) { $Profile } else { "default" }

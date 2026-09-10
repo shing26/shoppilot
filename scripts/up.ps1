@@ -11,7 +11,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
-$env:JAVA_HOME = if ($env:SHOPPILOT_JDK) { $env:SHOPPILOT_JDK } else { 'E:\java\jdk21' }
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+# 找不到 JDK 就在这里停：起栈脚本以前拿一个绝对路径兜底，换台机器会把 JAVA_HOME 指到不存在的目录，
+# 失败点于是漂到几十秒之后的一句 mvnw 报错上。
+$env:JAVA_HOME = Resolve-ShoppilotJdk
 $env:MAVEN_OPTS = '-Duser.language=en -Duser.country=US'
 # JVM 侧 -Dfile.encoding=UTF-8 输出的是 UTF-8 字节，PowerShell 默认按控制台代码页（本机 cp936）
 # 解码，日志里的中文就变成乱码。改控制台编码而不是改 JVM：入库与服务的输出都走这里。

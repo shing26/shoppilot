@@ -24,7 +24,9 @@
 ## 快速开始（一条命令）
 
 前置：Docker Desktop、JDK 21、Ollama、PowerShell 7（`pwsh`）。中间件端口全部偏移并只绑 `127.0.0.1`，
-不会和你机器上的别的项目抢 6379/6333/9200/8080。
+不会和你机器上的别的项目抢 6379/6333/9200/8080。JDK 不用你告诉脚本装在哪：`SHOPPILOT_JDK` → `JAVA_HOME`
+→ PATH 上的 `java.exe` 依次找，**每个候选都校验 `java -version` 主版本号 ≥21**，全不过就列出试过的来源与版本再停；
+PATH 上恰好是 JDK 18 这种机器（作者这台就是），盲信 PATH 会把构建炸在编译目标上。
 
 ```powershell
 git clone <本仓库> ShopPilot; cd ShopPilot
@@ -316,6 +318,12 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
   `模型调用增量 0 次`、`两次答案是否不同：True`、`伪造 token 直接 401`、`工单 …… reason=…… status=……`。
 - **计数器取不到时会白送一条断言**：`Get-Metric` 拿不到 actuator 指标返回 `-1`，首末两次 `-1` 相减也是 0，
   "第二次没打模型"这条天生成立。补上"第一次真的打了模型"之后，指标端点故障会当场红，不会伪装成缓存生效。
+- **要公开到 GitHub 之前自查出来的那一颗雷**：五个启动脚本（`up.ps1` / `ingest.ps1` / `run-acceptance.ps1` /
+  `start-gateway.ps1` / `start-bizmock.ps1`）一度都拿作者机器上的 JDK 绝对路径兜底，`run-acceptance.ps1` 的 `pwsh`
+  兜底路径里甚至带用户名。它们在**这台**机器上永远不发作，所以"照 README 一条命令起栈"这句话此前其实是靠 E 盘
+  恰好装着 jdk21 才成立的。现在收进 `lib-launch.ps1` 的 `Resolve-ShoppilotJdk`（三个来源依次找、逐个校验版本 ≥21，
+  全不过就报出试过的来源与版本），判据本身没动，动的是它下面那行地基。四种组合实测：给 21 就用 21；
+  `JAVA_HOME` 指到 18 会被跳过并继续往下找；全都不是 21 时报错并退出；改完重启整栈 + 三条演示复跑通过。
 - **Maven 退出码为 0 不等于 fat jar 齐**：内存吃紧时它的 JVM 会在 reactor 中途被打断，`start-bizmock.ps1`
   找不到 jar 就退回再开一个 `mvn spring-boot:run`，失败点于是漂成"biz-mock 300 s 没 readiness"，离真因隔两步。
   `up.ps1` 现在在 `[3/6]` 之后直接断言两个 fat jar 存在，缺哪个就红在哪一行。

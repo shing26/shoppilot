@@ -9,7 +9,7 @@
 **Verify:** 新 shell 执行 `docker compose up -d` 后跑 `mvnw verify` -> 三中间件健康、两服务 `/actuator/health` 为 UP、构建全绿。
 
 - [x] 父 pom 下三个模块：`shoppilot-gateway`(:8082)、`shoppilot-biz-mock`(:8091)、`shoppilot-tool-api`（纯契约，无 Spring 依赖）
-- [x] 编译与运行锁定 JDK 21（`E:\java\jdk21`），不依赖机器上的 `JAVA_HOME`；Maven wrapper 进仓库
+- [x] 编译与运行锁定 JDK 21：五个启动脚本走 `Resolve-ShoppilotJdk`，按 `SHOPPILOT_JDK` → `JAVA_HOME` → PATH 上的 `java.exe` 依次找，**每个候选都要过 `java -version` ≥21 的校验**，找不到就明确报错（见追加决策 10）；Maven wrapper 进仓库
 - [x] `docker-compose.yml` 拉起 Redis 7、Qdrant、ES 7.17，各自内存上限显式声明，宿主端口避开已被占用的 8080
 - [x] 两服务均开启虚拟线程配置项且可通过 profile 关闭（为 ticket 17 的对比实验预留开关，不要到时候再改代码）
 - [x] `/actuator/health` 两服务可用；Micrometer 指标端点暴露
@@ -31,6 +31,12 @@
 
 9. **Qdrant 的健康检查在 2026-09-10 之前从来没成功过一次，而原因不是超时。** 当时写的是 `CMD-SHELL wget -qO- http://127.0.0.1:6333/readyz`，容器长期报 `unhealthy`，我把原因记成"`/readyz` 在 wget 下超时"——那是猜的。真跑一次 `docker exec shoppilot-qdrant command -v wget curl` 就露底了：这个镜像里两个客户端都没有（`rc=127`），所以那条检查从第一天起就必然失败，而"读写正常"恰恰证明它什么都没测到。镜像里有 `bash`，于是用它的 `/dev/tcp` 手搓一次 `GET /readyz` 并断言 200，`docker inspect` 立刻转 `healthy`。**恒红的健康检查比没有健康检查更糟**：它教会人的是"这个红色可以忽略"，于是真坏的那一次也没人会看。
 
+
+**追加决策（2026-09-10，公开到 GitHub 前的自查）**
+
+10. **五个启动脚本一度拿作者机器的 JDK 绝对路径兜底，这是"照 README 能跑"这句话里最大的一个谎。** `up.ps1` / `ingest.ps1` / `run-acceptance.ps1` / `start-gateway.ps1` / `start-bizmock.ps1` 都写成 `if ($env:SHOPPILOT_JDK) { ... } else { "E:\java\jdk21" }`：换一台机器它照样起栈，只是把 `JAVA_HOME` 指向一个不存在的路径，然后失败在几十秒之后一句看不懂的 mvnw 报错上。现在收进 `lib-launch.ps1` 的 `Resolve-ShoppilotJdk`：`SHOPPILOT_JDK` → `JAVA_HOME` → PATH 上的 `java.exe`，**每个候选都跑一次 `java -version` 校验主版本号 ≥21**，全不过就带着"已试过哪些来源、各自的版本"报错并停在建栈之前。版本校验不是洁癖：这台机器 PATH 上的 `java` 是 JDK 18，盲信 PATH 会把构建炸在编译目标上，而"发现不了 JDK 21"和"发现了 18"给用户看的必须是两句话。
+    同一轮把 `run-acceptance.ps1` 里 `pwsh` 的兜底路径也删了——那个绝对路径里带用户名，等于把"我这台跑过"写进门禁；现在缺 `pwsh` 就直接要求装 PowerShell 7。为什么写在 `lib-launch.ps1`：本仓库已经在 readiness 超时上栽过一次"同一个常量两处各写一份，改就只改对一半"。
+
 **你需要能当场回答的三个追问**
 
 - *Q：为什么 ES 用 7.17 而不是 8.x？* A：8.x 强制 HTTPS + 客户端版本协商，本机内存预算下多一层安全握手不值当；7.17 的 `_search` + BM25 就是这个项目要用的全部能力，闭源特性一个没用。
@@ -39,6 +45,8 @@
 - *Q：两个检出为什么不能并存？容器名不是 compose 自己管的吗？* A：项目名是 compose 按目录算的，但 `container_name` 一旦写死就是 Docker 全局唯一的容器名，两套检出抢同一个名字，而且"停着"不等于"释放"。我保留钉死的名字（换来的是 README 里那几行命令直接可用），把冲突做成脚本里的显式前提：`down.ps1 -Containers` 现在 stop + rm 腾名字，`clean_clone_check.ps1` 前置检查还会查那三个宿主端口有没有被占用、并把空闲物理内存打出来——克隆起来的第二套全栈在这台 16 G 机器上本身就是失败源。
 
 - *Q：你的中间件健康检查真的在检查东西吗？* A：Qdrant 那条以前没有——它恒红，因为镜像里根本没有 wget/curl，`CMD-SHELL` 每次都 127。2026-09-10 换成 `bash` 的 `/dev/tcp` 手搓 `GET /readyz` 断言 200，才第一次转绿。教训不在 Docker，在"红了一周的东西没人去问为什么红"：现在我对任何健康检查的第一问都是"它失败的时候长什么样"，能稳定失败的检查才有资格说它成功。
+
+- *Q：既然 PATH 上有 java，为什么不直接用它？* A：因为本机 PATH 上是 JDK 18，而项目要 21（虚拟线程）。解析顺序里 PATH 只排第三，而且排在前面的候选也一样要过版本校验——顺序解决"用哪个"，校验解决"能不能用"，两件事不能合并成一条。实测四种组合：给了 21 就用 21；`JAVA_HOME` 指到 18 会被跳过并继续找；全都不是 21 时报错会列出试过的来源与版本号。
 
 **验证记录（2026-09-05）**
 
