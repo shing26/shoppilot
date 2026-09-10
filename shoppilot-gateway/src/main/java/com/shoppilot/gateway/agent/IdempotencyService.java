@@ -184,6 +184,11 @@ public class IdempotencyService {
      *
      * <p>任务书要求客户端提供，但对话式入口里"用户把同一句话再说一遍"就是重试；
      * 派生 token 让这种重试同样只产生一条退款单。客户端显式提供时以客户端为准。
+     *
+     * <p>参数必须**整个**进哈希。早先只放 orderNo 与 reason，于是同一笔订单改成两个不同地址会被
+     * 算成同一次提交：第二次直接回放第一次的结果，用户听到"已修改"而地址根本没动。门禁 eval 冒烟
+     * 实测到这一形态（ACT-ADR-03 把 ACT-ADR-01 的地址复述了一遍，三条 ADDRESS 用例全是
+     * {@code IDEMPOTENT_REPLAY}）。留空的可选项不参与哈希，"city 传空串"与"city 不传"是同一次提交。
      */
     private String resolveToken(String tenantId, String customerId, ToolName tool, Map<String, Object> arguments,
                                 String clientToken) {
@@ -191,7 +196,22 @@ public class IdempotencyService {
             return clientToken.trim();
         }
         return "derived:" + QueryNormalizer.md5(tenantId + "|" + customerId + "|" + tool.apiName()
-                + "|" + arguments.getOrDefault("orderNo", "") + "|" + arguments.getOrDefault("reason", ""));
+                + "|" + canonicalArguments(arguments));
+    }
+
+    /** 按 key 排序拼参数，忽略 Map 迭代顺序与空白值；同一组参数永远派生出同一个 token。 */
+    static String canonicalArguments(Map<String, Object> arguments) {
+        StringBuilder joined = new StringBuilder();
+        arguments.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
+                    Object value = entry.getValue();
+                    String text = value == null ? "" : String.valueOf(value).trim();
+                    if (!text.isEmpty()) {
+                        joined.append(entry.getKey()).append('=').append(text).append('&');
+                    }
+                });
+        return joined.toString();
     }
 
     private static String key(String tenantId, String customerId, ToolName tool, String token) {
