@@ -29,7 +29,7 @@
 PATH 上恰好是 JDK 18 这种机器（作者这台就是），盲信 PATH 会把构建炸在编译目标上。
 
 ```powershell
-git clone <本仓库> ShopPilot; cd ShopPilot
+git clone https://github.com/shing26/shoppilot.git ShopPilot; cd ShopPilot
 pwsh -NoProfile -File scripts/up.ps1          # 起中间件 -> 拉模型 -> 构建 -> seed -> 入库 -> 起服务
 start http://127.0.0.1:8082                   # 调试台
 ```

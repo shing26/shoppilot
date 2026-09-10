@@ -9,7 +9,8 @@
 #
 # 为什么要有这个脚本：验收矩阵一直是在开发工作目录里跑的，那里有 .env、有 target/、有已经拉好的模型、
 # 有上一轮留下的数据卷。"在我这儿能跑"和"没参与的人照 README 能跑"是两件事，这台机器上就撞过不止一次
-# （fat jar 文件锁、`.env` 里的 embed 模型名）。克隆出来只有 HEAD，所以这一步顺带验"提交的东西够不够"。
+# （fat jar 文件锁、`.env` 里的 embed 模型名、作者机器上的 JDK 绝对路径）。默认从 origin 克隆，所以这一步验的是
+# "推出去的那份够不够"——比"硬盘上这份够不够"严：漏 push 一个文件，只有前者会红。
 #
 # 两个前提：
 #   1. 中间件端口固定，一台机器同时只能有一个检出在跑：原栈必须先停
@@ -18,6 +19,9 @@
 #   2. 跑完自己清理：见最后一行提示（脚本不删任何目录，也不留容器）。
 param(
     [string]$At = '',
+    # 克隆来源。留空时优先取 origin：从 GitHub 上克隆才能证明"推出去的那份够不够"，
+    # 从本地路径克隆只证明硬盘上这一份 —— 漏提交文件时这两件事的结论可以完全相反。
+    [string]$From = '',
     [int]$DemoRetries = 2,
     [int]$UpRetries = 2,
     # 冷启动预算（分钟）。PLAN 第 165 行的"十分钟"，从本脚本开跑算到三条演示结束，含克隆与冷构建。
@@ -27,6 +31,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $At) { $At = "$repo-cleancheck" }
+$src = if ($From) { $From } else { "$(git -C $repo remote get-url origin 2>$null)" }
+if (-not $src) {
+    $src = $repo
+    Write-Warning '没有 origin，退回本地路径克隆：这一轮只证明硬盘上这一份，不证明推出去的那份。'
+}
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $logDir = Join-Path $repo 'logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -78,6 +87,7 @@ function Run-Step([string]$name, [scriptblock]$body, [object[]]$Expect, [int]$re
 }
 
 Write-Host "原仓库：$repo" -ForegroundColor Cyan
+Write-Host "克隆来源：$src" -ForegroundColor Cyan
 Write-Host "干净检出：$At" -ForegroundColor Cyan
 if (Test-Path $At) { throw "目标目录已存在：$At（先清理，或用 -At 换一个路径）" }
 
@@ -118,7 +128,7 @@ Run-Step '前置检查（固定容器名与原栈端口）' {
 } '检查通过'
 
 Run-Step 'clone' {
-    git clone --no-hardlinks --quiet $repo $At 2>&1
+    git clone --no-hardlinks --quiet $src $At 2>&1
     git -C $At log --oneline -1
     git -C $At status --short --branch
 } ''
@@ -154,12 +164,12 @@ $script:timings | ForEach-Object {
 }
 if ($overBudget) { $script:failed += "超出 $BudgetMinutes 分钟预算" }
 if ($script:failed.Count -eq 0) {
-    Write-Host ("PASS  从 HEAD 克隆出来，照 README 一条命令在 {0}s 内起栈，三条演示的预期输出逐条命中" -f $elapsed)
+    Write-Host ("PASS  从 {0} 克隆出来的那份，照 README 一条命令在 {1}s 内起栈，三条演示的预期输出逐条命中" -f $src, $elapsed)
 } else {
     Write-Host ("FAIL  失败步骤：{0}" -f ($script:failed -join ', ')) -ForegroundColor Red
 }
 Write-Host "完整记录：$transcript"
-('' , "结果：$(if ($script:failed.Count -eq 0) { 'PASS' } else { 'FAIL: ' + ($script:failed -join ', ') })  冷启动 ${elapsed}s / 预算 ${budgetSec}s  commit=$(git -C $repo rev-parse --short HEAD)") |
+    ('' , "结果：$(if ($script:failed.Count -eq 0) { 'PASS' } else { 'FAIL: ' + ($script:failed -join ', ') })  冷启动 ${elapsed}s / 预算 ${budgetSec}s  本地 HEAD=$(git -C $repo rev-parse --short HEAD)  被测那份=$(if (Test-Path $At) { git -C $At rev-parse --short HEAD } else { '未克隆成功' })") |
     Out-File -FilePath $transcript -Append -Encoding utf8
 if ($Teardown) {
     Write-Host "`n=== 清理（-Teardown）：停服务并移除克隆起来的容器" -ForegroundColor Cyan
