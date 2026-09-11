@@ -27,7 +27,6 @@ def sub(path, old, new):
 R = "README.md"
 T = ".scratch/shoppilot-mvp/issues/20-action-order-attribution.md"
 P = ".scratch/shoppilot-mvp/round3-plan.md"
-A = ".scratch/shoppilot-mvp/round3-closeout-audit.py"
 
 # ---- README 1：那句全称否定是假的 ----
 sub(R,
@@ -124,7 +123,9 @@ skipped = 0
 for path, old, new in EDITS:
     raw = io.open(path, "rb").read()
     crlf = raw.count(b"\r\n")
-    txt = raw.decode("utf-8")
+    # 匹配一律在 LF 形态上做：EDITS 里的模式串换行是 LF，而 `core.autocrlf=true` 的克隆上检出是 CRLF，
+    # 不规范化就会把「已应用」误判成「漂移」。2026-09-12 干净克隆复测实抓到 4 处 FAIL + 1 处误应用。
+    txt = raw.decode("utf-8").replace("\r\n", "\n")
 # 三态判定，不许把"看不懂"当成"已通过"（2026-09-12 自己踩出来的：重跑跑器把三段话重复贴了一遍）：
 #   new 已在文中            -> 已应用，跳过（有几处的 new 原样含着 old，所以 old 在不在不能当判据）
 #   old 恰一次且 new 不在    -> 未应用，应用一次
@@ -139,12 +140,13 @@ for path, old, new in EDITS:
         fails += 1
         continue
     out = txt.replace(old, new)
-    io.open(path, "wb").write(out.encode("utf-8"))
+    # 写回保持该文件原有的换行形态：CRLF 检出上不许被跑器悄悄改成 LF，LF 检出上不许被改成 CRLF。
+    io.open(path, "wb").write((out.replace("\n", "\r\n") if crlf else out).encode("utf-8"))
     applied += 1
     now = io.open(path, "rb").read().count(b"\r\n")
     if now != crlf:
         print(f"  注：{path} CRLF 数由 {crlf} 变 {now}")
-    if new not in io.open(path, encoding="utf-8", newline="").read():
+    if new not in io.open(path, encoding="utf-8", newline="").read().replace("\r\n", "\n"):
         print(f"FAIL 替换后 new 不在文中（自我矛盾）  {path}")
         fails += 1
 print(f"共 {len(EDITS)} 处：新应用 {applied}、已应用跳过 {skipped}、失败 {fails}")

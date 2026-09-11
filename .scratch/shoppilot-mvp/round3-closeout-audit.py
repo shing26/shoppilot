@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -44,12 +45,32 @@ FIXED_POINT = "11a12ac"  # 第三轮起点
 # 对照组的「订正前」基准必须钉死 commit，不能写 HEAD：
 #   这些条目断言的是「订正前那份文档里确实存在这句问题话」，而 HEAD 会随本轮提交前移，
 #   一旦提交了就永远取不到那句话，对照组反而把自己判红（第四轮收尾实际踩到过，见 ticket 20 第 10 条）。
-PRE_FIX = "a6ccdcb"  # 本轮定向替换之前的最后一个提交
+PRE_FIX = "a6ccdcb"  # 第四轮收口那一笔（对照组要取它**之前**那份文档，见下面 ROUND_FP 的分工）
+ROUND_FP = "9d444c9"  # 本轮（第五轮闭环）的 fixed point：B7 与 A3b 量的窗口
 
 FAILS = []
 PASSES = []
 SKIPS = []
-TAIL_CHECKS = 5  # N 定义点之后还会跑的 check 数：H7、H7b、H12、H13、H13b。加一项就得改这里，末尾硬断言会当场炸。
+# 「本机限定项」清单：读 `logs/` 或依赖本机检出环境的断言全部列在这儿，**在跑任何 check 之前**先打出来。
+# 第六轮 Spec 轴抓到判据 3 原文要求「在读 logs/ 之前打出具名清单」，而原先只在各项就地打 SKIP、
+# 末尾再汇总——顺序与自述不符。这里补上前置声明，并由 H16 钉「声明 ⊇ 实跑 SKIP」，防这张表腐烂。
+LOCAL_ONLY = [
+    "D3 verify_eval_judge 退出码 0 且 40/40 条断言全过",  # 依赖检出后的换行符，见 eol_drift()
+    "F1c 文档里的 logs 类产物名都指向本机 logs/（本机限定：logs 不入库）",
+    "G2b 落点那轮极性守卫真被触发（blocked 计数器增量 = 1）",
+    "G3 落点日志记 commit=9eede6d 且开跑时工作树 clean",
+    "G4 落点为 17 步全绿、总耗时 511s",
+    "G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）",
+    "G5b README 索引行与落点矩阵同读数",
+    "G6 surefire 3 + 12 + 89 = 104（build 与 unit 两份日志的 Results 段各自核过）",
+    "G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0",
+    "G8 打字机断言落在 > 60 字这一真判据上（未放宽）",
+    "H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符",
+    "H1b 每轮都是 17 步（不是步数变少造成的『更绿』）",
+    "H1d README 里每一处 N/17 主张都等于该轮日志实算（真读 README，不靠脚本内抄本）",
+    "H2 本机确有 69s/13s 成对的落盘矩阵（故 README 不得写『与任何一份都不符』）",
+]
+TAIL_CHECKS = 8  # N 定义点之后还会跑的 check 数：H7、H7b、H12、H13、H13b、H14、H15、H16。加一项就得改这里，末尾硬断言会当场炸。
 
 
 def check(name, ok, detail="", skip=False):
@@ -82,10 +103,26 @@ def read_opt(path):
     return p.read_text(encoding="utf-8", errors="replace") if p.exists() else None
 
 
+def local_missing(paths):
+    """纯函数：返回这组前置里缺哪些（相对路径）。check_local 与 J0b 共用同一个判断，
+    免得对照组另抄一份谓词（那是第五轮刚治过的病）。"""
+    # 仓库外的路径（J0 的临时探针）也要能报缺，不能因为 relative_to 抛异常把整轮审计打断。
+    out = []
+    for x in paths:
+        p = Path(x)
+        if p.exists():
+            continue
+        try:
+            out.append(str(p.relative_to(REPO)).replace("\\", "/"))
+        except ValueError:
+            out.append(str(p).replace("\\", "/"))
+    return out
+
+
 def check_local(name, paths, fn):
     """依赖本机不入库文件（`logs/`）的断言统一走这里：
     前置齐 → 照常判；前置不齐 → 打 **SKIP 并点名缺哪个文件**，既不算绿也不抛异常。"""
-    missing = [str(Path(p).relative_to(REPO)).replace("\\", "/") for p in paths if not Path(p).exists()]
+    missing = local_missing(paths)
     if missing:
         check(name, False, f"本机限定·前置不成立，缺 {'、'.join(missing)}（logs/ 不入库，见文件头）", skip=True)
         return
@@ -102,6 +139,14 @@ def gold_cases():
     return out
 
 
+print("=" * 78)
+print("本机限定项（读 logs/ 或依赖本机检出环境；缺前置时判 SKIP，不算绿也不算防线失效）")
+print("=" * 78)
+for _n in LOCAL_ONLY:
+    print(f"  LOCAL  {_n}")
+print(f"  共 {len(LOCAL_ONLY)} 项 —— 由 H16 钉『声明 ⊇ 实跑 SKIP』，这张表不许腐烂")
+
+print()
 print("=" * 78)
 print("A. 零额度 / git 状态")
 print("=" * 78)
@@ -155,10 +200,13 @@ except Exception as exc:  # noqa: BLE001
 
 # A3b：不依赖活体网关的零额度反证——本轮改动面里不得出现任何会花额度的评测命令入口。
 #      （花钱那条路必须显式 `-Run`，见 ticket 16/20 与 ADR 0012 的熔断；这里钉的是"本轮没去碰它"。）
-_dev_runs = sh(["git", "log", "--format=%H %s", f"{PRE_FIX}..HEAD"]).stdout
-_spend = [l for l in _dev_runs.splitlines() if re.search(r"run-dev-guardcheck|--limit\s+180|dev 模式实测", l)]
+_dev_runs = sh(["git", "log", "--format=%H %s", f"{ROUND_FP}..HEAD"]).stdout.splitlines()
+_spend = [l for l in _dev_runs if re.search(r"run-dev-guardcheck|--limit\s+180|dev 模式实测", l)]
+# 提交数必须用 rev-list --count 取：原先拿 `len(log.split())//2` 凑，subject 里的空格会把它放大
+# （第五轮双轴审查两轴同报：实跑打「共 17 笔」，`git rev-list --count` 是 7）。
+_N_COMMITS = sh(["git", "rev-list", "--count", f"{ROUND_FP}..HEAD"]).stdout.strip()
 check("A3b 本轮提交信息里没有花钱跑测的痕迹（零额度的离线反证）", not _spend,
-       f"命中 {len(_spend)} 笔：{_spend[:3]}" if _spend else f"{PRE_FIX}..HEAD 共 {len(_dev_runs.split()) // 2} 笔提交，无一含花钱跑测字样")
+       f"命中 {len(_spend)} 笔：{_spend[:3]}" if _spend else f"{ROUND_FP}..HEAD 共 {_N_COMMITS} 笔提交，无一含花钱跑测字样")
 
 print()
 print("=" * 78)
@@ -194,7 +242,7 @@ check("B5 唯一判据：tool_ok 赋值只在 judge() 内",
       len(assign_lines) == 2 and len(in_judge) == 2,
       f"赋值行 {assign_lines}，落在 judge()（偏移 {judge_start}-{after}）内的 {in_judge}")
 
-changed = sh(["git", "diff", "--name-only", f"{FIXED_POINT}..HEAD"]).stdout.split()
+changed = sh(["git", "diff", "--name-only", f"{FIXED_POINT}..HEAD"]).stdout.splitlines()
 allow_prefix = ("README.md", ".scratch/shoppilot-mvp/", "docs/interview-qa.md", "docs/console.png", "scripts/up.ps1",
                 "scripts/lib-launch.ps1", "eval/results/")
 outside = [f for f in changed if not f.startswith(allow_prefix)]
@@ -203,15 +251,26 @@ check("B6 第三轮窗口改动面未越界（判据/gold/ADR/PLAN/CONTEXT/Java 
 # B7：第五轮双轴审查抓到 P10 判据第 3 条那句「scripts/、eval/ 零改动由 B1-B6 与 F4 钉」是借来的保证——
 #     B6 的白名单里就明列 scripts/up.ps1、scripts/lib-launch.ps1、eval/results/，它根本不放这条红线；
 #     而且 B 组量的窗口是第三轮起点 11a12ac..HEAD，不是本轮。这里补一条真钉得住的：
-#     窗口取本轮 fixed point，白名单严格到四份文档 + .scratch 下脚本产物，scripts/eval/src/docs 出现即红。
-STRICT_ALLOW = ("README.md", ".scratch/shoppilot-mvp/")
-changed_now = sh(["git", "diff", "--name-only", f"{PRE_FIX}..HEAD"]).stdout.split()
+#     窗口取本轮 fixed point `ROUND_FP`（第六轮抓到原先误用 PRE_FIX，多含第四轮三笔），
+#     白名单是**具名文件**而不是 `.scratch/shoppilot-mvp/` 整目录，scripts/eval/src/docs 出现即红。
+# 白名单必须是**具体文件名**，不能是 `.scratch/shoppilot-mvp/` 这种整目录前缀——
+# 第六轮 Standards 轴抓到：整目录前缀等于在本目录下开一条免检通道，任何新文件都能混过去。
+STRICT_ALLOW = ("README.md",
+                ".scratch/shoppilot-mvp/round3-plan.md",
+                ".scratch/shoppilot-mvp/issues/20-action-order-attribution.md",
+                ".scratch/shoppilot-mvp/round3-closeout-audit.py",
+                ".scratch/shoppilot-mvp/round3-closeout-audit.txt",
+                ".scratch/shoppilot-mvp/round3-doc-fix-pass1.py",
+                # pass2 与 pass1 同族（第四轮那 3 处定向替换），本轮一起被 H8b/H8c 的换行符修复改到；
+                # 具名加进来，不开目录前缀。
+                ".scratch/shoppilot-mvp/round3-doc-fix-pass2.py")
+changed_now = sh(["git", "diff", "--name-only", f"{ROUND_FP}..HEAD"]).stdout.splitlines()
 forbidden = [f for f in changed_now if f.startswith(("scripts/", "eval/", "src/", "shoppilot-", "docs/adr/", "knowledge/"))]
 stray = [f for f in changed_now if not f.startswith(STRICT_ALLOW)]
 check("B7 本轮窗口改动面严格白名单（scripts/、eval/、src/、docs/adr/ 出现即红）",
       not forbidden and not stray,
       f"禁面命中 {forbidden}；白名单外 {stray}" if (forbidden or stray)
-      else f"{PRE_FIX}..HEAD 共 {len(changed_now)} 个文件，全在 {list(STRICT_ALLOW)} 内；禁面零命中")
+      else f"{ROUND_FP}..HEAD 共 {len(changed_now)} 个文件，逐个落在 {len(STRICT_ALLOW)} 个具名文件内；禁面零命中")
 
 print()
 print("=" * 78)
@@ -283,12 +342,26 @@ check("D2 build_eval_set 退出码 0、对抗 72/180=40.0%、无 FAIL",
       rc == 0 and "FAIL" not in out and "72/180 = 40.0%" in out,
       f"rc={rc}；" + (out.strip().splitlines()[-1] if out.strip() else "无输出"))
 
+def eol_drift():
+    """入库是 LF、检出被改写成 CRLF 的文件数。干净克隆 + `core.autocrlf=true` 的机器上必然 > 0，
+    此时 `verify_eval_judge` 的换行符基线判红是**检出环境**造成的，不是防线失效（第五轮 Spec 轴记过这条）。"""
+    rows = sh(["git", "ls-files", "--eol"]).stdout.splitlines()
+    return sum(1 for r in rows if "i/lf" in r and "w/crlf" in r)
+
+
 rc, out = run_py(["scripts/verify_eval_judge.py"])
 totals = re.findall(r"合计 (\d+)/(\d+) 通过", out)
 n_bad = len(re.findall(r"(?m)^FAIL  ", out))
-check("D3 verify_eval_judge 退出码 0 且 40/40 条断言全过",
-      rc == 0 and totals and totals[-1][0] == totals[-1][1] == "40" and n_bad == 0,
-      f"rc={rc}；合计行 {totals[-1] if totals else '未打印'}；FAIL 行 {n_bad}")
+_drift = eol_drift()
+_d3_ok = rc == 0 and totals and totals[-1][0] == totals[-1][1] == "40" and n_bad == 0
+if not _d3_ok and _drift:
+    check("D3 verify_eval_judge 退出码 0 且 40/40 条断言全过", False,
+          f"本机限定·检出环境不成立：{_drift} 个文件在索引里是 LF、检出后被改成 CRLF"
+          f"（core.autocrlf=true 的克隆上必这样），跑器 rc={rc} 的换行符基线红是环境差异不是防线失效",
+          skip=True)
+else:
+    check("D3 verify_eval_judge 退出码 0 且 40/40 条断言全过", _d3_ok,
+          f"rc={rc}；合计行 {totals[-1] if totals else '未打印'}；FAIL 行 {n_bad}；换行符漂移 {_drift} 个文件")
 
 # "未污染" = 取证复跑**没有新增**未跟踪/改动项；A2 那一刻已经在本轮改动里的文件不算它头上。
 # 两条一起钉：零新增（真判据）、零消失（钉住上面那个按行解析的列结构，路径被截断时这里会红）。
@@ -348,7 +421,7 @@ def merge_denied(text):
     return any(all(k in l for k in MERGE_DENY) for l in text.splitlines())
 
 
-_deny_lines = [i for i, l in enumerate(readme.splitlines(), 1) if merge_denied(l) and all(k in l for k in MERGE_DENY)]
+_deny_lines = [i for i, l in enumerate(readme.splitlines(), 1) if merge_denied(l)]
 _stripped = "\n".join(l for l in readme.splitlines() if not all(k in l for k in MERGE_DENY))
 check("E4 README 仍写明合并工具这条路被否决（钉同现行的三个特征，不是两个词各在不在）",
       bool(_deny_lines), f"命中行 {_deny_lines[:4]}")
@@ -595,18 +668,6 @@ def build_rounds(logs_dir, stamps):
 
 ROUNDS = build_rounds(LOGS, ROUND_TS)
 
-# J0：上面那句「缺 logs 走 SKIP 而不是崩」本身必须有反证，否则它又是一句不可复核自述。
-_tmp_empty = tempfile.mkdtemp(prefix="shoppilot-audit-J0-")
-try:
-    try:
-        _j0 = build_rounds(_tmp_empty, ROUND_TS)
-        _j0_ok, _j0_detail = _j0 is None, f"空目录 → 返回 {type(_j0).__name__}（None = 不适用分支，没抛异常）"
-    except Exception as exc:  # noqa: BLE001
-        _j0_ok, _j0_detail = False, f"空目录 → 抛了 {type(exc).__name__}: {exc}（这就是原先干净克隆上的死法）"
-finally:
-    os.rmdir(_tmp_empty)
-check("J0 对照组：缺 logs 时解析函数必须返回『不适用』而不是抛异常（钉本机限定这条路径）", _j0_ok, _j0_detail)
-
 if ROUNDS is None:
     _skip_detail = _why(LOGS / "acceptance-run-20260911-212011.log")
     check("H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符", False, _skip_detail, skip=True)
@@ -649,6 +710,46 @@ def find_pair(logs_dir, want_stack, want_demo):
         if secs(rows, "stack") == want_stack and secs(rows, "demo") == want_demo:
             hits.append(p.name)
     return hits
+
+
+# J0：上面那句「缺 logs 走 SKIP 而不是崩」本身必须有反证，否则它又是一句不可复核自述。
+#     第六轮 Standards 轴抓到第一版 J0 只喂了 `build_rounds` 一个入口，而本机限定其实有**四个**入口
+#     （build_rounds / find_pair / read_opt / check_local 的 local_missing）——只钉一个等于其余三个没校。
+#     每个入口都按「干净克隆上的真实形状」喂：目录/文件根本不存在 → 必须返回不适用（None / 报缺），
+#     不得抛异常。find_pair 多喂一种形状：目录在但空 → 返回空列表而不是崩，因为那种情况下「没有命中」
+#     本身就是 H2 该判红的事实，不该被冒充成前置不成立。
+_tmp_empty = tempfile.mkdtemp(prefix="shoppilot-audit-J0-")
+_tmp_absent = str(Path(_tmp_empty) / "no-logs-dir")
+_j0_hits, _j0_detail = [], []
+try:
+    _ghost = Path(_tmp_empty) / "acceptance-run-20260911-212011.log"
+
+    def _j0_probe(_tag, _call, _is_not_applicable):
+        try:
+            _r = _call()
+        except Exception as exc:  # noqa: BLE001
+            _j0_detail.append(f"{_tag} 抛了 {type(exc).__name__}: {exc}（这就是原先干净克隆上的死法）")
+            return
+        if _is_not_applicable(_r):
+            _j0_hits.append(_tag)
+        else:
+            _j0_detail.append(f"{_tag} 返回 {type(_r).__name__}（不是该形状应有的『不适用/无命中』）")
+
+    _j0_probe("build_rounds", lambda: build_rounds(_tmp_empty, ROUND_TS), lambda r: r is None)
+    _j0_probe("find_pair", lambda: find_pair(_tmp_absent, "69", "13"), lambda r: r is None)
+    _j0_probe("find_pair(目录在但空)", lambda: find_pair(_tmp_empty, "69", "13"), lambda r: r == [])
+    _j0_probe("read_opt", lambda: read_opt(_ghost), lambda r: r is None)
+    _j0_probe("local_missing", lambda: local_missing([_ghost]), lambda r: len(r) == 1)
+finally:
+    os.rmdir(_tmp_empty)
+_j0_ok = len(_j0_hits) == 5
+check("J0 对照组：四个本机限定入口（find_pair 两种形状）喂『缺前置』都必须返回不适用/报缺，不得抛异常", _j0_ok,
+      f"通过 {_j0_hits}；问题 {'；'.join(_j0_detail) if _j0_detail else '无'}")
+# J0b：本机限定这条路径有两个入口（read_opt / check_local），只钉一个等于另一半没校。
+_j0b_missing = local_missing([LOGS / "acceptance-run-19700101-000000.log"])
+_j0b_present = local_missing([REPO / "README.md"])
+check("J0b 对照组：check_local 用的前置谓词必须『缺的报缺、在的报在』（与 J0 不同源就又是一把尺子）",
+      bool(_j0b_missing) and not _j0b_present, f"缺文件 → {_j0b_missing}；README → {_j0b_present}")
 
 
 # H2：全称否定句必须被证伪过——69s/13s 确实成对存在于 09-09 的某份矩阵（本机限定：读 logs/）
@@ -791,6 +892,95 @@ check("H8 一次性跑器可安全重跑（退出码 0、新应用 0 处、三�
       f"{out2.strip().splitlines()[-1][:38] if out2.strip() else '?'}；sha 变化 "
       f"{[d for d in DOC3 if before[d] != after[d]]}")
 
+def _rm_force(path):
+    """删临时目录：`.git/objects` 里的文件是只读的，Windows 上要先摘掉只读位再删。"""
+    def _onerr(func, p, exc):
+        try:
+            os.chmod(p, 0o777)
+            func(p)
+        except OSError:
+            pass
+    shutil.rmtree(path, onerror=_onerr)
+
+
+# H8b：H8 只在这台机器的 LF 工作树上跑过（`git ls-files --eol` 可查三份文档 w/lf），
+#      而 `core.autocrlf=true` 的干净克隆检出是 CRLF。第六轮干净克隆复测实抓到：
+#      改前 pass1 在 CRLF 上误判 4 处「漂移」并**误应用 1 处**（跑器自己把 CRLF 悄悄改写成 LF）。
+#      这里把三份文档按 CRLF 复刻进临时目录，连跑器一起在那儿跑，判「零新应用、零失败、字节不变」。
+_crlf_dir = Path(tempfile.mkdtemp(prefix="shoppilot-audit-H8b-"))
+_crlf_before, _crlf_notes = {}, []
+try:
+    for _d in DOC3:
+        _src = (REPO / _d).read_bytes().replace(b"\r\n", b"\n")
+        _dst = _crlf_dir / _d
+        _dst.parent.mkdir(parents=True, exist_ok=True)
+        _dst.write_bytes(_src.replace(b"\n", b"\r\n"))
+        _crlf_before[_d] = sha256(_dst)
+    for _r in ("round3-doc-fix-pass1.py", "round3-doc-fix-pass2.py"):
+        shutil.copyfile(REPO / ".scratch/shoppilot-mvp" / _r, _crlf_dir / ".scratch/shoppilot-mvp" / _r)
+    _env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    _rcs = []
+    for _r in ("round3-doc-fix-pass1.py", "round3-doc-fix-pass2.py"):
+        _p = subprocess.run([sys.executable, "-X", "utf8", f".scratch/shoppilot-mvp/{_r}"],
+                            cwd=str(_crlf_dir), capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", env=_env)
+        _o = (_p.stdout or "") + (_p.stderr or "")
+        _rcs.append(_p.returncode)
+        _last = _o.strip().splitlines()[-1] if _p.stdout.strip() else "无输出"
+        if "新应用 0" not in _last or "失败 0" not in _last:
+            _crlf_notes.append(f"{_r}: {_last}")
+        if "CRLF 数由" in _o:
+            _crlf_notes.append(f"{_r} 改写了换行形态：" +
+                               "；".join(l.strip() for l in _o.splitlines() if "CRLF 数由" in l))
+    _changed = [d for d in DOC3 if _crlf_before[d] != sha256(_crlf_dir / d)]
+    if _changed:
+        _crlf_notes.append(f"字节变了：{_changed}")
+    check("H8b 一次性跑器在 CRLF 检出上同样可安全重跑（H8 只覆盖本机 LF，这是另一半形状）",
+          _rcs == [0, 0] and not _crlf_notes,
+          "；".join(_crlf_notes) if _crlf_notes
+          else f"两份末行均「新应用 0、失败 0」，rc={_rcs}，三份 CRLF 文档 sha 逐字节不变")
+finally:
+    _rm_force(_crlf_dir)
+
+# H8c：H8b 只覆盖「全部 skip」这一种形状，那条**写回**路径（真应用替换时把内容还原成该文件原有的
+#      CRLF）一次都没被走到——ce7 的 CE-b 就是这么露出来的：把写回还原拆掉，H8b 照样绿。
+#      这里拿订正前那份 README（PRE_FIX）复刻成 CRLF 喂 pass1，逼它真应用若干处，
+#      判「至少应用 1 处」且「写回后每个换行仍是 CRLF」，把那条分支也钉住。
+_crlf_dir2 = Path(tempfile.mkdtemp(prefix="shoppilot-audit-H8c-"))
+try:
+    _old_readme = sh(["git", "show", f"{PRE_FIX}:README.md"]).stdout.replace("\r\n", "\n")
+    _crlf_dir2.joinpath(".scratch/shoppilot-mvp/issues").mkdir(parents=True)
+    _crlf_dir2.joinpath("README.md").write_bytes(_old_readme.replace("\n", "\r\n").encode("utf-8"))
+    for _d in DOC3[1:]:  # 另两份用当前版，保证只有 README 上有真活要干
+        _crlf_dir2.joinpath(_d).parent.mkdir(parents=True, exist_ok=True)
+        _crlf_dir2.joinpath(_d).write_bytes(
+            (REPO / _d).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    shutil.copyfile(REPO / ".scratch/shoppilot-mvp/round3-doc-fix-pass1.py",
+                    _crlf_dir2 / ".scratch/shoppilot-mvp/round3-doc-fix-pass1.py")
+    _p = subprocess.run([sys.executable, "-X", "utf8", ".scratch/shoppilot-mvp/round3-doc-fix-pass1.py"],
+                        cwd=str(_crlf_dir2), capture_output=True, text=True,
+                        encoding="utf-8", errors="replace",
+                        env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+    _o = (_p.stdout or "") + (_p.stderr or "")
+    _last = _o.strip().splitlines()[-1] if _o.strip() else "无输出"
+    _m = re.search(r"\u65b0\u5e94\u7528 (\d+)", _last)
+    _applied = int(_m.group(1)) if _m else 0
+    _raw = _crlf_dir2.joinpath("README.md").read_bytes()
+    _n2 = []
+    if _applied < 1:
+        _n2.append(f"跑器一处都没应用（末行「{_last}」），写回分支仍未被覆盖")
+    if "CRLF \u6570\u7531" in _o:
+        _n2.append("跑器自报换行形态被改写：" +
+                   "\uff1b".join(l.strip() for l in _o.splitlines() if "CRLF \u6570\u7531" in l))
+    _nl, _crlf_n = _raw.count(b"\n"), _raw.count(b"\r\n")
+    if _nl != _crlf_n:
+        _n2.append(f"写回后混入裸 LF：{_nl} 个换行里只有 {_crlf_n} 个是 CRLF")
+    check("H8c 跑器在 CRLF 上真应用替换时，写回必须保住该文件原有的换行形态（H8b 走不到的那条分支）",
+          not _n2, "\uff1b".join(_n2) if _n2
+          else f"末行「{_last}」；README 写回后 {_crlf_n}/{_nl} 换行仍为 CRLF，裸 LF 0 个")
+finally:
+    _rm_force(_crlf_dir2)
+
 # H10：文档里"跑器替换 N 处"这个数，必须等于两支一次性跑器**自己末行打印的**处数之和。
 #      第四轮原先写的是「17 处 = 16 跑器 + 1 手工」，而 pass2 那 3 处从没进过任何一格的账；
 #      这里不重新解析脚本源码（那是第二把尺子），直接用跑器自己打的读数当唯一真值。
@@ -928,10 +1118,12 @@ if committed_txt.returncode != 0:
 else:
     _last = [l for l in committed_txt.stdout.splitlines() if l.startswith("汇总：")]
     _m = re.search(r"共 (\d+) 项", _last[-1]) if _last else None
-    check("H12 入仓读数产物的末行项数 == 本次实跑项数（钉住那句『以末行为准』）",
-          _m is not None and int(_m.group(1)) == N,
-          f"产物末行 {(_last[-1] if _last else '无汇总行')[:60]} vs 本次实跑 {N} 项"
-          "（改了跑器就得重跑并重新落盘产物，否则这一格红）")
+    # 第六轮抓到：只比 `共 N 项` 的话，一份 `FAIL 3` 的陈旧产物照样绿。整行三个数一起比。
+    _mine = f"汇总：PASS {len(PASSES)}  FAIL {len(FAILS)}  SKIP {len(SKIPS)}  共 {N} 项"
+    check("H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）",
+          _m is not None and int(_m.group(1)) == N and _last[-1] == _mine,
+          f"产物末行 {(_last[-1] if _last else '无汇总行')[:70]} vs 本次 {_mine}"
+          "（改了跑器或本轮状态变了就得重跑并重新落盘产物，否则这一格红）")
 
 # H13：P10 判据第 5 条要求「三条驳回项各留机器反证（不是留一句『审查读错了』）」，
 #      第五轮双轴审查判这一条只有 1/3 真有产物。这里把缺的两条补成可重跑断言：
@@ -940,17 +1132,71 @@ else:
 vej = read(REPO / "scripts" / "verify_eval_judge.py")
 PHANTOM = "17 项断言"
 MARK = re.compile(r"幻影|不存在|零命中")
-_ph_lines = [(i, l) for i, l in enumerate(plan.splitlines() + ticket20.splitlines(), 1) if PHANTOM in l]
-_unmarked = [(i, l[:50]) for i, l in _ph_lines if not MARK.search(l)]
+_ph_lines = [(d, i, l) for d in (".scratch/shoppilot-mvp/round3-plan.md",
+                                 ".scratch/shoppilot-mvp/issues/20-action-order-attribution.md")
+             for i, l in enumerate(read(REPO / d).splitlines(), 1) if PHANTOM in l]
+_unmarked = [(d, i, l[:40]) for d, i, l in _ph_lines if not MARK.search(l)]
 check("H13 反证：『17 项断言』既不在 verify_eval_judge 里，在文档里也只许以幻影标记的形式出现",
       PHANTOM not in vej and not _unmarked,
       f"跑器源码命中={PHANTOM in vej}；文档命中 {len(_ph_lines)} 行、其中无幻影标记 {len(_unmarked)} 行 {_unmarked[:2]}")
-_ghost_cite = "up.ps1:115"
-_ghost_hits = {d: read(REPO / d).count(_ghost_cite)
-               for d in ["README.md", "PLAN.md", ".scratch/shoppilot-mvp/round3-plan.md",
-                         ".scratch/shoppilot-mvp/issues/20-action-order-attribution.md"]}
-check("H13b 反证：被驳回的那处 `up.ps1:115` 引用在四份文档里零命中（它本就不存在，不是漏核）",
-      sum(_ghost_hits.values()) == 0, f"逐份命中 {_ghost_hits}")
+# 与 H3 同源：用同一个引用正则去扫，而不是另抄一份 `.count()`（第六轮 Standards 轴抓到那是第二把尺子）。
+_ghost_hits = {d: len([m for m in CITE_PAT.finditer(read(REPO / d)) if m.group(0) == "up.ps1:115"])
+               for d in DOC_GLOBS}
+check("H13b 反证：被驳回的那处 `up.ps1` 第 115 行引用在 8 份文档里零命中（它本就不存在，不是漏核）",
+      sum(_ghost_hits.values()) == 0,
+      f"逐份命中 {dict((k, v) for k, v in _ghost_hits.items() if v)}" if sum(_ghost_hits.values())
+      else f"{len(DOC_GLOBS)} 份文档用同一个 CITE_PAT 扫，零命中")
+
+# H14：本轮反复自述「P10 判据本体一字未动」。第六轮 Standards 轴抓到这句在字面上不成立——
+#      判据 3 与判据 5 的**括号内**引用确实被改过。所以这条断言钉的是可核的那一半：
+#      去掉括号内容之后的**主干要求**必须与本轮 fixed point（ROUND_FP=`9d444c9`）逐字相同。
+#      谁哪天改了某条判据的要求本身，这里就红。
+_PAT_PAREN = re.compile(r"（[^（）]*）")
+
+
+def _criteria_block(text, head):
+    i = text.index(head)
+    j = text.index("\n### ", i + 1) if "\n### " in text[i + 1:] else len(text)
+    seg = text[i:j]
+    k = seg.index("**通过判据**")
+    return [l.strip() for l in seg[k:].splitlines() if re.match(r"^\s+\d+\.\s", l)]
+
+
+_old_plan = sh(["git", "show", f"{ROUND_FP}:.scratch/shoppilot-mvp/round3-plan.md"]).stdout
+try:
+    _c_old = [_PAT_PAREN.sub("", l) for l in _criteria_block(_old_plan, "### P10")]
+    _c_new = [_PAT_PAREN.sub("", l) for l in _criteria_block(plan, "### P10")]
+    _drift14 = [(a, b) for a, b in zip(_c_old, _c_new) if a != b]
+    check("H14 P10 六条判据的主干要求（去括号后）与本轮 fixed point 逐字相同",
+          len(_c_old) == len(_c_new) == 6 and not _drift14,
+          f"条数 {len(_c_old)}/{len(_c_new)}；主干漂移 {_drift14[:2]}" if (len(_c_old) != 6 or _c_old != _c_new)
+          else f"6 条主干逐字相同；括号内引用确有 2 处改动（判据 3 改指 B7、判据 5 删掉指向不存在的「本节末」），"
+               "这两处按 P11 ⑥⑨ 记，不当『一字未动』引用")
+except ValueError as exc:
+    check("H14 P10 六条判据的主干要求（去括号后）与本轮 fixed point 逐字相同", False, f"取不到判据块：{exc}")
+
+# H15：入仓产物里 A1 记的 HEAD 必须是当前 HEAD 的祖先或本身。
+#      第五轮 Spec 轴记的「产物永远比 HEAD 慢一笔」是真形状（自我指涉），但「慢一笔」不等于「可以记一个无关 sha」。
+_a1 = [l for l in committed_txt.stdout.splitlines() if l.strip().startswith("HEAD=")]
+_m15 = re.search(r"HEAD=([0-9a-f]{7,40})", _a1[0]) if _a1 else None
+if not _m15:
+    check("H15 入仓产物里 A1 记的 HEAD 是当前 HEAD 的祖先或本身（允许慢一笔，不许跑偏）", False,
+          "产物里找不到 `HEAD=` 那一行")
+else:
+    _rec = _m15.group(1)
+    _anc = sh(["git", "merge-base", "--is-ancestor", _rec, "HEAD"]).returncode == 0
+    check("H15 入仓产物里 A1 记的 HEAD 是当前 HEAD 的祖先或本身（允许慢一笔，不许跑偏）", _anc,
+          f"产物记 {_rec[:9]}，当前 HEAD {head[:9]}，祖先关系={_anc}")
+
+# H16：文件头那份「本机限定项」清单是在跑任何 check 之前打出来的自述，必须与实跑的 SKIP 名单同集合，
+#      否则这张表就是一句会腐烂的自述（第六轮 Spec 轴抓到判据 3 要求的前置声明原先根本不在盘上）。
+#      比对两侧都去掉尾注括号：check 名会带「（121933 曾被粗正则数成 15）」这类补充，清单里写的是主干。
+_norm = lambda s: re.sub(r"\s+", " ", s.split("（")[0]).strip()
+_actual_skip = {_norm(x) for x in SKIPS}
+_undeclared = sorted(_actual_skip - {_norm(n) for n in LOCAL_ONLY})
+check("H16 实跑的每一项 SKIP 都在文件头声明的本机限定清单里（声明 ⊇ 实跑，不许腐烂）",
+      not _undeclared, f"未声明就 SKIP 的项：{_undeclared}" if _undeclared
+      else f"声明 {len(LOCAL_ONLY)} 项、本次实跑 SKIP {len(_actual_skip)} 项，全部在声明内")
 
 # 硬断言放在**所有** check 之后：N 必须等于此刻的实际计数。
 # 第五轮订正：原先这句注释写「以后若有人在 H7b 之后再加 check，这里会当场炸」是**说过头**——

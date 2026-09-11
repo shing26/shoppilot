@@ -40,7 +40,9 @@ applied = 0
 skipped = 0
 for path, old, new in EDITS:
     raw = io.open(path, "rb").read()
-    txt = raw.decode("utf-8")
+    crlf = raw.count(b"\r\n")
+    # 同 pass1：在 LF 形态上匹配，写回时还原该文件原有的换行形态（CRLF 检出上不误判成漂移）。
+    txt = raw.decode("utf-8").replace("\r\n", "\n")
 # 同 pass1 的三态判定（new 已在文中 = 已应用；old 恰一次且 new 不在 = 应用；其余 = 漂移报 FAIL）。
     if new in txt:
         print(f"skip 已应用  {path}  <<{new[:50]}>>")
@@ -51,9 +53,13 @@ for path, old, new in EDITS:
         print(f"FAIL 漂移：old 命中 {n} 次且 new 不在文中  {path}  <<{old[:50]}>>")
         fails += 1
         continue
-    io.open(path, "wb").write(txt.replace(old, new).encode("utf-8"))
+    out = txt.replace(old, new)
+    io.open(path, "wb").write((out.replace("\n", "\r\n") if crlf else out).encode("utf-8"))
     applied += 1
-    if new not in io.open(path, encoding="utf-8", newline="").read():
+    now = io.open(path, "rb").read().count(b"\r\n")
+    if now != crlf:
+        print(f"  注：{path} CRLF 数由 {crlf} 变 {now}")
+    if new not in io.open(path, encoding="utf-8", newline="").read().replace("\r\n", "\n"):
         print(f"FAIL 替换后 new 不在文中（自我矛盾）  {path}")
         fails += 1
 print(f"共 {len(EDITS)} 处：新应用 {applied}、已应用跳过 {skipped}、失败 {fails}")
