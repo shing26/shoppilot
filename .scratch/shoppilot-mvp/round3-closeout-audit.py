@@ -24,6 +24,10 @@ REPO = Path(__file__).resolve().parents[2]
 RESULTS = REPO / "eval" / "results"
 LOGS = REPO / "logs"
 FIXED_POINT = "11a12ac"  # 第三轮起点
+# 对照组的「订正前」基准必须钉死 commit，不能写 HEAD：
+#   这些条目断言的是「订正前那份文档里确实存在这句问题话」，而 HEAD 会随本轮提交前移，
+#   一旦提交了就永远取不到那句话，对照组反而把自己判红（第四轮收尾实际踩到过，见 ticket 20 第 10 条）。
+PRE_FIX = "a6ccdcb"  # 本轮定向替换之前的最后一个提交
 
 FAILS = []
 PASSES = []
@@ -476,7 +480,7 @@ check("H2 本机确有 69s/13s 成对的落盘矩阵（故 README 不得写『�
 DENIAL = "与本机任何一份落盘矩阵都不符"
 RETRACT = "说过头"
 den_offenders = [l for l in readme.splitlines() if DENIAL in l and RETRACT not in l]
-old_readme = sh(["git", "show", "HEAD:README.md"]).stdout
+old_readme = sh(["git", "show", f"{PRE_FIX}:README.md"]).stdout
 check("H2b README 里那句全称否定只许以撤回形式出现（对照组：订正前必须判红）",
       not den_offenders and DENIAL in old_readme,
       f"未挂撤回标记的命中 {len(den_offenders)} 行；订正前 README 含该句={DENIAL in old_readme}")
@@ -518,7 +522,7 @@ check("H4 ticket 20 取证命令条数自述与实数一致（4 条 python + 1 �
 # 钉的是那个**主张句式**（「README 索引行 + 第 11 条」），不是两个词的邻接：订正后的计划里
 # "README 索引行"是以「这个理由已经过期」的形式出现的，用邻接正则会把撤回句也判成假防线。
 KEEP_CLAIM = "README 索引行 + 第 11 条"
-old_plan = sh(["git", "show", "HEAD:.scratch/shoppilot-mvp/round3-plan.md"]).stdout
+old_plan = sh(["git", "show", f"{PRE_FIX}:.scratch/shoppilot-mvp/round3-plan.md"]).stdout
 check("H4b 计划不得再以『README 索引行』为理由留 185410，且 README 不引用它",
       KEEP_CLAIM not in plan and "185410" not in readme and KEEP_CLAIM in old_plan,
       f"订正后计划含主张句式={KEEP_CLAIM in plan}；README 命中 185410 {readme.count('185410')} 处；"
