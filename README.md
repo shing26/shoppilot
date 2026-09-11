@@ -472,7 +472,7 @@ demo          0  12s           # 三条演示
 eval          0 123s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）；日志第一行是 SCORER SELFCHECK ok=16
 ```
 
-矩阵现在由脚本自己落盘（`logs/acceptance-run-<时间戳>.log`，本机不入库）：run2..run8 那几份是人手工 Tee 出来的，
+矩阵现在由脚本自己落盘（`logs/acceptance-run-<时间戳>.log`；`logs/` 整目录与 `*.log` 在 `.gitignore` 第 9-10 行里，**干净克隆里没有这些日志**，入仓的机器证据只有 `eval/results/` 的 CSV/meta、`docs/console.png` 与 `.scratch/` 里那份收口审计读数）：run2..run8 那几份是人手工 Tee 出来的，
 run9 就漏了，于是"全绿"这句话一度在机器上找不到落点。现在它拿 `$results` 生成，不去回抓 `Write-Host`，
 并且记的是**开跑时**的工作树状态（跑完之后永远是脏的——这一步自己会写 `logs/`、`eval/results/`、`docs/console.png`）：
 上面那一行的落点是 `logs/acceptance-run-20260911-212011.log`，头两行写着
@@ -495,9 +495,9 @@ Ollama 服务都已经因为那次冻死被拉起来了、`11434` 一直在听�
 **旧写法在本机当前状态下复现不出来**（Ollama 应用此刻已在跑，触发条件消失），所以那句成因是从上面那串日志证据推出来的，不是重跑出来的——这条区别写在这儿，别把它当实测结论引用。
 落点这一轮（21:11-21:20，`511s`）门禁期间不并发任何东西：`stack` 80s、`polarity` 26s（守卫计数器增量 1，防线真跑到了）、`console` 15/15、`eval` 冒烟 24 条 0 失败，跑完复读 `GET /ops/circuit` 仍是 `tokensUsedToday: 0`。在此之前同一批代码还有两轮没拿全绿，两轮都照登，不挑一次好看的写：
 ① `logs/acceptance-run-20260911-200038.log`（18:56 那批文档之后的 `c5e6c2e`，588s）16/17，红的只有 `polarity` `exit 3`；
-② `logs/acceptance-run-20260911-201808.log`（606s）15/17，`polarity` 又 `exit 3`，外加 `console` 红在那条打字机分块断言上（实测 `3 chunks / 60 chars`，判据要 `> 60` 个字）。
+② `logs/acceptance-run-20260911-201808.log`（606s）15/17，`polarity` 又 `exit 3`，外加 `console` 红在那条打字机分块断言上（当时打印 `3 chunks / 60 chars`，判据要 `> 60` 个字）；这一轮日志头两行记的是 `开跑时工作树=dirty（4 个未提交改动）`，那 4 项是 `docs/console.png` 与 `195822` 那一轮冒烟产物的三份文件（都是前一轮门禁自己写出来的生成物），按上面「记的始终是脏的是什么」的口径照登在这一行。
 两轮的成因是机器不是防线：当时可用内存只剩 2.1-2.5 GB（16 GB 机器，同机还跑着别的项目的 10 个容器与 12 个 python 进程），该网关进程里 `shoppilot_cache_embed_unavailable_total` 累计 13 次而 `polarity_blocked` 是 0——向量压根没跑到守卫那一步，与 `exit 3` 自己打印的"那一刻向量不可用"对得上；
-单独打一次 `/api/embed` 冷加载要 5.43 s，而 `OLLAMA_MAX_LOADED_MODELS:1` 让 bge-m3（664 MB）与 qwen2.5:3b（1.9 GB）互相挤下线。可用内存回到 3.3 GB 之后重跑就是上面那个 17/17。**这一轮没放宽任何断言**：`console` 那条 `> 60` 一字未动，`polarity` 的 `exit 3` 语义也没改；给 `verify-polarity.ps1` 补"探针自身也没拿到 L2 候选时按前置不成立处理"的判定是这一轮暴露出来的真问题，但它改的是防线脚本的判据，另开一票做。
+单独打一次 `/api/embed` 冷加载要 5.43 s，而 `OLLAMA_MAX_LOADED_MODELS:1` 让 bge-m3（664 MB）与 qwen2.5:3b（1.9 GB）互相挤下线。可用内存回到 3.3 GB 之后重跑就是上面那个 17/17。这两轮的**一次生活体读数**（可用内存 GB 数、`embed_unavailable_total` 累计 13、冷加载 5.43 s、`3 chunks / 60 chars`）当时是从命令行与 `logs/acceptance/*.log` 上手抄的，`logs/` 不入库、逐步日志又被 21:11 那轮覆盖，**现在复原不出来**；能复原的只有这三份 `acceptance-run-*.log` 步骤矩阵本身、落点轮的 `polarity.log` 增量 1 与 `console.log` 的 `5 chunks / 103 chars`。更要紧的一条：本计划 P2 第 47 行要求的「栈不动单跑 `verify-polarity.ps1`、exit 0 才算一次性」这两轮**当时都没做**，所以「成因是机器不是防线」是推断（依据是同码的 21:11 那轮在内存够时 17/17），不是实测结论；缺的这次复验连同 `verify-polarity.ps1` 的前置判定一起并进那张另开的票。**这一轮没放宽任何断言**：`console` 那条 `> 60` 一字未动，`polarity` 的 `exit 3` 语义也没改；给 `verify-polarity.ps1` 补"探针自身也没拿到 L2 候选时按前置不成立处理"的判定是这一轮暴露出来的真问题，但它改的是防线脚本的判据，另开一票做。
 顺带一条机器侧口径：`down.ps1` 只按端口与本项目 pid 文件停栈，**不会**停掉 `11434` 上这个由起栈脚本补拉起来的模型服务——它是共用的，脚本只在没人听时补位、不去抢别人的端口。
 上一轮（12:24-12:33，`logs/acceptance-run-20260911-123307.log`）那条磁盘例外照登在这儿，读数仍是当时的：开跑前把 `TMP`/`TEMP` 指到 `D:\tmp`——
 当时系统盘稳定读数 284 MB、崩溃转储风暴期间最低 19 MB（`C:\Users\Shing\AppData\Local\Temp\wsl-crashes` 里 10 个 WSL core dump），
@@ -583,7 +583,7 @@ PowerShell 不允许从 try/catch 直接开管道，整脚本 parse 失败——
 | 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260911-211809-local-smoke*`，10/10 意图各有 2-3 条，日志首行是 `SCORER SELFCHECK ok=16`）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（40 条断言：四处评分缺陷各一次变异反证、10 条标注校验器防呆、6 条对偶矛盾边界、5 条 gold 形态与串号标记值对拍、4 条共享词表与两份 `accepted_tools` 跨实现对拍、生成物字节稳定、判据只有一份、17 个文件的换行符基线、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（16 条夹具，真跑前执行）；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
-| 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 80s / 12s（`69s / 13s` 那个旧读数与本机任何一份落盘矩阵都不符，第三轮审查抓出来随换轮一并改） |
+| 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 80s / 12s（索引行原来写的 `69s / 13s` 与第三轮任何一次落点跑法都不符，随换轮一并改；**但第三轮订正时我把那句话说过头了**——写成「与本机任何一份落盘矩阵都不符」，而 09-09 的 `logs/acceptance-run5.log` 里 `stack 0 ok / 69s` + `demo 0 ok / 13s` 是成对在的：它是更早一天的真读数，只是不属于这一轮任何一次跑法。收口审计 H2 钉住那一对确实存在，H2b 钉住 README 里不许再出现那种全称否定） |
 
 各 ticket 的实现决策与"当时能答上来的三个追问"记在 `.scratch/shoppilot-mvp/issues/`，
 汇总清单：`python scripts/collect_interview_questions.py` → [docs/interview-qa.md](docs/interview-qa.md)。
