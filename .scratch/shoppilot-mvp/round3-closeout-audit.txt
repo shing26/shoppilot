@@ -2,13 +2,15 @@
 A. 零额度 / git 状态
 ==============================================================================
 PASS  A1 origin/main == HEAD
-        HEAD=73e631a44 origin/main=73e631a44
+        HEAD=44d601d4b origin/main=44d601d4b
 PASS  A2 工作树 clean（审计自身读数产物除外，见 A2b）
         无输出（当轮审计脚本已提交）
 PASS  A2b 自排除名单不得长出文档/脚本路径（防长成免检通道）
         名单 ['.scratch/shoppilot-mvp/round3-closeout-audit.txt']；本次实际被豁免 ['.scratch/shoppilot-mvp/round3-closeout-audit.txt']
 PASS  A3 tokensUsedToday == 0（本轮零额度）
         tokensUsedToday=0 mode=local budget=260000
+PASS  A3b 本轮提交信息里没有花钱跑测的痕迹（零额度的离线反证）
+        a6ccdcb..HEAD 共 11 笔提交，无一含花钱跑测字样
 
 ==============================================================================
 B. 判据与阈值未被改动（反刷分）
@@ -20,8 +22,10 @@ PASS  B3 第三轮未碰阈值/标记常量
 PASS  B4 第三轮未新增第二处 tool_ok 赋值
 PASS  B5 唯一判据：tool_ok 赋值只在 judge() 内
         赋值行 [156, 160]，落在 judge()（偏移 5018-10353）内的 [156, 160]
-PASS  B6 第三轮改动面未越界（判据/gold/ADR/PLAN/CONTEXT/Java 零改动）
-        共 18 个文件，全在白名单内
+PASS  B6 第三轮窗口改动面未越界（判据/gold/ADR/PLAN/CONTEXT/Java 零改动；注意白名单含 scripts 那两支 ps1）
+        共 19 个文件，全在白名单内
+PASS  B7 本轮窗口改动面严格白名单（scripts/、eval/、src/、docs/adr/ 出现即红）
+        a6ccdcb..HEAD 共 8 个文件，全在 ['README.md', '.scratch/shoppilot-mvp/'] 内；禁面零命中
 
 ==============================================================================
 C. gold 标注边界（放开 4 条，其余不动）
@@ -60,7 +64,7 @@ PASS  D7 ORDER 行 72.2% -> 94.4%
 PASS  D8 差异集合恰 4 条
         实测 ['ACT-ORD-09', 'ACT-ORD-11', 'ACT-ORD-16', 'ACT-ORD-17']
 PASS  D9 本次复算产物与落盘产物字节级相同
-        新产物 ['tool-eval-20260912-033205-rescore.csv'] sha=BE53815C301BAA59 vs 落盘 sha=BE53815C301BAA59
+        新产物 1 份（名字带本次时间戳，故不写进读数产物，免得每跑一次就漂移一行） sha=BE53815C301BAA59 vs 落盘 sha=BE53815C301BAA59
 PASS  D10 复算临时产物已清理（不留未引用文件）
         现存 ['tool-eval-20260911-042142-rescore.csv']
 
@@ -75,7 +79,10 @@ PASS  E3 README 无假读数 `57/60`
 PASS  E3 README 无假读数 `95.0%`
 PASS  E3 README 无假读数 `168/180 = 95.6%`
 PASS  E3 README 无假读数 `172/180 = 93.3%`
-PASS  E4 README 仍写明合并工具这条路被否决
+PASS  E4 README 仍写明合并工具这条路被否决（钉同现行的三个特征，不是两个词各在不在）
+        命中行 [280]
+PASS  E4b 对照组：把那一行删掉后 E4 的判据必须变 False（钉这条不是恒绿）
+        正本 True=True；删掉同现行后 False=True（删了 1 行）
 PASS  E5 问答库 91 问、头部计数 = 正文 Q 条目 = 答案条数
         头部 91，正文 Q 91，A 91
 PASS  E5b 问答库覆盖 20 个 ticket 且无缺收尾记录
@@ -83,17 +90,22 @@ PASS  E5b 问答库覆盖 20 个 ticket 且无缺收尾记录
 PASS  E6a 让位轮 185608 在 ticket 20 留痕
         README 0 处，ticket20 3 处
 PASS  E6b 未全绿那一轮 `200038` 在 README 与 ticket 20 都可 grep 到
-        README 1 处，ticket20 7 处
-PASS  E6b 未全绿那一轮 `201808` 在 README 与 ticket 20 都可 grep 到
         README 1 处，ticket20 8 处
+PASS  E6b 未全绿那一轮 `201808` 在 README 与 ticket 20 都可 grep 到
+        README 1 处，ticket20 9 处
 PASS  E6c 落点轮 212011 在 README 与 ticket 20 都在
 
 ==============================================================================
 F. 引用可解析 + 扫描器对照组
 ==============================================================================
-PASS  F1 文档里每个具体产物名都指向在库文件（除 2 处写明是被删对象的删除记录）
-        8 份文档里出现 49 次 / 去重 27 个不同名，MISSING 0；豁免命中 ['tool-eval-20260911-050015-local-smoke', 'tool-eval-20260911-181037-rescore']
-PASS  F2 对照组：不存在的产物名必须被判 MISSING
+PASS  F1 文档里的 tool-eval 类产物名都指向在库文件（除 2 处写明是被删对象的删除记录）
+        8 份文档共 50 次 / 去重 27 名；tool-eval 类 16 名全可解析，豁免命中 ['tool-eval-20260911-050015-local-smoke', 'tool-eval-20260911-181037-rescore']
+PASS  F1c 文档里的 logs 类产物名都指向本机 logs/（本机限定：logs 不入库）
+        logs 类 11 名全部落在本机 logs/ 里
+PASS  F2 对照组：不存在的产物名必须被 resolvable() 判不可解析
+        探针 tool-eval-20260911-999999-local-smoke → resolvable=False
+PASS  F2c 对照组：真实存在的产物名必须被同一个 resolvable() 判可解析（防 F2 单边恒绿）
+        探针 tool-eval-20260911-042142-rescore → resolvable=True
 PASS  F2b 豁免表没有死条目（每条豁免都真的在文档里出现）
         未命中的豁免 []
 PASS  F3 对照组：比对大小写敏感（plan.md 不得命中 PLAN.md）
@@ -104,10 +116,10 @@ PASS  F4 README 相对链接全部可解析
 ==============================================================================
 G. 计划状态与门禁落点
 ==============================================================================
-PASS  G1 计划里每个 `### Pn` 段都带 Pass 状态
-        段数 11，Pass 计数 11，pending 计数 0
-PASS  G2 收口后无 pending
-        pending 0 处
+FAIL  G1 计划里每个 `### Pn` 段都带 Pass 状态
+        段数 12，Pass 计数 11，pending 计数 1
+FAIL  G2 收口后无 pending
+        pending 1 处
 PASS  G2b 落点那轮极性守卫真被触发（blocked 计数器增量 = 1）
         polarity.log 读数 ['1']
 PASS  G3 落点日志记 commit=9eede6d 且开跑时工作树 clean
@@ -117,6 +129,7 @@ PASS  G4 落点为 17 步全绿、总耗时 511s
 PASS  G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）
         17 步全 exit 0，关键四步 {'stack': '80', 'demo': '12', 'polarity': '26', 'eval': '123'}
 PASS  G5b README 索引行与落点矩阵同读数
+        矩阵解析出 17 步；README 含 80s/12s/511s = True
 PASS  G6 surefire 3 + 12 + 89 = 104（build 与 unit 两份日志的 Results 段各自核过）
         unit 模块小计 [3, 12, 89]，build 模块小计 [3, 12, 89]
 PASS  G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0
@@ -127,15 +140,22 @@ PASS  G8 打字机断言落在 > 60 字这一真判据上（未放宽）
 ==============================================================================
 H. 文档自述与磁盘对拍（第四轮审查的教训固化成断言）
 ==============================================================================
-PASS  H1 六轮门禁的 ok 步数与文档主张逐轮相符
+PASS  J0 对照组：缺 logs 时解析函数必须返回『不适用』而不是抛异常（钉本机限定这条路径）
+        空目录 → 返回 NoneType（None = 不适用分支，没抛异常）
+PASS  H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符（121933 曾被粗正则数成 15）
         不符 {}
 PASS  H1b 每轮都是 17 步（不是步数变少造成的『更绿』）
         {}
+PASS  H1d README 里每一处 N/17 主张都等于该轮日志实算（真读 README，不靠脚本内抄本）
+        从 README 抽出 3 处 {'200038': 16, '201808': 15, '121933': 16}；与日志实算不符 {}
 PASS  H2 本机确有 69s/13s 成对的落盘矩阵（故 README 不得写『与任何一份都不符』）
         命中 ['acceptance-run5.log']
 PASS  H2b README 里那句全称否定只许以撤回形式出现（对照组：订正前必须判红）
         未挂撤回标记的命中 0 行；订正前 README 含该句=True
 PASS  H3 文档里的每一处行号引用都能在对齐的磁盘行上落住
+        核 4 处引用、覆盖 8 份文档
+PASS  H3b 对照组：超行引用必须被 cite_ok() 判失败
+        探针 run_tool_eval.py:999999 → 对照组: run_tool_eval.py:999999 未在钉住的引用表里
 PASS  H4 ticket 20 取证命令条数自述与实数一致（4 条 python + 1 条零额度复读，自述 4）
         python 命令实数 4（钉为 4：`--rescore` 那条是续行，不计），自述最高档 4（钉为 4：第四轮审查后文档自己说「那 4 条 python 命令 + 1 条零额度复读」）
 PASS  H4b 计划不得再以『README 索引行』为理由留 185410，且 README 不引用它
@@ -144,7 +164,7 @@ PASS  H5 取证面口径与磁盘一致：logs/ 整目录不入库，docs/consol
         logs 在库 0 个（应为 0）；console.png 在库=True
 PASS  H5b README 把『门禁日志干净克隆里没有』这条口径写出来了
 PASS  H6 计划的步数自述与实际 `### P\d` 段数一致
-        实际 11 段，自述 共 **11 步**（P0-P10
+        实际 12 段，自述 共 **12 步**（P0-P11
 PASS  H6b P9 标题里那句已经作废的『待用户处置』已改（状态已是自发解决）
 PASS  H6c 计划里那句不可复核的『N 条可逐条打勾的动作项』自述已删（盘上无复选框形状）
         现存自述命中 0 处；未挂在删除说明里的提及 0 行
@@ -165,8 +185,17 @@ PASS  H11 同一个顶层条目里的圆号子项不得重复
 PASS  H11b 正文里每处「第 ①-⑳ 项」引用都落到真存在的条目上
         无落点的圆号引用 []
 PASS  H7 本轮实跑项数被文档至少引用一次
-        本次实际 77 项，文档自述集合 [54, 77]
+        本次实际 88 项，文档自述集合 [54, 88]
 PASS  H7b 文档里每个不等于本轮实数的项数，都带历史标记（不许裸着当现状）
         无历史标记的异数 []
-汇总：PASS 77  FAIL 0  共 77 项
+FAIL  H12 入仓读数产物的末行项数 == 本次实跑项数（钉住那句『以末行为准』）
+        产物末行 汇总：PASS 77  FAIL 0  共 77 项 vs 本次实跑 88 项（改了跑器就得重跑并重新落盘产物，否则这一格红）
+PASS  H13 反证：『17 项断言』既不在 verify_eval_judge 里，在文档里也只许以幻影标记的形式出现
+        跑器源码命中=False；文档命中 6 行、其中无幻影标记 0 行 []
+PASS  H13b 反证：被驳回的那处 `up.ps1:115` 引用在四份文档里零命中（它本就不存在，不是漏核）
+        逐份命中 {'README.md': 0, 'PLAN.md': 0, '.scratch/shoppilot-mvp/round3-plan.md': 0, '.scratch/shoppilot-mvp/issues/20-action-order-attribution.md': 0}
+汇总：PASS 85  FAIL 3  SKIP 0  共 88 项
+  FAIL -> G1 计划里每个 `### Pn` 段都带 Pass 状态
+  FAIL -> G2 收口后无 pending
+  FAIL -> H12 入仓读数产物的末行项数 == 本次实跑项数（钉住那句『以末行为准』）
 ==============================================================================
