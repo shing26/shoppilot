@@ -4,7 +4,7 @@
 
 **Blocked by:** 16 — Tool Calling 标注评测集与分意图准确率
 
-**Status:** done（2026-09-11：24 条验收逐条留证据，见文末「验收结果」；17 步门禁全绿 @`logs/acceptance-run-20260911-050229.log`）
+**Status:** done（2026-09-11：24 条验收逐条留证据，见文末「验收结果」；17 步门禁全绿 @`logs/acceptance-run-20260911-123307.log`）
 
 **Verify:** `python scripts/verify_eval_judge.py`（36 条断言的证据跑器，含变异反证）全绿 -> `--selfcheck` 全绿 -> `build_eval_set.py` 无 FAIL -> 对 09-10 那 6 份明细跑 `--rescore` 出前后对照 -> `mvnw test` 绿 -> 整轮 17 步门禁绿 -> 下面 24 条验收逐条留证据。取证命令集中在文末「取证命令」。
 
@@ -148,7 +148,7 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 8. 参数双算反证：临时副本里把 `args_ok` 改回旧语义 -> 副本 selfcheck **红**（`exit=2`），仓库 `git status` 实验前后一字不差。
 9. `status_ok` 真空反证：临时副本恢复 `and link` 旧写法 -> selfcheck **红**。
 10. 串号反证：临时副本让命中标记不再算硬失败 -> selfcheck **红**；夹具同时含「`查不到订单号 90001 的记录` + 标记 `演示买家`/`13800001234`」判不泄漏、答案正文出现 `演示买家` 判泄漏。
-11. `logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=14`，末行 `EVAL DONE cases=24 errors=0 mode=local limit=24`（同一份日志两条都在）。
+11. `logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=16`，末行 `EVAL DONE cases=24 errors=0 mode=local limit=24`（同一份日志两条都在）；这一轮的 24 条分层冒烟与 05:02 那一轮逐格同读数（`tool-eval-20260911-123109-local-smoke*` 与 `tool-eval-20260911-050015-local-smoke*` 的 summary 完全一致），四个 ACTION 行仍是 `args_comparable` 3/3、ADDRESS 66.7%。
 
 三、单一判据与不变性回归
 12. `rg -n "^\s+tool_ok = "` 命中 2 行（`run_tool_eval.py:152`、`:156`），都在 `judge()` 体内；`score_case()` 与 `rescore_details()` 无第三处判据赋值。
@@ -171,7 +171,7 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 23. `python scripts/collect_interview_questions.py` 打印 `写出 docs\interview-qa.md：90 问，覆盖 20/20 个 ticket`，无「缺收尾记录的 ticket」；头部计数行与正文以 **Q 开头的条目数一致（90）。
 
 七、零额度与整体验收
-24. `GET /api/v1/support/ops/circuit` 的 `tokensUsedToday` 在跑完整套取证命令前后都是 **0**（DELTA = 0，`llmMode=local`、日预算 260000）。换行符基线断言 **PASS**（17 个文件守住各自 CRLF/LF、无 BOM 变化），这条不再是人工目测。`run-dev-eval.ps1 -OnlyIntent ACTION_ORDER` 只干跑，停在 `没加 -Run，所以到此为止：不改网关、不发计费请求。`，并打印出真正会执行的 `python scripts/run_tool_eval.py --only-intent ACTION_ORDER`（补了 `-OnlyIntent` 透传才到得了这一行）。整轮 17 步门禁全绿：`logs/acceptance-run-20260911-050229.log`，头两行 `commit=8aea166 开跑时工作树=clean` / `总耗时 559s`，README 矩阵行与之一致。EOL 复查：`.py` / `.jsonl` 仍全 CRLF，Java、README、CONTEXT、ticket 16、本票仍 LF，ticket 12、PLAN、问答库仍 CRLF，无 BOM 变化；`git diff --stat` 每文件都是定向改动，无整文件重写。
+24. `GET /api/v1/support/ops/circuit` 的 `tokensUsedToday` 在跑完整套取证命令前后都是 **0**（DELTA = 0，`llmMode=local`、日预算 260000）；12:49 在这一轮 17 步门禁跑完之后复读仍是 `tokensUsedToday: 0` 且 `llmMode: local`——冒烟那 24 条走的是 ollama `qwen2.5:3b`，不计费。换行符基线断言 **PASS**（17 个文件守住各自 CRLF/LF、无 BOM 变化），这条不再是人工目测。`run-dev-eval.ps1 -OnlyIntent ACTION_ORDER` 只干跑，停在 `没加 -Run，所以到此为止：不改网关、不发计费请求。`，并打印出真正会执行的 `python scripts/run_tool_eval.py --only-intent ACTION_ORDER`（补了 `-OnlyIntent` 透传才到得了这一行）。整轮 17 步门禁全绿：`logs/acceptance-run-20260911-123307.log`，头两行 `commit=3e8d4ca 开跑时工作树=clean` / `开始 12:24:57 结束 12:33:07 总耗时 489s`，README 矩阵行与之一致。同一批改动在此之前跑过两轮都没收口，两轮的失败原因都记在这儿，不挑一次好看的写：① `logs/acceptance-run-20260911-121933.log` 是 16/17，红的只有 `polarity` 且 exit 3 = 它自己打印的「前置不成立」（那一次 L2 里没写进源条目），脚本按 README「假红」一节既有的口径拒绝把这一格当成防线失效的证据（2026-09-10 19:29 那一轮就是这么处置的）——单独重跑 `verify-polarity.ps1` 是 exit 0 全绿，所以判它一次性；② 更早一轮 `build` + `unit` 两步直接红，`TenantIsolationAndIdempotencyTest` 6 项全 Error，栈底是 `Could not initialize inline Byte Buddy mock maker ... Could not self-attach to current VM using external process`，根因是系统盘 C 剩 19 MB（`C:\Users\Shing\AppData\Local\Temp\wsl-crashes` 里 10 个 WSL core dump 各约 1 GB），ByteBuddy 往 `java.io.tmpdir` 写 attach 探针写不下去。处置是把 `TMP`/`TEMP` 指到 `D:\tmp` 再跑，之后 6/6 绿；本轮没动任何 Java 代码，也没删那些 dump（在仓库外，等用户处置）。这条环境例外同时解释了为什么取证四件套与门禁的 `eval` 步都在同一台机器上跑：换机器时先确认 `TMP` 所在盘的余量。EOL 复查：`.py` / `.jsonl` 仍全 CRLF，Java、README、CONTEXT、ticket 16、本票仍 LF，ticket 12、PLAN、问答库仍 CRLF，无 BOM 变化；`git diff --stat` 每文件都是定向改动，无整文件重写。
 
 ## Handoff notes
 

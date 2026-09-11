@@ -452,36 +452,41 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild # 用现成 jar，�
 ```
 
 ```
-step        exit  note          # 2026-09-11 04:53-05:02 同机全量跑（profile=local，HEAD=8aea166；开跑时工作树 clean），17 步全绿
+step        exit  note          # 2026-09-11 12:24-12:33 同机全量跑（profile=local，HEAD=3e8d4ca；开跑时工作树 clean），17 步全绿
 syntax        0   1s           # 解析 scripts\ 下 25 个 .ps1：门禁自己也得过语法门（见本节末）
 stop          0   3s           # 释放 fat jar 文件锁
-build         0  53s           # mvnw verify：3 + 12 + 89 = 104 项
-unit          0  70s           # mvn -o test 同一批，离线可跑
-report        0   1s           # build_loadtest_report.py --strict：生成物与压测产物一致，缺证据即红
-stack         0  83s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
-plan          0  87s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
-hitzero       0   9s           # 命中路径零模型、零远程向量化
-action        0   7s           # 查得到 / 问得出 / 越不了权
-idem          0  10s           # 并发同 token + 状态前置校验
-fallback      0  28s           # 七种降级原因 + 工单反查
+build         0  51s           # mvnw verify：3 + 12 + 89 = 104 项
+unit          0  48s           # mvn -o test 同一批，离线可跑
+report        0   0s           # build_loadtest_report.py --strict：生成物与压测产物一致，缺证据即红
+stack         0  70s           # up.ps1：中间件 -> 模型 -> seed 5 万单 -> 入库 -> 等 readiness
+plan          0  80s           # PLAN 逐 ticket 动作 01/03/04/05/10/13/14
+hitzero       0   8s           # 命中路径零模型、零远程向量化
+action        0   6s           # 查得到 / 问得出 / 越不了权
+idem          0   9s           # 并发同 token + 状态前置校验
+fallback      0  27s           # 七种降级原因 + 工单反查
 ratelimit     0   1s           # 同步 429 与 SSE rate_limited
-polarity      0  29s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
-l2            0   9s           # tenant/scope/intent/kb_epoch 四条 must-filter（前提阶段会重试，见下）
-console       0  23s           # Playwright 15 项
-demo          0  12s           # 三条演示
-eval          0 135s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）；日志第一行是 SCORER SELFCHECK ok=14
+polarity      0  27s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
+l2            0   8s           # tenant/scope/intent/kb_epoch 四条 must-filter（前提阶段会重试，见下）
+console       0  20s           # Playwright 15 项
+demo          0  11s           # 三条演示
+eval          0 117s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）；日志第一行是 SCORER SELFCHECK ok=16
 ```
 
 矩阵现在由脚本自己落盘（`logs/acceptance-run-<时间戳>.log`，本机不入库）：run2..run8 那几份是人手工 Tee 出来的，
 run9 就漏了，于是"全绿"这句话一度在机器上找不到落点。现在它拿 `$results` 生成，不去回抓 `Write-Host`，
 并且记的是**开跑时**的工作树状态（跑完之后永远是脏的——这一步自己会写 `logs/`、`eval/results/`、`docs/console.png`）：
-上面那一行的落点是 `logs/acceptance-run-20260911-050229.log`，头两行写着
-`commit=8aea166 开跑时工作树=clean`、`开始 04:53:11 结束 05:02:29 总耗时 559s`。
+上面那一行的落点是 `logs/acceptance-run-20260911-123307.log`，头两行写着
+`commit=3e8d4ca 开跑时工作树=clean`、`开始 12:24:57 结束 12:33:07 总耗时 489s`。
 这一轮工作树是干净的，因为判据收口那批改动（含生成物与文档）先落成了一个 commit 再跑门禁——
 门禁要求工作树干净才能开跑，而这一次没有需要例外解释的脏项。上一次（`logs/acceptance-run-20260910-203537.log`）
 记的是 dirty（8 项）并逐条列明各是什么，public 之后每一次全量跑都可能带着生成物的脏，
 所以这里记的始终是"脏的是什么"或者"为什么干净"，而不是挑一次好看的跑法来写。
-总耗时 559s，用例数从 63 涨到 104（新增的分布在 dev 生成路径、缓存写回与向量化重试、下面第 5 条那个 flush 竞态、dev 评测抓到的"订单存在却回 NOT_FOUND"、门禁冒烟抓到的"派生幂等 token 不含地址参数"，以及 9-11 给物流侧补的那条越权归属闸门）。`stack` 83s + `demo` 12s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
+这一轮有一条必须照登的环境例外：开跑前把 `TMP`/`TEMP` 指到 `D:\tmp`，因为系统盘当时只剩 284 MB，
+Mockito 的 inline mock maker 自检失败（`Could not self-attach to current VM`）——同一批用例在指盘前
+`build`/`unit` 两步红 6 项、指盘后 6/6 绿，红的是磁盘不是防线，处置记在 ticket 20。
+同一份矩阵之前还有一次 `logs/acceptance-run-20260911-121933.log` 是 `polarity` exit 3 收尾的（16/17），
+那是向量写回的前置在那一刻不成立、脚本自己判定"不作为防线失效的证据"，不算全绿，所以不拿它当落点。
+总耗时 489s，用例数从 63 涨到 104（新增的分布在 dev 生成路径、缓存写回与向量化重试、下面第 5 条那个 flush 竞态、dev 评测抓到的"订单存在却回 NOT_FOUND"、门禁冒烟抓到的"派生幂等 token 不含地址参数"，以及 9-11 给物流侧补的那条越权归属闸门）。`stack` 70s + `demo` 11s 也是 PLAN 第 19 行"十分钟内起栈并跑通三条演示"的机器侧证据；
 那条动作本来还要一个没参与的人来跑，现在这一段机器自己代跑了：`scripts/clean_clone_check.ps1` 从 `origin` 克隆那份到空目录、
 在**空数据卷**上照 README 起栈、跑通三条演示，并量端到端墙钟（`logs/clean-clone-check-20260910-192007.log`：
 全程 205s，预算 600s，被测那份与本地 HEAD 同为 `3c99739`；克隆目录里连 `.env` 都没有）。
@@ -504,7 +509,7 @@ run9 就漏了，于是"全绿"这句话一度在机器上找不到落点。现�
   运行期一次就抛。
 - `polarity` 曾以"极性守卫 FAIL"红过一次，实际是那一刻向量化失败、写回只落了 L1（ADR 0018），
   L2 空着，守卫根本没有可判的东西。脚本现在先用同极性近义问法确认 L2 里真有条目，拿不到就重打三次源问法，
-  仍不成立就 `exit 3` 并写明"这一步红不代表防线失效"。这条前置先在 `local,no-ollama` 下人造验证，2026-09-10 19:29 那一轮（logs/acceptance-run-20260910-193757.log）**真的用上了**：整轮跑到这一步 exit 3，`shoppilot_cache_embed_unavailable_total` 在该进程里累计 8 次，而门禁其余 16 步全绿；栈还开着，紧接着单跑同一步 exit 0 通过：这一回探针是 `triage=T1 cache=L2`（`answer_cache` 里有 3 条），跑前 `embed_unavailable` 仍停在上一轮那 8.0，说明那一刻向量已经恢复。20:26 重跑整轮 17 步全绿。**没有一步断言被改过**，改的只是"前提不成立时不把它算成防线失效"。
+  仍不成立就 `exit 3` 并写明"这一步红不代表防线失效"。这条前置先在 `local,no-ollama` 下人造验证，2026-09-10 19:29 那一轮（logs/acceptance-run-20260910-193757.log）**真的用上了**：整轮跑到这一步 exit 3，`shoppilot_cache_embed_unavailable_total` 在该进程里累计 8 次，而门禁其余 16 步全绿；栈还开着，紧接着单跑同一步 exit 0 通过：这一回探针是 `triage=T1 cache=L2`（`answer_cache` 里有 3 条），跑前 `embed_unavailable` 仍停在上一轮那 8.0，说明那一刻向量已经恢复。20:26 重跑整轮 17 步全绿。**没有一步断言被改过**，改的只是"前提不成立时不把它算成防线失效"。9-11 12:19 那一轮（`logs/acceptance-run-20260911-121933.log`）它第二次落地：同样只有 `polarity` exit 3、其余 16 步全绿，栈不动单跑同一步 exit 0；这一次连"是不是脚本侥幸"都不用争——前置那三行 `第 2/3 次 -> cache=L1` 就是它拒绝下结论时打印的东西。
 - `l2` 用同一个成因红过一次（11:18 那轮：`向量化失败次数 3.0 -> 4.0`、Qdrant 里 0 条），四条 must-filter
   一条都没被跑到，却被记成串号防线失效。它比 `polarity` 还缺一层：前提阶段没有重试。现在源问法最多重打三次，
   **每轮先 flush**（不 flush 就白重试——第二次提问直接命中 L1，根本不产生 CACHE_WRITE），三次仍拿不到向量且
@@ -554,7 +559,7 @@ PowerShell 不允许从 try/catch 直接开管道，整脚本 parse 失败——
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260911-050015-local-smoke*`，10/10 意图各有 2-3 条，日志首行是 `SCORER SELFCHECK ok=14`）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（36 条断言：四处评分缺陷各一次变异反证、标注校验器防呆、对偶矛盾边界、共享词表与两份 `accepted_tools` 跨实现对拍、生成物字节稳定、判据只有一份、17 个文件的换行符基线、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（16 条夹具，真跑前执行）；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260911-123109-local-smoke*`，10/10 意图各有 2-3 条，日志首行是 `SCORER SELFCHECK ok=16`）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（36 条断言：四处评分缺陷各一次变异反证、标注校验器防呆、对偶矛盾边界、共享词表与两份 `accepted_tools` 跨实现对拍、生成物字节稳定、判据只有一份、17 个文件的换行符基线、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（16 条夹具，真跑前执行）；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
 | 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 69s / 13s |
