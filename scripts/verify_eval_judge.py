@@ -9,6 +9,7 @@
 """
 
 import csv
+import os
 import hashlib
 import re
 import shutil
@@ -20,11 +21,49 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 PARTS = ["eval/cases-part1-policy.jsonl", "eval/cases-part2-action.jsonl", "eval/cases-part3-edge.jsonl"]
 SEED = "shoppilot-gateway/src/main/resources/intent-samples.json"
+SEEDRUNNER = "shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/seed/SeedRunner.java"
 SCORER = "scripts/run_tool_eval.py"
 VALIDATOR = "scripts/build_eval_set.py"
 
 RELAXED = {"ACT-ORD-09", "ACT-ORD-11", "ACT-ORD-16", "ACT-ORD-17"}
 STILL_SINGLE = {"ACT-ORD-13", "ACT-ADR-14", "ACT-RFD-14"}
+# 进度问法：这些说法在订单详情与物流轨迹之间本来就等价，是本轮认定对偶矛盾的词形依据。
+PROGRESS = re.compile(r"到哪|发了没|是不是已经发出|签收|物流|快递|走到哪|哪一步")
+# 全表含进度问法的 ACTION_ORDER 样本就这 5 条（第 5 条 ACT-ORD-14 的 gold 本来就是
+# queryLogistics，指不出对偶，所以不放开）。这四个是本轮认下来的对偶配对。
+PROGRESS_ORDERS = {"ACT-ORD-09", "ACT-ORD-11", "ACT-ORD-14", "ACT-ORD-16", "ACT-ORD-17"}
+DUAL_PAIRS = {"ACT-ORD-09": "ACT-LOG-09", "ACT-ORD-11": "ACT-LOG-11",
+              "ACT-ORD-16": "ACT-LOG-15", "ACT-ORD-17": "ACT-LOG-17"}
+
+# 本仓库的换行符是分文件的，而且 `git diff --check` 在这里不是信号（README 的改文档规矩）。
+# 这张表把"谁该是 CRLF、谁该是 LF"钉成机器断言——曾经把 run-dev-eval.ps1 从 LF 改成 CRLF
+# 就造出 230 行假 diff，那种改动混进判据收口里会把整轮证据淹掉。
+EOL_BASELINE = {
+    "scripts/run_tool_eval.py": "crlf",
+    "scripts/build_eval_set.py": "crlf",
+    "scripts/verify_eval_judge.py": "crlf",
+    "eval/cases-part1-policy.jsonl": "crlf",
+    "eval/cases-part2-action.jsonl": "crlf",
+    "eval/cases-part3-edge.jsonl": "lf",
+    "eval/tool-cases.jsonl": "crlf",
+    "PLAN.md": "crlf",
+    "docs/interview-qa.md": "crlf",
+    ".scratch/shoppilot-mvp/issues/12-write-idempotency-state-guard.md": "crlf",
+    "scripts/run-dev-eval.ps1": "lf",
+    "README.md": "lf",
+    "CONTEXT.md": "lf",
+    "docs/adr/0021-action-order-gold-boundary-relabel-not-tool-merge.md": "lf",
+    ".scratch/shoppilot-mvp/issues/16-tool-calling-eval.md": "lf",
+    ".scratch/shoppilot-mvp/issues/20-action-order-attribution.md": "lf",
+    "shoppilot-biz-mock/src/test/java/com/shoppilot/bizmock/TenantIsolationAndIdempotencyTest.java": "lf",
+}
+BOM = b"\xef\xbb\xbf"
+
+# 默认控制台是 GBK：不钉死 utf-8，取证脚本会在打印第一行中文时 UnicodeEncodeError 崩掉，
+# 而它偏又是"没参与的人复核这轮判据"的唯一入口。父进程自己与所有子进程都按 utf-8 走。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 import json  # noqa: E402  （放在常量后面只为让上面的清单先讲清判据形状）
 
@@ -41,7 +80,8 @@ def scaffold():
 
 def run(root, script, *args):
     proc = subprocess.run([sys.executable, f"scripts/{script}", *args], cwd=str(root),
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
@@ -53,6 +93,57 @@ def function_body(text, name):
     """按顶层 def 切出函数体：用来把"判据只有一份"这类断言落在结构上而不是行数上。"""
     matched = re.search(rf"^def {name}\(.*?(?=^def |\Z)", text, re.M | re.S)
     return matched.group(0) if matched else ""
+
+
+def load_callable(path, name):
+    """把单个顶层函数抠出来执行：跨文件比对两份同形状实现时用，不引入 import 耦合。"""
+    namespace = {}
+    exec(function_body(Path(path).read_text(encoding="utf-8"), name), namespace)
+    return namespace.get(name)
+
+
+def py_set(text, name):
+    """抠出一个顶层 `X = {...}` 字符串集合字面量。"""
+    matched = re.search(rf"^{name} = \{{(.*?)\}}", text, re.M | re.S)
+    return set(re.findall(r'"([^"]+)"', matched.group(1))) if matched else set()
+
+
+def java_row_labels(java, decl):
+    """取 `String[][] X = {{"代码", "中文名", ...}, ...};` 里每行第二个字面量。"""
+    matched = re.search(rf"String\[\]\[\] {decl} = \{{(.*?)\}};", java, re.S)
+    if not matched:
+        return set()
+    return set(re.findall(r'\{\s*"[^"]*",\s*"([^"]*)"[^}]*\}', matched.group(1)))
+
+
+def java_tenant_names(java):
+    matched = re.search(r"List<String\[\]> TENANTS = List\.of\((.*?)\);", java, re.S)
+    if not matched:
+        return set()
+    return set(re.findall(r'new String\[\]\{"[^"]*", "([^"]*)",', matched.group(1)))
+
+
+def eol_signature(path):
+    data = Path(path).read_bytes()
+    crlf = data.count(b"\r\n")
+    return crlf, data.count(b"\n") - crlf, data.startswith(BOM)
+
+
+def dual_partners(case, pool, accepted):
+    """给一条 ACTION_ORDER 样本找对偶：同场景、同租户、同买家、两边都是进度问法，
+    而对侧只认 queryLogistics、本侧却认 queryOrderDetail。
+
+    口径要写清：判据是「同一形态的诉求被两侧标成不同默认工具」，不是「同一个订单号」——
+    ACT-ORD-16/17 与各自对偶的单号本来就不同（一个查不到单、一个跨租户探别人的单）。
+    """
+    if not PROGRESS.search(case["query"]):
+        return []
+    if "queryOrderDetail" not in set(accepted(case["expect"])):
+        return []
+    return [other["id"] for other in pool
+            if other["kind"] == case["kind"] and other["tenant"] == case["tenant"]
+            and other["customer"] == case["customer"] and PROGRESS.search(other["query"])
+            and set(accepted(other["expect"])) == {"queryLogistics"}]
 
 
 class Ledger:
@@ -158,6 +249,57 @@ def main() -> int:
     ledger.check("每条越权样本都带可判别的串号标记",
                  len(cross) == 8 and len(with_marker) == 8, f"{len(with_marker)}/{len(cross)}")
 
+    # ---- 对偶矛盾的边界（验收 4、5；ADR 0021 第一段） --------------------------
+    # 这一组是"重标而不是并工具"的正面证据：放开的每一条都指得出对偶，指不出的一律没放开。
+    order_cases = [c for c in gold.values() if c["intent"] == "ACTION_ORDER"]
+    log_pool = [c for c in gold.values() if c["intent"] == "ACTION_LOGISTICS"]
+    scorer_accepted = load_callable(REPO / SCORER, "accepted_tools")
+    progress_orders = {c["id"] for c in order_cases if PROGRESS.search(c["query"])}
+    ledger.check("含进度问法的 ACTION_ORDER 样本恰好这 5 条",
+                 progress_orders == PROGRESS_ORDERS, f"实际 {sorted(progress_orders)}")
+    partners = {c["id"]: dual_partners(c, log_pool, scorer_accepted) for c in order_cases}
+    with_dual = sorted(cid for cid, hit in partners.items() if hit)
+    ledger.check("指得出对偶的样本恰好等于放开集（其余进度问法样本 gold 本就单指物流）",
+                 with_dual == sorted(RELAXED), f"实际 {with_dual}")
+    ledger.check("四组对偶逐组点名，且两侧问法都落在进度词形上",
+                 all(DUAL_PAIRS[a] in partners[a] for a in RELAXED)
+                 and all(PROGRESS.search(gold[cid]["query"])
+                         for cid in [*RELAXED, *DUAL_PAIRS.values()]),
+                 "；".join(f"{a}↔{b}" for a, b in sorted(DUAL_PAIRS.items())))
+    ledger.check("ACT-ORD-14 指不出对偶：gold 本就是 queryLogistics，所以不放开",
+                 not partners["ACT-ORD-14"]
+                 and scorer_accepted(gold["ACT-ORD-14"]["expect"]) == ["queryLogistics"])
+    ledger.check("放开的 4 条都是同场景同租户同买家的对偶，不是拿不同场景硬凑",
+                 all(gold[a]["kind"] == gold[DUAL_PAIRS[a]]["kind"]
+                     and gold[a]["tenant"] == gold[DUAL_PAIRS[a]]["tenant"]
+                     and gold[a]["customer"] == gold[DUAL_PAIRS[a]]["customer"] for a in RELAXED))
+    mockllm = (REPO / "shoppilot-gateway/src/main/java/com/shoppilot/gateway/llm/MockLlmClient.java")
+    router = mockllm.read_text(encoding="utf-8") if mockllm.exists() else ""
+    ledger.check("另一支柱：MockLlmClient 的路由词全被 PROGRESS 覆盖（到哪/签收→物流）",
+                 all(PROGRESS.search(word) for word in ("物流", "快递", "到哪", "签收"))
+                 and 'text.contains("到哪")' in router
+                 and "QUERY_LOGISTICS" in router)
+
+    # ---- 跨实现一致：判据形状与共享词表不许两份各说各话 ------------------------
+    build_accepted = load_callable(REPO / VALIDATOR, "accepted_tools")
+    ledger.check("两份 accepted_tools 实现行为一致（180 条逐个对拍）",
+                 scorer_accepted is not None and build_accepted is not None
+                 and all(scorer_accepted(c["expect"]) == build_accepted(c["expect"]) for c in gold.values())
+                 and build_accepted({"tool": "queryLogistics"}) == ["queryLogistics"]
+                 and build_accepted({"tool": None}) == [])
+    java_seed = (REPO / SEEDRUNNER).read_text(encoding="utf-8")
+    shared = py_set((REPO / VALIDATOR).read_text(encoding="utf-8"), "SHARED_VOCAB")
+    ledger.check("SHARED_VOCAB 与 SeedRunner 的品类/快递商一字不差（抄写不许漂）",
+                 shared == java_row_labels(java_seed, "CATEGORIES") | java_row_labels(java_seed, "CARRIERS"),
+                 f"{len(shared)} 个词")
+    shops = py_set((REPO / VALIDATOR).read_text(encoding="utf-8"), "SHOP_NAMES")
+    ledger.check("SHOP_NAMES 与 SeedRunner 的租户店名一字不差",
+                 shops == java_tenant_names(java_seed), f"实际 {sorted(shops)}")
+    streets = py_set((REPO / VALIDATOR).read_text(encoding="utf-8"), "SHARED_STREETS")
+    seeded_streets = set(re.findall(r'setDetailAddress\("([^"\s]+)', java_seed))
+    ledger.check("SHARED_STREETS 覆盖 SeedRunner 落地址用的全部街道",
+                 seeded_streets and seeded_streets == streets, f"种子里 {sorted(seeded_streets)}")
+
     # ---- 量具变异反证（验收 8、9） -------------------------------------------
     mutation_red(ledger, "变异：参数退回「工具没打对就拿空字典比、判成填错」→ selfcheck 必须红",
                  [('actual_args = link["args"] if args_comparable else {}',
@@ -167,7 +309,10 @@ def main() -> int:
     mutation_red(ledger, "变异：expectStatus 退回「期望工具没打就静默给 True」→ selfcheck 必须红",
                  [('if link and link["status"] else ""', 'if link and link["status"] else True')])
     mutation_red(ledger, "变异：串号命中不再算硬失败 → selfcheck 必须红",
-                 [("status_ok is not False, leak_ok is not False", "status_ok is not False")])
+                 [("leak_ok is not False", "True")])
+    mutation_red(ledger, "变异：缓存层空值退回「当成没入库白送一分」→ selfcheck 必须红",
+                 [('admission_ok = (layer.upper() == "NONE") if layer else ""',
+                   'admission_ok = (layer.upper() == "NONE")')])
 
     # ---- 校验器防呆（验收 18、19） -------------------------------------------
     validator_fail(ledger, "防呆：越权样本删掉 mustNotLeak → 必须 FAIL", '"id":"ACT-ORD-17"',
@@ -176,6 +321,11 @@ def main() -> int:
                    lambda l: l.replace('"mustNotLeak":["演示买家","13800001234"]', '"mustNotLeak":["90001"]'))
     validator_fail(ledger, "防呆：标记用品类名（跨租户共享词）→ 必须 FAIL", '"id":"ACT-LOG-18"',
                    lambda l: l.replace('"mustNotLeak":["演示买家","13800001234"]', '"mustNotLeak":["服饰鞋包"]'))
+    # 这两条是本轮真实踩过的坑：旧 gold 的「数码」正是 T001 招牌「数码旗舰店」的子串。
+    validator_fail(ledger, "防呆：标记用店名子串（旧「数码」同型）→ 必须 FAIL", '"id":"ACT-ORD-17"',
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234"]', '"mustNotLeak":["数码"]'))
+    validator_fail(ledger, "防呆：标记用裸街道名（种子单共用文三路）→ 必须 FAIL", '"id":"ACT-LOG-18"',
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234"]', '"mustNotLeak":["文三路"]'))
     validator_fail(ledger, "防呆：合格答案集为空列表 → 必须 FAIL", '"id":"ACT-ORD-09"',
                    lambda l: l.replace('"tool":["queryOrderDetail","queryLogistics"]', '"tool":[]'))
     validator_fail(ledger, "防呆：合格答案集含重复工具 → 必须 FAIL", '"id":"ACT-ORD-11"',
@@ -193,6 +343,15 @@ def main() -> int:
     second = sha256(root2 / "eval/tool-cases.jsonl")
     ledger.check("生成物稳定：连跑两次 tool-cases.jsonl 字节级相同", first == second, first[:12])
     ledger.check("仓库里那份与重新生成结果一致（没人手改过生成物）", second == sha256(REPO / "eval/tool-cases.jsonl"))
+
+    # ---- 换行符基线（README 的改文档规矩：假 diff 会淹掉证据） ------------------
+    drifted = []
+    for rel, want in sorted(EOL_BASELINE.items()):
+        crlf, lone, _ = eol_signature(REPO / rel)
+        if not ((lone == 0 and crlf > 0) if want == "crlf" else (crlf == 0 and lone > 0)):
+            drifted.append(f"{rel}={want}实际 crlf={crlf} lf={lone}")
+    ledger.check(f"换行符基线：{len(EOL_BASELINE)} 个文件各自守住 CRLF/LF",
+                 not drifted, "；".join(drifted)[:110])
 
     dirty_after = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain"],
                                  capture_output=True, text=True).stdout
