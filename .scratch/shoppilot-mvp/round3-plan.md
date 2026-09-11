@@ -45,11 +45,11 @@
 - 命令：`pwsh -NoProfile -File scripts/run-acceptance.ps1`（`profile=local`，要求开跑时工作树 clean）。
 - **通过判据**：`logs/acceptance-run-<新ts>.log` 17 步 exit 全 0；头两行的 `commit=` 等于当时 HEAD、`开跑时工作树=clean`；`logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=16`、末行 `EVAL DONE`；`build`/`unit` 两步 surefire 合计 104；新冒烟 summary 与 `123109` 那一轮逐格一致。
 - 若 `polarity` exit 3：按 README「假红」一节既有口径处置——栈不动单跑 `scripts/verify-polarity.ps1`，exit 0 才算一次性、不算防线失效，且这一轮**不得**当落点写进 README。
-- 状态：**Pass**（第二次跑 18:47:20-18:56:08，落点 `logs/acceptance-run-20260911-185608.log`；第一次尝试冻死在 `stack`，见下）
+- 状态：**Pass（落点轮 18:56:08 @`9353a32`）**；第三、四次尝试（20:00 / 20:18 @`c5e6c2e`）因机器内存压力红在 `polarity`/`console`，见 P9
   - 17 步 exit 全 0，总耗时 528s；头两行 `commit=9353a32 开跑时工作树=clean`、`开始 18:47:20 结束 18:56:08 总耗时 528s`，`commit=` 与开跑时 HEAD 一致。
   - `logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=16`、末行 `EVAL DONE cases=24 errors=0 mode=local limit=24`。
   - `build` 与 `unit` 两份日志的 `Results:` 段各三行 `3` / `12` / `89`（逐模块核对后相加 = 104），不是拿一个总数凑的。
-  - 新冒烟 summary 与 `123109` 那一轮 `Compare-Object` **零差异**（10 行 × 13 列全等）：四个 ACTION 行 `args_comparable=3`、`ACTION_ADDRESS` `args_accuracy=66.7%`。
+  - 新冒烟 summary 与 `123109` 那一轮**不是**零差异：130 格里 1 格不同（`ESCALATE.overall_accuracy` 50.0% -> 100.0%，明细 `ESC-02` 的 `escalate_ok` False -> True）。我原先用 `Compare-Object` 比 `Import-Csv` 的对象，它只比 `ToString()`，把这一格吞成"零差异"，于是 P2 这一条被我记成了 Pass——两条审查轴各自独立抓到。判据是"逐格一致"，实然是"129/130 一致 + 1 格是 local 3B 抖动"，按实然改写（见本票第 11 条）。
   - `polarity` 本轮 36s 通过，没触发 `exit 3`，所以不需要走「假红」那套处置。
   - 18:57 复读 `GET /ops/circuit`：`tokensUsedToday: 0`、`llmMode: local`、日预算 260000 —— 整轮 528s（含 24 条冒烟）零计费额度。
   - 18:11:38 起的第一次跑：`syntax`/`stop`/`build`/`unit`/`report` 五步绿（`build` 的 `BUILD SUCCESS` 落在 18:13:48，用例数与上一轮同），
@@ -129,6 +129,27 @@
 
 - **通过判据**：P0-P7 全绿、`tokensUsedToday` 差值 0、证据链可一键复现，才 `update_goal complete`。
 - 状态：pending
+
+### P9（计划外新增）机器内存压力挡住 17/17 那一轮 —— 待用户处置
+
+- **现象**：`c5e6c2e` 之后重跑两次门禁，都没拿到 17/17。
+  - 20:00 那一轮（`logs/acceptance-run-20260911-200038.log`，588s）：16/17，红的只有 `polarity` `exit 3`（前置不成立：L2 里没有源条目）。
+  - 20:18 那一轮（`logs/acceptance-run-20260911-201808.log`，606s）：15/17，`polarity` 又 `exit 3`，另加 `console` `exit 1`
+    ——挂在那条"未命中路径按打字机分块推出"的断言上，实测 `3 chunks / 60 chars`，而判据是 `chipCount > 1 && streamedChars > 60`，
+    差 1 个字。两次红的都是吃本机模型推理的那两步，没有一步落在本票的判据面上（阈值、gold、`--rescore` 读数、JVM 用例、104 项全都在它们自己的位置上绿着）。
+- **量到的环境事实**：可用内存 **2.1-2.5 GB**（16 GB 机器），CPU 41%；`docker ps` 里有 `nexus-*` 5 个 + `opspilot-*` 5 个容器在跑，
+  另有 12 个 `hermes-agent` 的 python/pythonw 进程（16:42 起）。`GET /actuator/metrics/shoppilot_cache_embed_unavailable_total` 在该网关进程里累计 **13** 次，
+  而 `shoppilot_cache_l2_polarity_blocked_total` 是 0 —— 向量根本没跑到守卫那一步，与 `exit 3` 自己打印的"那一刻向量不可用"一致。
+  单独打 `/api/embed` 三句：第一句 **5.43 s**（冷加载），后两句 0.37 s / 0.32 s；`/api/ps` 显示 `OLLAMA_MAX_LOADED_MODELS:1`，
+  即 bge-m3（664 MB）与 qwen2.5:3b（1.9 GB）在内存里互相挤。
+- **为什么不在本轮动它**：`polarity` 的 `exit 3` 已有 README「假红」一节的既有口径（前置不成立时拒绝下结论，栈不动单跑即 exit 0）；
+  而 `console` 那条 `streamedChars > 60` 是**真断言**，把它放宽成 `>= 60` 或改成重试到绿，正是铁律禁止的那类动作。
+  另一条路是给 `verify-polarity.ps1` 补"探针自身的 L2 候选也没拿到时按前置不成立处理"的判定——那是**改防线脚本的判据**，
+  形状与本轮第 2、4 处缺陷同族（该分开的两种"没观测到"混成了一个 FAIL / 一个 exit 3），值得做，但不该由我在收尾轮里顺手做掉，得用户点头。
+- **待用户选的三条**：① 腾出内存（关掉别的项目容器 / hermes 进程）后我再跑一轮 17/17，落点换到最终 HEAD；
+  ② 认可 18:56 那一轮（`9353a32`，17/17、528s）继续当落点，本轮两次失败按上面的证据照登进 README 与 ticket 20，
+     并写明 `c5e6c2e` 相对它只改了文档与一处纯注释；③ 授权我改 `verify-polarity.ps1` 的前置判定（单独一票、单独跑一轮门禁验）。
+- **状态**：blocked（等用户处置），P8 因此不收口。
 
 ## 本轮明确不做
 
