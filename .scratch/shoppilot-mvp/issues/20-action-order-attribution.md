@@ -4,7 +4,7 @@
 
 **Blocked by:** 16 — Tool Calling 标注评测集与分意图准确率
 
-**Status:** done（2026-09-11：24 条验收逐条留证据，见文末「验收结果」；17 步门禁全绿 @`logs/acceptance-run-20260911-123307.log`）
+**Status:** done（2026-09-11：24 条验收逐条留证据，见文末「验收结果」；17 步门禁全绿的落点是第三轮那一轮 @`logs/acceptance-run-20260911-185608.log`，换 HEAD 重跑的原委与另外两次没当落点的跑法见文末「第三轮收尾」）
 
 **Verify:** `python scripts/verify_eval_judge.py`（40 条断言的证据跑器，含变异反证）全绿 -> `--selfcheck` 全绿 -> `build_eval_set.py` 无 FAIL -> 对 09-10 那 6 份明细跑 `--rescore` 出前后对照 -> `mvnw test` 绿 -> 整轮 17 步门禁绿 -> 下面 24 条验收逐条留证据。取证命令集中在文末「取证命令」。
 
@@ -148,7 +148,7 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 8. 参数双算反证：临时副本里把 `args_ok` 改回旧语义 -> 副本 selfcheck **红**（`exit=2`），仓库 `git status` 实验前后一字不差。
 9. `status_ok` 真空反证：临时副本恢复 `and link` 旧写法 -> selfcheck **红**。
 10. 串号反证：临时副本让命中标记不再算硬失败 -> selfcheck **红**；夹具同时含「`查不到订单号 90001 的记录` + 标记 `演示买家`/`13800001234`」判不泄漏、答案正文出现 `演示买家` 判泄漏。
-11. `logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=16`，末行 `EVAL DONE cases=24 errors=0 mode=local limit=24`（同一份日志两条都在）；这一轮的 24 条分层冒烟与 05:02 那一轮逐格同读数（`tool-eval-20260911-123109-local-smoke*` 与 `tool-eval-20260911-050015-local-smoke*` 的 summary 完全一致），四个 ACTION 行仍是 `args_comparable` 3/3、ADDRESS 66.7%。
+11. `logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=16`，末行 `EVAL DONE cases=24 errors=0 mode=local limit=24`（同一份日志两条都在）；第三轮（18:54）那 24 条分层冒烟与 12:31 那一轮逐格同读数——`tool-eval-20260911-185410-local-smoke-summary.csv` 与 `tool-eval-20260911-123109-local-smoke-summary.csv` 的 10 行 × 13 列全等（`Compare-Object` 零差异），四个 ACTION 行仍是 `args_comparable` 3/3、`ACTION_ADDRESS` 的 `args_accuracy` 66.7%。这一条现在有跨实现的意义：两轮之间 `eval/cases-part2-action.jsonl` 被第二轮改过（8 条越权样本补满串号标记），而冒烟读数一字未动——因为串号那一维在离线口径下本就整体记未观测。
 
 三、单一判据与不变性回归
 12. `rg -n "^\s+tool_ok = "` 命中 2 行（`run_tool_eval.py:152`、`:156`），都在 `judge()` 体内；`score_case()` 与 `rescore_details()` 无第三处判据赋值。
@@ -158,7 +158,7 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 16. 条数由明细列直接可数：`new_args_scored` 真值 **63** 条；其中旧 gold 命中 **57** 条、这些行的 `old_args_ok` 全为 True；未命中 **6** 条在旧判据下全被判"填错"；离线 `new_args_comparable` **0/63**（明细只存旧 gold 那个工具的入参）；`new_status_ok` 空值 **2** 条（`ACT-ORD-16`、`ACT-ORD-17`）。README 那一格按三分法写条数，全文不出现 `57/60` 或 `95.0%`。
 
 四、标注集与校验器
-17. `python scripts/build_eval_set.py` 退出码 0、无 `FAIL`、无新增 `WARN`；连跑两次 `eval/tool-cases.jsonl` 字节级相同（sha256 前 12 位 `5e315190c46c`），且仓库里那份与重新生成结果一致（"没人手改过生成物"那条断言）。
+17. `python scripts/build_eval_set.py` 退出码 0、无 `FAIL`、无新增 `WARN`；连跑两次 `eval/tool-cases.jsonl` 字节级相同（sha256 前 12 位 `a8c88525fa7c`；第三轮取证时这里还是 `5e315190c46c`——第二轮给 8 条越权样本补满串号标记之后生成物就变了，那一格当时没跟着改，改的是自述而不是判据），且仓库里那份与重新生成结果一致（"没人手改过生成物"那条断言）。
 18. 三条越权防呆反证各打中一条 `FAIL`：删 `mustNotLeak` -> `ACT-ORD-17 是越权样本却没带 mustNotLeak`；标记用买家自己报的订单号 -> `ACT-RFD-17 串号标记「90001」出现在自己的 query 里`；标记用品类名 -> `ACT-LOG-18 串号标记「服饰鞋包」是跨租户共享词`。
 19. `expect.tool` 列表的三种坏形态各一条 `FAIL`：空列表（`ACT-ORD-09`）、重复元素（`ACT-ORD-11`）、非法工具名（`ACT-ORD-16`）。18-19 共 10 条防呆由 `verify_eval_judge.py` 自动跑（越权缺标记、标记=自报单号、标记=品类名、标记=店名子串「数码」、标记=整串店名「生鲜超市」、标记=「T001生鲜超市」这种店名加长串、标记=裸街道名「文三路」、空合格集、重复元素、非法工具名），注入全在临时副本上。
 
@@ -171,7 +171,7 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 23. `python scripts/collect_interview_questions.py` 打印 `写出 docs\interview-qa.md：90 问，覆盖 20/20 个 ticket`，无「缺收尾记录的 ticket」；头部计数行与正文以 **Q 开头的条目数一致（90）。
 
 七、零额度与整体验收
-24. `GET /api/v1/support/ops/circuit` 的 `tokensUsedToday` 在跑完整套取证命令前后都是 **0**（DELTA = 0，`llmMode=local`、日预算 260000）；12:49 在这一轮 17 步门禁跑完之后复读仍是 `tokensUsedToday: 0` 且 `llmMode: local`——冒烟那 24 条走的是 ollama `qwen2.5:3b`，不计费。换行符基线断言 **PASS**（17 个文件守住各自 CRLF/LF、无 BOM 变化），这条不再是人工目测。`run-dev-eval.ps1 -OnlyIntent ACTION_ORDER` 只干跑，停在 `没加 -Run，所以到此为止：不改网关、不发计费请求。`，并打印出真正会执行的 `python scripts/run_tool_eval.py --only-intent ACTION_ORDER`（补了 `-OnlyIntent` 透传才到得了这一行）。整轮 17 步门禁全绿：`logs/acceptance-run-20260911-123307.log`，头两行 `commit=3e8d4ca 开跑时工作树=clean` / `开始 12:24:57 结束 12:33:07 总耗时 489s`，README 矩阵行与之一致。同一批改动在此之前跑过两轮都没收口，两轮的失败原因都记在这儿，不挑一次好看的写：① `logs/acceptance-run-20260911-121933.log` 是 16/17，红的只有 `polarity` 且 exit 3 = 它自己打印的「前置不成立」（那一次 L2 里没写进源条目），脚本按 README「假红」一节既有的口径拒绝把这一格当成防线失效的证据（2026-09-10 19:29 那一轮就是这么处置的）——单独重跑 `verify-polarity.ps1` 是 exit 0 全绿，所以判它一次性；② 更早一轮 `build` + `unit` 两步直接红，`TenantIsolationAndIdempotencyTest` 6 项全 Error，栈底是 `Could not initialize inline Byte Buddy mock maker ... Could not self-attach to current VM using external process`，根因是系统盘 C 剩 19 MB（`C:\Users\Shing\AppData\Local\Temp\wsl-crashes` 里 10 个 WSL core dump 各约 1 GB），ByteBuddy 往 `java.io.tmpdir` 写 attach 探针写不下去。处置是把 `TMP`/`TEMP` 指到 `D:\tmp` 再跑，之后 6/6 绿；本轮没动任何 Java 代码，也没删那些 dump（在仓库外，等用户处置）。这条环境例外同时解释了为什么取证四件套与门禁的 `eval` 步都在同一台机器上跑：换机器时先确认 `TMP` 所在盘的余量。EOL 复查：`.py` / `.jsonl` 仍全 CRLF，Java、README、CONTEXT、ticket 16、本票仍 LF，ticket 12、PLAN、问答库仍 CRLF，无 BOM 变化；`git diff --stat` 每文件都是定向改动，无整文件重写。
+24. `GET /api/v1/support/ops/circuit` 的 `tokensUsedToday` 在跑完整套取证命令前后都是 **0**（DELTA = 0，`llmMode=local`、日预算 260000）；12:49 在这一轮 17 步门禁跑完之后复读仍是 `tokensUsedToday: 0` 且 `llmMode: local`——冒烟那 24 条走的是 ollama `qwen2.5:3b`，不计费。换行符基线断言 **PASS**（17 个文件守住各自 CRLF/LF、无 BOM 变化），这条不再是人工目测。`run-dev-eval.ps1 -OnlyIntent ACTION_ORDER` 只干跑，停在 `没加 -Run，所以到此为止：不改网关、不发计费请求。`，并打印出真正会执行的 `python scripts/run_tool_eval.py --only-intent ACTION_ORDER`（补了 `-OnlyIntent` 透传才到得了这一行）。整轮 17 步门禁全绿：落点 `logs/acceptance-run-20260911-185608.log`，头两行 `commit=9353a32 开跑时工作树=clean` / `开始 18:47:20 结束 18:56:08 总耗时 528s`，README 矩阵行与之一致；18:57 复读仍是 `tokensUsedToday: 0`、`llmMode: local`、日预算 260000。上一轮同口径落点是 `logs/acceptance-run-20260911-123307.log`（`commit=3e8d4ca`、489s、`开始 12:24:57 结束 12:33:07`），它验的代码不含第二轮审查的脚本与 gold 改动，所以是被替换掉而不是在旧行上补写——换行的理由记在文末「第三轮收尾」。同一批改动在此之前跑过两轮都没收口，两轮的失败原因都记在这儿，不挑一次好看的写：① `logs/acceptance-run-20260911-121933.log` 是 16/17，红的只有 `polarity` 且 exit 3 = 它自己打印的「前置不成立」（那一次 L2 里没写进源条目），脚本按 README「假红」一节既有的口径拒绝把这一格当成防线失效的证据（2026-09-10 19:29 那一轮就是这么处置的）——单独重跑 `verify-polarity.ps1` 是 exit 0 全绿，所以判它一次性；② 更早一轮 `build` + `unit` 两步直接红，`TenantIsolationAndIdempotencyTest` 6 项全 Error，栈底是 `Could not initialize inline Byte Buddy mock maker ... Could not self-attach to current VM using external process`，根因是系统盘 C 剩 19 MB（`C:\Users\Shing\AppData\Local\Temp\wsl-crashes` 里 10 个 WSL core dump 各约 1 GB），ByteBuddy 往 `java.io.tmpdir` 写 attach 探针写不下去。处置是把 `TMP`/`TEMP` 指到 `D:\tmp` 再跑，之后 6/6 绿；本轮没动任何 Java 代码，也没删那些 dump（在仓库外，等用户处置）。这条环境例外同时解释了为什么取证四件套与门禁的 `eval` 步都在同一台机器上跑：换机器时先确认 `TMP` 所在盘的余量。EOL 复查：`.py` / `.jsonl` 仍全 CRLF，Java、README、CONTEXT、ticket 16、本票仍 LF，ticket 12、PLAN、问答库仍 CRLF，无 BOM 变化；`git diff --stat` 每文件都是定向改动，无整文件重写。
 
 ### 第二轮双轴审查之后的取证复跑（口径一字未改，只是把自述钉得更严）
 
@@ -188,6 +188,39 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 - 换行符基线断言写完一分钟内就抓住了我自己：一次编辑往 `run_tool_eval.py` 插进 8 个裸 LF，它当场报
   `FAIL  scripts/run_tool_eval.py=crlf实际 crlf=782 lf=8`，归一后回到 40/40。
   这条正是第一轮回的"文档声称有 EOL 断言而脚本里没有"补出来的东西，第一次独立兑现价值就抓到了本轮自己的手。
+
+### 第三轮收尾（2026-09-11 晚，`11a12ac` → `9353a32`）
+
+判据与口径一字未改。这轮只做两件事：把 `11a12ac`（改了 `scripts/*.py` 与 `eval/*.jsonl`）之后失效的门禁落点重新钉回机器上，
+以及修掉一个把门禁冻死的起栈缺陷。执行计划与逐步状态在 `.scratch/shoppilot-mvp/round3-plan.md`（放在 `issues/` 之外，免得被 `collect_interview_questions.py` 当成第 21 个 ticket）。
+
+- **取证四件套重跑**（18:05-18:11，跑在 `11a12ac` 的代码上）：`verify_eval_judge.py` **40/40**；`--selfcheck` 打印 `ok=16`；
+  `build_eval_set.py` 退出码 0、`对抗样本 72/180 = 40.0%`、十个意图各 18 条；`--rescore` 退出码 0，差异集合仍恰好那 4 条、
+  聚合仍 `168/180 = 93.3% -> 172/180 = 95.6%`、`ACTION_ORDER 72.2% -> 94.4%`、未达 95% 的行仍是 5 行；
+  本轮重算出的新产物（临时文件，跑完即删、不入库）与被引用的 `tool-eval-20260911-042142-rescore.csv` **sha256 逐字节相同**（`BE53815C…5D85`）。
+- **抓到一处上一轮没收口的自述**：验收第 17 条那个 `tool-cases.jsonl` 的 sha256 前缀还是旧值。这条是本轮取证跑出来的，不是审查报出来的——
+  第 17 条按实然改写，改的是自述，判据没动。
+- **第一次门禁跑冻死**（18:11:38 起，只到第五步）：`scripts/up.ps1` 的 `[2/6]` 在本机 Ollama 服务没在跑时，第一句 `& ollama list`
+  会把 Ollama 的应用与服务进程拉起来，那几个进程继承了本步骤的重定向输出句柄，PowerShell 等不到 EOF，整条起栈流程永久冻结——
+  现场是 pwsh 活着、19 线程、CPU 停在 5.546875 不再涨、**没有任何子进程**、`8082`/`8091` 始终不通、`logs/acceptance/stack.log` 停在 18:14:04，
+  最后四行是被拉起的 Ollama 自己打的 `INFO`（它们的日志出现在我们的日志流里就是句柄被继承的实证）。18:36 手动终止，这一轮没产出落点日志。
+  难看的地方在于 `up.ps1` 那句 `Ollama 未监听 11434，先跑 ollama serve` 的 fail-fast 一直写在 `ollama list` 之后，**从来就不可达**。
+- **修法**（`e7c19ad`，只动 `[2/6]` 一段）：探活前置——端口没在听就用仓库既有的 `Start-ShoppilotService`（`Win32_Process.Create`，日志写自己的
+  `logs/ollama.out`）脱离式拉起 `ollama serve`，`Wait-For` 到 11434 之后再问 CLI。两条机制验证都在同机跑过：
+  ① 用同法起一个活 60 秒的 `powershell Start-Sleep 60`，2 秒后它 `alive=True`、父进程 `WmiPrvSE.exe`，而外层 pwsh（stdout 重定向到文件）3.5 秒就退出；
+  ② 拿一个没人用的 `11435` 端口跑改后的代码形状（不碰别人共用的 11434），端口 5.7 秒起来、之后那句 `& ollama list` **0.17 秒返回**、脚本 7 秒收工。
+  **旧写法此刻复现不出来**（Ollama 应用已在跑，触发条件消失），所以那句成因是从上面那串日志证据推出来的、不是重跑出来的——这条区别留在这儿，免得下一轮把它当实测结论引用。
+  这条缺陷与本票判据无关，它砸的是 PLAN 承诺项「新机器照 README 一条命令起栈并跑通三条演示」，所以记在本票的收尾里而不是另开票。
+- **第二次门禁跑**（18:47:20-18:56:08，HEAD `9353a32`、开跑时工作树 clean）17 步全绿、总耗时 528s，落点 `logs/acceptance-run-20260911-185608.log`；
+  `build` 与 `unit` 两步的 surefire 模块合计都是 `3 + 12 + 89 = 104`（两份日志的 `Results:` 段逐条对过）；README 矩阵块、落点 prose、索引行同步换到这一轮。
+  各步耗时与上一轮同量级（`stack` 89s 对 70s、`polarity` 36s 对 27s），本轮没有可归因的环境变化，差额没查，也不拿它当判据。
+- **冒烟产物换轮**：`tool-eval-20260911-185410-local-smoke*`（README 索引行与第 11 条引用的就是它）和
+  `tool-eval-20260911-123109-local-smoke*`（第 11 条的跨轮对照）两份留库；`tool-eval-20260911-050015-local-smoke*` 用 `git rm` 删除——
+  第 11 条改写后它不再被任何文档引用，而它提供的那一份读数已由 12:31 与 18:54 两轮的对照承担。删的是产物，不是判据；
+  `tool-eval-20260911-042142-rescore.csv` 照旧在库、仍被 README 两处引用。删前删后各跑一次全库引用扫描：除本节这段"删除记录"本身，
+  再没有任何文档把 `050015` 当证据引用。也就是说本节留的是**被删对象的身份**，不是对它的依赖——照登它删了，比抹掉它更好核对。
+- **零额度**：18:57 复读 `GET /api/v1/support/ops/circuit` 仍是 `tokensUsedToday: 0`、`llmMode: local`、日预算 260000。
+  本轮改动全部落在 `scripts/up.ps1`、README、本票、新增的 `round3-plan.md` 与产物换轮；阈值、判据、gold、夹具、断言数一处未动。
 
 ## Handoff notes
 
@@ -230,9 +263,14 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
    ⑤⑥ 的修法是给标记补一条"取值必须真实存在于种子"的反向对拍 + 8 条样本一律带满三件套，
    并把店名那条防呆从"标记⊆店名"改成"互为子串都拦"（整串招牌词与"招牌词+更多字"同样不配当标记）。
    断言数从 36 涨到 40（新增：标记取值对拍、三件套齐备、对照组夹具=16 准确数、店名整串、店名加长串）。
-   **两条不成立的也记下来，免得下一轮又被当成真问题重做**：审查说"取证命令缺 `--selfcheck` 那一行"
-   与"改动清单漏了 ADR 与 README"，实际两处都在（`--selfcheck` 在取证命令第 2 行，改动清单第 51、52 行
-   就是 ADR 与 README/ticket 落点）——子代理读的是旧快照。核实成本一条几秒钟，比照单改便宜得多。
+  **两条不成立的也记下来，免得下一轮又被当成真问题重做**：审查说"取证命令缺 `--selfcheck` 那一行"
+  与"改动清单漏了 ADR 与 README"，实际两处都在（`--selfcheck` 在取证命令第 2 行，改动清单第 51、52 行
+  就是 ADR 与 README/ticket 落点）——子代理读的是旧快照。核实成本一条几秒钟，比照单改便宜得多。
+8. 第三轮收尾被一个跟判据无关的地方绊倒：门禁 20 分钟不动，卡在 `up.ps1` 的 `[2/6]` 第一句 `& ollama list`——
+   模型服务没在跑时 CLI 会顺手把它的应用与服务进程拉起来，那几个进程继承了本步骤的重定向句柄，PowerShell 等不到 EOF。
+   教训不是"记得先起 Ollama"，而是**别拿被测对象的 CLI 当探活**：探活要用脱离式启动 + 端口断言。顺带一条更普遍的：
+   脚本里那句"先跑 ollama serve"的 fail-fast 写在会挂死的那句之后，等于没写——**报错信息也有可达性这回事**，
+   它和第一轮那条"文档说有 EOL 断言而脚本里没有"是同一类毛病，只是这次红在墙钟上而不是红在读数上。
 
 **追加追问**
 
@@ -240,3 +278,4 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 - *Q：95.6% 越过了 95%，为什么还写未达成？* A：因为承诺项的量纲是分意图，不是聚合；聚合那格并列两套读数（93.3% 与 95.6%）正是为了防止它被单独引用成"过了"。
 - *Q：重标为什么不重跑？* A：重标只改判据、不改样本采集，`选对工具` 依赖的实际调用链当年已落进明细，重算与实测共用同一个 `judge()`，同源只差采样；参数与 `NOT_FOUND` 离线补不出，前者记成不可比对、后者下沉成 JVM 断言，都不靠嘴说。花钱那条约一键预检命令留在本票「备用的花钱路线」。
 - *Q：这套改动怎么保证不是又一次"把测试改成能过"？* A：三类反证都在机器上：把四处量具修复分别改回旧语义，`--selfcheck` 必须红；把坏标注（空合格集、非法工具名、重复元素、越权样本缺标记、标记用跨租户共享词、标记用店名子串/整串/加长串、标记用裸街道名）注入仓库外临时副本，`build_eval_set.py` 必须 `FAIL`；阈值常量与 `EVAL DONE` 由断言盯住未在 diff 中出现。跑一遍 `python scripts/verify_eval_judge.py` 就是这 40 条，一条命令全复现。
+- *Q：门禁跑不完的时候，你怎么确定那不是防线失效？* A：看现场而不是看等待时长——第三轮那次 `stack` 步 20 分钟不动，被冻住的 pwsh 是活的、19 线程、CPU 停在 5.546875 不再增长、**没有任何子进程**、`8082`/`8091` 始终不通，而它的日志最后四行是被拉起的第三方进程自己打的 `INFO`；这五条合起来指向"继承句柄的探活挂死"，不指向任何一条业务防线，因为业务防线连开口的机会都没有。同一套区分用在 `polarity` 的 `exit 3` 上：前置不成立时脚本自己拒绝下结论，栈不动单跑一次就绿，那种红也不记成防线失效，见 README「假红」一节。

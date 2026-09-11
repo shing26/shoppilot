@@ -45,7 +45,13 @@
 - 命令：`pwsh -NoProfile -File scripts/run-acceptance.ps1`（`profile=local`，要求开跑时工作树 clean）。
 - **通过判据**：`logs/acceptance-run-<新ts>.log` 17 步 exit 全 0；头两行的 `commit=` 等于当时 HEAD、`开跑时工作树=clean`；`logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=16`、末行 `EVAL DONE`；`build`/`unit` 两步 surefire 合计 104；新冒烟 summary 与 `123109` 那一轮逐格一致。
 - 若 `polarity` exit 3：按 README「假红」一节既有口径处置——栈不动单跑 `scripts/verify-polarity.ps1`，exit 0 才算一次性、不算防线失效，且这一轮**不得**当落点写进 README。
-- 状态：**第一次尝试卡在 `stack` 步，已定位并修好起栈脚本，待重跑**
+- 状态：**Pass**（第二次跑 18:47:20-18:56:08，落点 `logs/acceptance-run-20260911-185608.log`；第一次尝试冻死在 `stack`，见下）
+  - 17 步 exit 全 0，总耗时 528s；头两行 `commit=9353a32 开跑时工作树=clean`、`开始 18:47:20 结束 18:56:08 总耗时 528s`，`commit=` 与开跑时 HEAD 一致。
+  - `logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=16`、末行 `EVAL DONE cases=24 errors=0 mode=local limit=24`。
+  - `build` 与 `unit` 两份日志的 `Results:` 段各三行 `3` / `12` / `89`（逐模块核对后相加 = 104），不是拿一个总数凑的。
+  - 新冒烟 summary 与 `123109` 那一轮 `Compare-Object` **零差异**（10 行 × 13 列全等）：四个 ACTION 行 `args_comparable=3`、`ACTION_ADDRESS` `args_accuracy=66.7%`。
+  - `polarity` 本轮 36s 通过，没触发 `exit 3`，所以不需要走「假红」那套处置。
+  - 18:57 复读 `GET /ops/circuit`：`tokensUsedToday: 0`、`llmMode: local`、日预算 260000 —— 整轮 528s（含 24 条冒烟）零计费额度。
   - 18:11:38 起的第一次跑：`syntax`/`stop`/`build`/`unit`/`report` 五步绿（`build` 的 `BUILD SUCCESS` 落在 18:13:48，用例数与上一轮同），
     18:13:49 进 `stack`，此后 20 分钟没有第六步。18:36 手动终止。
   - 卡点在 `scripts/up.ps1` 的 `[2/6] 本地模型`：`logs/acceptance/stack.log` 停在 18:14:04，最后四行是被拉起的 Ollama 自己打的
@@ -61,6 +67,12 @@
   - 机制反证（同机实测）：用 `Start-ShoppilotService` 起一个活 60 秒的 `powershell Start-Sleep 60`，2 秒后查它 `alive=True`、父进程 `WmiPrvSE.exe`，
     而外层 pwsh（stdout 重定向到文件）**3.5 秒就退出了**——这条路径的子孙不持有父进程的重定向句柄。
     仓库自己的历史也是同一条证据：每一轮 `stack` 步都用它拉起网关与 biz-mock，那两个进程跑完这一步之后还活着，这一步却照样在 70 秒内收口。
+  - 新分支的正证（同机实测，18:47）：拿一个没人用的 `11435` 端口跑改后的代码形状——端口没在听 → `Start-ShoppilotService` 脱离式拉起
+    `ollama serve`（`OLLAMA_HOST=127.0.0.1:11435`，不碰别人共用的 11434）→ `Wait-For` 到端口 5.7 秒 → 之后那句 `& ollama list` **0.17 秒返回**、
+    外层脚本 7 秒退出、退出码 0。这正是卡死那一轮缺的那一步：先确认服务在听，再问 CLI。
+  - **没做也做不了的反证**：旧写法（先 `& ollama list`）在本机当前状态下复现不出来——Ollama 桌面应用此刻已经在跑，
+    CLI 不会再去做"拉起服务"这件事，触发条件消失。所以那句成因是**从日志证据推出来的**（冻结点 + 被拉起进程的日志出现在本步骤日志流里 + 无子进程 + CPU 不涨），
+    不是重跑出来的。这条区别写在这儿，免得下一轮把它当成实测结论引用。
   - 顺带记两条环境事实：`C:` 余量 15.06 GB、`wsl-crashes` 目录已被清掉（上一轮那条磁盘例外成因消失，但 `TMP`/`TEMP` 仍指 `D:\tmp`）；
     第一次跑的 `build`/`unit` 两步在磁盘恢复后确实不再红，这与上一轮的记录不冲突——上一轮红的是磁盘，本轮红的是起栈脚本。
   - 待办：重跑整轮，判据不变。
@@ -72,19 +84,34 @@
 - README 索引行（第 16 条动作那一格）：冒烟产物名换成新那一份。
 - ticket 20：`Status` 行的 log 文件名、验收结果第 11 与 24 条、追加「第三轮收尾」取证段。
 - **通过判据**：README 与 ticket 20 里出现的每一个 `acceptance-run-*` / `*-smoke*` 文件名都能在磁盘上找到；`git diff` 不含任何阈值、判据、gold 改动；承诺项那一格结论仍是「未达成」。
-- 状态：pending
+- 状态：**Pass**（README 30 增 18 删；ticket 20 定向改 4 处 + 追加「第三轮收尾」段 + 1 条关键决策 + 1 条追问）
+  - 落点全部换到 `185608` / `commit=9353a32` / `528s` / 冒烟产物 `185410`，`stack 89s + demo 12s` 同步。
+  - 环境例外那段按实然改写：上一轮的磁盘例外标清"上一轮"并原样保留读数，本轮换成 `up.ps1` 起栈缺陷；
+    同时写明 `stack` 89s 对 70s 的差额**没有可归因的环境变化、没查、也不当判据**。
+  - 复核 `git diff`：改的是 README、ticket 20、本计划、`docs/console.png`（门禁自己重跑生成的截图）、产物换轮；
+    阈值、判据、gold、夹具、断言数一字未动；README 承诺项那一格仍是「未达成」。
+  - 抓到 ticket 20 第 17 条的 sha256 前缀是上一轮遗留的旧值（`5e315190c46c` → 实为 `a8c88525fa7c`），按"改自述不改判据"处理，并在那条里写明为什么变。
 
 ### P4 产物清理与引用可解析
 
 - 只保留被引用的重算产物与冒烟产物；未被任何文档引用的旧冒烟产物删除（删除前先确认它不是唯一一份跨轮对照证据）。
 - **通过判据**：`git ls-files eval/results` 里每个 20260911 文件都被 README 或某张 ticket 引用；每条引用都指向在库文件。
-- 状态：pending
+- 状态：**Pass**
+  - 留库：`185410-local-smoke*`（README 索引行 + 第 11 条）、`123109-local-smoke*`（第 11 条的跨轮对照）、`042142-rescore.csv`（README 两处 + 本票）；
+    删 `050015-local-smoke*`（第 11 条改写后它不再被任何依赖引用）。
+  - 机器扫 README、ticket 16/20、PLAN、ADR 0021、本计划里所有 `tool-eval-*` / `acceptance-run-*` / `clean-clone-check-*` 具体名字：
+    除 `050015` 那一处（它本身就是"删除记录"，文档里已写明是被删对象）外全部命中在库文件；剩下的 `*-<时间戳>` 是模板名不是引用。
+  - 记一条踩坑：第一版扫描器报 26 条 MISSING，全是它自己的假阳性（lookbehind 把 `tool-eval-` 截成 `eval-`、把 `-meta.json` 这种双扩展名算成不存在）。
+    重写成按目录 `os.listdir` 的精确版后归零。这条写在这儿，免得下一轮拿那版脚本的读数当结论——**取证脚本也要有对照组**，跟本票第 6 条是同一个道理。
 
 ### P5 问答库重生成（0 token）
 
 - `python scripts/collect_interview_questions.py` -> 问数 >= 83、覆盖 20/20、无「缺收尾记录的 ticket」、头部计数与正文 **Q 条目数一致。
 - **通过判据**：四条同时成立；`docs/interview-qa.md` 的 diff 只含预期新增。
-- 状态：pending
+- 状态：**Pass**
+  - `python scripts/collect_interview_questions.py` 打印 `写出 docs\interview-qa.md：91 问，覆盖 20/20 个 ticket`，无「缺收尾记录的 ticket」。
+  - 头部 `共 91 问，覆盖 20 个 ticket。` 与正文 Q 条目数 91 一致；文件仍是 CRLF（433 个 CRLF、0 个裸 LF）。
+  - 90 → 91 的唯一来源是本票新增那条单行追问，不是收集器口径变了。
 
 ### P6 commit + push
 
