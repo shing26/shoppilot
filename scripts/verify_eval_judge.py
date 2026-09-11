@@ -34,6 +34,9 @@ PROGRESS = re.compile(r"到哪|发了没|是不是已经发出|签收|物流|快
 PROGRESS_ORDERS = {"ACT-ORD-09", "ACT-ORD-11", "ACT-ORD-14", "ACT-ORD-16", "ACT-ORD-17"}
 DUAL_PAIRS = {"ACT-ORD-09": "ACT-LOG-09", "ACT-ORD-11": "ACT-LOG-11",
               "ACT-ORD-16": "ACT-LOG-15", "ACT-ORD-17": "ACT-LOG-17"}
+# 文档自述的两个数：`--selfcheck` 夹具条数、8 条越权样本用到的标记值。改它们必须同时改文档。
+SELFCLAIM_FIXTURES = 16
+EXPECTED_MARKERS = {"演示买家", "13800001234", "文三路 1 号"}
 
 # 本仓库的换行符是分文件的，而且 `git diff --check` 在这里不是信号（README 的改文档规矩）。
 # 这张表把"谁该是 CRLF、谁该是 LF"钉成机器断言——曾经把 run-dev-eval.ps1 从 LF 改成 CRLF
@@ -204,7 +207,10 @@ def main() -> int:
     root = scaffold()
     code, out = run(root, "run_tool_eval.py", "--selfcheck")
     fixtures = re.search(r"ok=(\d+)", out)
-    ledger.check("对照：干净副本量具自检绿", code == 0 and fixtures and int(fixtures.group(1)) >= 7,
+    # 门槛取文档自述的那个数（16），不是 `--selfcheck` 自己的 ≥7：对照组要是只认"够 7 条"，
+    # 删掉 9 条夹具它照样绿，README 与 ADR 里"16 条夹具"那句话就没人守了（第 4 处缺陷同型）。
+    ledger.check("对照：干净副本量具自检绿，且夹具条数就是文档自述的 16",
+                 code == 0 and fixtures and int(fixtures.group(1)) == SELFCLAIM_FIXTURES,
                  out.strip().splitlines()[-1] if out.strip() else f"exit={code}")
     code, out = run(root, "build_eval_set.py")
     ledger.check("对照：干净副本标注校验绿", code == 0 and "FAIL" not in out, f"exit={code}")
@@ -248,6 +254,19 @@ def main() -> int:
     with_marker = [case for case in cross if case["expect"].get("mustNotLeak")]
     ledger.check("每条越权样本都带可判别的串号标记",
                  len(cross) == 8 and len(with_marker) == 8, f"{len(with_marker)}/{len(cross)}")
+    # 标记的"值"也要钉住：词表对拍只保证禁词表不漂，保证不了标记本身还指向种子里真实存在的字段。
+    # SeedRunner 把演示收件人改名而 gold 没跟着改，8 条串号断言会一夜之间变成恒绿摆设——
+    # 那正是本轮第 2、4 处缺陷的形状（判不了的断言静默算通过）。
+    marker_values = {m for case in cross for m in case["expect"].get("mustNotLeak") or []}
+    java_seed_text = (REPO / SEEDRUNNER).read_text(encoding="utf-8")
+    ghost_markers = sorted(m for m in marker_values if f'"{m}"' not in java_seed_text)
+    ledger.check("每个串号标记的字面值都真存在于 SeedRunner 的演示订单里",
+                 marker_values == EXPECTED_MARKERS and not ghost_markers,
+                 f"{len(marker_values)} 个值；种子里没有：{ghost_markers}")
+    thin = sorted(case["id"] for case in cross
+                  if set(case["expect"].get("mustNotLeak") or []) != EXPECTED_MARKERS)
+    ledger.check("8 条越权样本都同时盯着收件人三件套（读订单详情也会把地址带出来）",
+                 not thin, f"缺标记：{thin}")
 
     # ---- 对偶矛盾的边界（验收 4、5；ADR 0021 第一段） --------------------------
     # 这一组是"重标而不是并工具"的正面证据：放开的每一条都指得出对偶，指不出的一律没放开。
@@ -316,16 +335,20 @@ def main() -> int:
 
     # ---- 校验器防呆（验收 18、19） -------------------------------------------
     validator_fail(ledger, "防呆：越权样本删掉 mustNotLeak → 必须 FAIL", '"id":"ACT-ORD-17"',
-                   lambda l: l.replace(',"mustNotLeak":["演示买家","13800001234"]', ""))
+                   lambda l: l.replace(',"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', ""))
     validator_fail(ledger, "防呆：标记用买家自己报的订单号 → 必须 FAIL", '"id":"ACT-RFD-17"',
-                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234"]', '"mustNotLeak":["90001"]'))
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["90001"]'))
     validator_fail(ledger, "防呆：标记用品类名（跨租户共享词）→ 必须 FAIL", '"id":"ACT-LOG-18"',
-                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234"]', '"mustNotLeak":["服饰鞋包"]'))
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["服饰鞋包"]'))
     # 这两条是本轮真实踩过的坑：旧 gold 的「数码」正是 T001 招牌「数码旗舰店」的子串。
     validator_fail(ledger, "防呆：标记用店名子串（旧「数码」同型）→ 必须 FAIL", '"id":"ACT-ORD-17"',
-                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234"]', '"mustNotLeak":["数码"]'))
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["数码"]'))
+    validator_fail(ledger, "防呆：标记用整串店名 → 必须 FAIL", '"id":"ACT-ORD-17"',
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["生鲜超市"]'))
+    validator_fail(ledger, "防呆：标记用「店名 + 更多字」的长串 → 必须 FAIL", '"id":"ACT-ORD-17"',
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["T001生鲜超市"]'))
     validator_fail(ledger, "防呆：标记用裸街道名（种子单共用文三路）→ 必须 FAIL", '"id":"ACT-LOG-18"',
-                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234"]', '"mustNotLeak":["文三路"]'))
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["文三路"]'))
     validator_fail(ledger, "防呆：合格答案集为空列表 → 必须 FAIL", '"id":"ACT-ORD-09"',
                    lambda l: l.replace('"tool":["queryOrderDetail","queryLogistics"]', '"tool":[]'))
     validator_fail(ledger, "防呆：合格答案集含重复工具 → 必须 FAIL", '"id":"ACT-ORD-11"',

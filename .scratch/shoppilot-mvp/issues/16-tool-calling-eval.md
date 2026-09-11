@@ -145,8 +145,9 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12 -Run    # 真跑；去�
     现在判据收进唯一一份 `judge()`，活体跑测与 `--rescore` 共用它，`--selfcheck` 16 条夹具在任何 HTTP 请求之前执行、红则 `exit 2`。
 24. **越权那 8 条的 `NOT_FOUND` 观测下沉到 JVM**：`TenantIsolationAndIdempotencyTest` 新增
     `logisticsSharesTheSameOwnershipGate`（一正两反），串号标记 `mustNotLeak` 也第一次真被评分器读取，
-    并由 `build_eval_set.py` 的四道词表防呆钉住：不得出现在样本自己的 query 里、不得是品类/快递商共享词、
-    不得落在三家店名的任一子串里（旧「数码」就是踩在这里）、不得是种子订单共用的裸街道名。
+    并由 `build_eval_set.py` 的五道防呆钉住：不得短于 2 字、不得出现在样本自己的 query 里、
+    不得是品类/快递商共享词、不得与三家店名互为子串（旧「数码」与整串「生鲜超市」都在这条上被拦）、
+    不得是种子订单共用的裸街道名；三份禁词表另由 `verify_eval_judge.py` 逐字对拍 `SeedRunner.java`。
 25. **"把两个查询工具合并"这条路否决**：它能把这 4 条收掉，但收掉的方式是让"模型能不能分清查状态与查物流"
     再也没有读数，属于删判据而不是过判据；何况 `ACTION_LOGISTICS` 18 条全选对、反方向 0 犹豫。
 

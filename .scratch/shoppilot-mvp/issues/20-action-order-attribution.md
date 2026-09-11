@@ -6,7 +6,7 @@
 
 **Status:** done（2026-09-11：24 条验收逐条留证据，见文末「验收结果」；17 步门禁全绿 @`logs/acceptance-run-20260911-123307.log`）
 
-**Verify:** `python scripts/verify_eval_judge.py`（36 条断言的证据跑器，含变异反证）全绿 -> `--selfcheck` 全绿 -> `build_eval_set.py` 无 FAIL -> 对 09-10 那 6 份明细跑 `--rescore` 出前后对照 -> `mvnw test` 绿 -> 整轮 17 步门禁绿 -> 下面 24 条验收逐条留证据。取证命令集中在文末「取证命令」。
+**Verify:** `python scripts/verify_eval_judge.py`（40 条断言的证据跑器，含变异反证）全绿 -> `--selfcheck` 全绿 -> `build_eval_set.py` 无 FAIL -> 对 09-10 那 6 份明细跑 `--rescore` 出前后对照 -> `mvnw test` 绿 -> 整轮 17 步门禁绿 -> 下面 24 条验收逐条留证据。取证命令集中在文末「取证命令」。
 
 ## 决策（2026-09-11 grilling 会话，逐条经用户确认）
 
@@ -36,18 +36,18 @@
   `args_ok` 在期望工具未出现时退回空字典，把每个参数比成 `got=None` —— 6 条 miss 全是这一类，比对过的 57 条零错误，参数子指标实际是工具选择的函数，违反票面「两个子指标分开报」；
   `status_ok` 的判定条件里带着 `and link`，`link` 为空时静默给 True，`ACT-ORD-16/17` 两条越权样本的 `NOT_FOUND` 从没被观测过（16 条带 `expectStatus` 的样本里 2 条真空）；
   `mustNotLeak` 只写在 gold 里，评分器从不读，标记本身还指错对象。原标记两处硬伤：「数码」是 T001 的店名（数码旗舰店）而不是 90001 的字段，90001 的品类是 `生鲜果蔬`；「`90001 的`」是正常拒答「查不到订单号 90001 的记录」去掉空白后的子串。所以真实现这个断言，第一次跑就会假红。
-  换标记时踩到的第二层坑：**品类名与快递商名不能当标记**。它们来自 `SeedRunner` 的全局 `CATEGORIES` / `CARRIERS` 词表，任何租户谈自家生意都可能合法说出，拿「生鲜果蔬」当标记等于把别人的正常表述判成事故；街道名同理（`文三路` 是四条种子订单共用的街道），只有带门牌的整串「文三路 1 号」才是 90001 的私密字段。最终标记取收件人隐私三件套：`演示买家`、`13800001234`，地址类样本另加 `文三路 1 号`。这条约束由 `build_eval_set.py` 的四道词表防呆钉住（不得出现在自己的 query 里、不得是品类/快递商共享词、不得落在三家店名的任一子串里、不得是种子订单共用的裸街道名），且这四份词表由 `verify_eval_judge.py` 逐字对拍 `SeedRunner.java`，不靠记性。
+  换标记时踩到的第二层坑：**品类名与快递商名不能当标记**。它们来自 `SeedRunner` 的全局 `CATEGORIES` / `CARRIERS` 词表，任何租户谈自家生意都可能合法说出，拿「生鲜果蔬」当标记等于把别人的正常表述判成事故；街道名同理（`文三路` 是四条种子订单共用的街道），只有带门牌的整串「文三路 1 号」才是 90001 的私密字段。最终标记取收件人隐私三件套：`演示买家`、`13800001234`、`文三路 1 号`，**8 条越权样本一律带满这三件**（第二轮审查前只有 2 条带地址标记，而 `queryOrderDetail` 回的是整份 `AddressView`，地址这一路没人盯）。这条约束由 `build_eval_set.py` 的五道防呆钉住（不得短于 2 字、不得出现在自己的 query 里、不得是品类/快递商共享词、不得与三家店名互为子串、不得是种子订单共用的裸街道名），三份禁词表另由 `verify_eval_judge.py` 逐字对拍 `SeedRunner.java`；反向也钉——标记的取值必须是种子里真实存在的字面量，否则 `SeedRunner` 改个演示收件人就能把 8 条串号断言一夜变成恒绿摆设。
   复核第 2 处时顺手查同型代码查出**第 4 处**：`admission_ok` 写的是 `obs.get("cache_layer") in (None, "NONE")`，而离线重算从明细拿到的空单元格是空串不是 `None`，于是「这一轮没观测到缓存层」被直接判成「入库了」——18 条 `cacheAdmissible: false` 的 `UNK-*` 样本既拿不到白送的一分也背不起这口锅。修法与第 2 处同形：没有值记未观测、出 `checks_ok`。本轮 6 份明细该列全为 `NONE`，所以两套读数一字不变（改前改后的重算产物字节级对拍过），修的是下一批空单元格。
 - **越权下沉可行**：`BizMockService.queryLogistics` 先 `findOwned()` 再判状态，越权一律 `NOT_FOUND` 且与订单状态无关，所以不需要新种子数据。
 
 ## 改动清单
 
 - `scripts/run_tool_eval.py`（CRLF）：拆出唯一判据函数 `judge(expect, obs)`，`score_case()` 退化成活体适配器；`obs` 带 `args_known` / `answer_known` 两个「这一轮拿得到什么」的开关。`tool_ok` 判合格集合任一命中；参数仅在 `link` 存在且 `args_known` 时比对，否则记不可比对；`expectStatus` 未观测时记未观测而不是 True；实现 `mustNotLeak`（归一化去空白子串命中即硬失败，新增 `leaked` 列）；`checks_ok` 只统计已判定断言，未判定项进 `unverifiable` 列。新增 `--selfcheck`（16 条夹具，门槛写 ≥7，真跑前执行，失败 `exit 2`）与 `--rescore <明细.csv> [--rescore-expected-diff id,..]`。`summarize()` 参数分母换成可比对条数并新增四列；`<80%` 判不通过、`<95%` 承诺线、`EVAL DONE` 标记一字不动。
-- `eval/cases-part2-action.jsonl`（CRLF）：`ACT-ORD-09/11/16/17` 的 `expect.tool` 改成 `["queryOrderDetail","queryLogistics"]`，并各带 `relabelNote` 记对偶来源；8 条 `cross_tenant` 全部补 `mustNotLeak`（取 `演示买家` / `13800001234`，两条改地址样本另加 `文三路 1 号`），`ACT-ORD-17` 的旧标记 `["数码","90001 的"]` 换掉。`ACT-ORD-13`、`ACT-ADR-14`、`ACT-RFD-14` 不动（无对偶矛盾，是真错）。
-- `scripts/build_eval_set.py`（CRLF）：`expect.tool` 允许列表并校验元素合法、不重复、非空；每条 `cross_tenant` 必须带非空 `mustNotLeak`；标记不得少于 2 字、不得出现在该样本自己的 query 里、不得是 `SHARED_VOCAB`（5 个品类名 + 4 个快递商名，抄自 `SeedRunner`）里的跨租户共享词、不得是三家店名（`SHOP_NAMES`）的子串——旧「数码」就是踩在这儿、不得是种子订单共用的裸街道名（`SHARED_STREETS`，只有带门牌的整串才指向单一条订单）。这四份词表由 `verify_eval_judge.py` 与 `SeedRunner.java` 逐字对拍，抄写漂了当场红。
+- `eval/cases-part2-action.jsonl`（CRLF）：`ACT-ORD-09/11/16/17` 的 `expect.tool` 改成 `["queryOrderDetail","queryLogistics"]`，并各带 `relabelNote` 记对偶来源；8 条 `cross_tenant` 全部补满 `mustNotLeak` 三件套（`演示买家` / `13800001234` / `文三路 1 号`；第二轮审查之前只有 2 条带地址标记，而 `queryOrderDetail` 回的是整份 `AddressView`，地址这一路没人盯），`ACT-ORD-17` 的旧标记 `["数码","90001 的"]` 换掉。`ACT-ORD-13`、`ACT-ADR-14`、`ACT-RFD-14` 不动（无对偶矛盾，是真错）。
+- `scripts/build_eval_set.py`（CRLF）：`expect.tool` 允许列表并校验元素合法、不重复、非空；每条 `cross_tenant` 必须带非空 `mustNotLeak`；标记不得少于 2 字、不得出现在该样本自己的 query 里、不得是 `SHARED_VOCAB`（5 个品类名 + 4 个快递商名，抄自 `SeedRunner`）里的跨租户共享词、不得与三家店名（`SHOP_NAMES`）互为子串——旧「数码」与整串「生鲜超市」都在这条上被拦、不得是种子订单共用的裸街道名（`SHARED_STREETS`，只有带门牌的整串才指向单一条订单）。这三份禁词表由 `verify_eval_judge.py` 与 `SeedRunner.java` 逐字对拍，抄写漂了当场红；反向另断两条：标记的取值必须是种子里真实存在的字面量，8 条越权样本必须带满收件人三件套。
 - `eval/tool-cases.jsonl`：只由脚本重生成。
 - `TenantIsolationAndIdempotencyTest`（LF）：新增 `@Test logisticsSharesTheSameOwnershipGate`，一正两反三条断言——归属者拿到的状态 `isNotEqualTo("NOT_FOUND")`（正向只断「不谎称查不到」，因为 10001 的状态由随机种子决定），换店、换人各一条 `isEqualTo("NOT_FOUND")`。三条合起来使「归属谓词被拿掉」时这条用例必然变红。
-- `scripts/verify_eval_judge.py`（CRLF，新增）：36 条断言的证据跑器。全部改动在 `tempfile` 里的仓库外副本上做，跑完断言工作树未被污染；覆盖 4 条变异反证（四处量具缺陷各一次）、8 条校验器防呆、6 条对偶矛盾边界、4 条跨实现与共享词表对拍、3 条判据形状、2 条结构不变、2 条生成物稳定、1 条 17 个文件的换行符基线、1 条工作树未被污染、2 条干净副本对照组。父进程与所有子进程都钉 `utf-8`，否则它在默认 GBK 控制台下打印第一行中文就崩。
+- `scripts/verify_eval_judge.py`（CRLF，新增）：40 条断言的证据跑器，逐桶相加=40。全部改动在 `tempfile` 里的仓库外副本上做，跑完断言工作树未被污染；覆盖 4 条变异反证（四处量具缺陷各一次）、10 条校验器防呆、6 条对偶矛盾边界、5 条 gold 形态与串号标记值对拍、4 条跨实现与共享词表对拍、3 条判据形状、2 条结构不变、2 条生成物稳定、1 条 17 个文件的换行符基线、1 条工作树未被污染、2 条干净副本对照组。对照组那条钉的是 `ok=16` 这个**准确数**而不是 `>=7`：门槛只要松到 7，删掉 9 条夹具照样绿，README 里那句「16 条夹具」就没人守。父进程与所有子进程都钉 `utf-8`，否则它在默认 GBK 控制台下打印第一行中文就崩。
 - `docs/adr/0021-*.md`：两段严格分开——「业务能力读数」（重标前后各一套并列）与「量具缺陷归因」；Considered Options 记合并工具及被否理由。
 - README 三处落点（指标表、承诺项逐条结论、已知限制）+ 门禁矩阵行；ticket 16 追加决策与追问；ticket 12 记越权断言下沉；`collect_interview_questions.py` 重生成问答库。
 
@@ -101,7 +101,7 @@
 ## 取证命令
 
 ```
-python scripts/verify_eval_judge.py                     # 36 条断言：变异反证 + 校验器防呆 + 对偶边界 + 跨实现对拍 + 生成物稳定 + 判据形状 + EOL + 工作树未被污染
+python scripts/verify_eval_judge.py                     # 40 条断言：变异反证 + 校验器防呆 + 对偶边界 + gold/标记值对拍 + 跨实现对拍 + 生成物稳定 + 判据形状 + EOL + 工作树未被污染
 python scripts/run_tool_eval.py --selfcheck             # SCORER SELFCHECK ok=16
 python scripts/build_eval_set.py                        # 退出码 0，无 FAIL / 无新增 WARN
 python scripts/run_tool_eval.py --rescore `
@@ -160,7 +160,7 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 四、标注集与校验器
 17. `python scripts/build_eval_set.py` 退出码 0、无 `FAIL`、无新增 `WARN`；连跑两次 `eval/tool-cases.jsonl` 字节级相同（sha256 前 12 位 `5e315190c46c`），且仓库里那份与重新生成结果一致（"没人手改过生成物"那条断言）。
 18. 三条越权防呆反证各打中一条 `FAIL`：删 `mustNotLeak` -> `ACT-ORD-17 是越权样本却没带 mustNotLeak`；标记用买家自己报的订单号 -> `ACT-RFD-17 串号标记「90001」出现在自己的 query 里`；标记用品类名 -> `ACT-LOG-18 串号标记「服饰鞋包」是跨租户共享词`。
-19. `expect.tool` 列表的三种坏形态各一条 `FAIL`：空列表（`ACT-ORD-09`）、重复元素（`ACT-ORD-11`）、非法工具名（`ACT-ORD-16`）。18-19 共 8 条防呆由 `verify_eval_judge.py` 自动跑（越权缺标记、标记=自报单号、标记=品类名、标记=店名子串「数码」、标记=裸街道名「文三路」、空合格集、重复元素、非法工具名），注入全在临时副本上。
+19. `expect.tool` 列表的三种坏形态各一条 `FAIL`：空列表（`ACT-ORD-09`）、重复元素（`ACT-ORD-11`）、非法工具名（`ACT-ORD-16`）。18-19 共 10 条防呆由 `verify_eval_judge.py` 自动跑（越权缺标记、标记=自报单号、标记=品类名、标记=店名子串「数码」、标记=整串店名「生鲜超市」、标记=「T001生鲜超市」这种店名加长串、标记=裸街道名「文三路」、空合格集、重复元素、非法工具名），注入全在临时副本上。
 
 五、JVM 越权补强
 20. `mvnw -o -pl shoppilot-biz-mock -am test -Dtest=TenantIsolationAndIdempotencyTest`：**Tests run: 6, Failures: 0, Errors: 0**（该类 5 -> 6）；门禁 `unit` 步 surefire 合计 **104**（3 + 12 + 89），BUILD SUCCESS。
@@ -172,6 +172,22 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 
 七、零额度与整体验收
 24. `GET /api/v1/support/ops/circuit` 的 `tokensUsedToday` 在跑完整套取证命令前后都是 **0**（DELTA = 0，`llmMode=local`、日预算 260000）；12:49 在这一轮 17 步门禁跑完之后复读仍是 `tokensUsedToday: 0` 且 `llmMode: local`——冒烟那 24 条走的是 ollama `qwen2.5:3b`，不计费。换行符基线断言 **PASS**（17 个文件守住各自 CRLF/LF、无 BOM 变化），这条不再是人工目测。`run-dev-eval.ps1 -OnlyIntent ACTION_ORDER` 只干跑，停在 `没加 -Run，所以到此为止：不改网关、不发计费请求。`，并打印出真正会执行的 `python scripts/run_tool_eval.py --only-intent ACTION_ORDER`（补了 `-OnlyIntent` 透传才到得了这一行）。整轮 17 步门禁全绿：`logs/acceptance-run-20260911-123307.log`，头两行 `commit=3e8d4ca 开跑时工作树=clean` / `开始 12:24:57 结束 12:33:07 总耗时 489s`，README 矩阵行与之一致。同一批改动在此之前跑过两轮都没收口，两轮的失败原因都记在这儿，不挑一次好看的写：① `logs/acceptance-run-20260911-121933.log` 是 16/17，红的只有 `polarity` 且 exit 3 = 它自己打印的「前置不成立」（那一次 L2 里没写进源条目），脚本按 README「假红」一节既有的口径拒绝把这一格当成防线失效的证据（2026-09-10 19:29 那一轮就是这么处置的）——单独重跑 `verify-polarity.ps1` 是 exit 0 全绿，所以判它一次性；② 更早一轮 `build` + `unit` 两步直接红，`TenantIsolationAndIdempotencyTest` 6 项全 Error，栈底是 `Could not initialize inline Byte Buddy mock maker ... Could not self-attach to current VM using external process`，根因是系统盘 C 剩 19 MB（`C:\Users\Shing\AppData\Local\Temp\wsl-crashes` 里 10 个 WSL core dump 各约 1 GB），ByteBuddy 往 `java.io.tmpdir` 写 attach 探针写不下去。处置是把 `TMP`/`TEMP` 指到 `D:\tmp` 再跑，之后 6/6 绿；本轮没动任何 Java 代码，也没删那些 dump（在仓库外，等用户处置）。这条环境例外同时解释了为什么取证四件套与门禁的 `eval` 步都在同一台机器上跑：换机器时先确认 `TMP` 所在盘的余量。EOL 复查：`.py` / `.jsonl` 仍全 CRLF，Java、README、CONTEXT、ticket 16、本票仍 LF，ticket 12、PLAN、问答库仍 CRLF，无 BOM 变化；`git diff --stat` 每文件都是定向改动，无整文件重写。
+
+### 第二轮双轴审查之后的取证复跑（口径一字未改，只是把自述钉得更严）
+
+- 断言 36 → 40，逐桶相加等于 40（第一轮那版分桶只加到 33，是 Standards 轴自己抓出来的）。
+- 新增 4 条：串号标记取值必须真在 `SeedRunner` 里、8 条越权样本带满三件套、对照组夹具钉准 `ok=16`、
+  店名防呆改成双向包含之后补的两条反证（整串「生鲜超市」、「T001生鲜超市」）。
+- `--selfcheck` 对照组的门槛从 `>= 7` 提到 `== 16`：钉的是文档自述那个准确数。`--selfcheck` 自己在真跑前的
+  那道 `>= 7` 闸门按票面原样不动——改它会改变真跑的行为，而本轮只准改"自述有没有人守"。
+- `blank_scores()` 把请求失败行的每条断言压成 `False` 而不是"未观测"，核完确认是**有意的保守方向**：
+  记未观测等于把失败从分母里摘出去，反而让读数变好看，那正是铁律要防的那类事。补注释说明，不改行为。
+- `--rescore` 全套重跑：差异集合仍恰好 `{ACT-ORD-09, 11, 16, 17}`，聚合仍 `168/180 = 93.3% -> 172/180 = 95.6%`，
+  新产物与 `tool-eval-20260911-042142-rescore.csv` **字节级相同**（补满地址标记不改变离线判定，因为串号那一维
+  在离线口径下本来就整体记未观测），所以文档里那个产物名不用换，重跑出来的临时产物直接删掉。
+- 换行符基线断言写完一分钟内就抓住了我自己：一次编辑往 `run_tool_eval.py` 插进 8 个裸 LF，它当场报
+  `FAIL  scripts/run_tool_eval.py=crlf实际 crlf=782 lf=8`，归一后回到 40/40。
+  这条正是第一轮回的"文档声称有 EOL 断言而脚本里没有"补出来的东西，第一次独立兑现价值就抓到了本轮自己的手。
 
 ## Handoff notes
 
@@ -192,20 +208,35 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 4. 判据唯一性那条验收原写"`rg tool_ok =` 恰好 1 处"，实现中发现它会被 `judge()` 的两个分支（期望调工具 /
    期望不调工具）自然打破，也会被 `rescore_details()` 里那句读历史值的 `old_tool_ok = ...` 误伤。
    改成结构断言：锚定 `^\s+tool_ok = ` 且全部落在 `judge()` 体内。量的是"判据只有一份"，不是"只有一行"。
-5. 证据从"手工截图"升级为一份可重跑的证据跑器：`scripts/verify_eval_judge.py`，36 条断言，全部改动在
+5. 证据从"手工截图"升级为一份可重跑的证据跑器：`scripts/verify_eval_judge.py`，40 条断言，全部改动在
    仓库外 `tempfile` 副本上做，跑完反查工作树未被污染。变异反证只有在"改坏了必须红"成立时才算证据，
    所以对照组（干净副本必须绿）与被试组同批断言。
-6. code-review 轮（Standards + Spec 双轴）报出 6 条，逐条核实后全部成立并修掉，没有一条是"审查意见误伤"：
+6. 第一轮 code-review（Standards + Spec 双轴）报出 6 条，逐条核实后全部成立并修掉，没有一条是"审查意见误伤"：
    ① 文档声称 EOL 有机器断言而脚本里没有 → 补 `EOL_BASELINE`（17 个文件）+ 断言；② `admission_ok` 空单元格静默判错，
    与 `status_ok` 同型 → 第 4 处缺陷；③ 取证脚本在默认 GBK 控制台下 `UnicodeEncodeError` 崩、且崩之前假报 2 条结构 FAIL；
    ④ 「对偶矛盾」定义写成「同订单」，与自己放开的 `ACT-ORD-16/17` 两组互斥，且「全表只有 4 组符合」说过头；
    ⑤ README 指标表格子漏写 `NOT_FOUND` 离线未观测的条数；⑥ "其余 176 条逐格一致"只对 `tool_ok` 一列成立。
    ④⑤⑥ 全是措辞与自述超出证据范围的虚高，①②③ 是"声称有反证其实没有"。一轮双轴审查把本轮自己的
    证据链收窄回它能撑住的宽度，这正是把判据写成机器断言的意义。
+7. 第二轮双轴审查（修完第一轮之后再跑一次）又报 8 条，核完 6 条成立、2 条不成立，成立的全部当场闭环：
+   ① README 复现段那行还留着"103 项"，而同文件矩阵段已经是 104 —— 同一文件里两个自述打脸；
+   ② `accepted_tools()` 的 docstring 仍写"同租户、同订单"且说这条由 `build_eval_set.py` 的校验器把门，
+      而校验器只看合格答案集的形状（合法/非空/不重复），真正逐条找对偶的是 `verify_eval_judge.py` 的
+      `dual_partners()` —— 把两道门混成一道，正是第一轮①的同类；
+   ③ `build_eval_set.py` 注释写"三条防呆"而实装 5 个分支；④ 文档给 36 条断言分桶，逐桶相加只有 33；
+   ⑤ 串号词表对拍只钉住"禁词表不漂"，没钉住"标记的取值本身还在种子里"——`SeedRunner` 一改演示收件人，
+      8 条串号断言一夜之间变成恒绿摆设，形状与本轮第 2、4 处缺陷一模一样；⑥ 同一轮还发现 8 条越权样本里
+      只有 2 条带地址标记，而 `queryOrderDetail` 返回整份 `AddressView`。
+   ⑤⑥ 的修法是给标记补一条"取值必须真实存在于种子"的反向对拍 + 8 条样本一律带满三件套，
+   并把店名那条防呆从"标记⊆店名"改成"互为子串都拦"（整串招牌词与"招牌词+更多字"同样不配当标记）。
+   断言数从 36 涨到 40（新增：标记取值对拍、三件套齐备、对照组夹具=16 准确数、店名整串、店名加长串）。
+   **两条不成立的也记下来，免得下一轮又被当成真问题重做**：审查说"取证命令缺 `--selfcheck` 那一行"
+   与"改动清单漏了 ADR 与 README"，实际两处都在（`--selfcheck` 在取证命令第 2 行，改动清单第 51、52 行
+   就是 ADR 与 README/ticket 落点）——子代理读的是旧快照。核实成本一条几秒钟，比照单改便宜得多。
 
 **追加追问**
 
 - *Q：改标注是不是为了让数字过线？* A：八个 id、四条问句原话都钉在 README 指标表那一格里，读者可以自己对照 `eval/cases-part2-action.jsonl` 复核；判据原文是分意图各 >= 95%，新判据下仍有 5 行未达线，承诺项结论没变。另外差异集合由 `--rescore-expected-diff` 锁死成恰好那 4 条，多放开一条重算命令就非零退出。
 - *Q：95.6% 越过了 95%，为什么还写未达成？* A：因为承诺项的量纲是分意图，不是聚合；聚合那格并列两套读数（93.3% 与 95.6%）正是为了防止它被单独引用成"过了"。
 - *Q：重标为什么不重跑？* A：重标只改判据、不改样本采集，`选对工具` 依赖的实际调用链当年已落进明细，重算与实测共用同一个 `judge()`，同源只差采样；参数与 `NOT_FOUND` 离线补不出，前者记成不可比对、后者下沉成 JVM 断言，都不靠嘴说。花钱那条约一键预检命令留在本票「备用的花钱路线」。
-- *Q：这套改动怎么保证不是又一次"把测试改成能过"？* A：三类反证都在机器上：把四处量具修复分别改回旧语义，`--selfcheck` 必须红；把坏标注（空合格集、非法工具名、重复元素、越权样本缺标记、标记用跨租户共享词、标记用店名子串、标记用裸街道名）注入仓库外临时副本，`build_eval_set.py` 必须 `FAIL`；阈值常量与 `EVAL DONE` 由断言盯住未在 diff 中出现。跑一遍 `python scripts/verify_eval_judge.py` 就是这 36 条，一条命令全复现。
+- *Q：这套改动怎么保证不是又一次"把测试改成能过"？* A：三类反证都在机器上：把四处量具修复分别改回旧语义，`--selfcheck` 必须红；把坏标注（空合格集、非法工具名、重复元素、越权样本缺标记、标记用跨租户共享词、标记用店名子串/整串/加长串、标记用裸街道名）注入仓库外临时副本，`build_eval_set.py` 必须 `FAIL`；阈值常量与 `EVAL DONE` 由断言盯住未在 diff 中出现。跑一遍 `python scripts/verify_eval_judge.py` 就是这 40 条，一条命令全复现。

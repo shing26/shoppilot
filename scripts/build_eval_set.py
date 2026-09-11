@@ -87,7 +87,9 @@ def main() -> int:
             failures.append(f"{case['id']} 政策意图却期望调用工具")
         if case["intent"].startswith("ACTION_") and not accepted:
             failures.append(f"{case['id']} 动作意图却期望不调工具")
-        # 串号标记的三条防呆（ticket 20 验收第 18、19 条）
+        # 串号标记的五道防呆（ticket 20 验收第 18、19 条）：长度、出现在自己的 query 里、
+        # 品类/快递商共享词、店名（双向包含：整串招牌词与"招牌词 + 更多字"都不配当标记）、
+        # 种子单共用的裸街道名。
         markers = expect.get("mustNotLeak") or []
         if case["kind"] == "cross_tenant" and not markers:
             failures.append(f"{case['id']} 是越权样本却没带 mustNotLeak：评测侧没人监测答案级串号")
@@ -102,7 +104,7 @@ def main() -> int:
                 failures.append(
                     f"{case['id']} 串号标记「{marker}」是跨租户共享词（品类/快递商），"
                     f"提问方谈自家业务时完全可能说出它")
-            elif any(marker.strip() in name for name in SHOP_NAMES):
+            elif any(marker.strip() in name or name in marker.strip() for name in SHOP_NAMES):
                 failures.append(
                     f"{case['id']} 串号标记「{marker}」落在某个店名里（招牌词），"
                     f"助手报出店名不是泄漏——旧标记「数码」就是这么假红的")

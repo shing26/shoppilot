@@ -124,8 +124,12 @@ def parse_trace(result):
 def accepted_tools(expect):
     """gold 的合格答案集（ticket 20 / ADR 0021）：expect.tool 允许写成列表，任一命中即算对。
 
-    只有存在对偶矛盾时才准放开：同租户、同订单、同一信息诉求的另一条 gold 标了不同工具。
-    这条由 build_eval_set.py 的校验器把门，不靠评审时的自觉。
+    只有存在对偶矛盾时才准放开：同租户、同买家、同场景、两侧同为进度问法（`到哪`/`发了没`/`签收`
+    这类在订单详情与物流轨迹之间本就等价的说法），而订单桶认 queryOrderDetail、物流桶只认
+    queryLogistics。定义见 CONTEXT.md，订单号相同不是判据。
+    把门的是 scripts/verify_eval_judge.py 的 dual_partners()（逐条找对偶并断言"指得出对偶的
+    恰好等于放开集"）；build_eval_set.py 的校验器只管合格答案集本身的形状合法（非空、不重复、
+    工具名合法），它看不见对偶矛盾——别把这两道门混成一道。
     """
     tool = expect.get("tool")
     if tool is None:
@@ -262,7 +266,13 @@ def judge(expect, obs):
 
 
 def blank_scores():
-    """请求失败行用的空评分：键集合与 judge() 同源，防止明细列名跟着评分器漂移。"""
+    """请求失败行用的空评分：键集合与 judge() 同源，防止明细列名跟着评分器漂移。
+
+    这里把每条断言都压成 False 而不是"未观测"（空串），是有意的保守方向：请求根本没成功，
+    说"模型会答对"没有任何依据，所以按没答对记。反过来若记成未观测，它就从分母里出去，
+    失败反而让读数变好看——那正是本轮铁律要防的那类事。历史产物里 `errors=0`，
+    这一支从没被走到过，改它不影响任何一个已登出的数。
+    """
     template = judge({"tool": None}, {"chain": []})
     blanked = {key: ("" if isinstance(value, str) else False) for key, value in template.items()}
     blanked["tool_ok"] = False

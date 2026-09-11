@@ -280,7 +280,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
   选对工具 93.3% → 95.6%（ADR 0021）。**合并 `queryOrderDetail` 与 `queryLogistics` 这条路明确否决**：
   两桶合一之后"模型能不能分清查状态与查物流"再也没有读数，那是删掉判据而不是通过判据；
   何况 `ACTION_LOGISTICS` 18 条全选对、反方向 0 犹豫，模型侧本来就没有"分不清"的证据。
-  剩下的限制照登：95.6% 是"新判据 + 09-10 明细离线重算"而不是重跑实测；参数子指标那 3 条（`ACT-ORD-09/16/17`）
+  剩下的限制照登：95.6% 是"新判据 + 09-10 明细离线重算"而不是重跑实测，重算依赖 `eval/results/` 里那 6 份 09-10 明细与产物 `tool-eval-20260911-042142-rescore.csv`，删了就复现不了；参数子指标那 3 条（`ACT-ORD-09/16/17`）
   要重跑才判得了；第 5 条"改地址 + 问状态"双诉求 miss 未放开。
 - **评分器（量具）自己有过四处缺陷，9-11 一并修掉**：参数子指标在期望工具未命中时拿空字典去比，把工具选错
   二次计成"填错参数"；越权断言 `status_ok` 在期望工具没打出来时静默给 True，`ACT-ORD-16/17` 的 `NOT_FOUND`
@@ -288,7 +288,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
   而不是被查订单的字段，「`90001 的`」是正常拒答去空白后的子串，品类名与快递商名是全局共享词表也不能当标记；
   缓存层断言 `admission_ok` 把"这一轮没观测到缓存层"的空单元格直接判成"入库了"，与 `status_ok` 同型。
   现在的兜法：判据收进唯一一份 `judge()`，活体跑测与离线重算共用它；`--selfcheck` 16 条夹具在任何请求之前执行、
-  红则 `exit 2`；`python scripts/verify_eval_judge.py` 36 条断言给这四处缺陷各做一次变异反证。逐条见 ADR 0021 第二段。
+  红则 `exit 2`；`python scripts/verify_eval_judge.py` 40 条断言给这四处缺陷各做一次变异反证。逐条见 ADR 0021 第二段。
 - **显式转人工的字面词表还是窄**：ADR 0017 收了 7 个变体，`要真人给我答复`、`接一个能拍板的客服` 不在里面，
   dev 评测里这两句掉进"未定案 → 模型自己挑工具 → 反问订单号"，ESCALATE 行 88.9% 的 2 条 miss 就是它们。
   扩词表要连带 `T0RuleLayerTest` 的否定词窗口一起看（`不是真人`、`别找客服` 不能被吞进去），属于要人拍板的调整。
@@ -413,7 +413,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元与架构测试（103 项）
+# 单元与架构测试（104 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -481,7 +481,7 @@ run9 就漏了，于是"全绿"这句话一度在机器上找不到落点。现�
 门禁要求工作树干净才能开跑，而这一次没有需要例外解释的脏项。上一次（`logs/acceptance-run-20260910-203537.log`）
 记的是 dirty（8 项）并逐条列明各是什么，public 之后每一次全量跑都可能带着生成物的脏，
 所以这里记的始终是"脏的是什么"或者"为什么干净"，而不是挑一次好看的跑法来写。
-这一轮有一条必须照登的环境例外：开跑前把 `TMP`/`TEMP` 指到 `D:\tmp`，因为系统盘当时只剩 284 MB，
+这一轮有一条必须照登的环境例外：开跑前把 `TMP`/`TEMP` 指到 `D:\tmp`——系统盘稳定读数 284 MB、崩溃转储风暴期间的最低水位只有 19 MB（ticket 20 记的是那个最低值），
 Mockito 的 inline mock maker 自检失败（`Could not self-attach to current VM`）——同一批用例在指盘前
 `build`/`unit` 两步红 6 项、指盘后 6/6 绿，红的是磁盘不是防线，处置记在 ticket 20。
 同一份矩阵之前还有一次 `logs/acceptance-run-20260911-121933.log` 是 `polarity` exit 3 收尾的（16/17），
@@ -559,7 +559,7 @@ PowerShell 不允许从 try/catch 直接开管道，整脚本 parse 失败——
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260911-123109-local-smoke*`，10/10 意图各有 2-3 条，日志首行是 `SCORER SELFCHECK ok=16`）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（36 条断言：四处评分缺陷各一次变异反证、标注校验器防呆、对偶矛盾边界、共享词表与两份 `accepted_tools` 跨实现对拍、生成物字节稳定、判据只有一份、17 个文件的换行符基线、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（16 条夹具，真跑前执行）；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260911-123109-local-smoke*`，10/10 意图各有 2-3 条，日志首行是 `SCORER SELFCHECK ok=16`）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（40 条断言：四处评分缺陷各一次变异反证、10 条标注校验器防呆、6 条对偶矛盾边界、5 条 gold 形态与串号标记值对拍、4 条共享词表与两份 `accepted_tools` 跨实现对拍、生成物字节稳定、判据只有一份、17 个文件的换行符基线、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（16 条夹具，真跑前执行）；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
 | 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 69s / 13s |
