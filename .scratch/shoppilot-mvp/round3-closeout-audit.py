@@ -1,11 +1,18 @@
 # -*- coding: utf-8 -*-
-"""ticket 20 第三轮收口审计（0 token，离线）。
+"""ticket 20 第三轮收口审计（0 token）——**本机当轮对账单**，不是干净克隆可复现的防线。
 
-重跑：`python .scratch/shoppilot-mvp/round3-closeout-audit.py`（退出码 0 = 全绿）。
+重跑：`python .scratch/shoppilot-mvp/round3-closeout-audit.py`
+  退出码 0 = 全绿；3 = 前置不成立（有 SKIP 项，不是防线失效）；1 = 有 FAIL。
 读数产物：同目录 `round3-closeout-audit.txt`（用 `... | Tee-Object -FilePath` 落盘，随本轮一起入仓）。
 
+**本机限定这件事必须写在这儿，因为第五轮双轴审查抓到原先那句「重跑…退出码 0 = 全绿」在干净克隆上跑不出来**：
+G 组与 H1/H1b/H2 那批断言读 `logs/`，而 `logs/` 整目录在 `.gitignore` 里（H5 钉着「不入库」）；
+A3 还要网关在跑。缺这些前置时，本脚本**不再抛 `FileNotFoundError`**，而是把受影响的项逐条打
+`SKIP  <项名>` 并以退出码 3 收口——与 `verify-polarity.ps1` 的 exit 3 同族：前置不成立不等于防线失效，
+但也绝不静默算绿。J0 那条断言钉的就是这个形状（拿一个空目录喂解析函数，必须返回「不适用」而不是崩）。
+
 规矩：所有文本比较一律大小写敏感（用 os.listdir / git ls-files 的精确集合，不用 Select-String 那种默认不敏感的比对）。
-自带对照组：故意塞几个"必须被判成不存在"的探针，防止扫描器自己假绿。
+自带对照组：故意塞几个"必须被判成不存在"的探针，防止扫描器自己假绿；每条新断言都配一支**必须能失败**的反证。
 
 钉的是当轮常数（落点轮、耗时、sha 前缀、104 用例数）。换落点就得同步改这些常数——
 这是有意的：它是一份**当轮对账单**，不是长期防线；长期防线在 scripts/verify_eval_judge.py。
@@ -17,8 +24,18 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from pathlib import Path
+
+# 本机控制台默认 GBK，断言 detail 里只要有一个 U+FFFD（子进程输出解码失败时的替换符）就整行崩在 print 上，
+# 于是"审计跑不出来"这件事会以 UnicodeEncodeError 的面目出现，而不是以某条 FAIL 的面目出现。
+# 第五轮双轴审查抓到的是"缺 logs 会抛 FileNotFoundError"，同一族毛病在这里再补一刀：输出流自己也得钉死 UTF-8。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
 
 REPO = Path(__file__).resolve().parents[2]
 RESULTS = REPO / "eval" / "results"
@@ -31,14 +48,18 @@ PRE_FIX = "a6ccdcb"  # 本轮定向替换之前的最后一个提交
 
 FAILS = []
 PASSES = []
+SKIPS = []
+TAIL_CHECKS = 5  # N 定义点之后还会跑的 check 数：H7、H7b、H12、H13、H13b。加一项就得改这里，末尾硬断言会当场炸。
 
 
-def check(name, ok, detail=""):
-    line = f"{'PASS' if ok else 'FAIL'}  {name}"
+def check(name, ok, detail="", skip=False):
+    """skip=True 走第三态：前置不成立，既不算绿也不算防线失效，但计入项数与退出码 3。"""
+    tag = "SKIP" if skip else ("PASS" if ok else "FAIL")
+    line = f"{tag}  {name}"
     if detail:
         line += f"\n        {detail}"
     print(line, flush=True)
-    (PASSES if ok else FAILS).append(name)
+    (SKIPS if skip else (PASSES if ok else FAILS)).append(name)
 
 
 def sh(args):
@@ -52,6 +73,24 @@ def sha256(path):
 
 def read(path):
     return Path(path).read_text(encoding="utf-8", errors="replace")
+
+
+def read_opt(path):
+    """本机限定用的读法：文件不在就返回 None，让调用方去判 SKIP，而不是抛异常打断整轮审计。
+    缺 `logs/` 是干净克隆的正常形状（H5 钉着 logs 不入库），不是崩溃现场。"""
+    p = Path(path)
+    return p.read_text(encoding="utf-8", errors="replace") if p.exists() else None
+
+
+def check_local(name, paths, fn):
+    """依赖本机不入库文件（`logs/`）的断言统一走这里：
+    前置齐 → 照常判；前置不齐 → 打 **SKIP 并点名缺哪个文件**，既不算绿也不抛异常。"""
+    missing = [str(Path(p).relative_to(REPO)).replace("\\", "/") for p in paths if not Path(p).exists()]
+    if missing:
+        check(name, False, f"本机限定·前置不成立，缺 {'、'.join(missing)}（logs/ 不入库，见文件头）", skip=True)
+        return
+    ok, detail = fn()
+    check(name, ok, detail)
 
 
 def gold_cases():
@@ -79,11 +118,10 @@ def dirty_paths():
     return [l[3:].strip().strip('"') for l in out.splitlines() if l.strip()]
 
 
-porcelain_lines = sh(["git", "status", "--porcelain"]).stdout
-porcelain = porcelain_lines.strip()
 # 自排除名单：只允许审计**自己的读数产物**。Tee-Object 是边跑边写的，产物在跑的过程中必然处于未跟踪态，
 # 不排除它就是永远自我判脏；能排掉自己，也就有了下面 A2b 这条防呆——这张表一旦长出文档或脚本路径就是免检通道。
-OWN_ARTIFACTS = {".scratch/shoppilot-mvp/round3-closeout-audit.txt"}
+OWN_TXT = ".scratch/shoppilot-mvp/round3-closeout-audit.txt"  # 本脚本自己的读数产物，H12 读的是 HEAD 里那一份
+OWN_ARTIFACTS = {OWN_TXT}
 _all = dirty_paths()
 _kept = [l for l in _all if l not in OWN_ARTIFACTS]
 _dropped = [l for l in _all if l in OWN_ARTIFACTS]
@@ -110,7 +148,17 @@ try:
     check("A3 tokensUsedToday == 0（本轮零额度）", used == 0,
           f"tokensUsedToday={used} mode={circuit.get('llmMode')} budget={circuit.get('dailyTokenBudget')}")
 except Exception as exc:  # noqa: BLE001
-    check("A3 tokensUsedToday == 0（本轮零额度）", False, f"网关读取失败：{exc}")
+    # 第五轮双轴审查：网关不在跑时这一格原先判 FAIL，读起来像"零额度这条防线失效"，
+    # 实际是前置不成立（这一项本来就要活体网关，干净克隆里没有）。改成具名 SKIP，与 polarity 的 exit 3 同族。
+    check("A3 tokensUsedToday == 0（本轮零额度）", False,
+          f"本机限定·前置不成立：读不到活体网关（{exc}）。零额度这条改由 A3b 离线钉。", skip=True)
+
+# A3b：不依赖活体网关的零额度反证——本轮改动面里不得出现任何会花额度的评测命令入口。
+#      （花钱那条路必须显式 `-Run`，见 ticket 16/20 与 ADR 0012 的熔断；这里钉的是"本轮没去碰它"。）
+_dev_runs = sh(["git", "log", "--format=%H %s", f"{PRE_FIX}..HEAD"]).stdout
+_spend = [l for l in _dev_runs.splitlines() if re.search(r"run-dev-guardcheck|--limit\s+180|dev 模式实测", l)]
+check("A3b 本轮提交信息里没有花钱跑测的痕迹（零额度的离线反证）", not _spend,
+       f"命中 {len(_spend)} 笔：{_spend[:3]}" if _spend else f"{PRE_FIX}..HEAD 共 {len(_dev_runs.split()) // 2} 笔提交，无一含花钱跑测字样")
 
 print()
 print("=" * 78)
@@ -150,8 +198,20 @@ changed = sh(["git", "diff", "--name-only", f"{FIXED_POINT}..HEAD"]).stdout.spli
 allow_prefix = ("README.md", ".scratch/shoppilot-mvp/", "docs/interview-qa.md", "docs/console.png", "scripts/up.ps1",
                 "scripts/lib-launch.ps1", "eval/results/")
 outside = [f for f in changed if not f.startswith(allow_prefix)]
-check("B6 第三轮改动面未越界（判据/gold/ADR/PLAN/CONTEXT/Java 零改动）",
+check("B6 第三轮窗口改动面未越界（判据/gold/ADR/PLAN/CONTEXT/Java 零改动；注意白名单含 scripts 那两支 ps1）",
       not outside, f"越界文件：{outside}" if outside else f"共 {len(changed)} 个文件，全在白名单内")
+# B7：第五轮双轴审查抓到 P10 判据第 3 条那句「scripts/、eval/ 零改动由 B1-B6 与 F4 钉」是借来的保证——
+#     B6 的白名单里就明列 scripts/up.ps1、scripts/lib-launch.ps1、eval/results/，它根本不放这条红线；
+#     而且 B 组量的窗口是第三轮起点 11a12ac..HEAD，不是本轮。这里补一条真钉得住的：
+#     窗口取本轮 fixed point，白名单严格到四份文档 + .scratch 下脚本产物，scripts/eval/src/docs 出现即红。
+STRICT_ALLOW = ("README.md", ".scratch/shoppilot-mvp/")
+changed_now = sh(["git", "diff", "--name-only", f"{PRE_FIX}..HEAD"]).stdout.split()
+forbidden = [f for f in changed_now if f.startswith(("scripts/", "eval/", "src/", "shoppilot-", "docs/adr/", "knowledge/"))]
+stray = [f for f in changed_now if not f.startswith(STRICT_ALLOW)]
+check("B7 本轮窗口改动面严格白名单（scripts/、eval/、src/、docs/adr/ 出现即红）",
+      not forbidden and not stray,
+      f"禁面命中 {forbidden}；白名单外 {stray}" if (forbidden or stray)
+      else f"{PRE_FIX}..HEAD 共 {len(changed_now)} 个文件，全在 {list(STRICT_ALLOW)} 内；禁面零命中")
 
 print()
 print("=" * 78)
@@ -204,8 +264,12 @@ print("D. 取证命令复跑（全离线，0 token）")
 print("=" * 78)
 
 
-def run_py(args, want_exit=0):
-    proc = sh([sys.executable, *args])
+def run_py(args):
+    # 子进程也钉 UTF-8：否则它按本机 GBK 码页写管道，这里按 utf-8 解码就得到一串 U+FFFD，
+    # 于是"读数里必须含 72/180 = 40.0%"这类断言会因为**解码**而不是因为**事实**失败。
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    proc = subprocess.run([sys.executable, *args], cwd=str(REPO), capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", env=env)
     out = (proc.stdout or "") + (proc.stderr or "")
     return proc.returncode, out
 
@@ -220,7 +284,6 @@ check("D2 build_eval_set 退出码 0、对抗 72/180=40.0%、无 FAIL",
       f"rc={rc}；" + (out.strip().splitlines()[-1] if out.strip() else "无输出"))
 
 rc, out = run_py(["scripts/verify_eval_judge.py"])
-assert_line = [l for l in out.splitlines() if "40" in l and ("断言" in l or "PASS" in l)]
 totals = re.findall(r"合计 (\d+)/(\d+) 通过", out)
 n_bad = len(re.findall(r"(?m)^FAIL  ", out))
 check("D3 verify_eval_judge 退出码 0 且 40/40 条断言全过",
@@ -254,8 +317,8 @@ new_files = sorted(RESULTS.glob("tool-eval-*-rescore.csv"), key=lambda p: p.name
 produced = [p for p in new_files if p.name != RESCORE_STAMPED.name]
 check("D9 本次复算产物与落盘产物字节级相同", bool(produced) and
       all(sha256(p) == sha256(RESCORE_STAMPED) for p in produced),
-      f"新产物 {[p.name for p in produced]} sha={sha256(produced[0])[:16] if produced else '-'}"
-      f" vs 落盘 sha={sha256(RESCORE_STAMPED)[:16]}")
+      f"新产物 {len(produced)} 份（名字带本次时间戳，故不写进读数产物，免得每跑一次就漂移一行）"
+      f" sha={sha256(produced[0])[:16] if produced else '-'} vs 落盘 sha={sha256(RESCORE_STAMPED)[:16]}")
 for p in produced:
     os.remove(p)
 check("D10 复算临时产物已清理（不留未引用文件）",
@@ -274,7 +337,24 @@ missing = [i for i in dual if i not in readme]
 check("E2 对偶 8 个 id 在 README 可 grep", not missing, f"缺 {missing}")
 for banned in ["57/60", "95.0%", "168/180 = 95.6%", "172/180 = 93.3%"]:
     check(f"E3 README 无假读数 `{banned}`", banned not in readme)
-check("E4 README 仍写明合并工具这条路被否决", "合并" in readme and "否决" in readme)
+# E4：第五轮双轴审查判这条**恒绿**——原先只问「合并」「否决」两个词在不在 43k 字的 README 里，
+#     实测两词各出现 13 与 8 次，除非删光整份 README 否则永远不会红，而它的名字写的是"写明这条路被否决"。
+#     现在钉的是那一行的实际措辞（三个特征同现），并配一支**必须能失败**的反证：把那一行删掉，判据必须变 False。
+MERGE_DENY = ("合并", "否决", "queryOrderDetail")
+
+
+def merge_denied(text):
+    """README 里是否存在一行同时写明「合并 queryOrderDetail … 这条路被否决」（三个特征同现行）。"""
+    return any(all(k in l for k in MERGE_DENY) for l in text.splitlines())
+
+
+_deny_lines = [i for i, l in enumerate(readme.splitlines(), 1) if merge_denied(l) and all(k in l for k in MERGE_DENY)]
+_stripped = "\n".join(l for l in readme.splitlines() if not all(k in l for k in MERGE_DENY))
+check("E4 README 仍写明合并工具这条路被否决（钉同现行的三个特征，不是两个词各在不在）",
+      bool(_deny_lines), f"命中行 {_deny_lines[:4]}")
+check("E4b 对照组：把那一行删掉后 E4 的判据必须变 False（钉这条不是恒绿）",
+      merge_denied(readme) and not merge_denied(_stripped),
+      f"正本 True={merge_denied(readme)}；删掉同现行后 False={not merge_denied(_stripped)}（删了 {len(readme.splitlines()) - len(_stripped.splitlines())} 行）")
 
 qa = read(REPO / "docs" / "interview-qa.md")
 head_line = re.search(r"共 (\d+) 问，覆盖 (\d+) 个 ticket", qa)
@@ -287,7 +367,6 @@ check("E5b 问答库覆盖 20 个 ticket 且无缺收尾记录",
       head_line is not None and head_line.group(2) == "20" and "缺收尾记录" not in qa,
       f"头部行 {head_line.group(0) if head_line else '-'}；正文无缺收尾记录={'缺收尾记录' not in qa}")
 
-tickets = sorted((REPO / ".scratch" / "shoppilot-mvp" / "issues").glob("*.md"))
 ticket20 = read(REPO / ".scratch" / "shoppilot-mvp" / "issues" / "20-action-order-attribution.md")
 # 185608 是 17/17 但让位的上一轮，只需在 ticket 20 留痕；200038/201808 是没拿全绿的两轮，README 也必须照登。
 check("E6a 让位轮 185608 在 ticket 20 留痕", "185608" in ticket20,
@@ -316,32 +395,52 @@ DOC_GLOBS = ["README.md", "PLAN.md", "CONTEXT.md",
              "docs/interview-qa.md"]
 PATTERN = re.compile(r"(?:tool-eval|acceptance-run|clean-clone-check)-\d{8}-\d{6}[A-Za-z0-9\-]*")
 
-refs, missing, occurrences = set(), [], 0
+refs, missing, missing_log, occurrences = set(), [], [], 0
 # 两处「删除记录」引用：文档里写明是被删对象，不是依赖。豁免必须写死具体名字，不能放开整类。
 DELETION_RECORDS = {"tool-eval-20260911-050015-local-smoke",
                     "tool-eval-20260911-181037-rescore"}
+
+
+def resolvable(stem):
+    """产物名能不能落到一个真实文件上——F1 / F1c / F2 共用的**唯一**谓词。
+    第五轮双轴审查抓到原先 F2 把这段就地重写一遍（同一段复制三处），于是 F1 坏成"永远命中"时
+    对照组仍然绿：对照组必须与被试组同源，否则它只是另一把没校过的尺子。"""
+    if stem in DELETION_RECORDS:
+        return True  # 删除记录不是依赖，具名豁免
+    names = res_files if stem.startswith("tool-eval") else log_files
+    return any(f == stem or f.startswith(stem + ".") or f.startswith(stem + "-") for f in names)
+
+
+# 两类名字的可核面不同，必须分开钉：`tool-eval-*` 落在 eval/results/（入库），干净克隆里也核得动；
+# `acceptance-run-*` / `clean-clone-check-*` 落在 logs/（不入库，H5 钉着），只有本机核得动。
+# 混成一条会让"缺 logs 的克隆"整条判红（假红），整体豁免又会让漏名混过去（假绿）。
 for doc in DOC_GLOBS:
     for m in PATTERN.finditer(read(REPO / doc)):
         stem = m.group(0)
         occurrences += 1
         refs.add(stem)
-        if stem in DELETION_RECORDS:
+        if resolvable(stem):
             continue
-        if stem.startswith("tool-eval"):
-            hit = any(f == stem or f.startswith(stem + ".") or f.startswith(stem + "-") for f in res_files)
-        else:
-            hit = any(f == stem or f.startswith(stem + ".") or f.startswith(stem + "-") for f in log_files)
-        if not hit:
-            missing.append((doc, stem))
-check("F1 文档里每个具体产物名都指向在库文件（除 2 处写明是被删对象的删除记录）", not missing,
-      f"{len(DOC_GLOBS)} 份文档里出现 {occurrences} 次 / 去重 {len(refs)} 个不同名，豁免 {len(DELETION_RECORDS)} 条，"
-      f"MISSING：{missing}" if missing
-      else f"{len(DOC_GLOBS)} 份文档里出现 {occurrences} 次 / 去重 {len(refs)} 个不同名，MISSING 0；"
-           f"豁免命中 {sorted(r for r in refs if r in DELETION_RECORDS)}")
+        (missing if stem.startswith("tool-eval") else missing_log).append((doc, stem))
 
-probe = "tool-eval-20260911-999999-local-smoke"
-hit = any(f == probe or f.startswith(probe + ".") or f.startswith(probe + "-") for f in res_files)
-check("F2 对照组：不存在的产物名必须被判 MISSING", not hit)
+_eval_refs = sorted(r for r in refs if r.startswith("tool-eval"))
+_log_refs = sorted(r for r in refs if not r.startswith("tool-eval"))
+check("F1 文档里的 tool-eval 类产物名都指向在库文件（除 2 处写明是被删对象的删除记录）", not missing,
+      f"MISSING：{missing}" if missing
+      else f"{len(DOC_GLOBS)} 份文档共 {occurrences} 次 / 去重 {len(refs)} 名；tool-eval 类 {len(_eval_refs)} 名全可解析，"
+           f"豁免命中 {sorted(r for r in refs if r in DELETION_RECORDS)}")
+check_local("F1c 文档里的 logs 类产物名都指向本机 logs/（本机限定：logs 不入库）", [LOGS],
+            lambda: (not missing_log,
+                     f"logs 类 MISSING：{missing_log}" if missing_log
+                     else f"logs 类 {len(_log_refs)} 名全部落在本机 logs/ 里"))
+
+# F2/F2c：对照组必须**真调** F1 的那个谓词，而且两边都要能失败。
+_probe_absent = "tool-eval-20260911-999999-local-smoke"
+check("F2 对照组：不存在的产物名必须被 resolvable() 判不可解析", not resolvable(_probe_absent),
+      f"探针 {_probe_absent} → resolvable={resolvable(_probe_absent)}")
+_probe_present = "tool-eval-20260911-042142-rescore"
+check("F2c 对照组：真实存在的产物名必须被同一个 resolvable() 判可解析（防 F2 单边恒绿）",
+      resolvable(_probe_present), f"探针 {_probe_present} → resolvable={resolvable(_probe_present)}")
 unused = [n for n in DELETION_RECORDS if n not in refs]
 check("F2b 豁免表没有死条目（每条豁免都真的在文档里出现）", not unused, f"未命中的豁免 {unused}")
 
@@ -361,8 +460,6 @@ print("G. 计划状态与门禁落点")
 print("=" * 78)
 
 plan = read(REPO / ".scratch" / "shoppilot-mvp" / "round3-plan.md")
-statuses = dict(re.findall(r"### (P\d)[^\n]*\n(?:.*?\*\*状态\*\*：\*\*(\w+))?", plan, re.S) or [])
-rows = re.findall(r"### (P\d)|状态：\*\*(Pass|pending)", plan)
 # 计划里"状态"这一行有两种写法（`- 状态：**Pass**` 与 `- **状态**：**Pass（…**）`），
 # 只认一种会把另一种漏掉（P9 就是被漏的那个），于是 G1 的"每段都有 Pass"永远差一格。这里两种都认。
 STATUS_PAT = re.compile(r"(?mi)^- \*{0,2}状态\*{0,2}[：:]\*{0,2}(Pass|Pending)")
@@ -373,50 +470,78 @@ pending = [s for s in status_hits if s.lower() == "pending"]
 check("G1 计划里每个 `### Pn` 段都带 Pass 状态", pass_count == n_plan_steps,
       f"段数 {n_plan_steps}，Pass 计数 {pass_count}，pending 计数 {len(pending)}")
 check("G2 收口后无 pending", len(pending) == 0, f"pending {len(pending)} 处")
-pol = read(LOGS / "acceptance" / "polarity.log")
-inc = re.findall(r"(?m)polarity_blocked_total 增量 = (\d+)", pol)
-check("G2b 落点那轮极性守卫真被触发（blocked 计数器增量 = 1）",
-      inc == ["1"],
-      f"polarity.log 读数 {inc}" if inc else "polarity.log 未打印 blocked 增量")
 
-acc = read(LOGS / "acceptance-run-20260911-212011.log")
-check("G3 落点日志记 commit=9eede6d 且开跑时工作树 clean",
-      any("commit=9eede6d" in l and "工作树=clean" in l for l in acc.splitlines()[:6]),
-      acc.splitlines()[0] if acc.splitlines() else "空")
-check("G4 落点为 17 步全绿、总耗时 511s",
-      "全部步骤通过（17 步）" in acc and "总耗时 511s" in acc,
-      acc.strip().splitlines()[-1])
+# 下面这一整批读 logs/，而 logs/ 整目录不入库（H5 钉着）。第五轮双轴审查抓到：
+# 原先它们直接 read()，干净克隆上抛 FileNotFoundError 把整轮审计打断，
+# 于是「重跑=全绿」这句自述在别的机器上根本跑不到底。现在缺前置就逐条具名 SKIP，
+# 形状与 verify-polarity.ps1 的 exit 3 同族——前置不成立既不算绿，也不算防线失效。
+def _why(p):
+    return (f"本机限定·前置不成立：缺 {Path(p).relative_to(REPO).as_posix()}"
+            f"（logs/ 不入库，见文件头「本机当轮对账单」）")
 
-steps = {n: s for n, e, s in re.findall(r"(?m)^(\S+)\s+(\d+)\s+ok / (\d+)s", acc)}
-want_steps = {"stack": "80", "demo": "12", "polarity": "26", "eval": "123"}
-bad_steps = {k: steps.get(k) for k, v in want_steps.items() if steps.get(k) != v}
-check("G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）",
-      len(steps) == 17 and not bad_steps,
-      f"步数 {len(steps)}，读数 {steps}" if bad_steps else f"17 步全 exit 0，关键四步 {want_steps}")
-check("G5b README 索引行与落点矩阵同读数",
-      "80s" in readme and "12s" in readme and "511s" in readme)
 
-unit_log = read(LOGS / "acceptance" / "unit.log")
-build_log = read(LOGS / "acceptance" / "build.log")
-SUM_RE = r"(?m)^\[INFO\] Tests run: (\d+), Failures: 0, Errors: 0, Skipped: 0$"
-unit_totals = [int(x) for x in re.findall(SUM_RE, unit_log)]
-build_totals = [int(x) for x in re.findall(SUM_RE, build_log)]
-check("G6 surefire 3 + 12 + 89 = 104（build 与 unit 两份日志的 Results 段各自核过）",
-      unit_totals == [3, 12, 89] and build_totals == [3, 12, 89]
-      and sum(unit_totals) == sum(build_totals) == 104,
-      f"unit 模块小计 {unit_totals}，build 模块小计 {build_totals}")
+G2B = "G2b 落点那轮极性守卫真被触发（blocked 计数器增量 = 1）"
+pol = read_opt(LOGS / "acceptance" / "polarity.log")
+if pol is None:
+    check(G2B, False, _why(LOGS / "acceptance" / "polarity.log"), skip=True)
+else:
+    inc = re.findall(r"(?m)polarity_blocked_total 增量 = (\d+)", pol)
+    check(G2B, inc == ["1"], f"polarity.log 读数 {inc}" if inc else "polarity.log 未打印 blocked 增量")
 
-eval_log = read(LOGS / "acceptance" / "eval.log")
-check("G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0",
-      eval_log.splitlines()[0].strip() == "SCORER SELFCHECK ok=16"
-      and "EVAL DONE cases=24 errors=0 mode=local limit=24" in eval_log.strip().splitlines()[-1],
-      f"首行 {eval_log.splitlines()[0].strip()}；末行 {eval_log.strip().splitlines()[-1]}")
+LANDING_LOG = LOGS / "acceptance-run-20260911-212011.log"
+G3 = "G3 落点日志记 commit=9eede6d 且开跑时工作树 clean"
+G4 = "G4 落点为 17 步全绿、总耗时 511s"
+G5 = "G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）"
+acc = read_opt(LANDING_LOG)
+if acc is None:
+    check(G3, False, _why(LANDING_LOG), skip=True)
+    check(G4, False, _why(LANDING_LOG), skip=True)
+    check(G5, False, _why(LANDING_LOG), skip=True)
+    steps = {}
+else:
+    check(G3, any("commit=9eede6d" in l and "工作树=clean" in l for l in acc.splitlines()[:6]),
+          acc.splitlines()[0] if acc.splitlines() else "空")
+    check(G4, "全部步骤通过（17 步）" in acc and "总耗时 511s" in acc, acc.strip().splitlines()[-1])
+    steps = {n: s for n, e, s in re.findall(r"(?m)^(\S+)\s+(\d+)\s+ok / (\d+)s", acc)}
+    want_steps = {"stack": "80", "demo": "12", "polarity": "26", "eval": "123"}
+    bad_steps = {k: steps.get(k) for k, v in want_steps.items() if steps.get(k) != v}
+    check(G5, len(steps) == 17 and not bad_steps,
+          f"步数 {len(steps)}，读数 {steps}" if bad_steps else f"17 步全 exit 0，关键四步 {want_steps}")
+check_local("G5b README 索引行与落点矩阵同读数", [LANDING_LOG],
+            lambda: (bool(steps) and "80s" in readme and "12s" in readme and "511s" in readme,
+                     f"矩阵解析出 {len(steps)} 步；README 含 80s/12s/511s = "
+                     f"{'80s' in readme and '12s' in readme and '511s' in readme}"))
 
-console_log = read(LOGS / "acceptance" / "console.log")
-cc = re.search(r"(\d+) chunks / (\d+) chars", console_log)
-check("G8 打字机断言落在 > 60 字这一真判据上（未放宽）",
-      cc is not None and int(cc.group(2)) > 60,
-      cc.group(0) if cc else "console.log 里找不到 chunks/chars 读数")
+G6 = "G6 surefire 3 + 12 + 89 = 104（build 与 unit 两份日志的 Results 段各自核过）"
+unit_log, build_log = read_opt(LOGS / "acceptance" / "unit.log"), read_opt(LOGS / "acceptance" / "build.log")
+if unit_log is None or build_log is None:
+    check(G6, False, _why(LOGS / "acceptance" / "unit.log" if unit_log is None else LOGS / "acceptance" / "build.log"),
+          skip=True)
+else:
+    SUM_RE = r"(?m)^\[INFO\] Tests run: (\d+), Failures: 0, Errors: 0, Skipped: 0$"
+    unit_totals = [int(x) for x in re.findall(SUM_RE, unit_log)]
+    build_totals = [int(x) for x in re.findall(SUM_RE, build_log)]
+    check(G6, unit_totals == [3, 12, 89] and build_totals == [3, 12, 89]
+          and sum(unit_totals) == sum(build_totals) == 104,
+          f"unit 模块小计 {unit_totals}，build 模块小计 {build_totals}")
+
+G7 = "G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0"
+eval_log = read_opt(LOGS / "acceptance" / "eval.log")
+if eval_log is None:
+    check(G7, False, _why(LOGS / "acceptance" / "eval.log"), skip=True)
+else:
+    check(G7, eval_log.splitlines()[0].strip() == "SCORER SELFCHECK ok=16"
+          and "EVAL DONE cases=24 errors=0 mode=local limit=24" in eval_log.strip().splitlines()[-1],
+          f"首行 {eval_log.splitlines()[0].strip()}；末行 {eval_log.strip().splitlines()[-1]}")
+
+G8 = "G8 打字机断言落在 > 60 字这一真判据上（未放宽）"
+console_log = read_opt(LOGS / "acceptance" / "console.log")
+if console_log is None:
+    check(G8, False, _why(LOGS / "acceptance" / "console.log"), skip=True)
+else:
+    cc = re.search(r"(\d+) chunks / (\d+) chars", console_log)
+    check(G8, cc is not None and int(cc.group(2)) > 60,
+          cc.group(0) if cc else "console.log 里找不到 chunks/chars 读数")
 
 print()
 print("=" * 78)
@@ -443,38 +568,97 @@ def secs(step_rows, name):
     return None
 
 
-ROUNDS = {}
-for ts in ["121933", "123307", "185608", "200038", "201808", "212011"]:
-    p = LOGS / f"acceptance-run-20260911-{ts}.log"
-    rows = gate_matrix(p)
-    head = read(p).splitlines()[0]
-    commit = re.search(r"commit=(\S+)", head)
-    ROUNDS[ts] = {
-        "total": len(rows),
-        "ok": sum(1 for r in rows if r[1] == "0"),
-        "bad": [(r[0], r[1]) for r in rows if r[1] != "0"],
-        "commit": commit.group(1) if commit else "?",
-        "worktree": "dirty" if "dirty" in head else "clean",
-    }
+ROUND_TS = ["121933", "123307", "185608", "200038", "201808", "212011"]
 
-# H1：README 里每一句 "N/17" 都必须等于该轮日志实算的 ok 数（121933 曾被本审计的粗正则数成 15）
-claims = {"121933": 16, "123307": 17, "185608": 17, "200038": 16, "201808": 15, "212011": 17}
-wrong = {ts: (n, ROUNDS[ts]["ok"], ROUNDS[ts]["bad"]) for ts, n in claims.items() if ROUNDS[ts]["ok"] != n}
-check("H1 六轮门禁的 ok 步数与文档主张逐轮相符", not wrong, f"不符 {wrong}")
-check("H1b 每轮都是 17 步（不是步数变少造成的『更绿』）",
-      all(v["total"] == 17 for v in ROUNDS.values()),
-      str({k: v["total"] for k, v in ROUNDS.items() if v["total"] != 17}))
 
-# H2：全称否定句必须被证伪过——69s/13s 确实成对存在于 09-09 的某份矩阵
-pair_hits = []
-for p in sorted(LOGS.glob("*.log")):
-    if not p.name.startswith("acceptance-run"):
-        continue
-    rows = gate_matrix(p)
-    if secs(rows, "stack") == "69" and secs(rows, "demo") == "13":
-        pair_hits.append(p.name)
-check("H2 本机确有 69s/13s 成对的落盘矩阵（故 README 不得写『与任何一份都不符』）",
-      pair_hits == ["acceptance-run5.log"], f"命中 {pair_hits}")
+def build_rounds(logs_dir, stamps):
+    """逐轮解析门禁矩阵。缺任何一份就返回 None（= 本机前置不成立）——
+    不抛异常，也不返回空 dict 让下面的『零轮』看起来像全绿。"""
+    out = {}
+    for ts in stamps:
+        p = Path(logs_dir) / f"acceptance-run-20260911-{ts}.log"
+        if not p.exists():
+            return None
+        text = p.read_text(encoding="utf-8", errors="replace")
+        rows = gate_matrix(p)
+        head = text.splitlines()[0] if text.splitlines() else ""
+        commit = re.search(r"commit=(\S+)", head)
+        out[ts] = {
+            "total": len(rows),
+            "ok": sum(1 for r in rows if r[1] == "0"),
+            "bad": [(r[0], r[1]) for r in rows if r[1] != "0"],
+            "commit": commit.group(1) if commit else "?",
+            "worktree": "dirty" if "dirty" in head else "clean",
+        }
+    return out
+
+
+ROUNDS = build_rounds(LOGS, ROUND_TS)
+
+# J0：上面那句「缺 logs 走 SKIP 而不是崩」本身必须有反证，否则它又是一句不可复核自述。
+_tmp_empty = tempfile.mkdtemp(prefix="shoppilot-audit-J0-")
+try:
+    try:
+        _j0 = build_rounds(_tmp_empty, ROUND_TS)
+        _j0_ok, _j0_detail = _j0 is None, f"空目录 → 返回 {type(_j0).__name__}（None = 不适用分支，没抛异常）"
+    except Exception as exc:  # noqa: BLE001
+        _j0_ok, _j0_detail = False, f"空目录 → 抛了 {type(exc).__name__}: {exc}（这就是原先干净克隆上的死法）"
+finally:
+    os.rmdir(_tmp_empty)
+check("J0 对照组：缺 logs 时解析函数必须返回『不适用』而不是抛异常（钉本机限定这条路径）", _j0_ok, _j0_detail)
+
+if ROUNDS is None:
+    _skip_detail = _why(LOGS / "acceptance-run-20260911-212011.log")
+    check("H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符", False, _skip_detail, skip=True)
+    check("H1b 每轮都是 17 步（不是步数变少造成的『更绿』）", False, _skip_detail, skip=True)
+    check("H1d README 里每一处 N/17 主张都等于该轮日志实算", False, _skip_detail, skip=True)
+else:
+    # claims 是**钉住的期望表**（当轮对账单的一部分），不是"文档主张"的抄本——文档那一侧由 H1d 真去读 README。
+    claims = {"121933": 16, "123307": 17, "185608": 17, "200038": 16, "201808": 15, "212011": 17}
+    wrong = {ts: (n, ROUNDS[ts]["ok"], ROUNDS[ts]["bad"]) for ts, n in claims.items() if ROUNDS[ts]["ok"] != n}
+    check("H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符（121933 曾被粗正则数成 15）", not wrong, f"不符 {wrong}")
+    check("H1b 每轮都是 17 步（不是步数变少造成的『更绿』）",
+          all(v["total"] == 17 for v in ROUNDS.values()),
+          str({k: v["total"] for k, v in ROUNDS.items() if v["total"] != 17}))
+    # H1d：第五轮双轴审查判 H1 是**第二把尺子**——注释写着「README 里每一句 N/17」，代码却从不读 README，
+    #      只把脚本里手抄的字典与日志比；README 改数或字典改数各走各路都能绿。这里真去 README 抽主张：
+    #      同一行里既有 `acceptance-run-<ts>` 又有 `N/17` 才算一处（README 别处的 `ACT-ORD-09/16/17` 不会误命中）。
+    readme_claims = {}
+    for l in readme.splitlines():
+        ts_hit = re.findall(r"acceptance-run-20260911-(\d{6})", l)
+        n_hit = re.findall(r"(\d+)/17", l)
+        if len(ts_hit) == 1 and len(n_hit) == 1:
+            readme_claims[ts_hit[0]] = int(n_hit[0])
+    bad_claims = {ts: (readme_claims[ts], ROUNDS.get(ts, {}).get("ok")) for ts in readme_claims
+                  if ROUNDS.get(ts, {}).get("ok") != readme_claims[ts]}
+    check("H1d README 里每一处 N/17 主张都等于该轮日志实算（真读 README，不靠脚本内抄本）",
+          len(readme_claims) >= 3 and not bad_claims,
+          f"从 README 抽出 {len(readme_claims)} 处 {readme_claims}；与日志实算不符 {bad_claims}")
+
+
+def find_pair(logs_dir, want_stack, want_demo):
+    """在落盘矩阵里找 stack/demo 成对等于给定秒数的那些份。logs 不在 → 返回 None（不适用）。"""
+    d = Path(logs_dir)
+    if not d.is_dir():
+        return None
+    hits = []
+    for p in sorted(d.glob("*.log")):
+        if not p.name.startswith("acceptance-run"):
+            continue
+        rows = gate_matrix(p)
+        if secs(rows, "stack") == want_stack and secs(rows, "demo") == want_demo:
+            hits.append(p.name)
+    return hits
+
+
+# H2：全称否定句必须被证伪过——69s/13s 确实成对存在于 09-09 的某份矩阵（本机限定：读 logs/）
+pair_hits = find_pair(LOGS, "69", "13")
+if pair_hits is None:
+    check("H2 本机确有 69s/13s 成对的落盘矩阵（故 README 不得写『与任何一份都不符』）",
+          False, _why(LOGS / "acceptance-run5.log"), skip=True)
+else:
+    check("H2 本机确有 69s/13s 成对的落盘矩阵（故 README 不得写『与任何一份都不符』）",
+          pair_hits == ["acceptance-run5.log"], f"命中 {pair_hits}")
 # 那句全称否定是假的，但订正后要把它作为"我曾经说过头"的反面教材留在原地，所以不能简单判子串不存在：
 # 判的是"它只许出现在带撤回标记的行里"。对照组用订正前那份 README（HEAD）证明这条断言抓的是真东西。
 DENIAL = "与本机任何一份落盘矩阵都不符"
@@ -485,30 +669,61 @@ check("H2b README 里那句全称否定只许以撤回形式出现（对照组�
       not den_offenders and DENIAL in old_readme,
       f"未挂撤回标记的命中 {len(den_offenders)} 行；订正前 README 含该句={DENIAL in old_readme}")
 
-# H3：文档里的 file.py:NNN / file.ps1:NNN 行号引用必须与磁盘一致
+# H3：文档里的 file.py:NNN / file.ps1:NNN 行号引用必须与磁盘一致。
+#     第五轮双轴审查判这一格**名不副实**三处，逐条改掉：
+#       (1) 原先给 `up.ps1:58` 钉的期望串是 `"# "`——任何一行注释都满足，等于没钉。现在换成该行真内容。
+#       (2) 原先只扫 3 份文档，而 F1 扫 8 份；在 PLAN/ADR/ticket 16 里新增一处行号引用它看不见。现在与 F1 同集合。
+#       (3) 原先 `rglob(fname)` 取 candidates[0]，同名文件多命中时取哪份不确定。现在多命中即判红。
+#     另外引用可以带**版本**：文档里那句讲的是订正前那份文件，就按订正前那份核（rev 非 None 时走 git show），
+#     但文档必须自己点名是哪个 commit，否则读者无从复核——这条口径写进本票第 11 条。
 CITE_PAT = re.compile(r"([A-Za-z0-9_\-]+\.(?:py|ps1|java)):(\d+)")
 EXPECT_CITE = {
-    "run_tool_eval.py": {"156": "tool_ok = ", "160": "tool_ok = ", "421": "def rescore_details"},
-    "up.ps1": {"58": "# ", "66": "Start-ShoppilotService", "71": "ollama list"},
+    "run_tool_eval.py": {"156": ("tool_ok = ", None), "160": ("tool_ok = ", None),
+                         "421": ("def rescore_details", None)},
+    "up.ps1": {"58": ("throw 'Ollama 未监听 11434", "e7c19ad^"),  # 订正前那份；订正后同一句在第 68 行
+               "66": ("Start-ShoppilotService", None), "68": ("throw 'Ollama 未监听 11434", None),
+               "71": ("ollama list", None)},
 }
-bad_cites = []
-for doc in ["README.md", ".scratch/shoppilot-mvp/round3-plan.md",
-            ".scratch/shoppilot-mvp/issues/20-action-order-attribution.md"]:
-    for fname, lineno in CITE_PAT.findall(read(REPO / doc)):
-        want = EXPECT_CITE.get(fname, {}).get(lineno)
-        if want is None:
-            bad_cites.append(f"{doc}: {fname}:{lineno} 未在钉住的引用表里")
-            continue
+
+
+def cite_ok(doc, fname, lineno):
+    """核一处行号引用：返回 None = 落得住，返回字符串 = 失败原因。"""
+    entry = EXPECT_CITE.get(fname, {}).get(lineno)
+    if entry is None:
+        return f"{doc}: {fname}:{lineno} 未在钉住的引用表里"
+    want, rev = entry
+    if rev:
+        text = sh(["git", "show", f"{rev}:scripts/{fname}"]).stdout
+        if not text:
+            return f"{doc}: {fname}:{lineno} 取不到 {rev} 那份"
+    else:
         candidates = list((REPO / "scripts").rglob(fname))
         if not candidates:
-            bad_cites.append(f"{doc}: 找不到 {fname}")
-            continue
-        lines = read(candidates[0]).splitlines()
-        n = int(lineno)
-        if n > len(lines) or want not in lines[n - 1]:
-            got = lines[n - 1][:40] if n <= len(lines) else "<超行>"
-            bad_cites.append(f"{doc}: {fname}:{n} 期望含 `{want}`，实为 `{got}`")
-check("H3 文档里的每一处行号引用都能在对齐的磁盘行上落住", not bad_cites, "；".join(bad_cites[:4]))
+            return f"{doc}: 找不到 {fname}"
+        if len(candidates) > 1:
+            return f"{doc}: {fname} 多命中 {len(candidates)} 份，取哪份不确定"
+        text = read(candidates[0])
+    lines = text.splitlines()
+    n = int(lineno)
+    if n > len(lines) or want not in lines[n - 1]:
+        got = lines[n - 1][:40] if n <= len(lines) else "<超行>"
+        return f"{doc}: {fname}:{n} 期望含 `{want}`，实为 `{got}`"
+    return None
+
+
+bad_cites = []
+n_cites = 0
+for doc in DOC_GLOBS:  # 与 F1 同一组文档，不再只扫三份
+    for fname, lineno in CITE_PAT.findall(read(REPO / doc)):
+        n_cites += 1
+        why = cite_ok(doc, fname, lineno)
+        if why:
+            bad_cites.append(why)
+check("H3 文档里的每一处行号引用都能在对齐的磁盘行上落住", not bad_cites,
+      f"核 {n_cites} 处引用、覆盖 {len(DOC_GLOBS)} 份文档" + ("；" + "；".join(bad_cites[:4]) if bad_cites else ""))
+# H3b 对照组：一个物理上不可能落住的引用必须被同一个 cite_ok() 判红，否则 H3 又是一条恒绿假防线。
+_bogus = cite_ok("对照组", "run_tool_eval.py", "999999")
+check("H3b 对照组：超行引用必须被 cite_ok() 判失败", _bogus is not None, f"探针 run_tool_eval.py:999999 → {_bogus}")
 
 # H4：可复现物计数与留库理由
 block = ticket20.split("## 取证命令")[1].split("```")[1]
@@ -625,7 +840,6 @@ check("H9 三份文档里没有 >=200 字的块自我复制（防重跑贴两遍
 # 对照组 1：检测器必须能抓到"真贴两遍"，否则 H9 是恒绿假防线。
 #           探针不重打原文（重打就会抄错字），直接从盘上切 README 最长的长行——本次事故被贴两遍的就是这种整段长行。
 _blk = max((l for l in readme.splitlines() if len(l) >= 400), key=len, default="")
-_n_long = sum(1 for l in readme.splitlines() if l.strip())
 _hits_same = long_dups(_blk + _blk)
 check("H9b 对照组：README 真实长段落原样贴两遍必须被 H9 抓到",
       len(_blk) >= 400 and bool(_hits_same),
@@ -689,7 +903,7 @@ check("H11b 正文里每处「第 ①-⑳ 项」引用都落到真存在的条�
 #   也可能是**上一版跑器**的历史数（22:5x 那次的 54 项，加 H 组之前，那是当时的真话）。
 # 早期版本一律要求相等，结果是历史那一格永远判红——那是拿今天的尺子量昨天。
 # 现在的形状：本轮数必须至少被引用一次；其余每个数所在行必须带历史标记，否则红。
-N = len(PASSES) + len(FAILS) + 2  # +2：H7 与 H7b 自己
+N = len(PASSES) + len(FAILS) + len(SKIPS) + TAIL_CHECKS  # 末尾还会跑 TAIL_CHECKS 项，见文件头常量
 HIST = re.compile(r"上一版|让位|加 H 组前|历史")
 stated_lines = []
 for doc in [readme, plan, ticket20]:
@@ -703,14 +917,57 @@ check("H7 本轮实跑项数被文档至少引用一次",
 check("H7b 文档里每个不等于本轮实数的项数，都带历史标记（不许裸着当现状）",
       not stale, f"无历史标记的异数 {stale}")
 
-# 硬断言：N 必须等于此刻的实际计数。以后若有人在 H7b 之后再加 check，这里会当场炸，
-# 而不是像第四轮那样静默把新增项漏出自述。
-assert len(PASSES) + len(FAILS) == N, (
-    f"N={N} 与实际 {len(PASSES) + len(FAILS)} 不符：新增 check 不能放在 H7b 之后")
+# H12：第五轮双轴审查抓到——三处文档把「项数以 round3-closeout-audit.txt 末行为准」钉成权威，
+#      可这份 txt 在脚本里只出现在文档字符串与豁免名单里，**没有任何断言读它**。
+#      后果：改了跑器忘了重落产物，一份陈旧末行照样全绿入仓，那句"为准"是空的。
+#      现在真去读 HEAD 里那份（不是工作树这份——它正被本次 Tee 边跑边写，读它会自我循环）。
+committed_txt = sh(["git", "show", f"HEAD:{OWN_TXT}"])
+if committed_txt.returncode != 0:
+    check("H12 入仓读数产物的末行项数 == 本次实跑项数（钉住那句『以末行为准』）", False,
+          f"取不到 HEAD:{OWN_TXT}（{committed_txt.stderr.strip()[:60]}）")
+else:
+    _last = [l for l in committed_txt.stdout.splitlines() if l.startswith("汇总：")]
+    _m = re.search(r"共 (\d+) 项", _last[-1]) if _last else None
+    check("H12 入仓读数产物的末行项数 == 本次实跑项数（钉住那句『以末行为准』）",
+          _m is not None and int(_m.group(1)) == N,
+          f"产物末行 {(_last[-1] if _last else '无汇总行')[:60]} vs 本次实跑 {N} 项"
+          "（改了跑器就得重跑并重新落盘产物，否则这一格红）")
 
-print(f"汇总：PASS {len(PASSES)}  FAIL {len(FAILS)}  共 {N} 项")
+# H13：P10 判据第 5 条要求「三条驳回项各留机器反证（不是留一句『审查读错了』）」，
+#      第五轮双轴审查判这一条只有 1/3 真有产物。这里把缺的两条补成可重跑断言：
+#      (a)「`verify_eval_judge` 的 17 项断言在盘上不存在」——钉它只许以带幻影标记的形式出现；
+#      (b)「Kant F5 报的 `up.ps1` 第 115 行引用」——钉这个引用在四份文档里零命中（它本来就不存在）。
+vej = read(REPO / "scripts" / "verify_eval_judge.py")
+PHANTOM = "17 项断言"
+MARK = re.compile(r"幻影|不存在|零命中")
+_ph_lines = [(i, l) for i, l in enumerate(plan.splitlines() + ticket20.splitlines(), 1) if PHANTOM in l]
+_unmarked = [(i, l[:50]) for i, l in _ph_lines if not MARK.search(l)]
+check("H13 反证：『17 项断言』既不在 verify_eval_judge 里，在文档里也只许以幻影标记的形式出现",
+      PHANTOM not in vej and not _unmarked,
+      f"跑器源码命中={PHANTOM in vej}；文档命中 {len(_ph_lines)} 行、其中无幻影标记 {len(_unmarked)} 行 {_unmarked[:2]}")
+_ghost_cite = "up.ps1:115"
+_ghost_hits = {d: read(REPO / d).count(_ghost_cite)
+               for d in ["README.md", "PLAN.md", ".scratch/shoppilot-mvp/round3-plan.md",
+                         ".scratch/shoppilot-mvp/issues/20-action-order-attribution.md"]}
+check("H13b 反证：被驳回的那处 `up.ps1:115` 引用在四份文档里零命中（它本就不存在，不是漏核）",
+      sum(_ghost_hits.values()) == 0, f"逐份命中 {_ghost_hits}")
+
+# 硬断言放在**所有** check 之后：N 必须等于此刻的实际计数。
+# 第五轮订正：原先这句注释写「以后若有人在 H7b 之后再加 check，这里会当场炸」是**说过头**——
+# 那个 assert 站在 H7b 与汇总行之间，落在汇总行之后新增的项它根本看不见（恒真）。
+# 现在 assert 就是最后一道，任何位置的追加都会当场炸；TAIL_CHECKS 也要同步改，否则同样炸。
+assert len(PASSES) + len(FAILS) + len(SKIPS) == N, (
+    f"N={N} 与实际 PASS {len(PASSES)} + FAIL {len(FAILS)} + SKIP {len(SKIPS)} 不符："
+    f"新增 check 请同步改文件头的 TAIL_CHECKS（当前 {TAIL_CHECKS}）")
+
+print(f"汇总：PASS {len(PASSES)}  FAIL {len(FAILS)}  SKIP {len(SKIPS)}  共 {N} 项")
 if FAILS:
     for f in FAILS:
         print(f"  FAIL -> {f}")
+if SKIPS:
+    for s in SKIPS:
+        print(f"  SKIP -> {s}")
 print("=" * 78)
-sys.exit(1 if FAILS else 0)
+if FAILS:
+    sys.exit(1)
+sys.exit(3 if SKIPS else 0)
