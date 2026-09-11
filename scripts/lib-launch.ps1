@@ -1,6 +1,8 @@
 ﻿# 供 start-gateway.ps1 / start-bizmock.ps1 dot-source。
 #
-# 现在 dot-source 它的还有 up.ps1 / ingest.ps1 / run-acceptance.ps1（为了 Resolve-ShoppilotJdk）。
+# 现在 dot-source 它的还有 up.ps1 / ingest.ps1 / run-acceptance.ps1。Resolve-ShoppilotJdk 是它们共同的理由，
+# up.ps1 还多一个：起栈时用 Start-ShoppilotService 脱离式拉 ollama serve（见 up.ps1 [2/6] 的注释——
+# 拿 CLI 当探活会继承重定向句柄，把整条起栈流程冻死）。
 # 这个文件只放"两个以上脚本共同遵守的规则"，否则又是同一个常量写五份——本仓库已经在
 # readiness 超时上栽过一次"同一个常量两处各写一份，改就只改对一半"。
 #

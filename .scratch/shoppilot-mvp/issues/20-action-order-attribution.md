@@ -168,7 +168,7 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
 六、文档一致性与落点
 21. README 指标表、承诺项、已知限制三处均同时含 `93.3%` 与 `95.6%`（逐行机器验过）；8 个 id 全部可在正文 grep 到；承诺项那一格结论仍是「未达成」。
 22. `docs/adr/0021-action-order-gold-boundary-relabel-not-tool-merge.md` 存在、编号紧跟 0020、含「一、业务能力读数」与「二、量具缺陷归因」两节（读数段的结论不引用量具段数字，反之亦然）；ticket 16 有 `**追加决策（2026-09-11，ticket 20 判据收口）**`（22-25 四条）+ 三条追加追问；ticket 12 追加决策 9 记越权断言下沉。
-23. `python scripts/collect_interview_questions.py` 打印 `写出 docs\interview-qa.md：90 问，覆盖 20/20 个 ticket`，无「缺收尾记录的 ticket」；头部计数行与正文以 **Q 开头的条目数一致（90）。
+23. `python scripts/collect_interview_questions.py` 打印 `写出 docs\interview-qa.md：91 问，覆盖 20/20 个 ticket`，无「缺收尾记录的 ticket」；头部计数行与正文以 **Q 开头的条目数一致（91）。问数 90 -> 91 的唯一来源是第三轮给本票补的那条单行追问（"门禁跑不完时你怎么确定不是防线失效"），不是收集器口径变了。这一格前两轮的读数都是 90，第三轮重生成问答库之后没回头改它——是双轴审查替我抓出来的。
 
 七、零额度与整体验收
 24. `GET /api/v1/support/ops/circuit` 的 `tokensUsedToday` 在跑完整套取证命令前后都是 **0**（DELTA = 0，`llmMode=local`、日预算 260000）；12:49 在这一轮 17 步门禁跑完之后复读仍是 `tokensUsedToday: 0` 且 `llmMode: local`——冒烟那 24 条走的是 ollama `qwen2.5:3b`，不计费。换行符基线断言 **PASS**（17 个文件守住各自 CRLF/LF、无 BOM 变化），这条不再是人工目测。`run-dev-eval.ps1 -OnlyIntent ACTION_ORDER` 只干跑，停在 `没加 -Run，所以到此为止：不改网关、不发计费请求。`，并打印出真正会执行的 `python scripts/run_tool_eval.py --only-intent ACTION_ORDER`（补了 `-OnlyIntent` 透传才到得了这一行）。整轮 17 步门禁全绿：落点 `logs/acceptance-run-20260911-185608.log`，头两行 `commit=9353a32 开跑时工作树=clean` / `开始 18:47:20 结束 18:56:08 总耗时 528s`，README 矩阵行与之一致；18:57 复读仍是 `tokensUsedToday: 0`、`llmMode: local`、日预算 260000。上一轮同口径落点是 `logs/acceptance-run-20260911-123307.log`（`commit=3e8d4ca`、489s、`开始 12:24:57 结束 12:33:07`），它验的代码不含第二轮审查的脚本与 gold 改动，所以是被替换掉而不是在旧行上补写——换行的理由记在文末「第三轮收尾」。同一批改动在此之前跑过两轮都没收口，两轮的失败原因都记在这儿，不挑一次好看的写：① `logs/acceptance-run-20260911-121933.log` 是 16/17，红的只有 `polarity` 且 exit 3 = 它自己打印的「前置不成立」（那一次 L2 里没写进源条目），脚本按 README「假红」一节既有的口径拒绝把这一格当成防线失效的证据（2026-09-10 19:29 那一轮就是这么处置的）——单独重跑 `verify-polarity.ps1` 是 exit 0 全绿，所以判它一次性；② 更早一轮 `build` + `unit` 两步直接红，`TenantIsolationAndIdempotencyTest` 6 项全 Error，栈底是 `Could not initialize inline Byte Buddy mock maker ... Could not self-attach to current VM using external process`，根因是系统盘 C 剩 19 MB（`C:\Users\Shing\AppData\Local\Temp\wsl-crashes` 里 10 个 WSL core dump 各约 1 GB），ByteBuddy 往 `java.io.tmpdir` 写 attach 探针写不下去。处置是把 `TMP`/`TEMP` 指到 `D:\tmp` 再跑，之后 6/6 绿；本轮没动任何 Java 代码，也没删那些 dump（在仓库外，等用户处置）。这条环境例外同时解释了为什么取证四件套与门禁的 `eval` 步都在同一台机器上跑：换机器时先确认 `TMP` 所在盘的余量。EOL 复查：`.py` / `.jsonl` 仍全 CRLF，Java、README、CONTEXT、ticket 16、本票仍 LF，ticket 12、PLAN、问答库仍 CRLF，无 BOM 变化；`git diff --stat` 每文件都是定向改动，无整文件重写。
@@ -213,14 +213,14 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
   这条缺陷与本票判据无关，它砸的是 PLAN 承诺项「新机器照 README 一条命令起栈并跑通三条演示」，所以记在本票的收尾里而不是另开票。
 - **第二次门禁跑**（18:47:20-18:56:08，HEAD `9353a32`、开跑时工作树 clean）17 步全绿、总耗时 528s，落点 `logs/acceptance-run-20260911-185608.log`；
   `build` 与 `unit` 两步的 surefire 模块合计都是 `3 + 12 + 89 = 104`（两份日志的 `Results:` 段逐条对过）；README 矩阵块、落点 prose、索引行同步换到这一轮。
-  各步耗时与上一轮同量级（`stack` 89s 对 70s、`polarity` 36s 对 27s），本轮没有可归因的环境变化，差额没查，也不拿它当判据。
+  各步耗时与上一轮同量级但确实偏高（`stack` 89s 对 70s、`polarity` 36s 对 27s）。`stack` 那一步有现成的嫌疑人：**我自己**——18:48:17 我并发跑了那次 11435 隔离实验（`logs/ollama-probe.out` 首行时间戳），它另起一个带 GPU discovery 的 `ollama serve`，正落在 `stack` 步的窗口（18:47:20-18:48:5x）里。这句先记下不深挖，耗时不当判据；重跑那一轮门禁期间不再并发任何东西，让这一格重新变干净。
 - **冒烟产物换轮**：`tool-eval-20260911-185410-local-smoke*`（README 索引行与第 11 条引用的就是它）和
   `tool-eval-20260911-123109-local-smoke*`（第 11 条的跨轮对照）两份留库；`tool-eval-20260911-050015-local-smoke*` 用 `git rm` 删除——
   第 11 条改写后它不再被任何文档引用，而它提供的那一份读数已由 12:31 与 18:54 两轮的对照承担。删的是产物，不是判据；
   `tool-eval-20260911-042142-rescore.csv` 照旧在库、仍被 README 两处引用。删前删后各跑一次全库引用扫描：除本节这段"删除记录"本身，
   再没有任何文档把 `050015` 当证据引用。也就是说本节留的是**被删对象的身份**，不是对它的依赖——照登它删了，比抹掉它更好核对。
 - **零额度**：18:57 复读 `GET /api/v1/support/ops/circuit` 仍是 `tokensUsedToday: 0`、`llmMode: local`、日预算 260000。
-  本轮改动全部落在 `scripts/up.ps1`、README、本票、新增的 `round3-plan.md` 与产物换轮；阈值、判据、gold、夹具、断言数一处未动。
+  本轮改动全部落在：`scripts/up.ps1`（起栈修复）、`scripts/lib-launch.ps1`（第三轮审查后补的 dot-source 理由注释，纯注释）、README、本票、新增的 `.scratch/shoppilot-mvp/round3-plan.md`、`docs/interview-qa.md`（重生成，90 -> 91 问）、`docs/console.png`（门禁 `console` 步自己重跑写的截图，不是我手改）、以及冒烟产物换轮。阈值、判据、gold、夹具、断言数一处未动。
 
 ## Handoff notes
 
@@ -263,9 +263,9 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -OnlyIntent ACTION_ORDER -Run   #
    ⑤⑥ 的修法是给标记补一条"取值必须真实存在于种子"的反向对拍 + 8 条样本一律带满三件套，
    并把店名那条防呆从"标记⊆店名"改成"互为子串都拦"（整串招牌词与"招牌词+更多字"同样不配当标记）。
    断言数从 36 涨到 40（新增：标记取值对拍、三件套齐备、对照组夹具=16 准确数、店名整串、店名加长串）。
-  **两条不成立的也记下来，免得下一轮又被当成真问题重做**：审查说"取证命令缺 `--selfcheck` 那一行"
-  与"改动清单漏了 ADR 与 README"，实际两处都在（`--selfcheck` 在取证命令第 2 行，改动清单第 51、52 行
-  就是 ADR 与 README/ticket 落点）——子代理读的是旧快照。核实成本一条几秒钟，比照单改便宜得多。
+   **两条不成立的也记下来，免得下一轮又被当成真问题重做**：审查说"取证命令缺 `--selfcheck` 那一行"
+   与"改动清单漏了 ADR 与 README"，实际两处都在（`--selfcheck` 在取证命令第 2 行，改动清单第 51、52 行
+   就是 ADR 与 README/ticket 落点）——子代理读的是旧快照。核实成本一条几秒钟，比照单改便宜得多。
 8. 第三轮收尾被一个跟判据无关的地方绊倒：门禁 20 分钟不动，卡在 `up.ps1` 的 `[2/6]` 第一句 `& ollama list`——
    模型服务没在跑时 CLI 会顺手把它的应用与服务进程拉起来，那几个进程继承了本步骤的重定向句柄，PowerShell 等不到 EOF。
    教训不是"记得先起 Ollama"，而是**别拿被测对象的 CLI 当探活**：探活要用脱离式启动 + 端口断言。顺带一条更普遍的：
