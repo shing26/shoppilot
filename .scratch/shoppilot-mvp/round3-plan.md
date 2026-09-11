@@ -45,13 +45,17 @@
 - 命令：`pwsh -NoProfile -File scripts/run-acceptance.ps1`（`profile=local`，要求开跑时工作树 clean）。
 - **通过判据**：`logs/acceptance-run-<新ts>.log` 17 步 exit 全 0；头两行的 `commit=` 等于当时 HEAD、`开跑时工作树=clean`；`logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=16`、末行 `EVAL DONE`；`build`/`unit` 两步 surefire 合计 104；新冒烟 summary 与 `123109` 那一轮逐格一致。
 - 若 `polarity` exit 3：按 README「假红」一节既有口径处置——栈不动单跑 `scripts/verify-polarity.ps1`，exit 0 才算一次性、不算防线失效，且这一轮**不得**当落点写进 README。
-- 状态：**Pass（落点轮 18:56:08 @`9353a32`）**；第三、四次尝试（20:00 / 20:18 @`c5e6c2e`）因机器内存压力红在 `polarity`/`console`，见 P9
+- 状态：**Pass**（落点轮 21:11:40-21:20:11，`logs/acceptance-run-20260911-212011.log`，`commit=9eede6d`、511s、开跑时工作树 clean）
   - 17 步 exit 全 0，总耗时 528s；头两行 `commit=9353a32 开跑时工作树=clean`、`开始 18:47:20 结束 18:56:08 总耗时 528s`，`commit=` 与开跑时 HEAD 一致。
   - `logs/acceptance/eval.log` 首行 `SCORER SELFCHECK ok=16`、末行 `EVAL DONE cases=24 errors=0 mode=local limit=24`。
   - `build` 与 `unit` 两份日志的 `Results:` 段各三行 `3` / `12` / `89`（逐模块核对后相加 = 104），不是拿一个总数凑的。
   - 新冒烟 summary 与 `123109` 那一轮**不是**零差异：130 格里 1 格不同（`ESCALATE.overall_accuracy` 50.0% -> 100.0%，明细 `ESC-02` 的 `escalate_ok` False -> True）。我原先用 `Compare-Object` 比 `Import-Csv` 的对象，它只比 `ToString()`，把这一格吞成"零差异"，于是 P2 这一条被我记成了 Pass——两条审查轴各自独立抓到。判据是"逐格一致"，实然是"129/130 一致 + 1 格是 local 3B 抖动"，按实然改写（见本票第 11 条）。
   - `polarity` 本轮 36s 通过，没触发 `exit 3`，所以不需要走「假红」那套处置。
   - 18:57 复读 `GET /ops/circuit`：`tokensUsedToday: 0`、`llmMode: local`、日预算 260000 —— 整轮 528s（含 24 条冒烟）零计费额度。
+  - **上面这组读数属于 18:56 那一轮，它后来让位给落点轮**（第三轮审查又改了文档与一处纯注释）。落点轮 21:11:40-21:20:11 的同款读数：
+    17 步 exit 全 0、511s、`commit=9eede6d`、开跑时工作树 clean；`eval.log` 首行 `SCORER SELFCHECK ok=16`、末行 `EVAL DONE cases=24 errors=0 mode=local limit=24`；
+    `build`/`unit` 两步 surefire 仍是 `3 + 12 + 89 = 104`；`polarity` 26s 且守卫计数器增量 1；`console` 15/15（打字机那格 `5 chunks / 103 chars`）；
+    冒烟 summary 对 12:31 那一轮 130 格全等（逐行逐列按字段比，不是 `Compare-Object`）；21:21 复读 `tokensUsedToday: 0`。
   - 18:11:38 起的第一次跑：`syntax`/`stop`/`build`/`unit`/`report` 五步绿（`build` 的 `BUILD SUCCESS` 落在 18:13:48，用例数与上一轮同），
     18:13:49 进 `stack`，此后 20 分钟没有第六步。18:36 手动终止。
   - 卡点在 `scripts/up.ps1` 的 `[2/6] 本地模型`：`logs/acceptance/stack.log` 停在 18:14:04，最后四行是被拉起的 Ollama 自己打的
@@ -84,7 +88,7 @@
 - README 索引行（第 16 条动作那一格）：冒烟产物名换成新那一份。
 - ticket 20：`Status` 行的 log 文件名、验收结果第 11 与 24 条、追加「第三轮收尾」取证段。
 - **通过判据**：README 与 ticket 20 里出现的每一个 `acceptance-run-*` / `*-smoke*` 文件名都能在磁盘上找到；`git diff` 不含任何阈值、判据、gold 改动；承诺项那一格结论仍是「未达成」。
-- 状态：**Pass**（README 30 增 18 删；ticket 20 定向改 4 处 + 追加「第三轮收尾」段 + 1 条关键决策 + 1 条追问）
+- 状态：**Pass**（README 19 增 17 删；ticket 20 定向改 Status 行 + 第 11/24 条 + 追加 3 段取证；索引第 19 行的 `69s / 13s` 一并改到 80s / 12s）
   - 落点全部换到 `185608` / `commit=9353a32` / `528s` / 冒烟产物 `185410`，`stack 89s + demo 12s` 同步。
   - 环境例外那段按实然改写：上一轮的磁盘例外标清"上一轮"并原样保留读数，本轮换成 `up.ps1` 起栈缺陷；
     同时写明 `stack` 89s 对 70s 的差额**没有可归因的环境变化、没查、也不当判据**。
@@ -96,7 +100,7 @@
 
 - 只保留被引用的重算产物与冒烟产物；未被任何文档引用的旧冒烟产物删除（删除前先确认它不是唯一一份跨轮对照证据）。
 - **通过判据**：`git ls-files eval/results` 里每个 20260911 文件都被 README 或某张 ticket 引用；每条引用都指向在库文件。
-- 状态：**Pass**
+- 状态：**Pass**（留库 `211809` 落点轮 + `185410` 抖动对照面 + `123109` 跨轮对照 + `042142-rescore`；20:00 / 20:18 两轮非落点冒烟产物已删）
   - 留库：`185410-local-smoke*`（README 索引行 + 第 11 条）、`123109-local-smoke*`（第 11 条的跨轮对照）、`042142-rescore.csv`（README 两处 + 本票）；
     删 `050015-local-smoke*`（第 11 条改写后它不再被任何依赖引用）。
   - 机器扫 README、ticket 16/20、PLAN、ADR 0021、本计划里所有 `tool-eval-*` / `acceptance-run-*` / `clean-clone-check-*` 具体名字：
@@ -108,7 +112,7 @@
 
 - `python scripts/collect_interview_questions.py` -> 问数 >= 83、覆盖 20/20、无「缺收尾记录的 ticket」、头部计数与正文 **Q 条目数一致。
 - **通过判据**：四条同时成立；`docs/interview-qa.md` 的 diff 只含预期新增。
-- 状态：**Pass**
+- 状态：**Pass**（91 问、覆盖 20/20、无缺收尾记录、头部计数与正文一致、文件仍 CRLF）
   - `python scripts/collect_interview_questions.py` 打印 `写出 docs\interview-qa.md：91 问，覆盖 20/20 个 ticket`，无「缺收尾记录的 ticket」。
   - 头部 `共 91 问，覆盖 20 个 ticket。` 与正文 Q 条目数 91 一致；文件仍是 CRLF（433 个 CRLF、0 个裸 LF）。
   - 90 → 91 的唯一来源是本票新增那条单行追问，不是收集器口径变了。
@@ -117,13 +121,13 @@
 
 - 落点更新与产物变更合成一笔；提交信息说明「第三轮：门禁换到 `11a12ac` 之后那一轮」。
 - **通过判据**：`git status` clean；`git log origin/main..HEAD` 为空；push 后远端 HEAD 与本地一致。
-- 状态：pending
+- 状态：**Pass**（`380a217`、`c5e6c2e`、`9eede6d` 三笔已 push，`origin/main` 追平；本计划收口那一笔随后 push）
 
 ### P7 第三轮双轴 code-review（fixed point `e64dc66`）
 
 - Standards + Spec 两条轴并行子代理，逐条核实：成立则闭环，不成立则把证据写进 ticket 20 的 Handoff notes，免得下一轮重做。
 - **通过判据**：所有成立项修完并重跑受影响的取证命令；不成立项逐条留反证；若改了 `scripts/` 或 `eval/` 则回到 P2 重跑门禁。
-- 状态：pending
+- 状态：**Pass**（Standards 9 条 + Spec 2 条，逐条核实全部成立，闭环在 `c5e6c2e` / `9eede6d`；最重一条是假的"零差异"比对，见本票第 11 条）
 
 ### P8 目标收口
 
@@ -149,7 +153,7 @@
 - **待用户选的三条**：① 腾出内存（关掉别的项目容器 / hermes 进程）后我再跑一轮 17/17，落点换到最终 HEAD；
   ② 认可 18:56 那一轮（`9353a32`，17/17、528s）继续当落点，本轮两次失败按上面的证据照登进 README 与 ticket 20，
      并写明 `c5e6c2e` 相对它只改了文档与一处纯注释；③ 授权我改 `verify-polarity.ps1` 的前置判定（单独一票、单独跑一轮门禁验）。
-- **状态**：blocked（等用户处置），P8 因此不收口。
+- **状态**：**Pass（自发解决，未等用户处置）**——18:47/18:56 那两轮的并发是我自己的错，20:00/20:18 两轮则是机器内存不够。20:29 复测可用内存回到 3.3 GB，21:11 重跑拿到 17/17（511s），全程没放宽任何断言、没换任何口径。遗留的 `verify-polarity.ps1` 前置判定问题按铁律另开一票，不在本轮顺手做。
 
 ## 本轮明确不做
 
