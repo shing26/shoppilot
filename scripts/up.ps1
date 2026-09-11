@@ -50,15 +50,26 @@ foreach ($triple in @(@(16379, 'Redis', 'shoppilot-redis'), @(16333, 'Qdrant', '
 }
 
 Write-Host '[2/6] 本地模型（bge-m3 供 embedding，qwen2.5:3b 供 local 模式生成）' -ForegroundColor Cyan
-if (Get-Command ollama -ErrorAction SilentlyContinue) {
-    foreach ($model in @('bge-m3', 'qwen2.5:3b')) {
-        $have = (& ollama list) -match $model
-        if ($have) { Write-Host "  OK $model 已在本地" } else { & ollama pull $model | Out-Host }
-    }
-    if (-not (Wait-For { Test-Port 11434 } 'Ollama :11434' 30)) { throw 'Ollama 未监听 11434，先跑 ollama serve' }
-} else {
+if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
     Write-Host '  !! 未找到 ollama：local 模式与入库都需要它。装好后重跑本脚本。' -ForegroundColor Yellow
     throw 'Ollama 未安装'
+}
+# 先确认端口在听，再问 CLI。顺序反了会冻：11434 没人监听时，第一句 `ollama list` 就让 CLI 去拉起
+# Ollama 的应用与服务进程，那几个进程继承了本步骤的重定向输出句柄，PowerShell 要等句柄 EOF 才认
+# 为外部命令结束，于是永远等不到——连原来那句"先跑 ollama serve"的 fail-fast 都到不了。
+# 2026-09-11 18:13 那一轮门禁就是这么卡在 stack 步 20 分钟的（当时本机 Ollama 服务没在跑），
+# 证据是被拉起的 Ollama 自己那几行 INFO 出现在了本步骤的日志里：句柄确实被继承了。
+# 这里用仓库自己的脱离式启动法（WMI 创建、父进程是 WmiPrvSE、日志走自己的文件），
+# 和 gateway/biz-mock 同一条路；它们从没把卡住过，卡的只有走 CLI 继承句柄的这一条。
+# 这个服务起来后不随 down.ps1 停：11434 是共用的模型服务，脚本不去抢别人的端口，只在它没人听时补上。
+if (-not (Test-Port 11434)) {
+    Start-ShoppilotService -Name 'ollama' -WorkingDirectory $root -FilePath (Get-Command ollama).Source `
+        -ArgumentList @('serve') -StandardOutput (Join-Path $root 'logs\ollama.out') | Out-Null
+    if (-not (Wait-For { Test-Port 11434 } 'Ollama :11434' 60)) { throw 'Ollama 未监听 11434，先跑 ollama serve' }
+}
+foreach ($model in @('bge-m3', 'qwen2.5:3b')) {
+    $have = (& ollama list) -match $model
+    if ($have) { Write-Host "  OK $model 已在本地" } else { & ollama pull $model | Out-Host }
 }
 
 Write-Host '[3/6] 构建' -ForegroundColor Cyan
