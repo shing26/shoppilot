@@ -1202,8 +1202,12 @@ def h12_verdict(artifact_stdout, n_pass, n_fail, n_skip, n_total):
     lines = artifact_stdout.splitlines()
     # 第八轮自查抓到：原先两侧都用宽匹配（"H12" in l / startswith("H12")），而跑器里真有一个
     # 名字以 `H12b` 开头的 check —— 伪造的红名单只要写 `H12b ...` 就能冒充「H12 自己那一格」，
-    # 顺带还把 `was_red` 骗成「H12 当时是红」。check 名在打印时是 `H12 ` 加一个空格，按这个收紧。
-    _is_h12 = lambda s: s.startswith("H12 ")
+    # 顺带还把 `was_red` 骗成「H12 当时是红」。
+    # Mendel（第八轮 Standards 轴）补第二刀：收紧时别退回去写字面量前缀 `"H12 "`——那等于把「自己那一格」
+    # 绑死在名字字符串上，哪天改了 `_H12_NAME`，产物里合法的红名单就不再被认作自己，`was_red` 恒假，
+    # 「收敛途中」那个形状当场长成恒红假判据（和 f6234c4 刚治过的那条同型）。按 `_H12_NAME` 的全名比；
+    # 它在调用期才求值，定义顺序不影响。
+    _is_h12 = lambda s: s.startswith(_H12_NAME)
     last = [l for l in lines if l.startswith("汇总：")]
     if not last:
         return False, "产物里没有汇总行"
@@ -1250,9 +1254,12 @@ def _run_h12():
     # 「PASS 95 FAIL 0」这个状态在数学上不可达。第六轮注释里刚写过「拿中间快照比末行是恒红假判据」，
     # 第七轮只把 H12 挪到「自己之前那一段之后」，没挪到「所有 check 之后」，同一个病换了更隐蔽的形状。
     # 正解：判定走 defer，落到 flush 阶段——此刻除 H12 自己以外全部登记完毕。
-    assert len(PASSES) + len(FAILS) + len(SKIPS) == N - 1, (
-        f"H12 要求「除自己外全部登记完」，此刻只有 {len(PASSES) + len(FAILS) + len(SKIPS)} 项、N={N}："
-        f"有新的 check 加在 flush 之后了")
+    # Mendel（第八轮 Standards 轴）：原先写死 `N - 1`，等于把「本轮只推迟一项、且那一项就是 H12」
+    # 藏进判据里——再加一个 `defer()` 就自己炸自己。改成按实际推迟项数算。
+    _reg = len(PASSES) + len(FAILS) + len(SKIPS)
+    assert _reg == N - len(DEFERRED_NAMES), (
+        f"H12 要求「除所有推迟项之外全部登记完」：此刻登记 {_reg} 项、N={N}、推迟 {len(DEFERRED_NAMES)} 项。"
+        f"要么有人把 _run_h12 改回就地调用（那时 H12b/H16 还没登记），要么有 check 加在了 flush 之后")
     if committed_txt.returncode != 0:
         check(_H12_NAME, False, f"取不到 HEAD:{OWN_TXT}（{committed_txt.stderr.strip()[:60]}）")
     elif SKIPS:
@@ -1281,7 +1288,7 @@ _H12_CASES = [
     ("全绿产物 + 本次全绿", _mk(94, 0, _H12_TAIL), 93, 0, True),
     ("陈旧产物（项数少一笔）", _mk(88, 0, "汇总：PASS 88  FAIL 0  SKIP 0  共 88 项"), 93, 0, False),
     ("伪造：末行 FAIL 1、红名单里是 G1", _mk(93, 1, "", ("G1 计划里每个",)), 93, 0, False),
-    ("伪造：末行 FAIL 1、红名单只有 H12（收敛途中）", _mk(93, 1, "", ("H12 入仓读数产物",)), 93, 0, True),
+    ("伪造：末行 FAIL 1、红名单只有 H12（收敛途中）", _mk(93, 1, "", (_H12_NAME,)), 93, 0, True),
     ("本次另有红（A2）", _mk(94, 0, _H12_TAIL), 92, 1, False),
     ("末行四个数自相矛盾", _mk(90, 0, "汇总：PASS 90  FAIL 0  SKIP 0  共 94 项"), 93, 0, False),
     # P13 落盘期真实踩到的形状：H12 就地判、后面还有两颗没登记 ⇒ 送进来的计数比最终少两笔。
@@ -1307,8 +1314,9 @@ _H16 = "H16 本机限定清单两个方向都要对得上（声明 ⊇ 实跑 SK
 _norm = lambda x: re.sub(r"\s+", " ", x.split("（")[0]).strip()
 _declared = {_norm(n) for n in LOCAL_ONLY}
 _actual_skip = {_norm(x) for x in SKIPS}
-# 推迟登记的项（H12）此刻还没落地，但它在 flush 阶段一定会跑；末尾硬断言兜「登记数 == N」，
-# 所以这里把它算成「本轮跑过」不会放过真正的死条目。
+# 推迟登记的项（H12）此刻还没落地，这里先按「稍后会跑」算进「跑过的项」。
+# 第八轮 Standards 轴抓到：光靠末尾「登记数 == N」兜不住——冒名换掉 check 的名字，数量照样对得上。
+# 真正的闸在下面 flush 处：逐项核 `DEFERRED_NAMES` 是否以自己的名字落地，不落地就当场炸。
 _ran = {_norm(x) for x in ALL_NAMES + DEFERRED_NAMES if _norm(x) != _norm(_H16)}
 _undeclared = sorted(_actual_skip - _declared)
 _dead = sorted(_declared - _ran)
@@ -1323,6 +1331,12 @@ for _nm, _fn in DEFERRED:
     _fn()
 assert len(ALL_NAMES) - _before == len(DEFERRED_NAMES), (
     f"登记了 {len(DEFERRED_NAMES)} 个推迟项，flush 只落地 {len(ALL_NAMES) - _before} 个")
+# Mendel（第八轮 Standards 轴）抓到上面那条只比「数量」：把 _run_h12 里的 check(_H12_NAME, ...) 换成
+# check("H12Q 冒名格", ...) 之后数量照样相等，而 H16 又把 DEFERRED_NAMES 当成「跑过」，
+# 于是清单里那一格从没以自己的名字落地过，两侧却全绿。按名字逐个核才咬得住。
+_misnamed = [nm for nm in DEFERRED_NAMES if nm not in ALL_NAMES[_before:]]
+assert not _misnamed, (
+    f"推迟项登记了名字却没以自己的名字落地（冒名/改名）：{_misnamed}")
 DEFERRED.clear()
 
 # 硬断言放在**所有** check 之后：N 必须等于此刻的实际计数。
