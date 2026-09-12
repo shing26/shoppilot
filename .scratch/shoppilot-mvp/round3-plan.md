@@ -713,7 +713,7 @@
 | 监控与告警 | 指标强、告警零 | 34 个自定义 `shoppilot_*` 指标，`/actuator/prometheus` 实测 200 / 38595 字节带实值；`probes.enabled: true` 配了 readiness 组。但健康组件实测只有 diskSpace/livenessState/ping/readinessState/redis，README 自认的「真单点」向量库不在就绪门里；全仓零条告警规则 |
 | 错误处理 | 部分具备 | SSE 侧业务/系统分离干净（8 值 reason + userMessage 两层、限流走同通道不裸 429、明确不 completeWithError）；REST 侧零 `@RestControllerAdvice`，12 处手搓错误体，同一令牌错误两种文案（根因 `requireOps()` 把开关关闭与令牌不匹配压成一个布尔） |
 
-差距 16 项（工时是我的判断，不是实测）：高优先级 5 项合计 4-5 人日（密钥 fail-fast 0.5d → readiness 三个 HealthIndicator 1d → 最小告警集 1d → logback 加 traceId 贯穿 1.5d → REST 统一异常出口 1d）；中优先级 6 项 5-6 人日（在线有界重试、优雅停机、LLM/检索熔断、分布式追踪、配置校验、半开与 Redis 故障测试）；低优先级 4 项 3-5 人日（Dockerfile 与 CI、跨实例 singleflight 验证、调试台 12 项、异机复现一次 `clean_clone_check.ps1`）。把 biz-mock 换成真业务库与真身份方不在此列，那是新项目量级。
+差距合计 16 项，其中 15 项是本项目内的改造（高 5 + 中 6 + 低 4，工时是我的判断不是实测）：高优先级 5 项合计 4-5 人日（密钥 fail-fast 0.5d → readiness 三个 HealthIndicator 1d → 最小告警集 1d → logback 加 traceId 贯穿 1.5d → REST 统一异常出口 1d）；中优先级 6 项 5-6 人日（在线有界重试、优雅停机、LLM/检索熔断、分布式追踪、配置校验、半开与 Redis 故障测试）；低优先级 4 项 3-5 人日（Dockerfile 与 CI、跨实例 singleflight 验证、调试台 12 项、异机复现一次 `clean_clone_check.ps1`）。把 biz-mock 换成真业务库与真身份方不在此列，那是新项目量级。
 
 ### 已踩到的门（本轮实测，待处置）
 
