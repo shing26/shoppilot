@@ -1200,6 +1200,10 @@ def h12_verdict(artifact_stdout, n_pass, n_fail, n_skip, n_total):
       ② 产物末行内部自洽（PASS+FAIL+SKIP == 共 N 项）；
       ③ 本次除 H12 外零红，且产物自记的红名单只许是 H12 那一格（收敛途中的唯一合法形状）。"""
     lines = artifact_stdout.splitlines()
+    # 第八轮自查抓到：原先两侧都用宽匹配（"H12" in l / startswith("H12")），而跑器里真有一个
+    # 名字以 `H12b` 开头的 check —— 伪造的红名单只要写 `H12b ...` 就能冒充「H12 自己那一格」，
+    # 顺带还把 `was_red` 骗成「H12 当时是红」。check 名在打印时是 `H12 ` 加一个空格，按这个收紧。
+    _is_h12 = lambda s: s.startswith("H12 ")
     last = [l for l in lines if l.startswith("汇总：")]
     if not last:
         return False, "产物里没有汇总行"
@@ -1207,11 +1211,11 @@ def h12_verdict(artifact_stdout, n_pass, n_fail, n_skip, n_total):
     if not m:
         return False, f"末行形状不对：{last[-1][:40]}"
     got = tuple(int(x) for x in m.groups())
-    was_red = any("H12" in l for l in lines if l.startswith("  FAIL -> "))
-    exp = (n_pass + (0 if was_red else 1), n_fail + (1 if was_red else 0), n_skip, n_total)
     art_fails = [l[len("  FAIL -> "):].strip() for l in lines if l.startswith("  FAIL -> ")]
+    was_red = any(_is_h12(f) for f in art_fails)
+    exp = (n_pass + (0 if was_red else 1), n_fail + (1 if was_red else 0), n_skip, n_total)
     ok = (got == exp and got[0] + got[1] + got[2] == got[3]
-          and n_fail == 0 and all(f.startswith("H12") for f in art_fails))
+          and n_fail == 0 and all(_is_h12(f) for f in art_fails))
     return ok, (f"末行 {got} vs 应为 {exp}；产物里 H12 当时={'红' if was_red else '绿'}；"
                 f"本次除 H12 外的红 {n_fail} 项；产物自记红名单 {art_fails or '无'}")
 
@@ -1283,6 +1287,9 @@ _H12_CASES = [
     # P13 落盘期真实踩到的形状：H12 就地判、后面还有两颗没登记 ⇒ 送进来的计数比最终少两笔。
     # 这一格把「np 必须 == N-1」这个调用点不变量钉成可重跑断言，防它换个名字再长回来。
     ("本次计数少两笔（未 flush 的旧调用点形状）", _mk(94, 0, _H12_TAIL), 91, 0, False),
+    # 第八轮自查抓到的宽匹配：伪造的红名单写 `H12b ...`（同样以 H12 开头）在旧代码里会同时骗过
+    # `was_red` 与「红名单只许是 H12 那一格」两道，判成绿。收紧成 `H12 ` 前缀后这一格必须判红。
+    ("伪造：红名单写 H12b（宽前缀匹配下的漏网形状）", _mk(93, 1, "", ("H12b 对照组",)), 93, 0, False),
 ]
 _H12_BAD = [(nm, got, exp) for nm, art, np_, nf, exp in _H12_CASES
             for got, _ in [h12_verdict(art, np_, nf, 0, 94)] if got != exp]
