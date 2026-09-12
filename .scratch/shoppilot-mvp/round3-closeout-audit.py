@@ -262,12 +262,17 @@ check("B5 唯一判据：tool_ok 赋值只在 judge() 内",
       len(assign_lines) == 2 and len(in_judge) == 2,
       f"赋值行 {assign_lines}，落在 judge()（偏移 {judge_start}-{after}）内的 {in_judge}")
 
-changed = sh(["git", "diff", "--name-only", f"{FIXED_POINT}..HEAD"]).stdout.splitlines()
+# B6 的右端原先是 HEAD，于是「第三轮窗口」这个以某一轮命名的断言会跟着仓库一起长：
+# 实现轮只改 CONTEXT.md 与新增 ADR 就让它当场判红（本轮实测），而那条改动根本不属于第三轮。
+# 右端改钉到第四轮收口那一笔 PRE_FIX（`a6ccdcb`，复算：`git log -1 --format=%h a6ccdcb`），
+# 白名单与判据面一字未动。这是 ADR 0023 那条「窗口逐轮重锚」的同病同治，不是放宽：
+# 窗口闭起来之后，它回答的才正是它名字里那件事。
+changed = sh(["git", "diff", "--name-only", f"{FIXED_POINT}..{PRE_FIX}"]).stdout.splitlines()
 allow_prefix = ("README.md", ".scratch/shoppilot-mvp/", "docs/interview-qa.md", "docs/console.png", "scripts/up.ps1",
                 "scripts/lib-launch.ps1", "eval/results/")
 outside = [f for f in changed if not f.startswith(allow_prefix)]
 check("B6 第三轮窗口改动面未越界（判据/gold/ADR/PLAN/CONTEXT/Java 零改动；注意白名单含 scripts 那两支 ps1）",
-      not outside, f"越界文件：{outside}" if outside else f"共 {len(changed)} 个文件，全在白名单内")
+      not outside, f"越界文件：{outside}" if outside else f"{FIXED_POINT}..{PRE_FIX} 共 {len(changed)} 个文件，全在白名单内")
 # B7：第五轮双轴审查抓到 P10 判据第 3 条那句「scripts/、eval/ 零改动由 B1-B6 与 F4 钉」是借来的保证——
 #     B6 的白名单里就明列 scripts/up.ps1、scripts/lib-launch.ps1、eval/results/，它根本不放这条红线；
 #     而且 B 组量的窗口是第三轮起点 11a12ac..HEAD，不是本轮。这里补一条真钉得住的：
