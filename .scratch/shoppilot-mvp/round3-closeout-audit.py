@@ -46,7 +46,7 @@ FIXED_POINT = "11a12ac"  # 第三轮起点
 #   这些条目断言的是「订正前那份文档里确实存在这句问题话」，而 HEAD 会随本轮提交前移，
 #   一旦提交了就永远取不到那句话，对照组反而把自己判红（第四轮收尾实际踩到过，见 ticket 20 第 10 条）。
 PRE_FIX = "a6ccdcb"  # 第四轮收口那一笔（对照组要取它**之前**那份文档，见下面 ROUND_FP 的分工）
-ROUND_FP = "9d444c9"  # 本轮（第五轮闭环）的 fixed point：B7 与 A3b 量的窗口
+ROUND_FP = "bb45004"  # 本轮（实现轮，ticket 21 起）的 fixed point：B7 与 A3b 量的窗口。逐轮重锚，见 ADR 0023。
 
 FAILS = []
 PASSES = []
@@ -273,24 +273,26 @@ check("B6 第三轮窗口改动面未越界（判据/gold/ADR/PLAN/CONTEXT/Java 
 #     而且 B 组量的窗口是第三轮起点 11a12ac..HEAD，不是本轮。这里补一条真钉得住的：
 #     窗口取本轮 fixed point `ROUND_FP`（第六轮抓到原先误用 PRE_FIX，多含第四轮三笔），
 #     白名单是**具名文件**而不是 `.scratch/shoppilot-mvp/` 整目录，scripts/eval/src/docs 出现即红。
-# 白名单必须是**具体文件名**，不能是 `.scratch/shoppilot-mvp/` 这种整目录前缀——
-# 第六轮 Standards 轴抓到：整目录前缀等于在本目录下开一条免检通道，任何新文件都能混过去。
-STRICT_ALLOW = ("README.md",
-                ".scratch/shoppilot-mvp/round3-plan.md",
-                ".scratch/shoppilot-mvp/issues/20-action-order-attribution.md",
-                ".scratch/shoppilot-mvp/round3-closeout-audit.py",
-                ".scratch/shoppilot-mvp/round3-closeout-audit.txt",
-                ".scratch/shoppilot-mvp/round3-doc-fix-pass1.py",
-                # pass2 与 pass1 同族（第四轮那 3 处定向替换），本轮一起被 H8b/H8c 的换行符修复改到；
-                # 具名加进来，不开目录前缀。
-                ".scratch/shoppilot-mvp/round3-doc-fix-pass2.py")
+# 实现轮的产出就是 `src/` 里的 Java，路径白名单在这一轮不再承载任何含义，故按 ADR 0023 改成
+# **内容级禁面 + 改动清单读数**。原口径（下面两行历史）与 `STRICT_ALLOW` 一并撤下：
+# 第六轮 Standards 轴立的是「白名单必须是具体文件名，整目录前缀等于免检通道」，那条规矩在它唯一
+# 有效的场景（纯文档轮）里仍然成立；纯文档轮若再需要这张表，五行代码加回，且那是有意加回。
+# 留着它不删的另一条理由是本仓自己的家法 F2b：豁免表不许长出没人读的条目。
+# 项数保持 95：这一条仍是一次 check 调用，两个子句合成一个谓词，改动清单降为 detail 里的读数。
+# 已知缺口照登：`application.yml` 里的阈值（`perf-first-token-latency` 等）不在路径禁面内——
+# 票 21/24 要往同一个文件加键，那条红线本轮只由「判据/阈值一字不动」这条铁律与本条的读数看着。
 changed_now = sh(["git", "diff", "--name-only", f"{ROUND_FP}..HEAD"]).stdout.splitlines()
-forbidden = [f for f in changed_now if f.startswith(("scripts/", "eval/", "src/", "shoppilot-", "docs/adr/", "knowledge/"))]
-stray = [f for f in changed_now if not f.startswith(STRICT_ALLOW)]
-check("B7 本轮窗口改动面严格白名单（scripts/、eval/、src/、docs/adr/ 出现即红）",
-      not forbidden and not stray,
-      f"禁面命中 {forbidden}；白名单外 {stray}" if (forbidden or stray)
-      else f"{ROUND_FP}..HEAD 共 {len(changed_now)} 个文件，逐个落在 {len(STRICT_ALLOW)} 个具名文件内；禁面零命中")
+# 「既有 ADR」= 本轮起点那一刻就在库里的这些，新写的 ADR 不在禁面内（本窗口自己就在往里加）。
+prior_adrs = {"docs/adr/" + n
+              for n in sh(["git", "ls-tree", "--name-only", f"{ROUND_FP}:docs/adr"]).stdout.splitlines()}
+forbidden = [f for f in changed_now
+             if f.startswith(("eval/", "knowledge/", "scripts/run_tool_eval.py",
+                              "scripts/verify_eval_judge.py", "scripts/build_eval_set.py"))
+             or f in prior_adrs]
+check("B7 本轮窗口未碰内容级禁面（gold 与判据阈值所在文件、既有 ADR 出现即红；改动清单为读数）",
+      not forbidden,
+      (f"禁面命中 {forbidden}；" if forbidden else "禁面零命中；")
+      + f"{ROUND_FP}..HEAD 改动 {len(changed_now)} 个文件：{'、'.join(changed_now) or '（无）'}")
 
 print()
 print("=" * 78)
