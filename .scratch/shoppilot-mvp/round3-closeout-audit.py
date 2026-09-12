@@ -52,6 +52,10 @@ FAILS = []
 PASSES = []
 SKIPS = []
 ALL_NAMES = []  # 本轮跑过的每一项（含 SKIP 分支），H16 用它反查「声明了但盘上没这一项」的腐烂
+# 推迟登记：有些判据必须看到**最终**计数才能算（H12 就是），它们在普通 check 流里只挂名字、
+# 不落地，等所有 check 跑完再统一 flush。DEFERRED_NAMES 让 H16 反查时把「稍后会跑」也算成跑过。
+DEFERRED = []
+DEFERRED_NAMES = []
 # 「本机限定项」清单：读 `logs/` 或依赖本机检出环境的断言全部列在这儿，**在跑任何 check 之前**先打出来。
 # 第六轮 Spec 轴抓到判据 3 原文要求「在读 logs/ 之前打出具名清单」，而原先只在各项就地打 SKIP、
 # 末尾再汇总——顺序与自述不符。这里补上前置声明，并由 H16 钉「声明 ⊇ 实跑 SKIP」，防这张表腐烂。
@@ -75,6 +79,7 @@ LOCAL_ONLY = [
 ]
 TAIL_CHECKS = 9  # N 定义点之后还会跑的 check 数：H7、H7b、H13、H13b、H14、H15、H12、H12b、H16。
 # 第七轮把 H12 挪到末尾并加了 H12b，这张表跟着变；加一项就得改这里，末尾硬断言会当场炸。
+# P13 落盘期补：H12 在这一段里求值，但它的 check() 登记走 defer，实际落在 H16 之后（见 _run_h12）。
 
 
 def check(name, ok, detail="", skip=False):
@@ -86,6 +91,12 @@ def check(name, ok, detail="", skip=False):
     print(line, flush=True)
     ALL_NAMES.append(name)
     (SKIPS if skip else (PASSES if ok else FAILS)).append(name)
+
+
+def defer(name, fn):
+    """登记一个「要等最终计数」的 check：名字立刻进清单（H16 要认），判定推迟到 flush 阶段执行。"""
+    DEFERRED_NAMES.append(name)
+    DEFERRED.append((name, fn))
 
 
 def sh(args):
@@ -1226,24 +1237,34 @@ else:
 #      可这份 txt 在脚本里只出现在文档字符串与豁免名单里，**没有任何断言读它**。
 #      后果：改了跑器忘了重落产物，一份陈旧末行照样全绿入仓，那句"为准"是空的。
 #      现在真去读 HEAD 里那份（不是工作树这份——它正被本次 Tee 边跑边写，读它会自我循环）。
-if committed_txt.returncode != 0:
-    check("H12 入仓读数产物的末行项数 == 本次实跑项数（钉住那句『以末行为准』）", False,
-          f"取不到 HEAD:{OWN_TXT}（{committed_txt.stderr.strip()[:60]}）")
-elif SKIPS:
-    # 入仓那份产物记的是**本机全绿那一跑**的末行；干净克隆上本次必然带 SKIP，两边不同源，
-    # 判红就是把「本机当轮对账单」当成克隆可复现的防线——那正是第五轮 ① 刚治过的病。走 SKIP 三态。
-    check("H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）", False,
-          f"本机限定·本次有 {len(SKIPS)} 项 SKIP（缺 `logs/` 的形状），与入仓产物那份全绿末行不同源",
-          skip=True)
-else:
-    _last = [l for l in committed_txt.stdout.splitlines() if l.startswith("汇总：")]
-    _mm = re.match(r"汇总：PASS (\d+)  FAIL (\d+)  SKIP (\d+)  共 (\d+) 项", _last[-1]) if _last else None
-    # 第六轮抓到两件事：(a) 只比 `共 N 项` 的话，一份 `FAIL 3` 的陈旧产物照样绿；
-    #   (b) 但拿「跑到自己之前的中间快照」去比末行永远对不上，那是一条恒红的假判据（第一版整行比对就栽在这儿）。
-    #   自指涉的正解：把 H12 自己那一格从两侧都摘掉再比。产物里 H12 是绿是红，看它自己的 `FAIL ->` 名单。
-    _ok12, _why12 = h12_verdict(committed_txt.stdout, len(PASSES), len(FAILS), len(SKIPS), N)
-    check("H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）", _ok12,
-          f"{_why12}（改了跑器或本轮状态变了就得重跑并重新落盘产物）")
+_H12_NAME = "H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）"
+
+
+def _run_h12():
+    # P13 落盘期抓到：这一格原先**就地** check()，而 H12b、H16 在它之后才登记，
+    # h12_verdict 拿到的是「跑到自己为止」的计数，比最终少两格 ⇒ exp 永远对不上，
+    # 「PASS 95 FAIL 0」这个状态在数学上不可达。第六轮注释里刚写过「拿中间快照比末行是恒红假判据」，
+    # 第七轮只把 H12 挪到「自己之前那一段之后」，没挪到「所有 check 之后」，同一个病换了更隐蔽的形状。
+    # 正解：判定走 defer，落到 flush 阶段——此刻除 H12 自己以外全部登记完毕。
+    assert len(PASSES) + len(FAILS) + len(SKIPS) == N - 1, (
+        f"H12 要求「除自己外全部登记完」，此刻只有 {len(PASSES) + len(FAILS) + len(SKIPS)} 项、N={N}："
+        f"有新的 check 加在 flush 之后了")
+    if committed_txt.returncode != 0:
+        check(_H12_NAME, False, f"取不到 HEAD:{OWN_TXT}（{committed_txt.stderr.strip()[:60]}）")
+    elif SKIPS:
+        # 入仓那份产物记的是**本机全绿那一跑**的末行；干净克隆上本次必然带 SKIP，两边不同源，
+        # 判红就是把「本机当轮对账单」当成克隆可复现的防线——那正是第五轮 ① 刚治过的病。走 SKIP 三态。
+        check(_H12_NAME, False,
+              f"本机限定·本次有 {len(SKIPS)} 项 SKIP（缺 `logs/` 的形状），与入仓产物那份全绿末行不同源",
+              skip=True)
+    else:
+        # 第六轮抓到两件事：(a) 只比 `共 N 项` 的话，一份 `FAIL 3` 的陈旧产物照样绿；
+        #   (b) 拿中间快照去比末行永远对不上，那是恒红假判据。自指涉的正解：把 H12 自己那一格从两侧都摘掉再比。
+        _ok12, _why12 = h12_verdict(committed_txt.stdout, len(PASSES), len(FAILS), len(SKIPS), N)
+        check(_H12_NAME, _ok12, f"{_why12}（改了跑器或本轮状态变了就得重跑并重新落盘产物）")
+
+
+defer(_H12_NAME, _run_h12)
 
 # H12b：H12 的三条判据必须都能失败——直接拿合成输入打那颗纯函数，不用再造克隆。
 #       第七轮 Standards 轴抓到「末行写着 FAIL 1（那 1 就是 H12）的陈旧产物照样能满足 H12」，
@@ -1259,11 +1280,15 @@ _H12_CASES = [
     ("伪造：末行 FAIL 1、红名单只有 H12（收敛途中）", _mk(93, 1, "", ("H12 入仓读数产物",)), 93, 0, True),
     ("本次另有红（A2）", _mk(94, 0, _H12_TAIL), 92, 1, False),
     ("末行四个数自相矛盾", _mk(90, 0, "汇总：PASS 90  FAIL 0  SKIP 0  共 94 项"), 93, 0, False),
+    # P13 落盘期真实踩到的形状：H12 就地判、后面还有两颗没登记 ⇒ 送进来的计数比最终少两笔。
+    # 这一格把「np 必须 == N-1」这个调用点不变量钉成可重跑断言，防它换个名字再长回来。
+    ("本次计数少两笔（未 flush 的旧调用点形状）", _mk(94, 0, _H12_TAIL), 91, 0, False),
 ]
 _H12_BAD = [(nm, got, exp) for nm, art, np_, nf, exp in _H12_CASES
             for got, _ in [h12_verdict(art, np_, nf, 0, 94)] if got != exp]
-check("H12b 对照组：H12 那颗纯函数对六种合成产物必须按预期判绿/判红（钉住第七轮补的三条都真能失败）",
-      not _H12_BAD, f"六格全部符合预期" if not _H12_BAD
+check(f"H12b 对照组：H12 那颗纯函数对 {len(_H12_CASES)} 种合成产物必须按预期判绿/判红"
+      f"（钉住第七轮补的三条与 P13 落盘期的调用点不变量都真能失败）",
+      not _H12_BAD, f"{len(_H12_CASES)} 格全部符合预期" if not _H12_BAD
       else "；".join(f"{nm}：判 {got}，应为 {exp}" for nm, got, exp in _H12_BAD))
 
 # H16：文件头那份「本机限定项」清单是在跑任何 check 之前打出来的自述，两个方向都要核：
@@ -1275,13 +1300,23 @@ _H16 = "H16 本机限定清单两个方向都要对得上（声明 ⊇ 实跑 SK
 _norm = lambda x: re.sub(r"\s+", " ", x.split("（")[0]).strip()
 _declared = {_norm(n) for n in LOCAL_ONLY}
 _actual_skip = {_norm(x) for x in SKIPS}
-_ran = {_norm(x) for x in ALL_NAMES if _norm(x) != _norm(_H16)}
+# 推迟登记的项（H12）此刻还没落地，但它在 flush 阶段一定会跑；末尾硬断言兜「登记数 == N」，
+# 所以这里把它算成「本轮跑过」不会放过真正的死条目。
+_ran = {_norm(x) for x in ALL_NAMES + DEFERRED_NAMES if _norm(x) != _norm(_H16)}
 _undeclared = sorted(_actual_skip - _declared)
 _dead = sorted(_declared - _ran)
 check(_H16, not _undeclared and not _dead,
       f"未声明就 SKIP {len(_undeclared)} 项 {_undeclared[:3]}；清单里本轮没跑过的死条目 {len(_dead)} 项 {_dead[:3]}"
       if (_undeclared or _dead)
       else f"声明 {len(LOCAL_ONLY)} 项、本次实跑 SKIP {len(_actual_skip)} 项、本轮共跑过 {len(_ran)} 项，两个方向都对得上")
+
+# flush：把「要等最终计数」的判据落地。必须在末尾硬断言之前，否则 N 对不上。
+_before = len(ALL_NAMES)
+for _nm, _fn in DEFERRED:
+    _fn()
+assert len(ALL_NAMES) - _before == len(DEFERRED_NAMES), (
+    f"登记了 {len(DEFERRED_NAMES)} 个推迟项，flush 只落地 {len(ALL_NAMES) - _before} 个")
+DEFERRED.clear()
 
 # 硬断言放在**所有** check 之后：N 必须等于此刻的实际计数。
 # 第五轮订正：原先这句注释写「以后若有人在 H7b 之后再加 check，这里会当场炸」是**说过头**——
