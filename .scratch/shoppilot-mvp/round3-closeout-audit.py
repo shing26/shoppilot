@@ -69,6 +69,7 @@ LOCAL_ONLY = [
     "H1b 每轮都是 17 步（不是步数变少造成的『更绿』）",
     "H1d README 里每一处 N/17 主张都等于该轮日志实算（真读 README，不靠脚本内抄本）",
     "H2 本机确有 69s/13s 成对的落盘矩阵（故 README 不得写『与任何一份都不符』）",
+    "H12 入仓读数产物的末行与本次实跑逐字段相同",  # 产物记的是本机全绿那一跑，克隆上不同源
 ]
 TAIL_CHECKS = 8  # N 定义点之后还会跑的 check 数：H7、H7b、H12、H13、H13b、H14、H15、H16。加一项就得改这里，末尾硬断言会当场炸。
 
@@ -1107,24 +1108,6 @@ check("H7 本轮实跑项数被文档至少引用一次",
 check("H7b 文档里每个不等于本轮实数的项数，都带历史标记（不许裸着当现状）",
       not stale, f"无历史标记的异数 {stale}")
 
-# H12：第五轮双轴审查抓到——三处文档把「项数以 round3-closeout-audit.txt 末行为准」钉成权威，
-#      可这份 txt 在脚本里只出现在文档字符串与豁免名单里，**没有任何断言读它**。
-#      后果：改了跑器忘了重落产物，一份陈旧末行照样全绿入仓，那句"为准"是空的。
-#      现在真去读 HEAD 里那份（不是工作树这份——它正被本次 Tee 边跑边写，读它会自我循环）。
-committed_txt = sh(["git", "show", f"HEAD:{OWN_TXT}"])
-if committed_txt.returncode != 0:
-    check("H12 入仓读数产物的末行项数 == 本次实跑项数（钉住那句『以末行为准』）", False,
-          f"取不到 HEAD:{OWN_TXT}（{committed_txt.stderr.strip()[:60]}）")
-else:
-    _last = [l for l in committed_txt.stdout.splitlines() if l.startswith("汇总：")]
-    _m = re.search(r"共 (\d+) 项", _last[-1]) if _last else None
-    # 第六轮抓到：只比 `共 N 项` 的话，一份 `FAIL 3` 的陈旧产物照样绿。整行三个数一起比。
-    _mine = f"汇总：PASS {len(PASSES)}  FAIL {len(FAILS)}  SKIP {len(SKIPS)}  共 {N} 项"
-    check("H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）",
-          _m is not None and int(_m.group(1)) == N and _last[-1] == _mine,
-          f"产物末行 {(_last[-1] if _last else '无汇总行')[:70]} vs 本次 {_mine}"
-          "（改了跑器或本轮状态变了就得重跑并重新落盘产物，否则这一格红）")
-
 # H13：P10 判据第 5 条要求「三条驳回项各留机器反证（不是留一句『审查读错了』）」，
 #      第五轮双轴审查判这一条只有 1/3 真有产物。这里把缺的两条补成可重跑断言：
 #      (a)「`verify_eval_judge` 的 17 项断言在盘上不存在」——钉它只许以带幻影标记的形式出现；
@@ -1175,6 +1158,10 @@ try:
 except ValueError as exc:
     check("H14 P10 六条判据的主干要求（去括号后）与本轮 fixed point 逐字相同", False, f"取不到判据块：{exc}")
 
+# 产物只读一次，H12 与 H15 共用同一份（读的是 HEAD 里那一份，不是工作树——工作树这份正被本次 Tee 边跑边写）。
+committed_txt = sh(["git", "show", f"HEAD:{OWN_TXT}"])
+
+
 # H15：入仓产物里 A1 记的 HEAD 必须是当前 HEAD 的祖先或本身。
 #      第五轮 Spec 轴记的「产物永远比 HEAD 慢一笔」是真形状（自我指涉），但「慢一笔」不等于「可以记一个无关 sha」。
 _a1 = [l for l in committed_txt.stdout.splitlines() if l.strip().startswith("HEAD=")]
@@ -1197,6 +1184,35 @@ _undeclared = sorted(_actual_skip - {_norm(n) for n in LOCAL_ONLY})
 check("H16 实跑的每一项 SKIP 都在文件头声明的本机限定清单里（声明 ⊇ 实跑，不许腐烂）",
       not _undeclared, f"未声明就 SKIP 的项：{_undeclared}" if _undeclared
       else f"声明 {len(LOCAL_ONLY)} 项、本次实跑 SKIP {len(_actual_skip)} 项，全部在声明内")
+
+# H12：第五轮双轴审查抓到——三处文档把「项数以 round3-closeout-audit.txt 末行为准」钉成权威，
+#      可这份 txt 在脚本里只出现在文档字符串与豁免名单里，**没有任何断言读它**。
+#      后果：改了跑器忘了重落产物，一份陈旧末行照样全绿入仓，那句"为准"是空的。
+#      现在真去读 HEAD 里那份（不是工作树这份——它正被本次 Tee 边跑边写，读它会自我循环）。
+if committed_txt.returncode != 0:
+    check("H12 入仓读数产物的末行项数 == 本次实跑项数（钉住那句『以末行为准』）", False,
+          f"取不到 HEAD:{OWN_TXT}（{committed_txt.stderr.strip()[:60]}）")
+elif SKIPS:
+    # 入仓那份产物记的是**本机全绿那一跑**的末行；干净克隆上本次必然带 SKIP，两边不同源，
+    # 判红就是把「本机当轮对账单」当成克隆可复现的防线——那正是第五轮 ① 刚治过的病。走 SKIP 三态。
+    check("H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）", False,
+          f"本机限定·本次有 {len(SKIPS)} 项 SKIP（缺 `logs/` 的形状），与入仓产物那份全绿末行不同源",
+          skip=True)
+else:
+    _last = [l for l in committed_txt.stdout.splitlines() if l.startswith("汇总：")]
+    _mm = re.match(r"汇总：PASS (\d+)  FAIL (\d+)  SKIP (\d+)  共 (\d+) 项", _last[-1]) if _last else None
+    # 第六轮抓到两件事：(a) 只比 `共 N 项` 的话，一份 `FAIL 3` 的陈旧产物照样绿；
+    #   (b) 但拿「跑到自己之前的中间快照」去比末行永远对不上，那是一条恒红的假判据（第一版整行比对就栽在这儿）。
+    #   自指涉的正解：把 H12 自己那一格从两侧都摘掉再比。产物里 H12 是绿是红，看它自己的 `FAIL ->` 名单。
+    _h12_was_red = any("H12" in l for l in committed_txt.stdout.splitlines() if l.startswith("  FAIL -> "))
+    _exp = (len(PASSES) + (0 if _h12_was_red else 1), len(FAILS) + (1 if _h12_was_red else 0),
+            len(SKIPS), N)
+    _got = tuple(int(x) for x in _mm.groups()) if _mm else None
+    check("H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）",
+          _got == _exp and _got[0] + _got[1] + _got[2] == _got[3],
+          f"产物末行 {(_last[-1] if _last else '无汇总行')[:64]} vs 本次（摘掉 H12 自己那一格后）"
+          f"应为 汇总：PASS {_exp[0]}  FAIL {_exp[1]}  SKIP {_exp[2]}  共 {_exp[3]} 项"
+          f"；产物里 H12 当时={'红' if _h12_was_red else '绿'}（改了跑器或本轮状态变了就得重跑并重新落盘产物）")
 
 # 硬断言放在**所有** check 之后：N 必须等于此刻的实际计数。
 # 第五轮订正：原先这句注释写「以后若有人在 H7b 之后再加 check，这里会当场炸」是**说过头**——
