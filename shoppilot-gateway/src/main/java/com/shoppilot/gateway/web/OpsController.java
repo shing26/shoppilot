@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.agent.BizMockClient;
 import com.shoppilot.gateway.cache.CacheService;
+import com.shoppilot.gateway.config.DevDefaultsPolicy;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.config.OpsAccess;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.llm.LlmFaultInjector;
 import com.shoppilot.gateway.llm.TokenBudget;
@@ -55,11 +57,12 @@ public class OpsController {
     private final KbEpoch kbEpoch;
     private final TokenBudget tokenBudget;
     private final HybridRetriever retriever;
+    private final DevDefaultsPolicy devDefaults;
 
     public OpsController(HttpClient http, GatewayProperties properties, BizMockClient bizMockClient,
                          ObjectMapper mapper, LlmFaultInjector llmFaultInjector, CacheService cacheService,
                          KbEpoch kbEpoch, TokenBudget tokenBudget,
-                         HybridRetriever retriever) {
+                         HybridRetriever retriever, DevDefaultsPolicy devDefaults) {
         this.http = http;
         this.properties = properties;
         this.bizMockClient = bizMockClient;
@@ -69,6 +72,7 @@ public class OpsController {
         this.kbEpoch = kbEpoch;
         this.tokenBudget = tokenBudget;
         this.retriever = retriever;
+        this.devDefaults = devDefaults;
     }
 
     /** 本店工单队列，按当前身份的租户隔离。 */
@@ -127,6 +131,10 @@ public class OpsController {
         view.put("llmBaseUrl", activeBaseUrl());
         view.put("tokensUsedToday", tokenBudget.usedToday());
         view.put("dailyTokenBudget", properties.llm().dailyTokenBudget());
+        // ADR 0029：默认凭证只在回环上合法，所以「是不是回环」与「正在吃哪几处默认值」得能被机器读到。
+        // 注意绑定回环只是必要条件、不是防线——反向代理打进来的也是 127.0.0.1。
+        view.put("bindLoopback", devDefaults.loopback());
+        view.put("devDefaultsInUse", devDefaults.devDefaultsInUse());
         return view;
     }
 
@@ -195,8 +203,9 @@ public class OpsController {
     public ResponseEntity<String> setLlmFault(
             @RequestHeader(value = "X-Ops-Token", required = false) String opsToken,
             @RequestBody Map<String, Object> body) {
-        if (!requireOps(opsToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("{\"error\":\"ops endpoint disabled\"}");
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed()) {
+            return denied(access);
         }
         try {
             llmFaultInjector.configure(String.valueOf(body.getOrDefault("mode", "none")));
@@ -211,8 +220,9 @@ public class OpsController {
     public ResponseEntity<String> markNegative(
             @RequestHeader(value = "X-Ops-Token", required = false) String opsToken,
             @RequestBody Map<String, Object> body) {
-        if (!requireOps(opsToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("{\"error\":\"ops endpoint disabled\"}");
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed()) {
+            return denied(access);
         }
         String query = String.valueOf(body.getOrDefault("query", ""));
         Intent intent;
@@ -229,9 +239,15 @@ public class OpsController {
         return ResponseEntity.ok("{\"marked\":true}");
     }
 
-    private boolean requireOps(String opsToken) {
+    /** 开关关闭与令牌不匹配是两件事，分开报；以前这里返回布尔，两件事就只能共用一句话。 */
+    private OpsAccess opsAccess(String opsToken) {
         GatewayProperties.Ops ops = properties.ops();
-        return ops.enabled() && ops.token() != null && ops.token().equals(opsToken);
+        return OpsAccess.evaluate(ops.enabled(), ops.token(), opsToken);
+    }
+
+    private ResponseEntity<String> denied(OpsAccess access) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body("{\"code\":\"" + access.code() + "\",\"message\":\"" + access.message() + "\"}");
     }
 
     /**
@@ -244,8 +260,9 @@ public class OpsController {
             @RequestParam("query") String query,
             @RequestParam(value = "intent", required = false) String intent,
             @RequestParam(value = "limit", defaultValue = "10") int limit) {
-        if (!requireOps(opsToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("{\"error\":\"invalid or disabled ops token\"}");
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed()) {
+            return denied(access);
         }
         try {
             var diagnosis = retriever.diagnose(query, TenantContext.current().tenantId(),
@@ -264,8 +281,9 @@ public class OpsController {
     @PostMapping("/epoch/bump")
     public ResponseEntity<String> bumpEpoch(
             @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
-        if (!requireOps(opsToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("{\"error\":\"invalid or disabled ops token\"}");
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed()) {
+            return denied(access);
         }
         return ResponseEntity.ok("{\"kbEpoch\":" + kbEpoch.bump() + "}");
     }
@@ -279,8 +297,9 @@ public class OpsController {
     @PostMapping("/cache/flush")
     public ResponseEntity<String> flushCache(
             @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
-        if (!requireOps(opsToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("{\"error\":\"invalid or disabled ops token\"}");
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed()) {
+            return denied(access);
         }
         try {
             return ResponseEntity.ok(mapper.writeValueAsString(cacheService.flush()));
@@ -290,8 +309,9 @@ public class OpsController {
     }
 
     private ResponseEntity<String> guarded(String method, String path, Map<String, Object> body, String opsToken) {
-        if (!requireOps(opsToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("{\"error\":\"invalid or disabled ops token\"}");
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed()) {
+            return denied(access);
         }
         return forward(method, path, body, false);
     }

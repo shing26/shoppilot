@@ -1,5 +1,8 @@
 server:
   port: 8082
+  # 回环绑定是「dev 默认凭证可以用」的唯一前提（ADR 0029）：改成别的地址，
+  # 三处默认值任一没被环境变量覆盖就启动失败，mock 身份签发端点也不再注册。
+  # 这只是必要条件，不是防线——反向代理打进来的同样是 127.0.0.1。
   address: 127.0.0.1
 
 spring:
@@ -41,8 +44,10 @@ management:
           include: livenessState
 
 shoppilot:
-  # ADR 0014：mock JWT 签名密钥，至少 32 字节
-  jwt-secret: ${SHOPPILOT_JWT_SECRET:dev-jwt-secret-change-me-please-0123456789}
+  # ADR 0014：mock JWT 签名密钥，至少 32 字节。
+  # 默认值不在这里写：它由 DevDefaultsPolicy 持有、只在回环绑定时由环境后置处理器兜进来，
+  # 守护判的必须是真正在用的那个值，两处各写一份迟早分家（ADR 0029）。
+  jwt-secret: ${SHOPPILOT_JWT_SECRET:}
   llm:
     # dev | local | perf —— 三态模式，指标分口径声明见 ADR 0001
     mode: local
@@ -94,7 +99,8 @@ shoppilot:
     singleflight-enabled: true
   bizmock:
     base-url: ${SHOPPILOT_BIZMOCK_URL:http://127.0.0.1:8091}
-    internal-token: ${SHOPPILOT_INTERNAL_TOKEN:dev-internal-token-change-me}
+    # 同上：默认值单一来源在 DevDefaultsPolicy。biz-mock 自己那份是接收端，保持原样。
+    internal-token: ${SHOPPILOT_INTERNAL_TOKEN:}
     connect-timeout: 2s
     read-timeout: 3s
   agent:
@@ -121,7 +127,8 @@ shoppilot:
     # 调试台的故障注入 / 工单队列 / 演示复位经网关代理到 biz-mock（ticket 14、15）。
     # 生产必须置 false：故障注入是平台级动作，能拖慢整条链路。
     enabled: ${SHOPPILOT_OPS_ENABLED:true}
-    token: ${SHOPPILOT_OPS_TOKEN:dev-ops-token}
+    # 同上。非回环绑定时「仍用默认令牌且没关掉运维端点」是启动阻断项（ADR 0029）。
+    token: ${SHOPPILOT_OPS_TOKEN:}
 
 ---
 spring:

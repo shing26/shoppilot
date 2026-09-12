@@ -209,7 +209,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | 串号防线 | 跨租户同意图 0 次互命中；跨店查询不泄露 B 店字段 | **通过**（local 与 dev 都实测） | `verify_l2_filters.py`（租户/scope/意图/纪元四类过滤）、`verify-action-loop.ps1` 第 3 段、`verify-polarity.ps1` 8/8、dev 复核 `logs/dev-guardcheck-20260910-105633.log` |
 | 写操作幂等 | 并发 50 同 token 仅 1 条；Redis 停机由 DB 唯一约束兜 | **通过**（local 与 dev 都实测） | `verify-idempotency.ps1`、`IdempotencyServiceTest`、`TenantIsolationAndIdempotencyTest`、dev 复核同上 |
 | 降级可复现 | 七种 reason 稳定触发且各有可查工单 | **通过**（local 与 dev 都实测） | `verify-fallback.ps1` 7/7、`FallbackReasonTest`、dev 复核同上 |
-| 身份不可伪造 | 无 token/伪造/过期 401；body 或参数带 tenantId 被忽略并告警 | **通过**（local 与 dev 都实测） | `AuthFilterTest`、`demo.ps1 -Which isolation`、`IdentityArchitectureTest`、dev 复核同上 |
+| 身份不可伪造 | 无 token/伪造/过期 401；body 或参数带 tenantId 被忽略并告警。**这一格钉的是「伪造」，不是「领取」**：`/auth/mock-token` 不要任何凭证就能签出任意店铺 + 任意买家的合法身份，它只在回环绑定上注册（ADR 0029）；而绑定回环只是必要条件、不是防线——反向代理打进来的同样是 `127.0.0.1` | **通过**（local 与 dev 都实测） | `AuthFilterTest`、`MockIdentityConditionTest`、`DevDefaultsPolicyTest`、`demo.ps1 -Which isolation`、`IdentityArchitectureTest`、dev 复核同上 |
 
 四条否决项的判据模式写的是 `dev`，而 2026-09-10 之前证据只取自 `local`/`perf` 与 JVM 用例，当时给的理由是
 这四条防线的正确性与用哪家模型无关（越权与幂等发生在业务系统与仓储层）。这句话今天仍然成立，但它不再被拿来
