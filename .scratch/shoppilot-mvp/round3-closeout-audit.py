@@ -56,6 +56,14 @@ ALL_NAMES = []  # 本轮跑过的每一项（含 SKIP 分支），H16 用它反�
 # 不落地，等所有 check 跑完再统一 flush。DEFERRED_NAMES 让 H16 反查时把「稍后会跑」也算成跑过。
 DEFERRED = []
 DEFERRED_NAMES = []
+# flush 里已落地的推迟项数。初始化必须放在这里而不是 flush 段：第九轮 ce13 的 CE-5a 把
+# `defer(...)` 换回就地 `_run_h12()`，那次读到的不是防呆的 AssertionError 而是 NameError——
+# 诊断被自己的声明顺序冲掉，等于这道闸在最该说话的时候说了句胡话。
+_DEF_LANDED = 0
+# flush 期已落地的推迟项数。必须在**任何** check 之前就有值：`_run_h12` 靠它算「还欠几格未落地」，
+# 而克隆反证 CE-5a/5b 会把 `_run_h12` 改回就地调用——那时如果这个数还没初始化，炸出来的是
+# `NameError` 而不是防呆该说的那句诊断（ce13 实跑到：exit=1、无汇总行）。
+_DEF_LANDED = 0
 # 「本机限定项」清单：读 `logs/` 或依赖本机检出环境的断言全部列在这儿，**在跑任何 check 之前**先打出来。
 # 第六轮 Spec 轴抓到判据 3 原文要求「在读 logs/ 之前打出具名清单」，而原先只在各项就地打 SKIP、
 # 末尾再汇总——顺序与自述不符。这里补上前置声明，并由 H16 钉「声明 ⊇ 实跑 SKIP」，防这张表腐烂。
@@ -1340,7 +1348,6 @@ check(_H16, not _undeclared and not _dead,
 
 # flush：把「要等最终计数」的判据落地。必须在末尾硬断言之前，否则 N 对不上。
 _before = len(ALL_NAMES)
-_DEF_LANDED = 0          # flush 里已落地的推迟项数；_run_h12 用它算「还欠几格未登记」，不假设自己是第一个
 for _nm, _fn in DEFERRED:
     _fn()
     _DEF_LANDED += 1
