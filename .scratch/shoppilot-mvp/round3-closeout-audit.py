@@ -1207,7 +1207,10 @@ def h12_verdict(artifact_stdout, n_pass, n_fail, n_skip, n_total):
     # 绑死在名字字符串上，哪天改了 `_H12_NAME`，产物里合法的红名单就不再被认作自己，`was_red` 恒假，
     # 「收敛途中」那个形状当场长成恒红假判据（和 f6234c4 刚治过的那条同型）。按 `_H12_NAME` 的全名比；
     # 它在调用期才求值，定义顺序不影响。
-    _is_h12 = lambda s: s.startswith(_H12_NAME)
+    # 第九轮 Standards 轴（Euclid）补第三刀：`startswith(全名)` 仍然放过「全名 + 任意后缀」，而产物里
+    # `FAIL -> ` 那一行就是逐字登记名（跑器只打印名字），所以这里按**全名等值**比；H12b 补第九格钉住
+    # 「全名后面还带字」必须判红。
+    _is_h12 = lambda s: s == _H12_NAME
     last = [l for l in lines if l.startswith("汇总：")]
     if not last:
         return False, "产物里没有汇总行"
@@ -1256,9 +1259,14 @@ def _run_h12():
     # 正解：判定走 defer，落到 flush 阶段——此刻除 H12 自己以外全部登记完毕。
     # Mendel（第八轮 Standards 轴）：原先写死 `N - 1`，等于把「本轮只推迟一项、且那一项就是 H12」
     # 藏进判据里——再加一个 `defer()` 就自己炸自己。改成按实际推迟项数算。
+    # 第九轮 Standards 轴（Euclid）补第四刀：`N - len(DEFERRED_NAMES)` 还隐含「H12 是**第一个**落地的推迟项」——
+    # 干净克隆里再登记一个 defer 并让它先落地，实测 `reg=95 N=96 deferred=2` 当场炸，那是又一次过度自述。
+    # 正解：只扣「此刻尚未落地的推迟项数」（含 H12 自己这一格），与本项在队列里的位置无关。
     _reg = len(PASSES) + len(FAILS) + len(SKIPS)
-    assert _reg == N - len(DEFERRED_NAMES), (
-        f"H12 要求「除所有推迟项之外全部登记完」：此刻登记 {_reg} 项、N={N}、推迟 {len(DEFERRED_NAMES)} 项。"
+    _pending = len(DEFERRED_NAMES) - _DEF_LANDED
+    assert _reg == N - _pending, (
+        f"H12 要求「除尚未落地的推迟项之外全部登记完」：此刻登记 {_reg} 项、N={N}、"
+        f"推迟 {len(DEFERRED_NAMES)} 项（其中已落地 {_DEF_LANDED}、尚未落地 {_pending}）。"
         f"要么有人把 _run_h12 改回就地调用（那时 H12b/H16 还没登记），要么有 check 加在了 flush 之后")
     if committed_txt.returncode != 0:
         check(_H12_NAME, False, f"取不到 HEAD:{OWN_TXT}（{committed_txt.stderr.strip()[:60]}）")
@@ -1280,26 +1288,31 @@ defer(_H12_NAME, _run_h12)
 # H12b：H12 的三条判据必须都能失败——直接拿合成输入打那颗纯函数，不用再造克隆。
 #       第七轮 Standards 轴抓到「末行写着 FAIL 1（那 1 就是 H12）的陈旧产物照样能满足 H12」，
 #       这一格就是把那个形状钉成可重跑断言；同时钉住收敛途中的合法形状仍然判绿（防它长成恒红）。
-_H12_TAIL = "汇总：PASS 94  FAIL 0  SKIP 0  共 94 项"
+# 夹具里的项数由 N 推：H12 自己那一格在调用点尚未落地 ⇒ 产物侧的总数恒为 N-1（第九轮 Standards 轴抓到
+    # 原先把 94/93 抄死，真 N 一变这些合成输入就和调用点不变量脱钩，夹具悄悄失去它本要钉的那个形状）。
+_FX = N - 1
+_H12_TAIL = f"汇总：PASS {_FX}  FAIL 0  SKIP 0  共 {_FX} 项"
 def _mk(passes, fails, skip_line, fail_names=()):
     body = "".join(f"  FAIL -> {n}\n" for n in fail_names)
-    return f"...\n{body}{skip_line}汇总：PASS {passes}  FAIL {fails}  SKIP 0  共 94 项\n"
+    return f"...\n{body}{skip_line}汇总：PASS {passes}  FAIL {fails}  SKIP 0  共 {_FX} 项\n"
 _H12_CASES = [
-    ("全绿产物 + 本次全绿", _mk(94, 0, _H12_TAIL), 93, 0, True),
-    ("陈旧产物（项数少一笔）", _mk(88, 0, "汇总：PASS 88  FAIL 0  SKIP 0  共 88 项"), 93, 0, False),
-    ("伪造：末行 FAIL 1、红名单里是 G1", _mk(93, 1, "", ("G1 计划里每个",)), 93, 0, False),
-    ("伪造：末行 FAIL 1、红名单只有 H12（收敛途中）", _mk(93, 1, "", (_H12_NAME,)), 93, 0, True),
-    ("本次另有红（A2）", _mk(94, 0, _H12_TAIL), 92, 1, False),
-    ("末行四个数自相矛盾", _mk(90, 0, "汇总：PASS 90  FAIL 0  SKIP 0  共 94 项"), 93, 0, False),
+    ("全绿产物 + 本次全绿", _mk(_FX, 0, _H12_TAIL), _FX - 1, 0, True),
+    ("陈旧产物（项数少一笔）", _mk(88, 0, "汇总：PASS 88  FAIL 0  SKIP 0  共 88 项"), _FX - 1, 0, False),
+    ("伪造：末行 FAIL 1、红名单里是 G1", _mk(_FX - 1, 1, "", ("G1 计划里每个",)), _FX - 1, 0, False),
+    ("伪造：末行 FAIL 1、红名单只有 H12（收敛途中）", _mk(_FX - 1, 1, "", (_H12_NAME,)), _FX - 1, 0, True),
+    ("本次另有红（A2）", _mk(_FX, 0, _H12_TAIL), _FX - 2, 1, False),
+    ("末行四个数自相矛盾", _mk(90, 0, f"汇总：PASS 90  FAIL 0  SKIP 0  共 {_FX} 项"), _FX - 1, 0, False),
     # P13 落盘期真实踩到的形状：H12 就地判、后面还有两颗没登记 ⇒ 送进来的计数比最终少两笔。
     # 这一格把「np 必须 == N-1」这个调用点不变量钉成可重跑断言，防它换个名字再长回来。
-    ("本次计数少两笔（未 flush 的旧调用点形状）", _mk(94, 0, _H12_TAIL), 91, 0, False),
+    ("本次计数少两笔（未 flush 的旧调用点形状）", _mk(_FX, 0, _H12_TAIL), _FX - 3, 0, False),
     # 第八轮自查抓到的宽匹配：伪造的红名单写 `H12b ...`（同样以 H12 开头）在旧代码里会同时骗过
     # `was_red` 与「红名单只许是 H12 那一格」两道，判成绿。收紧成 `H12 ` 前缀后这一格必须判红。
-    ("伪造：红名单写 H12b（宽前缀匹配下的漏网形状）", _mk(93, 1, "", ("H12b 对照组",)), 93, 0, False),
+    ("伪造：红名单写 H12b（宽前缀匹配下的漏网形状）", _mk(_FX - 1, 1, "", ("H12b 对照组",)), _FX - 1, 0, False),
+    # 第九轮 Standards 轴抓到的漏网形状：`startswith(全名)` 下「全名 + 后缀」照样被认作自己那一格。
+    ("伪造：红名单写「全名 + 后缀」", _mk(_FX - 1, 1, "", (_H12_NAME + " 的变体",)), _FX - 1, 0, False),
 ]
 _H12_BAD = [(nm, got, exp) for nm, art, np_, nf, exp in _H12_CASES
-            for got, _ in [h12_verdict(art, np_, nf, 0, 94)] if got != exp]
+            for got, _ in [h12_verdict(art, np_, nf, 0, _FX)] if got != exp]
 check(f"H12b 对照组：H12 那颗纯函数对 {len(_H12_CASES)} 种合成产物必须按预期判绿/判红"
       f"（钉住第七轮补的三条与 P13 落盘期的调用点不变量都真能失败）",
       not _H12_BAD, f"{len(_H12_CASES)} 格全部符合预期" if not _H12_BAD
@@ -1327,8 +1340,10 @@ check(_H16, not _undeclared and not _dead,
 
 # flush：把「要等最终计数」的判据落地。必须在末尾硬断言之前，否则 N 对不上。
 _before = len(ALL_NAMES)
+_DEF_LANDED = 0          # flush 里已落地的推迟项数；_run_h12 用它算「还欠几格未登记」，不假设自己是第一个
 for _nm, _fn in DEFERRED:
     _fn()
+    _DEF_LANDED += 1
 assert len(ALL_NAMES) - _before == len(DEFERRED_NAMES), (
     f"登记了 {len(DEFERRED_NAMES)} 个推迟项，flush 只落地 {len(ALL_NAMES) - _before} 个")
 # Mendel（第八轮 Standards 轴）抓到上面那条只比「数量」：把 _run_h12 里的 check(_H12_NAME, ...) 换成
@@ -1337,7 +1352,10 @@ assert len(ALL_NAMES) - _before == len(DEFERRED_NAMES), (
 _misnamed = [nm for nm in DEFERRED_NAMES if nm not in ALL_NAMES[_before:]]
 assert not _misnamed, (
     f"推迟项登记了名字却没以自己的名字落地（冒名/改名）：{_misnamed}")
+# 第九轮 Standards 轴（Euclid）：两张表必须同步清空。原先只清 `DEFERRED`，`DEFERRED_NAMES` 留着旧名字，
+# 下一个 `defer()` 一登记就和旧账混在一起，`_misnamed` 会去核一批根本不属于本轮的名字。
 DEFERRED.clear()
+DEFERRED_NAMES.clear()
 
 # 硬断言放在**所有** check 之后：N 必须等于此刻的实际计数。
 # 第五轮订正：原先这句注释写「以后若有人在 H7b 之后再加 check，这里会当场炸」是**说过头**——
