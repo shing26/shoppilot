@@ -42,6 +42,13 @@ for path, old, new in EDITS:
     raw = io.open(path, "rb").read()
     crlf = raw.count(b"\r\n")
     # 同 pass1：在 LF 形态上匹配，写回时还原该文件原有的换行形态（CRLF 检出上不误判成漂移）。
+    # 第七轮 Standards 轴抓到另一半：`if crlf` 对**混合换行**的文件会把裸 LF 整体翻成 CRLF，
+    # 原先只打一句「注」不判失败——现在直接拒绝在这种文件上写回。
+    _lone_lf = raw.count(b"\n") - crlf
+    if crlf and _lone_lf:
+        print(f"FAIL 混合换行：{path} 有 {crlf} 个 CRLF 与 {_lone_lf} 个裸 LF，跑器拒绝在这种文件上写回")
+        fails += 1
+        continue
     txt = raw.decode("utf-8").replace("\r\n", "\n")
 # 同 pass1 的三态判定（new 已在文中 = 已应用；old 恰一次且 new 不在 = 应用；其余 = 漂移报 FAIL）。
     if new in txt:

@@ -51,10 +51,12 @@ ROUND_FP = "9d444c9"  # 本轮（第五轮闭环）的 fixed point：B7 与 A3b 
 FAILS = []
 PASSES = []
 SKIPS = []
+ALL_NAMES = []  # 本轮跑过的每一项（含 SKIP 分支），H16 用它反查「声明了但盘上没这一项」的腐烂
 # 「本机限定项」清单：读 `logs/` 或依赖本机检出环境的断言全部列在这儿，**在跑任何 check 之前**先打出来。
 # 第六轮 Spec 轴抓到判据 3 原文要求「在读 logs/ 之前打出具名清单」，而原先只在各项就地打 SKIP、
 # 末尾再汇总——顺序与自述不符。这里补上前置声明，并由 H16 钉「声明 ⊇ 实跑 SKIP」，防这张表腐烂。
 LOCAL_ONLY = [
+    "A3 tokensUsedToday == 0",  # 要活体网关；网关不在跑时判 SKIP（第七轮 Standards 轴抓到它漏声明）
     "D3 verify_eval_judge 退出码 0 且 40/40 条断言全过",  # 依赖检出后的换行符，见 eol_drift()
     "F1c 文档里的 logs 类产物名都指向本机 logs/（本机限定：logs 不入库）",
     "G2b 落点那轮极性守卫真被触发（blocked 计数器增量 = 1）",
@@ -71,7 +73,8 @@ LOCAL_ONLY = [
     "H2 本机确有 69s/13s 成对的落盘矩阵（故 README 不得写『与任何一份都不符』）",
     "H12 入仓读数产物的末行与本次实跑逐字段相同",  # 产物记的是本机全绿那一跑，克隆上不同源
 ]
-TAIL_CHECKS = 8  # N 定义点之后还会跑的 check 数：H7、H7b、H12、H13、H13b、H14、H15、H16。加一项就得改这里，末尾硬断言会当场炸。
+TAIL_CHECKS = 9  # N 定义点之后还会跑的 check 数：H7、H7b、H13、H13b、H14、H15、H12、H12b、H16。
+# 第七轮把 H12 挪到末尾并加了 H12b，这张表跟着变；加一项就得改这里，末尾硬断言会当场炸。
 
 
 def check(name, ok, detail="", skip=False):
@@ -81,6 +84,7 @@ def check(name, ok, detail="", skip=False):
     if detail:
         line += f"\n        {detail}"
     print(line, flush=True)
+    ALL_NAMES.append(name)
     (SKIPS if skip else (PASSES if ok else FAILS)).append(name)
 
 
@@ -145,7 +149,7 @@ print("本机限定项（读 logs/ 或依赖本机检出环境；缺前置时判
 print("=" * 78)
 for _n in LOCAL_ONLY:
     print(f"  LOCAL  {_n}")
-print(f"  共 {len(LOCAL_ONLY)} 项 —— 由 H16 钉『声明 ⊇ 实跑 SKIP』，这张表不许腐烂")
+print(f"  共 {len(LOCAL_ONLY)} 项 —— 由 H16 两个方向钉：实跑 SKIP 不得超出这张表，表里也不许有本轮没跑过的死条目")
 
 print()
 print("=" * 78)
@@ -1138,25 +1142,68 @@ _PAT_PAREN = re.compile(r"（[^（）]*）")
 
 
 def _criteria_block(text, head):
+    """取某一节「通过判据」下的编号条目。**第七轮 Standards 轴抓到第一版只收首行**——
+    判据 3/5 的续行整体不进比对，把续行改成「阈值从 95% 降到 90%」照样绿，
+    而本轮真正的改动恰好落在续行上。现在续行（缩进 >=3 且不是新的编号项/列表项）并进同一条。"""
     i = text.index(head)
     j = text.index("\n### ", i + 1) if "\n### " in text[i + 1:] else len(text)
     seg = text[i:j]
     k = seg.index("**通过判据**")
-    return [l.strip() for l in seg[k:].splitlines() if re.match(r"^\s+\d+\.\s", l)]
+    out, cur = [], None
+    for line in seg[k:].splitlines()[1:]:
+        if re.match(r"^\s+\d+\.\s", line):
+            if cur is not None:
+                out.append(cur)
+            cur = line.strip()
+        elif cur is not None and re.match(r"^\s{3,}\S", line) and not line.strip().startswith(("-", "1.", "2.", "3.")):
+            cur += "\n" + line.strip()
+        elif cur is not None:
+            out.append(cur)
+            cur = None
+    if cur is not None:
+        out.append(cur)
+    return out
 
 
 _old_plan = sh(["git", "show", f"{ROUND_FP}:.scratch/shoppilot-mvp/round3-plan.md"]).stdout
 try:
-    _c_old = [_PAT_PAREN.sub("", l) for l in _criteria_block(_old_plan, "### P10")]
-    _c_new = [_PAT_PAREN.sub("", l) for l in _criteria_block(plan, "### P10")]
+    _raw_old, _raw_new = _criteria_block(_old_plan, "### P10"), _criteria_block(plan, "### P10")
+    _c_old = [_PAT_PAREN.sub("", l) for l in _raw_old]
+    _c_new = [_PAT_PAREN.sub("", l) for l in _raw_new]
     _drift14 = [(a, b) for a, b in zip(_c_old, _c_new) if a != b]
-    check("H14 P10 六条判据的主干要求（去括号后）与本轮 fixed point 逐字相同",
+    # 括号内容改了而主干没改的条数——**算出来的**，不是抄一句文案（第七轮抓到原先那句「确有 2 处」代码从没核过）。
+    _paren = [n for n, (a, b) in enumerate(zip(_raw_old, _raw_new), 1)
+              if a != b and _PAT_PAREN.sub("", a) == _PAT_PAREN.sub("", b)]
+    check("H14 P10 六条判据的主干要求（含续行、去括号后）与本轮 fixed point 逐字相同",
           len(_c_old) == len(_c_new) == 6 and not _drift14,
-          f"条数 {len(_c_old)}/{len(_c_new)}；主干漂移 {_drift14[:2]}" if (len(_c_old) != 6 or _c_old != _c_new)
-          else f"6 条主干逐字相同；括号内引用确有 2 处改动（判据 3 改指 B7、判据 5 删掉指向不存在的「本节末」），"
-               "这两处按 P11 ⑥⑨ 记，不当『一字未动』引用")
+          f"条数 {len(_c_old)}/{len(_c_new)}；主干漂移 {len(_drift14)} 条 {_drift14[:1]}" if (len(_c_old) != 6 or _drift14)
+          else f"6 条主干（含续行）逐字相同；括号内容有 {len(_paren)} 条判据不同（第 {_paren} 条），"
+               "按 P11 ⑥⑨ 记，不当『一字未动』引用")
 except ValueError as exc:
-    check("H14 P10 六条判据的主干要求（去括号后）与本轮 fixed point 逐字相同", False, f"取不到判据块：{exc}")
+    check("H14 P10 六条判据的主干要求（含续行、去括号后）与本轮 fixed point 逐字相同", False, f"取不到判据块：{exc}")
+
+def h12_verdict(artifact_stdout, n_pass, n_fail, n_skip, n_total):
+    """H12 的判据本体（纯函数，第七轮反证 H12b 直接打这颗，不再另抄一把尺子）。
+    返回 (是否判绿, 说明)。三条一起才算绿：
+      ① 产物末行四个数 == 本次实数（把 H12 自己那一格从两侧都摘掉后）；
+      ② 产物末行内部自洽（PASS+FAIL+SKIP == 共 N 项）；
+      ③ 本次除 H12 外零红，且产物自记的红名单只许是 H12 那一格（收敛途中的唯一合法形状）。"""
+    lines = artifact_stdout.splitlines()
+    last = [l for l in lines if l.startswith("汇总：")]
+    if not last:
+        return False, "产物里没有汇总行"
+    m = re.match(r"汇总：PASS (\d+)  FAIL (\d+)  SKIP (\d+)  共 (\d+) 项", last[-1])
+    if not m:
+        return False, f"末行形状不对：{last[-1][:40]}"
+    got = tuple(int(x) for x in m.groups())
+    was_red = any("H12" in l for l in lines if l.startswith("  FAIL -> "))
+    exp = (n_pass + (0 if was_red else 1), n_fail + (1 if was_red else 0), n_skip, n_total)
+    art_fails = [l[len("  FAIL -> "):].strip() for l in lines if l.startswith("  FAIL -> ")]
+    ok = (got == exp and got[0] + got[1] + got[2] == got[3]
+          and n_fail == 0 and all(f.startswith("H12") for f in art_fails))
+    return ok, (f"末行 {got} vs 应为 {exp}；产物里 H12 当时={'红' if was_red else '绿'}；"
+                f"本次除 H12 外的红 {n_fail} 项；产物自记红名单 {art_fails or '无'}")
+
 
 # 产物只读一次，H12 与 H15 共用同一份（读的是 HEAD 里那一份，不是工作树——工作树这份正被本次 Tee 边跑边写）。
 committed_txt = sh(["git", "show", f"HEAD:{OWN_TXT}"])
@@ -1174,16 +1221,6 @@ else:
     _anc = sh(["git", "merge-base", "--is-ancestor", _rec, "HEAD"]).returncode == 0
     check("H15 入仓产物里 A1 记的 HEAD 是当前 HEAD 的祖先或本身（允许慢一笔，不许跑偏）", _anc,
           f"产物记 {_rec[:9]}，当前 HEAD {head[:9]}，祖先关系={_anc}")
-
-# H16：文件头那份「本机限定项」清单是在跑任何 check 之前打出来的自述，必须与实跑的 SKIP 名单同集合，
-#      否则这张表就是一句会腐烂的自述（第六轮 Spec 轴抓到判据 3 要求的前置声明原先根本不在盘上）。
-#      比对两侧都去掉尾注括号：check 名会带「（121933 曾被粗正则数成 15）」这类补充，清单里写的是主干。
-_norm = lambda s: re.sub(r"\s+", " ", s.split("（")[0]).strip()
-_actual_skip = {_norm(x) for x in SKIPS}
-_undeclared = sorted(_actual_skip - {_norm(n) for n in LOCAL_ONLY})
-check("H16 实跑的每一项 SKIP 都在文件头声明的本机限定清单里（声明 ⊇ 实跑，不许腐烂）",
-      not _undeclared, f"未声明就 SKIP 的项：{_undeclared}" if _undeclared
-      else f"声明 {len(LOCAL_ONLY)} 项、本次实跑 SKIP {len(_actual_skip)} 项，全部在声明内")
 
 # H12：第五轮双轴审查抓到——三处文档把「项数以 round3-closeout-audit.txt 末行为准」钉成权威，
 #      可这份 txt 在脚本里只出现在文档字符串与豁免名单里，**没有任何断言读它**。
@@ -1204,15 +1241,47 @@ else:
     # 第六轮抓到两件事：(a) 只比 `共 N 项` 的话，一份 `FAIL 3` 的陈旧产物照样绿；
     #   (b) 但拿「跑到自己之前的中间快照」去比末行永远对不上，那是一条恒红的假判据（第一版整行比对就栽在这儿）。
     #   自指涉的正解：把 H12 自己那一格从两侧都摘掉再比。产物里 H12 是绿是红，看它自己的 `FAIL ->` 名单。
-    _h12_was_red = any("H12" in l for l in committed_txt.stdout.splitlines() if l.startswith("  FAIL -> "))
-    _exp = (len(PASSES) + (0 if _h12_was_red else 1), len(FAILS) + (1 if _h12_was_red else 0),
-            len(SKIPS), N)
-    _got = tuple(int(x) for x in _mm.groups()) if _mm else None
-    check("H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）",
-          _got == _exp and _got[0] + _got[1] + _got[2] == _got[3],
-          f"产物末行 {(_last[-1] if _last else '无汇总行')[:64]} vs 本次（摘掉 H12 自己那一格后）"
-          f"应为 汇总：PASS {_exp[0]}  FAIL {_exp[1]}  SKIP {_exp[2]}  共 {_exp[3]} 项"
-          f"；产物里 H12 当时={'红' if _h12_was_red else '绿'}（改了跑器或本轮状态变了就得重跑并重新落盘产物）")
+    _ok12, _why12 = h12_verdict(committed_txt.stdout, len(PASSES), len(FAILS), len(SKIPS), N)
+    check("H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）", _ok12,
+          f"{_why12}（改了跑器或本轮状态变了就得重跑并重新落盘产物）")
+
+# H12b：H12 的三条判据必须都能失败——直接拿合成输入打那颗纯函数，不用再造克隆。
+#       第七轮 Standards 轴抓到「末行写着 FAIL 1（那 1 就是 H12）的陈旧产物照样能满足 H12」，
+#       这一格就是把那个形状钉成可重跑断言；同时钉住收敛途中的合法形状仍然判绿（防它长成恒红）。
+_H12_TAIL = "汇总：PASS 94  FAIL 0  SKIP 0  共 94 项"
+def _mk(passes, fails, skip_line, fail_names=()):
+    body = "".join(f"  FAIL -> {n}\n" for n in fail_names)
+    return f"...\n{body}{skip_line}汇总：PASS {passes}  FAIL {fails}  SKIP 0  共 94 项\n"
+_H12_CASES = [
+    ("全绿产物 + 本次全绿", _mk(94, 0, _H12_TAIL), 93, 0, True),
+    ("陈旧产物（项数少一笔）", _mk(88, 0, "汇总：PASS 88  FAIL 0  SKIP 0  共 88 项"), 93, 0, False),
+    ("伪造：末行 FAIL 1、红名单里是 G1", _mk(93, 1, "", ("G1 计划里每个",)), 93, 0, False),
+    ("伪造：末行 FAIL 1、红名单只有 H12（收敛途中）", _mk(93, 1, "", ("H12 入仓读数产物",)), 93, 0, True),
+    ("本次另有红（A2）", _mk(94, 0, _H12_TAIL), 92, 1, False),
+    ("末行四个数自相矛盾", _mk(90, 0, "汇总：PASS 90  FAIL 0  SKIP 0  共 94 项"), 93, 0, False),
+]
+_H12_BAD = [(nm, got, exp) for nm, art, np_, nf, exp in _H12_CASES
+            for got, _ in [h12_verdict(art, np_, nf, 0, 94)] if got != exp]
+check("H12b 对照组：H12 那颗纯函数对六种合成产物必须按预期判绿/判红（钉住第七轮补的三条都真能失败）",
+      not _H12_BAD, f"六格全部符合预期" if not _H12_BAD
+      else "；".join(f"{nm}：判 {got}，应为 {exp}" for nm, got, exp in _H12_BAD))
+
+# H16：文件头那份「本机限定项」清单是在跑任何 check 之前打出来的自述，两个方向都要核：
+#      正向——实跑的每一项 SKIP 都必须在清单里（不许偷偷 SKIP 没声明的项）；
+#      反向——清单里每一项都必须是本轮真跑过的项（删了断言却留着声明，就是这张表腐烂）。
+#      第七轮 Standards 轴抓到原先只有正向，且本机 SKIP=0 时正向无事可查，等于恒绿。
+#      本条自己是清单里唯一不可能被「跑过的项」覆盖的名字（它就在末尾），显式摘掉。
+_H16 = "H16 本机限定清单两个方向都要对得上（声明 ⊇ 实跑 SKIP，且声明的每一项本轮真跑过）"
+_norm = lambda x: re.sub(r"\s+", " ", x.split("（")[0]).strip()
+_declared = {_norm(n) for n in LOCAL_ONLY}
+_actual_skip = {_norm(x) for x in SKIPS}
+_ran = {_norm(x) for x in ALL_NAMES if _norm(x) != _norm(_H16)}
+_undeclared = sorted(_actual_skip - _declared)
+_dead = sorted(_declared - _ran)
+check(_H16, not _undeclared and not _dead,
+      f"未声明就 SKIP {len(_undeclared)} 项 {_undeclared[:3]}；清单里本轮没跑过的死条目 {len(_dead)} 项 {_dead[:3]}"
+      if (_undeclared or _dead)
+      else f"声明 {len(LOCAL_ONLY)} 项、本次实跑 SKIP {len(_actual_skip)} 项、本轮共跑过 {len(_ran)} 项，两个方向都对得上")
 
 # 硬断言放在**所有** check 之后：N 必须等于此刻的实际计数。
 # 第五轮订正：原先这句注释写「以后若有人在 H7b 之后再加 check，这里会当场炸」是**说过头**——

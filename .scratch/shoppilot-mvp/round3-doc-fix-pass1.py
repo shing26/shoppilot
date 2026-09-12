@@ -125,6 +125,13 @@ for path, old, new in EDITS:
     crlf = raw.count(b"\r\n")
     # 匹配一律在 LF 形态上做：EDITS 里的模式串换行是 LF，而 `core.autocrlf=true` 的克隆上检出是 CRLF，
     # 不规范化就会把「已应用」误判成「漂移」。2026-09-12 干净克隆复测实抓到 4 处 FAIL + 1 处误应用。
+    # 第七轮 Standards 轴抓到另一半：`if crlf` 对**混合换行**的文件会把裸 LF 整体翻成 CRLF，
+    # 原先只打一句「注」不判失败——现在直接拒绝在这种文件上写回。
+    _lone_lf = raw.count(b"\n") - crlf
+    if crlf and _lone_lf:
+        print(f"FAIL 混合换行：{path} 有 {crlf} 个 CRLF 与 {_lone_lf} 个裸 LF，跑器拒绝在这种文件上写回")
+        fails += 1
+        continue
     txt = raw.decode("utf-8").replace("\r\n", "\n")
 # 三态判定，不许把"看不懂"当成"已通过"（2026-09-12 自己踩出来的：重跑跑器把三段话重复贴了一遍）：
 #   new 已在文中            -> 已应用，跳过（有几处的 new 原样含着 old，所以 old 在不在不能当判据）
