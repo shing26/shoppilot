@@ -23,15 +23,15 @@
 A. 零额度 / git 状态
 ==============================================================================
 PASS  A1 origin/main == HEAD
-        HEAD=f4569f1ff origin/main=f4569f1ff
+        HEAD=d830cef03 origin/main=d830cef03
 PASS  A2 工作树 clean（审计自身读数产物除外，见 A2b）
         无输出（当轮审计脚本已提交）
 PASS  A2b 自排除名单不得长出文档/脚本路径（防长成免检通道）
-        名单 ['.scratch/shoppilot-mvp/round3-closeout-audit.txt']；本次实际被豁免 ['.scratch/shoppilot-mvp/round3-closeout-audit.txt']
+        名单 ['.scratch/shoppilot-mvp/round3-closeout-audit.txt']；本次实际被豁免 []
 PASS  A3 tokensUsedToday == 0（本轮零额度）
         tokensUsedToday=0 mode=local budget=260000
 PASS  A3b 本轮提交信息里没有花钱跑测的痕迹（零额度的离线反证）
-        9d444c9..HEAD 共 57 笔提交，无一含花钱跑测字样
+        bb45004..HEAD 共 3 笔提交，无一含花钱跑测字样
 
 ==============================================================================
 B. 判据与阈值未被改动（反刷分）
@@ -44,9 +44,9 @@ PASS  B4 第三轮未新增第二处 tool_ok 赋值
 PASS  B5 唯一判据：tool_ok 赋值只在 judge() 内
         赋值行 [156, 160]，落在 judge()（偏移 5018-10353）内的 [156, 160]
 PASS  B6 第三轮窗口改动面未越界（判据/gold/ADR/PLAN/CONTEXT/Java 零改动；注意白名单含 scripts 那两支 ps1）
-        共 19 个文件，全在白名单内
-PASS  B7 本轮窗口改动面严格白名单（scripts/、eval/、src/、docs/adr/ 出现即红）
-        9d444c9..HEAD 共 6 个文件，逐个落在 7 个具名文件内；禁面零命中
+        11a12ac..a6ccdcb 共 14 个文件，全在白名单内
+PASS  B7 本轮窗口未碰内容级禁面（gold 与判据阈值所在文件、既有 ADR 出现即红；改动清单为读数）
+        禁面零命中；bb45004..HEAD 改动 10 个文件：.scratch/shoppilot-mvp/round3-closeout-audit.py、CONTEXT.md、docs/adr/0023-implementation-round-gate-switched-to-content-level-red-lines.md、docs/adr/0024-scope-is-interview-artifact-not-productionization.md、docs/adr/0025-conversation-owned-by-shop-and-customer.md、docs/adr/0026-degradable-dependencies-stand-outside-the-readiness-gate.md、docs/adr/0027-mdc-propagated-manually-across-async-boundaries.md、docs/adr/0028-rest-error-envelope-covers-gateway-generated-errors-only.md、docs/adr/0029-dev-defaults-legality-decided-by-bind-address.md、docs/prod-readiness-2026-09-12.md
 
 ==============================================================================
 C. gold 标注边界（放开 4 条，其余不动）
@@ -220,9 +220,9 @@ PASS  H13 反证：『17 项断言』既不在 verify_eval_judge 里，在文档
 PASS  H13b 反证：被驳回的那处 `up.ps1` 第 115 行引用在 8 份文档里零命中（它本就不存在，不是漏核）
         8 份文档用同一个 CITE_PAT 扫，零命中
 PASS  H14 P10 六条判据的主干要求（含续行、去括号后）与本轮 fixed point 逐字相同
-        6 条主干（含续行）逐字相同；括号内容有 2 条判据不同（第 [3, 5] 条），按 P11 ⑥⑨ 记，不当『一字未动』引用
+        6 条主干（含续行）逐字相同；括号内容有 0 条判据不同（第 [] 条），按 P11 ⑥⑨ 记，不当『一字未动』引用
 PASS  H15 入仓产物里 A1 记的 HEAD 是当前 HEAD 的祖先或本身（允许慢一笔，不许跑偏）
-        产物记 4ee01651e，当前 HEAD f4569f1ff，祖先关系=True
+        产物记 f4569f1ff，当前 HEAD d830cef03，祖先关系=True
 PASS  H12b 对照组：H12 那颗纯函数对 15 种合成产物必须按预期判绿/判红（钉住第七轮补的三条、P13 落盘期的调用点不变量、两条早退与取末行下标各自都有承重格：摘掉任一条，必有格子当场判错）
         15 格全部符合预期
 PASS  H16 本机限定清单两个方向都要对得上（声明 ⊇ 实跑 SKIP，且声明的每一项本轮真跑过）
