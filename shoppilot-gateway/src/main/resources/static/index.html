@@ -20,6 +20,9 @@
   header h1 { font-size: 14px; margin: 0 10px 0 0; font-weight: 650; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); display: inline-block; }
   .dot.bad { background: var(--rose); }
+  /* 读不到读数时的第三态。灰既不承诺"还能应答"，也不冒充"别再给它流量"：
+     原先只有绿红两档，取不到读数时页面只能落在绿上，那盏灯从此不可能说谎，也不可能说真话。 */
+  .dot.unknown { background: var(--ink-3); }
   .grow { flex: 1; }
   main { display: grid; grid-template-columns: 250px minmax(0,1fr) 400px;
     height: calc(100vh - 49px - 62px); gap: 1px; background: var(--line); }
@@ -225,7 +228,6 @@ async function login() {
   state.customer = customer;
   state.token = res.body.token;
   $('claims').textContent = JSON.stringify(decodeJwt(state.token), null, 1);
-  $('health').classList.remove('bad');
 }
 
 function decodeJwt(jwt) {
@@ -351,6 +353,9 @@ async function ask() {
   } finally {
     state.busy = false;
     $('btnSend').disabled = false;
+    // 每一轮答完补一次依赖读数：这一轮是齐的还是降级的，答案本身答不了，得让灯跟着这一轮走。
+    // 不 await——读数慢不许把输入框锁在这一轮之后。
+    refreshHealth();
   }
 }
 
@@ -391,6 +396,47 @@ async function refreshOps() {
   if (!$('opsToken').value.trim()) return;
   const stats = await api('GET', '/api/v1/support/ops/stats', null, true);
   if (stats.status === 200) $('refunds').textContent = String(stats.body.refunds);
+}
+
+// ---- 健康灯：读 deps 组，不读 readiness（ADR 0026）----
+// 三态各有各的判据：不挂 class = 三格齐；bad = 至少一格 DOWN，即「还能应答但已经缺一条路」；
+// unknown = 这个读数本身取不到。就绪门里只有 readinessState，拿它当灯就是恒绿的那半个成因，
+// 所以这里读 /actuator/health/deps —— 它的 DOWN 不摘流量，只负责让人看见。
+// 颜色之外另留一个 data-state：验收脚本要断的是「灯知道自己该是什么色」，不该去猜 computed style。
+async function refreshHealth() {
+  const dot = $('health');
+  dot.classList.remove('bad');
+  dot.classList.remove('unknown');
+  dot.dataset.state = '';
+  dot.title = '依赖状态：读数加载中';
+  let body = null;
+  try {
+    // DOWN 时 Spring Boot 把这一格映射成 503，但响应体仍是合法读数：只认 body.status，
+    // 不拿 HTTP 码当健康判据（拿码当判据等于把 503 又读成「读不到」）。
+    const res = await fetch('/actuator/health/deps');
+    body = await res.json();
+  } catch (e) {
+    body = null;
+  }
+  if (!body || !body.status) {
+    dot.classList.add('unknown');
+    dot.dataset.state = 'unknown';
+    dot.title = '依赖状态：读不到 /actuator/health/deps';
+    return;
+  }
+  const components = body.components || {};
+  const names = Object.keys(components);
+  const down = names.filter((n) => components[n].status !== 'UP');
+  // 有成员明细时按成员点名；被人把 show-components 关掉时退回整体状态，总之不许在 DOWN 上留绿。
+  const degraded = down.length > 0 || (names.length === 0 && body.status !== 'UP');
+  if (degraded) {
+    dot.classList.add('bad');
+    dot.dataset.state = 'bad';
+    dot.title = down.length ? '依赖降级：' + down.join('、') + ' 不为 UP' : '依赖整体 ' + body.status;
+  } else {
+    dot.dataset.state = 'ok';
+    dot.title = names.length ? '向量、词法、语料三格齐 UP' : '依赖整体 UP';
+  }
 }
 
 function report(ok, message) {
@@ -466,6 +512,9 @@ $('btnCloseTickets').onclick = () => $('drawer').classList.remove('open');
   await login();
   await loadTenants();
   $('tenant').value = state.tenant;
+  // 灯要自己会说话：deps 不鉴权，开页即读一次。它红了不影响这一页问答，
+  // 影响的只是「这一轮的降级是已知的，不是被恒绿盖住的」。
+  await refreshHealth();
   await refreshOps();
 })();
 </script>

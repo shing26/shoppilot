@@ -34,7 +34,10 @@ function Wait-Healthy([int]$Seconds = 90) {
     $deadline = (Get-Date).AddSeconds($Seconds)
     while ((Get-Date) -lt $deadline) {
         try {
-            if ((Invoke-RestMethod "http://127.0.0.1:8082/actuator/health" -TimeoutSec 5).status -eq "UP") { return $true }
+            # 读 readiness 而不是总健康：票 23 起网关总健康会把可降级依赖算进去（ADR 0026），
+            # 而实验档存在的全部理由就是把某个依赖弄残去量降级——总健康在这几档下本来就该红。
+            # 与 up.ps1、run-acceptance.ps1 同一个放行谓词，别在这里另立一套。
+            if ((Invoke-RestMethod "http://127.0.0.1:8082/actuator/health/readiness" -TimeoutSec 5).status -eq "UP") { return $true }
         } catch { Start-Sleep -Seconds 4 }
     }
     return $false

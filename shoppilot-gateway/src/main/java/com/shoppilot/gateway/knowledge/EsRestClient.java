@@ -135,6 +135,16 @@ public class EsRestClient {
         }
     }
 
+    /**
+     * 词法引擎可达性探针（ADR 0026 的 deps 组用）。与 Qdrant 那边同名同语义。
+     *
+     * <p>不能用 {@link #count(String)} 代：它在"索引是空的"与"服务没起来"两种情况下都返回 0，
+     * 而 deps 要答的正是这两者里的那一个——索引空了该由知识库那一格去说。
+     */
+    public boolean ping() {
+        return trySend("GET", "/") != null;
+    }
+
     private String send(String method, String path, Object body) {
         try {
             HttpRequest.BodyPublisher publisher = body == null

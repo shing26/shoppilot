@@ -42,6 +42,14 @@ management:
           include: readinessState
         liveness:
           include: livenessState
+        # 可降级依赖的真实状态（ADR 0026）：这一组**刻意不进 readiness**。门禁与起栈脚本都以
+        # readiness 为放行谓词，而 nocache / no-ollama / nodeps 这些实验档存在的意义就是把某个
+        # 依赖人为弄残去证明降级路径成立；并进就绪门等于用运维口把 fail-open 改回 fail-closed。
+        # 明细不外泄：这一组只报每个成员 UP/DOWN，URL 与计数留在未分组的 /actuator/health 里。
+        deps:
+          include: qdrant,elasticsearch,knowledgeBase
+          show-components: always
+          show-details: never
 
 shoppilot:
   # ADR 0014：mock JWT 签名密钥，至少 32 字节。
@@ -234,3 +242,16 @@ spring:
   # 入库是一次性脚本，不需要监听端口；关掉 web 容器也避免 8082 占用冲突
   main:
     web-application-type: none
+
+---
+spring:
+  config:
+    activate:
+      on-profile: nodeps
+shoppilot:
+  retrieval:
+    # ADR 0026 的实验档：把两个检索引擎指到无人监听的端口，等价于它们整个没了（与 no-ollama 同一家法，
+    # 只影响本系统，不碰别人共用的 19200/16333）。这一档要证的性质是：deps 组红，而 readiness 仍 UP、
+    # 问答按既有降级路径照出——也就是"没从运维口把 fail-open 改回 fail-closed"。
+    qdrant-url: http://127.0.0.1:59997
+    es-url: http://127.0.0.1:59998

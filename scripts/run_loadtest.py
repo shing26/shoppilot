@@ -85,9 +85,13 @@ def gateway_healthy(base: str) -> bool:
     <p>压测中途 JVM 凭空消失时（这台机器上真的发生过），计数器快照会全读成 0，
     差值变负数却没人报错——于是一份看起来正常的 CSV 其实是废数据。
     每档结束都问一次健康，宁可中途停下也不留下能骗人的表。
+
+    <p>问的是 readiness 而不是总健康：这一句要答的是「进程还在不在服务」，不是「依赖齐不齐」。
+    票 23 起总健康会把可降级依赖算进去（ADR 0026），拿它当中途存活的判据，等于让一次 ES 抖动
+    把整轮压测判成「进程没了」——那正是本函数要防的那类误读。
     """
     try:
-        with urllib.request.urlopen(f"{base}/actuator/health", timeout=5) as response:
+        with urllib.request.urlopen(f"{base}/actuator/health/readiness", timeout=5) as response:
             return json.loads(response.read().decode("utf-8")).get("status") == "UP"
     except Exception:
         return False

@@ -60,6 +60,37 @@ check('tenant picker populated via proxy', tenantOptions.length >= 3, tenantOpti
 const tenantLabels = await page.$$eval('#tenant option', (els) => els.map((e) => e.textContent));
 check('tenant picker shows shop names from biz-mock', tenantLabels.some((t) => t.includes('数码旗舰店')), tenantLabels.join(' | '));
 
+// 票 23（ADR 0026）：这盏灯第一次有能力变红。三态各喂一份 deps 读数去断，不靠运气等一次真故障。
+// 另开一个页面打桩：主页面那条「页面无失败请求」的断言不许被 DOWN 时的 503 污染成假红。
+const LIGHT_STATES = [
+  // want = data-state（灯知道自己是什么），cls = 它据此挂上的 class。两者都要断：
+  // 只断 cls 会放过「靠 CSS 蒙对颜色但状态机是坏的」，只断 want 会放过「状态对但没上色」。
+  { name: 'deps 三格齐时灯为绿', want: 'ok', cls: 'dot', http: 200,
+    body: { status: 'UP', components: { qdrant: { status: 'UP' }, elasticsearch: { status: 'UP' },
+      knowledgeBase: { status: 'UP' } } } },
+  // 503 是真的：Spring Boot 默认把 DOWN 映射成 503。页面只认 body.status，不拿 HTTP 码当判据。
+  { name: '词法侧 DOWN 时灯为红并点名', want: 'bad', cls: 'dot bad', http: 503,
+    body: { status: 'DOWN', components: { qdrant: { status: 'UP' }, elasticsearch: { status: 'DOWN' },
+      knowledgeBase: { status: 'DOWN' } } } },
+  { name: '读不到 deps 读数时灯为灰', want: 'unknown', cls: 'dot unknown', http: 200,
+    body: { note: 'not a health payload' } },
+];
+for (const light of LIGHT_STATES) {
+  const probe = await browser.newPage();
+  await probe.route('**/actuator/health/deps', (route) => route.fulfill({
+    status: light.http, contentType: 'application/json', body: JSON.stringify(light.body),
+  }));
+  await probe.goto(BASE + '/', { waitUntil: 'load' });
+  const state = await probe.waitForFunction(
+    () => document.getElementById('health').dataset.state || null, null, { timeout: 20000 })
+    .then((handle) => handle.jsonValue()).catch(() => '');
+  const cls = await probe.$eval('#health', (el) => el.className).catch(() => '');
+  const tip = await probe.$eval('#health', (el) => el.title).catch(() => '');
+  check(light.name, state === light.want && cls === light.cls,
+    `state="${state}" class="${cls}" title="${tip}"`);
+  await probe.close();
+}
+
 // 演示一：政策问答走打字机。先清一次答案缓存——上一轮跑测留下的 L1 命中会让"未命中路径"
 // 退化成一次性下发，那条断言就变成在测缓存而不是测流式形态。
 await page.click('#btnFlush');

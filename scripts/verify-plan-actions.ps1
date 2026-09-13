@@ -107,7 +107,10 @@ foreach ($pair in @(@(16379, 'Redis'), @(16333, 'Qdrant'), @(19200, 'Elasticsear
     Assert-True (Test-Port $pair[0]) "$($pair[1]) 端口 $($pair[0]) 在监听"
 }
 foreach ($svc in @(@('8082', '网关'), @('8091', 'biz-mock'))) {
-    $status = (Invoke-RestMethod "http://127.0.0.1:$($svc[0])/actuator/health" -TimeoutSec 10).status
+    # 读 readiness 而不是总健康（票 23、ADR 0026）：网关总健康从这一轮起把可降级依赖算进去，
+    # 拿它当"栈在不在"的冒烟判据，等于让一次 ES 抖动把整条门禁判成服务没起来——而那一刻
+    # 问答还在按降级路径出答案。放行谓词全仓只有一个：readiness。
+    $status = (Invoke-RestMethod "http://127.0.0.1:$($svc[0])/actuator/health/readiness" -TimeoutSec 10).status
     Assert-True ($status -eq 'UP') "$($svc[1]) health=UP（实际 $status）"
 }
 # 中间件一律按接口实际可用性判，不看 docker 给容器打的 health 标签：Qdrant 那条 healthcheck
