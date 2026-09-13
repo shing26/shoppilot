@@ -72,7 +72,7 @@ LOCAL_ONLY = [
     "G4 落点为 17 步全绿、总耗时 511s",
     "G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）",
     "G5b README 索引行与落点矩阵同读数",
-    "G6 surefire 3 + 12 + 133 = 148（build 与 unit 两份日志的 Results 段各自核过）",
+    "G6 surefire 3 + 12 + 134 = 149（build 与 unit 两份日志的 Results 段各自核过）",
     "G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0",
     "G8 打字机断言落在 > 60 字这一真判据上（未放宽）",
     "H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符",
@@ -615,13 +615,15 @@ check_local("G5b README 索引行与落点矩阵同读数", [LANDING_LOG],
                      f"矩阵解析出 {len(steps)} 步；README 含 80s/12s/511s = "
                      f"{'80s' in readme and '12s' in readme and '511s' in readme}"))
 
-G6 = "G6 surefire 3 + 12 + 133 = 148（build 与 unit 两份日志的 Results 段各自核过）"
+G6 = "G6 surefire 3 + 12 + 134 = 149（build 与 unit 两份日志的 Results 段各自核过）"
 # 换代指针（第十三轮票 21 落点）：G3/G4/G5/G5b 钉的是第十二轮那份矩阵文件名，换轮不动它们；
 # G6 读的却是 logs/acceptance/{build,unit}.log 这两份**每跑必覆盖**的最新日志，所以它天然跟着
 # 最近一次门禁走。票 21 把网关单测从 89 加到 125（新增 DevDefaultsPolicy 等 36 条 + 静态页无凭证 2 条），
 # 这一格不同步改数就会把「测试变多了」报成防线失效。见 ADR 0023 的逐轮重锚与 README 的票 21 落点段。
-# 换代指针（第十三轮票 22 落点）：网关 125 涨到 133，新增的是 ConversationOwnershipTest 8 条
-# （键含买家段、跨买家载不出/写不进/续办不了、旧键不迁移、无买家声明退化、正对照、静态页换身份清屏）。
+# 换代指针（第十三轮票 22 落点）：网关 125 涨到 134，新增的是 ConversationOwnershipTest 9 条
+# （键含买家段、跨买家载不出/写不进/续办不了、旧键不迁移、无买家声明退化、买家标识不 trim、
+# 正对照、静态页换身份清屏）。最后一条是收尾双轴审查抓出来的：键里那句 trim 会把 "C001" 与
+# "C001 " 合成一把，而订单行侧的守卫把它们当两个买家——两道防线对"谁是同一个人"的判断就此分家。
 # 同一条理由：这一格是当轮常数，不跟着改就把「测试变多了」报成防线失效。
 unit_log, build_log = read_opt(LOGS / "acceptance" / "unit.log"), read_opt(LOGS / "acceptance" / "build.log")
 if unit_log is None or build_log is None:

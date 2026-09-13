@@ -49,7 +49,7 @@ import static org.mockito.Mockito.when;
  * 而 {@code X-Conversation-Id} 由客户端自带。同店铺里 B 把这一头填成 A 的值，就能载出 A 的对话轮次喂进
  * prompt、把新轮次写回 A 的会话，并接着办 A 办到一半的待办动作。词汇表把这件事叫**串号**。
  *
- * <p>本类最后一条用例 {@link #ownerStillResumesItsOwnPendingAction()} 是**正对照**：它证明「续办待办动作
+ * <p>用例 {@link #ownerStillResumesItsOwnPendingAction()} 是**正对照**：它证明「续办待办动作
  * 并把工具返回喂进 prompt」这条通路本身是活的。没有它，前面那些 never() 断言可能只是因为整条链路
  * 压根没跑起来而白绿。
  */
@@ -151,6 +151,19 @@ class ConversationOwnershipTest {
 
         store.save(TENANT, "", store.appendTurn(store.load(TENANT, "", CONV), INTRUDER_TURN, "在查了"));
 
+        assertThat(store.load(TENANT, OWNER, CONV).turns()).extracting(SessionStore.Turn::text)
+                .containsExactly(OWNER_TURN, "请补充收件人姓名");
+    }
+
+    @Test
+    @DisplayName("买家标识不归一化：只差一处空白的两个 cid 不共享会话键")
+    void whitespaceInBuyerClaimDoesNotMergeSessions() {
+        // 订单行侧的守卫拿原样 cid 比人，会话键要是先 trim 一下，两边对"谁是同一个人"就分家了。
+        store.save(TENANT, OWNER, sessionWithOwnerHistory());
+        store.save(TENANT, OWNER + " ", store.appendTurn(store.load(TENANT, OWNER + " ", CONV), INTRUDER_TURN, "在查了"));
+
+        assertThat(store.load(TENANT, OWNER + " ", CONV).turns()).extracting(SessionStore.Turn::text)
+                .containsExactly(INTRUDER_TURN, "在查了");
         assertThat(store.load(TENANT, OWNER, CONV).turns()).extracting(SessionStore.Turn::text)
                 .containsExactly(OWNER_TURN, "请补充收件人姓名");
     }

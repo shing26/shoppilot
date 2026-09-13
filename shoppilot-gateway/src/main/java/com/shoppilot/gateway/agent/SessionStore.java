@@ -113,6 +113,8 @@ public class SessionStore {
     }
 
     private static String key(String tenantId, String customerId, String conversationId) {
-        return "shoppilot:session:" + tenantId + ":" + customerId.trim() + ":" + conversationId;
+        // 不做 trim：订单行侧的守卫比的是 token 里那个原样的 cid，"C001" 与 "C001 " 在那边是两个买家。
+        // 这里一旦归一化，就等于把两道防线对"谁是同一个人"的判断拆开——会话键跟着下游那把尺子走。
+        return "shoppilot:session:" + tenantId + ":" + customerId + ":" + conversationId;
     }
 }
