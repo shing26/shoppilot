@@ -63,6 +63,13 @@ _DEF_LANDED = 0
 # 「本机限定项」清单：读 `logs/` 或依赖本机检出环境的断言全部列在这儿，**在跑任何 check 之前**先打出来。
 # 第六轮 Spec 轴抓到判据 3 原文要求「在读 logs/ 之前打出具名清单」，而原先只在各项就地打 SKIP、
 # 末尾再汇总——顺序与自述不符。这里补上前置声明，并由 H16 钉「声明 ⊇ 实跑 SKIP」，防这张表腐烂。
+# G6 的当轮常数：三份 surefire 模块小计。一处定义、三处引用（下面的本机限定清单、那一格的名称、
+# 名称里的算式）。「名称写 149 而断言判 148」这种分家，第十三轮票 22 落点靠实跑才抓出来一次，
+# 收成一个来源之后它就长不出来了——本项的判据形状（读哪两份日志、比什么）一字未动。
+G6_EXPECT = [3, 12, 134]
+G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
+    " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
+
 LOCAL_ONLY = [
     "A3 tokensUsedToday == 0",  # 要活体网关；网关不在跑时判 SKIP（第七轮 Standards 轴抓到它漏声明）
     "D3 verify_eval_judge 退出码 0 且 40/40 条断言全过",  # 依赖检出后的换行符，见 eol_drift()
@@ -72,7 +79,7 @@ LOCAL_ONLY = [
     "G4 落点为 17 步全绿、总耗时 511s",
     "G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）",
     "G5b README 索引行与落点矩阵同读数",
-    "G6 surefire 3 + 12 + 134 = 149（build 与 unit 两份日志的 Results 段各自核过）",
+    G6_CLAIM,
     "G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0",
     "G8 打字机断言落在 > 60 字这一真判据上（未放宽）",
     "H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符",
@@ -615,7 +622,7 @@ check_local("G5b README 索引行与落点矩阵同读数", [LANDING_LOG],
                      f"矩阵解析出 {len(steps)} 步；README 含 80s/12s/511s = "
                      f"{'80s' in readme and '12s' in readme and '511s' in readme}"))
 
-G6 = "G6 surefire 3 + 12 + 134 = 149（build 与 unit 两份日志的 Results 段各自核过）"
+G6 = G6_CLAIM
 # 换代指针（第十三轮票 21 落点）：G3/G4/G5/G5b 钉的是第十二轮那份矩阵文件名，换轮不动它们；
 # G6 读的却是 logs/acceptance/{build,unit}.log 这两份**每跑必覆盖**的最新日志，所以它天然跟着
 # 最近一次门禁走。票 21 把网关单测从 89 加到 125（新增 DevDefaultsPolicy 等 36 条 + 静态页无凭证 2 条），
@@ -633,8 +640,8 @@ else:
     SUM_RE = r"(?m)^\[INFO\] Tests run: (\d+), Failures: 0, Errors: 0, Skipped: 0$"
     unit_totals = [int(x) for x in re.findall(SUM_RE, unit_log)]
     build_totals = [int(x) for x in re.findall(SUM_RE, build_log)]
-    check(G6, unit_totals == [3, 12, 133] and build_totals == [3, 12, 133]
-          and sum(unit_totals) == sum(build_totals) == 148,
+    check(G6, unit_totals == G6_EXPECT and build_totals == G6_EXPECT
+          and sum(unit_totals) == sum(build_totals) == sum(G6_EXPECT),
           f"unit 模块小计 {unit_totals}，build 模块小计 {build_totals}")
 
 G7 = "G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0"
