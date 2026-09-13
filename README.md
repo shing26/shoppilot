@@ -38,6 +38,16 @@ start http://127.0.0.1:8082                   # 调试台
 就绪判定用 Spring Boot 的 readiness 健康组（`/actuator/health/readiness`）：`ApplicationRunner`
 跑完之前端口已经开着，但 `/actuator/health` 会返回 503 `OUT_OF_SERVICE`，脚本因此不会在
 biz-mock 还在 seed 5 万单、网关还在预热 bge-m3 的时候就把流量放进来。
+
+依赖的真实状态是**另一格**：`/actuator/health/deps` 报向量引擎、词法引擎、语料在位三格各自
+UP/DOWN（ADR 0026）。这一组**刻意不进 readiness**——缓存、模型、检索这些依赖按设计是可降级
+运行的（fail-open 写在每一处读路径上），把它们并进就绪门等于用运维口把取向改回 fail-closed：
+实验档存在的意义就是把某个依赖人为弄残去证明降级成立，那样一起栈门禁就不放行了。
+所以三个运维口径各管一件事，别拿错：`readiness` 答「能不能给它流量」、`deps` 答「这一轮是齐的还是降级的」、
+`/actuator/health`（总健康）会把可降级依赖一并算进去，只作诊断用，**不许当放行谓词**——
+`scripts/run_experiment_suite.ps1` 与 `scripts/run_loadtest.py` 因此读的是 readiness 而不是总健康。
+调试台左上角那颗灯读 `deps`，它从这一轮起才有能力变红（三态：齐 / 降级 / 读不到读数）。
+
 要停：`pwsh -NoProfile -File scripts/down.ps1`（加 `-Containers` 连中间件一起停，数据卷保留）。
 
 <details>
@@ -433,7 +443,7 @@ pwsh -NoProfile -File scripts/verify-fallback.ps1       # 七种降级原因 + �
 pwsh -NoProfile -File scripts/verify-idempotency.ps1    # 并发同 token 与状态前置校验
 pwsh -NoProfile -File scripts/verify-ratelimit.ps1      # 同步 429 与 SSE rate_limited
 pwsh -NoProfile -File scripts/verify-polarity.ps1       # 反义对不互命中（要求 local/dev 模式）
-node scripts/verify-console.mjs                         # 调试台 15 项（Playwright）
+node scripts/verify-console.mjs                         # 调试台 18 项（Playwright）
 # dev 评测（唯一要云端 key 的一格）：默认只自查与摆位置，不发任何计费请求
 pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12        # 干跑：查配置、报缺什么
 pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12 -Run   # 真跑 12 条；去掉 -Limit 是 180 条全量
@@ -467,7 +477,7 @@ fallback      0  25s           # 七种降级原因 + 工单反查
 ratelimit     0   1s           # 同步 429 与 SSE rate_limited
 polarity      0  26s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
 l2            0   8s           # tenant/scope/intent/kb_epoch 四条 must-filter（前提阶段会重试，见下）
-console       0  20s           # Playwright 15 项
+console       0  21s           # Playwright 18 项
 demo          0  12s           # 三条演示
 eval          0 123s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）；日志第一行是 SCORER SELFCHECK ok=16
 ```
@@ -615,6 +625,44 @@ surefire 三份模块小计 3 + 12 + 134 = 149，网关那一格从上一轮的 
 点「换身份」：`#chat .msg` 由 2 条变 0 条、会话 id 换掉、时间线清空，而同一个身份再点一次换身份气泡数不变（1 变 1），
 无 pageerror。长期可复跑的证据是那 9 条 JVM 用例，其中一条是正对照。
 
+**票 23 的落点（第十三轮，实现轮中途）**：`logs/acceptance-run-20260913-204500.log`，
+`commit=7f17da6 开跑时工作树=dirty（16 个未提交改动，除两份票面文档外全是本票）`，
+`开始 20:36:27 结束 20:45:01 总耗时 513s`，17 步全绿。surefire 三份模块小计 3 + 12 + 140 = 155，
+网关那一格从上一轮的 134 涨到 140，多出的 6 条全是本票新增的 `DependencyHealthTest`；
+`console` 从 15 项涨到 18 项（新增的三条就是那颗灯的三态）。G6 那处当轮常数跟着换代，
+理由写在审计量具旁边；**审计项数仍是 95**，本票没新增审计项。同一批代码在这份绿之前还有一份 17/17 的
+`20:07:28`（496s，`logs/acceptance-run-20260913-200728.log`）：它测的是「连带那一笔」改之前的代码
+（`verify-plan-actions.ps1` 与页面每轮补读都还没落），所以它不算落点，只照登在这里。
+
+票面「拿一档把依赖弄残的实验 profile 起栈、门禁照样放行」那一勾是**活体量的**，两份读数都取自本机：
+其一（依赖弄残那一档），`pwsh -NoProfile -File scripts/start-gateway.ps1 -Profile "local,nodeps"`
+（新增的实验档，把
+`shoppilot.retrieval.qdrant-url` / `es-url` 指到 59997 / 59998 两个空端口，与 `no-ollama` 同一家法，不碰共用的
+16333 / 19200）。网关日志记下 `检索基础设施未就绪，网关以降级模式启动` 之后照常 `Started ... in 5.314 seconds`；
+`/actuator/health/readiness` = **UP**、`/actuator/health/liveness` = **UP**，而 `/actuator/health/deps` =
+**HTTP 503 + 三格全 DOWN**（`qdrant` / `elasticsearch` / `knowledgeBase`）；`scripts/chat.ps1` 问
+「七天无理由怎么算」拿到 **HTTP 200**、`intent=POLICY_RETURN triage=T0 citations=0` 与一句正常答案——
+运维口红了，业务还在按既有降级路径应答。同一档下再跑门禁自己的放行谓词那一段
+（`run-acceptance.ps1 -SkipBuild -SkipStack -Only fallback,ratelimit,idem`，
+`logs/acceptance-run-20260913-195335.log`）：`idem`、`ratelimit` 两步**真跑绿**，
+`fallback` 判红——它第一枪 `POST /ops/cache/flush` 在 Qdrant 不在时返 500，那是「这一步业务真需要那个依赖」，
+不是「运维口把流量摘了」，两件事不许混谈；那一枪的响应体还是一具裸 Spring 错误体，**转票 25**。
+其二（依赖齐那一档）：17 步全绿的那份矩阵里 `stack` 步等的仍是 readiness，一行判据没改。
+
+一处**连带**必须记在这儿，因为它是本票自己带来的：注册三个 `HealthIndicator` 之后，**未分组的**
+`/actuator/health` 会把这三格算进总健康，于是它在依赖被弄残时跟着变 503。仓里还有三处读的是总健康，
+三处的本意都是「进程还在不在服务」，而不是「依赖齐不齐」——拿总健康当判据，等于把 ADR 0026 从 readiness
+门口挡住的那扇门，从另一扇门放进来。三处一律改读 `readiness`，与 `up.ps1`、`run-acceptance.ps1`、
+`run_ttft_sweep.ps1` 同一个谓词：`run_experiment_suite.ps1` 起网关后的等健康、`run_loadtest.py` 每档结束的
+存活探测、`verify-plan-actions.ps1` 第 01 段那句「两服务 health 为 UP」（PLAN 第 01 行的原话问的是服务在不在，
+依赖齐不齐另有 `deps` 那一格答）。改完后全仓**没有**第二处拿总健康当放行谓词的脚本了。
+调试台那颗灯的探针因此也读 `deps` 而不读总健康：拿总健康当灯，红的会是「磁盘也满了」这一类与降级无关的事。
+
+一处本票**没做**的取舍也留在这儿：`deps` 三格里没有 embedding / Ollama 那一格。ADR 0026 点名的是
+Qdrant、ES、知识库装载三格，向量化那条路的降级早写在读路径里（`EmbeddingWarmupRetryTest`、
+`probe_embedding_latency.py`），加一格等于替 ADR 追加一条它没写过的决定。同理 `knowledgeBase` 只数
+两引擎的条目，不去判「语料对不对」——那是入库与 `retrieval_compare.py` 的地盘。
+
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
 | 01 | `run-acceptance.ps1` 的 stop / build / unit / stack 四步（`mvnw verify` + `mvn -o test` + `up.ps1`）；`verify-plan-actions.ps1` 第 01 段判"三中间件在跑、两服务健康 UP" |
@@ -631,7 +679,7 @@ surefire 三份模块小计 3 + 12 + 134 = 149，网关那一格从上一轮的 
 | 12 | `verify-idempotency.ps1`、`IdempotencyServiceTest` |
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
-| 15 | `node scripts/verify-console.mjs`（Playwright 15 项，含"页面拿不到内部 token"） |
+| 15 | `node scripts/verify-console.mjs`（Playwright 18 项，含"页面拿不到内部 token"、健康灯三态） |
 | 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260911-211809-local-smoke*`，10/10 意图各有 2-3 条，日志首行是 `SCORER SELFCHECK ok=16`）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（40 条断言：四处评分缺陷各一次变异反证、10 条标注校验器防呆、6 条对偶矛盾边界、5 条 gold 形态与串号标记值对拍、4 条共享词表与两份 `accepted_tools` 跨实现对拍、生成物字节稳定、判据只有一份、17 个文件的换行符基线、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（16 条夹具，真跑前执行）；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |

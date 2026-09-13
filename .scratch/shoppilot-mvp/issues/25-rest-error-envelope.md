@@ -26,4 +26,16 @@
 - **S2**：「非回环绑定上仍用着仓库默认凭证」这句报错在 `DevDefaultsEnvironmentPostProcessor` 与
   `DevDefaultsConfiguration` 各写一份、措辞不同。第二道阻断不能删（它防的是绕过环境后置处理器的启动方式），
   但该把句子收成一个工厂方法，别让它长成第三种错误形状。
+
+## 承接（票 23 收尾审账转过来的那条）
+
+- **依赖弄残那一档下的一具裸 500**：`nodeps` 档（两个检索引擎指向空端口）下 `POST /api/v1/support/ops/cache/flush`
+  返 `{"timestamp":...,"status":500,"error":"Internal Server Error","path":"/api/v1/support/ops/cache/flush"}` ——
+  现场在 `logs/acceptance/fallback.log`（`verify-fallback.ps1` 的第一枪就是它）。这一枪是**网关自产**的：
+  仓储层抛上来的 `RuntimeException` 没人接，于是走了 Spring Boot 的默认错误体。它恰好落在本票第一条勾的射程里
+  （"网关自己说错话时只有一个形状"），而且是最能说明这一票值多少的一条：同一个失效在 `deps` 那一格已经说得清
+  （`qdrant` DOWN），在 HTTP 面上却只剩一个 500。本票落地时把它收进 advice，形状 `code`/`message`/`traceId`，
+  status code 仍按第二条勾保持现状不改。
+  注：这条**不**是票 23 的 fail-open 被打破——`readiness` 在该档下实测仍 UP，放行谓词没变；
+  变的只是一句错误该长什么样。
 - [ ] 零额度；审计项数保持 95

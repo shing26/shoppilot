@@ -66,7 +66,7 @@ _DEF_LANDED = 0
 # G6 的当轮常数：三份 surefire 模块小计。一处定义、三处引用（下面的本机限定清单、那一格的名称、
 # 名称里的算式）。「名称写 149 而断言判 148」这种分家，第十三轮票 22 落点靠实跑才抓出来一次，
 # 收成一个来源之后它就长不出来了——本项的判据形状（读哪两份日志、比什么）一字未动。
-G6_EXPECT = [3, 12, 134]
+G6_EXPECT = [3, 12, 140]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 
@@ -632,6 +632,10 @@ G6 = G6_CLAIM
 # 正对照、静态页换身份清屏）。最后一条是收尾双轴审查抓出来的：键里那句 trim 会把 "C001" 与
 # "C001 " 合成一把，而订单行侧的守卫把它们当两个买家——两道防线对"谁是同一个人"的判断就此分家。
 # 同一条理由：这一格是当轮常数，不跟着改就把「测试变多了」报成防线失效。
+# 换代指针（第十三轮票 23 落点）：网关 134 涨到 140，新增的是 DependencyHealthTest 6 条
+# （readiness 成员一字未动、deps 恰好三格且与就绪门不相交、摘掉任一注册当场判错、
+#  依赖全挂时三件事同时成立、引擎活着而语料 0 块时只有 knowledgeBase 红、静态页那颗灯改读 deps）。
+# 本票没动任何一项判据形状，也没新增审计项：项数仍是 95。
 unit_log, build_log = read_opt(LOGS / "acceptance" / "unit.log"), read_opt(LOGS / "acceptance" / "build.log")
 if unit_log is None or build_log is None:
     check(G6, False, _why(LOGS / "acceptance" / "unit.log" if unit_log is None else LOGS / "acceptance" / "build.log"),
