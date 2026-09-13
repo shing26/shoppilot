@@ -126,6 +126,21 @@ class RestErrorEnvelopeTest {
     }
 
     @Test
+    @DisplayName("流式那条通道也一样：Accept 是 event-stream，400 的 JSON 信封照样出得来")
+    void streamEndpointSendsTheSameEnvelopeForInvalidInput() throws Exception {
+        // 调试台的超长输入打在 /chat/stream 上。这一格钉的是「advice 显式带的 JSON 内容类型
+        // 不被请求的 Accept: text/event-stream 换成 406」——换成了就没有 message 可回显，票 26 那条断言会空转。
+        MvcResult result = mvc().perform(post("/api/v1/support/chat/stream")
+                .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"query\":\"" + "退".repeat(600) + "\"}"))
+            .andReturn();
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(400);
+        assertThat(envelope(result).get("message").asText()).contains("问题太长");
+    }
+
+    @Test
     @DisplayName("没人接的运行时异常：500 仍是 500，但报文有 code 与 traceId（依赖弄残那档的裸 500 收进这里）")
     void unexpectedFailureGetsCodeNotBareBody() throws Exception {
         MDC.put(RequestTrace.TRACE_ID, "trace-500");

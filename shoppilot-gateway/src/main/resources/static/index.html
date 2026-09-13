@@ -6,17 +6,22 @@
 <title>ShopPilot 调试台</title>
 <style>
   :root {
-    --bg: #f2f3f5; --panel: #fff; --ink: #14161a; --ink-2: #5c636e; --ink-3: #8b929d;
+    /* --ink-3 从 #8b929d（白底 2.9:1）换到 #6b7280（4.8:1）：走查第 12 项量的就是这一族小字，
+       label / .dim / #mode / .empty / .ctl .t 全挂在它上面，改一个令牌比逐处补颜色少一分漏改。 */
+    --bg: #f2f3f5; --panel: #fff; --ink: #14161a; --ink-2: #5c636e; --ink-3: #6b7280;
     --line: #dfe2e7; --line-2: #eceef1;
     --teal: #0f766e; --amber: #b45309; --rose: #be123c; --violet: #6d28d9;
     --sky: #0369a1; --green: #15803d;
     --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
+  /* 竖向改成 flex 分配：原先 main 的高度是 calc(100vh - 49px - 62px)，把页脚按死 62px，
+     窄屏一页脚一换行就盖住内容。现在 footer 自然高、main 吃剩余。 */
+  body { margin: 0; background: var(--bg); color: var(--ink); height: 100dvh; display: flex; flex-direction: column;
     font: 13px/1.55 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif; }
   header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-    background: var(--panel); border-bottom: 1px solid var(--line); height: 49px; }
+    background: var(--panel); border-bottom: 1px solid var(--line); height: 49px; flex: none;
+    position: relative; z-index: 21; }
   header h1 { font-size: 14px; margin: 0 10px 0 0; font-weight: 650; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); display: inline-block; }
   .dot.bad { background: var(--rose); }
@@ -25,7 +30,7 @@
   .dot.unknown { background: var(--ink-3); }
   .grow { flex: 1; }
   main { display: grid; grid-template-columns: 250px minmax(0,1fr) 400px;
-    height: calc(100vh - 49px - 62px); gap: 1px; background: var(--line); }
+    flex: 1; min-height: 0; gap: 1px; background: var(--line); }
   section { background: var(--panel); min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   section > h2 { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3);
     margin: 0; padding: 9px 12px 7px; border-bottom: 1px solid var(--line-2); font-weight: 650; }
@@ -56,6 +61,12 @@
   .msg details.cite ul { margin: 4px 0 0; padding-left: 16px; overflow-wrap: anywhere; }
   .composer { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line-2); }
   .composer input { flex: 1; }
+  /* 空输入提交不再静默：一句可见的回显，role=status 让它同时进可读区。 */
+  .hint { padding: 0 12px 8px; font-size: 12px; color: var(--amber); min-height: 0; }
+  .hint:empty { display: none; }
+  /* 首字延迟期间的进行态：走查第 2 项量到 11.6 s 里界面是空的，那段时间必须有个「正在」。 */
+  .typing { color: var(--ink-3); }
+  .typing::after { content: '…'; }
   #timeline { flex: 1; overflow: auto; min-height: 0; }
   .ev { display: grid; grid-template-columns: 78px minmax(0,1fr); gap: 8px; padding: 5px 10px;
     border-bottom: 1px solid var(--line-2); font-size: 12px; }
@@ -76,7 +87,7 @@
   .chip { font-family: var(--mono); font-size: 11px; background: #ecfdf8; border: 1px solid #a7f3d0;
     border-radius: 4px; padding: 0 3px; }
   footer { background: var(--panel); border-top: 1px solid var(--line); display: flex; align-items: center;
-    gap: 13px; padding: 9px 12px; height: 62px; overflow-x: auto; }
+    flex-wrap: wrap; gap: 9px 13px; padding: 9px 12px; min-height: 62px; }
   .ctl { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
   .ctl .t { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); font-weight: 650; }
   input[type=range] { width: 104px; accent-color: var(--teal); }
@@ -85,7 +96,9 @@
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button[aria-pressed=true] { background: var(--ink); color: #fff; }
   .val { font-family: var(--mono); font-size: 11px; min-width: 44px; color: var(--ink-2); }
-  aside.drawer { position: fixed; inset: 0 0 0 auto; width: min(520px,92vw); background: var(--panel);
+  /* 抽屉从 header 下沿开始（49px 与上面 header 的声明高度同源）：压在 header 之上时，
+     「工单队列」那颗按钮会被抽屉自己盖住，点开之后就再也关不掉了（走查第 11 项）。 */
+  aside.drawer { position: fixed; inset: 49px 0 0 auto; width: min(520px,92vw); background: var(--panel);
     border-left: 1px solid var(--line); box-shadow: -12px 0 28px rgba(20,22,26,.10);
     transform: translateX(100%); transition: transform .18s ease; display: flex; flex-direction: column; z-index: 20; }
   aside.drawer.open { transform: none; }
@@ -99,7 +112,25 @@
   .badge.ASSIGNED { color: var(--sky); border-color: #7dd3fc; background: #f0f9ff; }
   .badge.RESOLVED { color: var(--green); border-color: #86efac; background: #f0fdf4; }
   .empty { color: var(--ink-3); padding: 14px; }
-  @media (max-width: 1100px) { main { grid-template-columns: 220px minmax(0,1fr); } #pane-events { display: none; } }
+  /* 运维回执与问答事件流分家（走查第 10 项）：ops 的行落在 #opslog 里，
+     它不再是每轮 clearTimeline() 的清场对象，也不再混进 .ev 的序列。 */
+  .opslog { border-top: 1px solid var(--line); background: var(--line-2); max-height: 34%; overflow: auto; }
+  .opslog > .cap { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--ink-2);
+    padding: 7px 10px 1px; letter-spacing: .04em; }
+  .ops { display: grid; grid-template-columns: 78px minmax(0,1fr); gap: 8px; padding: 4px 10px; font-size: 12px; }
+  .ops .k { font-family: var(--mono); font-size: 10px; font-weight: 700; padding-top: 2px; color: var(--ink-2); }
+  .ops .v { min-width: 0; overflow-wrap: anywhere; }
+  .ops.ok .v { color: var(--green); }
+  .ops.bad .v { color: var(--rose); }
+  .opslog .empty { padding: 6px 10px; }
+  /* 遮罩压在抽屉下面、内容上面；抽屉从 header 下沿开始，不再盖住那颗「工单队列」按钮。 */
+  .scrim { position: fixed; inset: 49px 0 0 0; background: rgba(20,22,26,.28); z-index: 19; }
+  .scrim[hidden] { display: none; }
+  /* 窄屏不再整块藏时间线（走查第 7 项）：换成横跨两列的一条，位置看得见、内容还在。 */
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 200px minmax(0,1fr); grid-template-rows: minmax(0,1fr) minmax(140px,34%); }
+    #pane-events { grid-column: 1 / -1; }
+  }
 </style>
 </head>
 <body>
@@ -116,7 +147,10 @@
     <h2>身份</h2>
     <div class="body">
       <label>店铺 tenant</label><select id="tenant"></select>
-      <label>买家 customer</label><input type="text" id="customer" value="C001">
+      <label>买家 customer</label>
+      <!-- 买家 id 要有个上限（走查那轮的次一级项）：一千多字符的 id 会把 claims 那格撑爆，
+           而它本来就不是合法 id。32 与演示/验收在用的 id 形状相符，超出的字符根本进不来。 -->
+      <input type="text" id="customer" value="C001" maxlength="32" autocomplete="off">
       <div class="row" style="margin-top:10px">
         <button class="primary sm" id="btnLogin">换身份</button>
         <button class="sm" id="btnNewConv">新会话</button>
@@ -132,10 +166,15 @@
       <input type="text" id="q" value="生鲜坏了怎么赔" placeholder="向客服提问">
       <button class="primary" id="btnSend">发送</button>
     </div>
+    <div class="hint" id="hint" role="status" aria-live="polite"></div>
   </section>
   <section id="pane-events">
     <h2>事件时间线</h2>
     <div id="timeline"><div class="empty">尚无事件</div></div>
+    <div class="opslog" id="opslog">
+      <div class="cap">运维回执</div>
+      <div class="empty" id="opslogEmpty">尚无运维动作</div>
+    </div>
   </section>
 </main>
 <footer>
@@ -148,6 +187,7 @@
     <button class="sm" id="btnFlush">清缓存</button><button class="sm" id="btnDemo">复位演示单</button></div>
   <div class="ctl"><span class="t">circuit</span><span class="val" id="circuit">-</span><span class="t">refunds</span><span class="val" id="refunds">-</span></div>
 </footer>
+<div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer">
   <h2 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:0;padding:13px 12px;border-bottom:1px solid var(--line-2);font-weight:650" class="row">
     <span class="grow">工单队列</span><button class="sm" id="btnCloseTickets">关闭</button></h2>
@@ -257,6 +297,32 @@ function bubble(cls, who, text) {
 // ---- 事件时间线 ----
 function clearTimeline() { $('timeline').innerHTML = ''; }
 
+/** 空输入那类「你先敲点什么」的回显：写在 composer 下面那一行，不混进对话气泡。 */
+function showHint(text) { $('hint').textContent = text || ''; }
+
+/** 首字到达之前挂在对话区末尾的一行；调用方拿到的是它自己，remove() 幂等。 */
+function typingRow() {
+  const row = document.createElement('div');
+  row.className = 'msg bot';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble typing';
+  bubble.textContent = '正在等模型首字';
+  row.appendChild(bubble);
+  $('chat').appendChild(row);
+  $('chat').scrollTop = $('chat').scrollHeight;
+  return row;
+}
+
+/** 4xx 的报文里票 25 起有 message，能显就显；显不了至少还是那句状态码，不假装有内容。 */
+async function rejectionText(res) {
+  let message = '';
+  try {
+    const body = await res.json();
+    message = body && body.message ? String(body.message) : '';
+  } catch (notJson) { message = ''; }
+  return message ? `请求被拒绝：${res.status} ${message}` : `请求被拒绝：${res.status}`;
+}
+
 function ev(name, html) {
   const row = document.createElement('div');
   row.className = 'ev ' + name;
@@ -277,12 +343,21 @@ const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<'
 async function ask() {
   if (state.busy) return;
   const query = $('q').value.trim();
-  if (!query) return;
+  if (!query) {
+    // 走查第 3 项：这里原先直接 return，点发送什么也没发生，用户只能怀疑按钮坏了
+    showHint('先输入一个问题，再点发送');
+    $('q').focus();
+    return;
+  }
+  showHint('');
   if (!state.token) await login();
   state.busy = true;
   $('btnSend').disabled = true;
   bubble('user', '买家 ' + state.customer, query);
   const answerEl = bubble('bot', '客服');
+  // 走查第 2 项：首字实测最慢 11.6 s，这期间气泡是空的，界面像卡死。进行态单独一行，
+  // 不塞进气泡里——气泡靠 textContent 累加 token，混进去就把「正在」两个字复述进答案了。
+  const pending = typingRow();
   clearTimeline();
   const started = performance.now();
   let tokens = 0;
@@ -296,13 +371,20 @@ async function ask() {
         Authorization: 'Bearer ' + state.token, 'X-Conversation-Id': state.conv },
       body: JSON.stringify({ query })
     });
-    if (!res.ok) { ev('fallback', 'HTTP ' + res.status); answerEl.textContent = '请求被拒绝：' + res.status; return; }
+    if (!res.ok) {
+      pending.remove();
+      ev('fallback', 'HTTP ' + res.status);
+      // 走查第 4 项的前端那一半：票 25 之后 400 的报文里有 message，回显它，而不是只剩一个状态码
+      answerEl.textContent = await rejectionText(res);
+      return;
+    }
     await readSse(res, (name, raw) => {
       let d = {};
       try { d = JSON.parse(raw); } catch (e) { d = { text: raw }; }
       if (typeof d === 'string') d = { text: d };
       const text = d.text ?? raw;
       if (name === 'token') {
+        pending.remove();
         tokens++;
         answerEl.textContent += text;
         if (!tokenRow) {
@@ -349,8 +431,10 @@ async function ask() {
       }
     });
   } catch (failure) {
+    pending.remove();
     ev('fallback', 'stream error <span class="dim">' + esc(failure.message) + '</span>');
   } finally {
+    pending.remove();
     state.busy = false;
     $('btnSend').disabled = false;
     // 每一轮答完补一次依赖读数：这一轮是齐的还是降级的，答案本身答不了，得让灯跟着这一轮走。
@@ -384,18 +468,42 @@ async function clearFaults() {
   await refreshOps();
 }
 
+/** 读数格只经由这里写：失败路径与成功路径共用同一支笔，才不会再出现「失败时留在上一格」。 */
+function setGauge(id, text, stale) {
+  const el = $(id);
+  el.textContent = text;
+  el.dataset.state = stale ? 'stale' : 'live';
+}
+
+/** 失败时要说出是哪一种失败：票 25 之后 403 的报文自带 code，没报文就退回状态码。 */
+function failureReason(res) {
+  return res.body && res.body.code ? String(res.body.code) : 'HTTP ' + res.status;
+}
+
 async function refreshOps() {
+  // 走查第 9 项：这一格原先只在成功时写字，失败时 footer 上留的还是上一次的成功值——
+  // 指标没撒谎，但它装死。现在失败就把「读不到 + 为什么」写上去。
   const circuit = await api('GET', '/api/v1/support/ops/circuit', null, true);
-  if (circuit.body) {
-    $('circuit').textContent = circuit.body.circuitState + ' / ' + circuit.body.llmMode;
-    $('mode').textContent = 'mode ' + circuit.body.llmMode;
+  if (circuit.status === 200 && circuit.body) {
+    setGauge('circuit', circuit.body.circuitState + ' / ' + circuit.body.llmMode, false);
+    setGauge('mode', 'mode ' + circuit.body.llmMode, false);
+  } else {
+    setGauge('circuit', '读不到：' + failureReason(circuit), true);
+    setGauge('mode', 'mode 读不到', true);
   }
   // stats 是运维凭证守护的端点，令牌框空着去读必然吃一发 403（票 21 起页面不再预填令牌，
   // ADR 0029）。没凭证就是「没得看」而不是「出错了」：这里不发那一枪，浏览器控制台才不会
   // 每次开页面都留下红字，验收里「页面无失败请求」那条断言量的才是真失败。
-  if (!$('opsToken').value.trim()) return;
+  if (!$('opsToken').value.trim()) {
+    setGauge('refunds', '未填令牌', true);
+    return;
+  }
   const stats = await api('GET', '/api/v1/support/ops/stats', null, true);
-  if (stats.status === 200) $('refunds').textContent = String(stats.body.refunds);
+  if (stats.status === 200) {
+    setGauge('refunds', String(stats.body.refunds), false);
+  } else {
+    setGauge('refunds', '读不到：' + failureReason(stats), true);
+  }
 }
 
 // ---- 健康灯：读 deps 组，不读 readiness（ADR 0026）----
@@ -440,24 +548,46 @@ async function refreshHealth() {
 }
 
 function report(ok, message) {
+  // 走查第 10 项：运维回执原先混在问答事件流里，既被每轮 clearTimeline() 清掉，
+  // 又让「.ev.done 表示这一轮答完了」那条判据有机会读到自己写的行。现在它另起一条流。
   const row = document.createElement('div');
-  // 独立事件名，不复用 done：验收脚本用 .ev.done 等"这一轮答完了"，
-  // 运维回执要是混进同一个类，脚本会在自己写的行上提前收工。
-  row.className = 'ev ops ' + (ok ? 'ok' : 'bad');
+  row.className = 'ops ' + (ok ? 'ok' : 'bad');
   row.innerHTML = `<div class="k">ops</div><div class="v">${esc(message)}</div>`;
-  $('timeline').appendChild(row);
-  $('timeline').scrollTop = $('timeline').scrollHeight;
+  $('opslog').appendChild(row);
+  if ($('opslogEmpty')) $('opslogEmpty').remove();
+  $('opslog').scrollTop = $('opslog').scrollHeight;
 }
 
 // ---- 工单抽屉 ----
-async function loadTickets() {
+/** 走查第 11 项：抽屉原先盖住 header，那颗「工单队列」按钮被自己的抽屉挡住，
+ *  跑器在第二次点它时超时 30 s 崩过。现在抽屉从 header 下沿开始，另配一层可点的遮罩。 */
+function openDrawer() {
   $('drawer').classList.add('open');
+  $('scrim').hidden = false;
+  loadTickets();
+}
+
+function closeDrawer() {
+  $('drawer').classList.remove('open');
+  $('scrim').hidden = true;
+}
+
+/** 工单卡片带时间戳（次一级项）：坐席排队列先看的是「这单挂了多久」。 */
+function fmtTime(raw) {
+  if (!raw && raw !== 0) return '-';
+  const when = new Date(raw);
+  return Number.isNaN(when.getTime()) ? String(raw)
+    : when.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+async function loadTickets() {
   const res = await api('GET', '/api/v1/support/ops/tickets', null, true);
   if (res.status !== 200) { $('tickets').innerHTML = '<div class="empty">拉取失败 ' + res.status + '</div>'; return; }
   if (!res.body.length) { $('tickets').innerHTML = '<div class="empty">当前店铺暂无工单</div>'; return; }
   $('tickets').innerHTML = res.body.map((t) => `
     <div class="tk">
-      <div><div class="id">${esc(t.id)} · ${esc(t.reason)} · ${esc(t.customerId)}</div>
+      <div><div class="id">${esc(t.id)} · ${esc(t.reason)} · ${esc(t.customerId)} · ${esc(fmtTime(t.createdAt))}</div>
         <div class="q">${esc(t.userQuery)}</div>
         <div class="row" style="margin-top:6px">
           <button class="sm" data-tk="${esc(t.id)}" data-to="ASSIGNED">认领</button>
@@ -491,7 +621,11 @@ $('llmSeg').querySelectorAll('button').forEach((b) => { b.onclick = () => setLlm
 $('btnApply').onclick = applyFaults;
 $('btnClear').onclick = clearFaults;
 // 令牌是人敲进来的，敲完顺手把运维读数补上（不然 refunds 会一直停在初始值）
-$('opsToken').onchange = () => { refreshOps(); };
+// 令牌是人敲进来（多半是粘进来）的，粘完不挪鼠标就去点别的按钮，是这台调试台的常态。
+// 挂在 change 上等于要等失焦才补读数，那一眼里 footer 上还是上一次的值。改成输入后去抖 400ms：
+// 粘贴生效即读数，又不至于每敲一个字符就打一发 ops 请求。
+let opsTokenTimer = 0;
+$('opsToken').oninput = () => { clearTimeout(opsTokenTimer); opsTokenTimer = setTimeout(refreshOps, 400); };
 $('btnFlush').onclick = async () => {
   const r = await api('POST', '/api/v1/support/ops/cache/flush', {});
   report(r.status === 200, '清缓存 ' + JSON.stringify(r.body));
@@ -501,8 +635,13 @@ $('btnDemo').onclick = async () => {
   report(r.status === 200, '演示单复位 ' + JSON.stringify(r.body));
   refreshOps();
 };
-$('btnTickets').onclick = loadTickets;
-$('btnCloseTickets').onclick = () => $('drawer').classList.remove('open');
+$('btnTickets').onclick = openDrawer;
+$('btnCloseTickets').onclick = closeDrawer;
+$('scrim').onclick = closeDrawer;
+// Esc 关抽屉：键盘用户不该只能去找那颗鼠标才看得见的关闭按钮
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('drawer').classList.contains('open')) closeDrawer();
+});
 
 (async function boot() {
   newConv();
@@ -517,7 +656,6 @@ $('btnCloseTickets').onclick = () => $('drawer').classList.remove('open');
   await refreshHealth();
   await refreshOps();
 })();
-</script>
 </script>
 </body>
 </html>
