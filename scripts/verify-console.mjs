@@ -288,6 +288,10 @@ check('narrow footer wraps instead of running off the screen',
 await page.setViewportSize({ width: 1440, height: 900 });
 await page.waitForTimeout(200);
 
+// 截图放在换身份那两格**之前**：那两格量的是「换买家把整段对话作废」，跑完 #chat 与 #timeline 是空的，
+// 入仓那张 docs/console.png 就会变成一张空台子的照片——它作为「这一轮的调试台长什么样」的证据就没用了。
+await page.screenshot({ path: 'docs/console.png', fullPage: false });
+
 // 票 22 那条「换身份清屏」此前只有静态页结构断言兜着（票 22 收尾双轴审查 S4），这里补上浏览器那一半
 const bubblesBefore = await page.$$eval('#chat .msg', (els) => els.length);
 const convBefore = await page.textContent('#conv');
@@ -310,9 +314,7 @@ check('no failed or throwing requests in the page', consoleErrors.length === 0, 
 check('every request went to the gateway origin', seen.every((u) => u.startsWith(BASE)),
   [...new Set(seen.map((u) => new URL(u).origin))].join(', '));
 
-await page.screenshot({ path: 'docs/console.png', fullPage: false });
-
-// ---- 负向探针：以下三处是故意打出去的失败，放在那三条安全断言与截图之后 ----
+// ---- 负向探针：以下几处是故意打出去的失败，放在那三条安全断言之后，免得污染「页面无失败请求」 ----
 phase = 'probe';
 
 // 走查第 3 项：空输入点发送，原先既不加气泡也不出一句话
