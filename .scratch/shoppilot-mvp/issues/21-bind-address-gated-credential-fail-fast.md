@@ -24,13 +24,18 @@
 审的是 `ba1fb31..HEAD` 五笔（`da421d0` 实现 / `7144b9f` 门禁抓出的两处连带 / `5462899` 截图产物 / `893046b` 落点与常数换代 / `4c4b219` E5 换代）。
 本环境没有并行 sub-agent 工具，Standards 与 Spec 两轴在同一会话里分头跑完，互不引用对方的结论。
 
-**Spec 轴：报 10 勾 → 成立 9、部分成立 1、驳回 0。**
+**Spec 轴（含收口时补跑的那一次干净检出检查）：报 10 勾，成立 10、部分成立 0、驳回 0。**
 
-- 勾 1「起栈脚本 / 干净克隆 / 三条演示都不因本票改动而红」——**部分成立**：起栈与三条演示由 17/17 那份矩阵覆盖（`logs/acceptance-run-20260913-142932.log`）；
-  `scripts/clean_clone_check.ps1` 本票**没重跑**，登记为残余风险。理由写在这儿而不是遮掉：三处凭证都不在仓库根 `.env` 里
-  （那份只有 `SHOPPILOT_EMBED_MODEL` 与四个 `SHOPPILOT_LLM_*`），所以本机起栈与干净克隆走的是同一条 EPP 兜底路径；
-  克隆独有的风险面是「有文件没提交」，而本票唯一新增的非源码文件 `META-INF/spring.factories` 已随 `da421d0` 入库，
-  且 `HEAD == origin/main == 4c4b219`、`git status --porcelain` 空。完整克隆检查按历轮规矩放在轮次收口那一次跑。
+- 勾 1「起栈脚本 / 干净克隆 / 三条演示都不因本票改动而红」——**成立，两半都实跑过**。起栈与三条演示由 17/17 那份矩阵覆盖
+  （`logs/acceptance-run-20260913-142932.log`）。干净克隆这一半，本账第一次落笔时只给了推理没给复跑，当场判的是"部分成立"，
+  收口时补跑了：`pwsh -NoProfile -File scripts\clean_clone_check.ps1 -At D:\ShopPilot-clean-r13`，克隆源是
+  `https://github.com/shing26/shoppilot.git`，拿到的那份是 `e909534`（等于当时的 `origin/main`，所以验的是推出去的那份而不是硬盘上这份），
+  克隆目录里没有 `.env`，冷启动 213s / 预算 600s，三条演示的 7 条预期输出逐条命中，完整记录
+  `logs/clean-clone-check-20260913-152311.log`（`clone 17s / up 89s / demo 104s`）。
+  这一条恰是本票最该复跑的量：`application.yml` 那三处默认值被本票清空，裸检出能不能起来全看
+  `DevDefaultsEnvironmentPostProcessor` 的兜底生不生效——实测生效。两处现场照登，不遮：起栈前本机空闲物理内存只剩 1.8 GB
+  （脚本自己建议 3 GB 以上，但它判"检查通过"没拦）；上一轮遗留的克隆目录 `D:\ShopPilot-cleancheck`（那份是 `3c99739`，09-10 的）
+  还占着默认路径，所以这次换 `-At` 路径跑，没有删任何东西，它按脚本文末的提示留着。
 - 其余九条逐条对上证据：勾 2 由 `logs/gateway-local.out` 14:25:24 那行 WARN 与 `/ops/circuit` 的 `bindLoopback`/`devDefaultsInUse` 对上；
   勾 3、4 由 `onlyMissingJwtSecretIsOnlyThatBlocker`、`onlyMissingInternalTokenIsOnlyThatBlocker`、`opsBlockedOnlyWhenEnabledAndDefault`、`externalBindWithAllDefaultsIsBlocked` 钉住；
   勾 5 由 `MockIdentityConditionTest` 的绑定地址矩阵钉住，回环那半边由三条演示全绿兜住；勾 6 由 `OpsAccessTest` 五条钉住；

@@ -570,6 +570,10 @@ surefire 三份模块小计 3 + 12 + 125 = 140（网关那一格从上一轮的 
 `MockIdentityConditionTest` 6、`ServedConsoleHidesDevDefaultsTest` 2）。审计量具的 G6 跟着这次落点换代到 140，
 那是它自己的当轮常数，理由写在那一行旁边。跑完复读 `GET /ops/circuit` 得到 `tokensUsedToday=0`、
 `bindLoopback=true`、`devDefaultsInUse` 点名三处默认值——这一句是本票观测面自证，是一次性活体读数，别长期引用。
+同一份票面还要求验「干净克隆不因本票改动而红」，收口时补跑了：从 `origin` 克隆到的 `e909534` 那一份（目录里没有 `.env`）
+冷启动 213s / 预算 600s，三条演示的 7 条预期输出逐条命中，完整记录 `logs/clean-clone-check-20260913-152311.log`。
+这一跑量的正是本票最危险的那处改动：`application.yml` 里三处 dev 默认值被清空，裸检出起不起来全看
+`DevDefaultsEnvironmentPostProcessor` 在回环上兜不兜得住（ADR 0020 那条判据与 ADR 0029 的触发器就靠这一环接上）。
 
 同一批代码在这份绿之前有四轮没拿全绿，四轮都照登，不挑一次好看的写：
 
