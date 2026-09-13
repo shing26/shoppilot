@@ -206,7 +206,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 
 | 否决项 | 判据 | 状态 | 证据 |
 | --- | --- | --- | --- |
-| 串号防线 | 跨租户同意图 0 次互命中；跨店查询不泄露 B 店字段 | **通过**（local 与 dev 都实测） | `verify_l2_filters.py`（租户/scope/意图/纪元四类过滤）、`verify-action-loop.ps1` 第 3 段、`verify-polarity.ps1` 8/8、dev 复核 `logs/dev-guardcheck-20260910-105633.log` |
+| 串号防线 | 跨租户同意图 0 次互命中；跨店查询不泄露 B 店字段；同店铺内换一个买家拿同一个会话 id 载出空会话、写不进对方会话、也续办不了别人的待办动作（票 22、ADR 0025）。**这一格管的是上下文可见性**：订单行与含买家的幂等键那道守卫本来就按「店铺 + 买家」拦（ADR 0005），本票修的是同一店铺里两个人共用一段会话，不把「跨买家隔离已达成」说满 | **通过**（local 与 dev 都实测） | `verify_l2_filters.py`（租户/scope/意图/纪元四类过滤）、`verify-action-loop.ps1` 第 3 段、`verify-polarity.ps1` 8/8、`ConversationOwnershipTest`（键含买家段 + 跨买家载不出/写不进/续办不了 + 同店 A 自己仍可续办的正对照）、dev 复核 `logs/dev-guardcheck-20260910-105633.log` |
 | 写操作幂等 | 并发 50 同 token 仅 1 条；Redis 停机由 DB 唯一约束兜 | **通过**（local 与 dev 都实测） | `verify-idempotency.ps1`、`IdempotencyServiceTest`、`TenantIsolationAndIdempotencyTest`、dev 复核同上 |
 | 降级可复现 | 七种 reason 稳定触发且各有可查工单 | **通过**（local 与 dev 都实测） | `verify-fallback.ps1` 7/7、`FallbackReasonTest`、dev 复核同上 |
 | 身份不可伪造 | 无 token/伪造/过期 401；body 或参数带 tenantId 被忽略并告警。**这一格钉的是「伪造」，不是「领取」**：`/auth/mock-token` 不要任何凭证就能签出任意店铺 + 任意买家的合法身份，它只在回环绑定上注册（ADR 0029）；而绑定回环只是必要条件、不是防线——反向代理打进来的同样是 `127.0.0.1` | **通过**（local 与 dev 都实测） | `AuthFilterTest`、`MockIdentityConditionTest`、`DevDefaultsPolicyTest`、`demo.ps1 -Which isolation`、`IdentityArchitectureTest`、dev 复核同上 |

@@ -114,12 +114,14 @@ public class AgentStateMachine {
         String conversationId = TenantContext.current().conversationId();
         step(trace, sink, AgentState.INTAKE, "tenant=" + tenantId);
 
-        SessionStore.Session session = sessionStore.load(tenantId, conversationId);
+        // 会话归属是「店铺 + 买家」两者（ADR 0025）：只按店铺载会话，同店铺里换个人填同一个会话 id，
+        // 载出来的就是别人的对话轮次与别人没办完的待办动作。
+        SessionStore.Session session = sessionStore.load(tenantId, customerId, conversationId);
         long epoch = kbEpoch.current();
 
         if (session.hasPending()) {
             sink.meta(conversationId, null, CacheService.Layer.NONE);
-            return resumePending(session, query, idempotencyToken, tenantId, conversationId, trace, sink);
+            return resumePending(session, query, idempotencyToken, tenantId, customerId, conversationId, trace, sink);
         }
 
         step(trace, sink, AgentState.TRIAGE, "开始判定");
@@ -273,13 +275,13 @@ public class AgentStateMachine {
                 // 模型凭空编了一个订单号：绝不拿它去撞库，退回来向用户追问合法订单号
                 step(trace, sink, AgentState.TOOL_EXEC,
                         "fabricated-orderNo 已拦截 modelArgs=" + traceArgs(call.arguments()));
-                return ModelRun.solo(askSlot(session, tenantId, conversationId, dispatch, query, trace, sink));
+                return ModelRun.solo(askSlot(session, tenantId, customerId, conversationId, dispatch, query, trace, sink));
             }
             if (dispatch.needsSlot()) {
                 step(trace, sink, AgentState.TOOL_EXEC,
                         dispatch.tool() + " missing=" + dispatch.missingSlots()
                                 + " modelArgs=" + traceArgs(call.arguments()));
-                return ModelRun.solo(askSlot(session, tenantId, conversationId, dispatch, query, trace, sink));
+                return ModelRun.solo(askSlot(session, tenantId, customerId, conversationId, dispatch, query, trace, sink));
             }
             if (dispatch.tool() == expectedWrite) {
                 expectedWriteDone = true;
@@ -313,7 +315,8 @@ public class AgentStateMachine {
                 step(trace, sink, AgentState.TOOL_EXEC,
                         derived.tool() + " missing=" + derived.gap().missingSlots()
                                 + " modelArgs=" + traceArgs(derived.slots()));
-                return ModelRun.solo(askSlot(session, tenantId, conversationId, derived.gap(), query, trace, sink));
+                return ModelRun.solo(
+                        askSlot(session, tenantId, customerId, conversationId, derived.gap(), query, trace, sink));
             }
             if (derived != null && derived.missing().isEmpty() && !IdempotencyService.isWrite(derived.tool())) {
                 // 读路径且槽位齐备：模型没发 function call 也要把这一枪开了，
@@ -360,7 +363,7 @@ public class AgentStateMachine {
             }
         }
 
-        sessionStore.save(tenantId, sessionStore.appendTurn(clearPending(session), query, answer));
+        sessionStore.save(tenantId, customerId, sessionStore.appendTurn(clearPending(session), query, answer));
 
         List<String> citations = retrieved == null ? List.of()
                 : retrieved.rules().stream().map(HybridRetriever.Retrieved::ruleId).toList();
@@ -408,8 +411,8 @@ public class AgentStateMachine {
     }
 
     /** 缺槽位：追问一次，仍缺则转人工。绝不猜（ADR 0008、ticket 11）。 */
-    private AgentResult askSlot(SessionStore.Session session, String tenantId, String conversationId,
-                                ToolDispatcher.Dispatch dispatch, String query,
+    private AgentResult askSlot(SessionStore.Session session, String tenantId, String customerId,
+                                String conversationId, ToolDispatcher.Dispatch dispatch, String query,
                                 List<AgentResult.TraceStep> trace, EventSink sink) {
         int asks = session.slotAskCount() + 1;
         if (asks > properties.agent().maxSlotAsks()) {
@@ -420,7 +423,7 @@ public class AgentStateMachine {
         String question = dispatcher.question(dispatch.tool(), dispatch.missingSlots());
         step(trace, sink, AgentState.SLOT_ASK, dispatch.tool() + " 缺 " + slot);
         sink.slotAsk(slot, question);
-        sessionStore.save(tenantId, new SessionStore.Session(conversationId, session.turns(),
+        sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
                 dispatch.tool().apiName(), new LinkedHashMap<>(Map.of("askedSlot", slot)), asks));
         return new AgentResult(question, dispatch.tool().intent(), "SLOT", CacheService.Layer.NONE, List.of(), trace,
                 null, null, true, 0, 0, false, false);
@@ -487,12 +490,12 @@ public class AgentStateMachine {
      * 这里刻意不再进模型：订单号这类槽位用正则就能取，交给模型只会更慢更贵。
      */
     private AgentResult resumePending(SessionStore.Session session, String query, String idempotencyToken,
-                                      String tenantId, String conversationId, List<AgentResult.TraceStep> trace,
-                                      EventSink sink) {
+                                      String tenantId, String customerId, String conversationId,
+                                      List<AgentResult.TraceStep> trace, EventSink sink) {
         step(trace, sink, AgentState.SLOT_ASK, "合并补充信息");
         ToolName tool = ToolName.fromApiName(session.pendingTool());
         if (tool == null) {
-            sessionStore.save(tenantId, clearPending(session));
+            sessionStore.save(tenantId, customerId, clearPending(session));
             return fallback(AgentState.SLOT_ASK, trace, sink, FallbackReason.INTENT_UNRESOLVED, query, "待办工具已失效");
         }
         Map<String, Object> arguments = extractSlots(tool, query);
@@ -505,8 +508,8 @@ public class AgentStateMachine {
                 return fallback(AgentState.SLOT_ASK, trace, sink, FallbackReason.SLOT_UNRESOLVED, query, null);
             }
             sink.slotAsk(slot, question);
-            sessionStore.save(tenantId, new SessionStore.Session(conversationId, session.turns(), tool.apiName(),
-                    arguments, asks));
+            sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
+                    tool.apiName(), arguments, asks));
             return new AgentResult(question, tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(), trace,
                     null, null, true, 0, 0, false, false);
         }
@@ -519,7 +522,7 @@ public class AgentStateMachine {
             sink.toolExecuting(tool, dispatch.label());
         }
         sink.toolResult(tool, dispatch.status(), summarize(dispatch));
-        sessionStore.save(tenantId, clearPending(session));
+        sessionStore.save(tenantId, customerId, clearPending(session));
         if (dispatch.degraded()) {
             return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json());
         }
@@ -529,7 +532,8 @@ public class AgentStateMachine {
         try {
             LlmTypes.Reply reply = llm.stream(new LlmTypes.Request(messages, List.of(),
                     properties.llm().temperature()), sink::token);
-            sessionStore.save(tenantId, sessionStore.appendTurn(clearPending(session), query, reply.content()));
+            sessionStore.save(tenantId, customerId,
+                    sessionStore.appendTurn(clearPending(session), query, reply.content()));
             return new AgentResult(reply.content(), tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(),
                     trace, null, null, false, reply.promptTokens(), reply.completionTokens(), true, false);
         } catch (LlmException failure) {

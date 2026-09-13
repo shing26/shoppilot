@@ -19,6 +19,11 @@ import java.util.Map;
  * 会话状态外置到 Redis：虚拟线程本身无状态，状态外置才能水平扩（ticket 11）。
  *
  * <p>Redis 不可用时降级为"无上下文单轮"，不影响可用性。
+ *
+ * <p>归属单位是「店铺 + 买家」两者（ADR 0025）：键形状 {@code shoppilot:session:{tenant}:{customer}:{conv}}。
+ * 只按店铺归属时，同店铺里任何买家把 {@code X-Conversation-Id} 填成别人的值，就能载出对方的对话轮次喂进
+ * prompt，并把新轮次写回对方会话——词汇表把这件事叫**串号**。会话 id 由客户端自带是真实接入方的常态形状，
+ * 所以收口点在键里加买家段，而不是改接入契约。
  */
 @Component
 public class SessionStore {
@@ -52,9 +57,19 @@ public class SessionStore {
         this.config = properties.agent();
     }
 
-    public Session load(String tenantId, String conversationId) {
+    /**
+     * 载出「这位买家在这家店铺里」的会话。
+     *
+     * <p>买家归属缺失时返回空会话而不报错：验签通过但 token 里没有 {@code cid} 声明的凭证，
+     * 归属无从判定，此时唯一安全的做法是退化成无上下文单轮（与 Redis 不可用同一条降级路），
+     * 而不是给"匿名"开一个共享桶——共享桶正是本类要关的那扇门。
+     */
+    public Session load(String tenantId, String customerId, String conversationId) {
+        if (customerId == null || customerId.isBlank()) {
+            return Session.empty(conversationId);
+        }
         try {
-            String body = redis.opsForValue().get(key(tenantId, conversationId));
+            String body = redis.opsForValue().get(key(tenantId, customerId, conversationId));
             if (body == null) {
                 return Session.empty(conversationId);
             }
@@ -65,10 +80,15 @@ public class SessionStore {
         }
     }
 
-    public void save(String tenantId, Session session) {
+    /** 保存会话；买家归属缺失时不落盘（理由同 {@link #load}），旧键不迁移、靠 TTL 自然走。 */
+    public void save(String tenantId, String customerId, Session session) {
+        if (customerId == null || customerId.isBlank()) {
+            log.warn("缺少买家归属，本次会话状态不落盘：conv={}", session.conversationId());
+            return;
+        }
         try {
-            redis.opsForValue().set(key(tenantId, session.conversationId()), mapper.writeValueAsString(session),
-                    config.sessionTtl());
+            redis.opsForValue().set(key(tenantId, customerId, session.conversationId()),
+                    mapper.writeValueAsString(session), config.sessionTtl());
         } catch (Exception failure) {
             log.warn("保存会话失败: {}", failure.getMessage());
         }
@@ -92,7 +112,7 @@ public class SessionStore {
                 session.pendingArgs(), session.slotAskCount());
     }
 
-    private static String key(String tenantId, String conversationId) {
-        return "shoppilot:session:" + tenantId + ":" + conversationId;
+    private static String key(String tenantId, String customerId, String conversationId) {
+        return "shoppilot:session:" + tenantId + ":" + customerId.trim() + ":" + conversationId;
     }
 }

@@ -14,7 +14,7 @@ A3 还要网关在跑。缺这些前置时，本脚本**不再抛 `FileNotFoundE
 规矩：所有文本比较一律大小写敏感（用 os.listdir / git ls-files 的精确集合，不用 Select-String 那种默认不敏感的比对）。
 自带对照组：故意塞几个"必须被判成不存在"的探针，防止扫描器自己假绿；每条新断言都配一支**必须能失败**的反证。
 
-钉的是当轮常数（落点轮、耗时、sha 前缀、140 用例数）。换落点就得同步改这些常数——
+钉的是当轮常数（落点轮、耗时、sha 前缀、surefire 用例数）。换落点就得同步改这些常数——
 这是有意的：它是一份**当轮对账单**，不是长期防线；长期防线在 scripts/verify_eval_judge.py。
 """
 import csv
@@ -72,7 +72,7 @@ LOCAL_ONLY = [
     "G4 落点为 17 步全绿、总耗时 511s",
     "G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）",
     "G5b README 索引行与落点矩阵同读数",
-    "G6 surefire 3 + 12 + 125 = 140（build 与 unit 两份日志的 Results 段各自核过）",
+    "G6 surefire 3 + 12 + 133 = 148（build 与 unit 两份日志的 Results 段各自核过）",
     "G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0",
     "G8 打字机断言落在 > 60 字这一真判据上（未放宽）",
     "H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符",
@@ -462,8 +462,9 @@ body_q = qa.count("*Q：")
 body_a = len(re.findall(r"(?m)^A：", qa))
 # 换代指针（第十三轮票 21）：问答库从 91 问涨到 92 问——票 21 补了「身份领取 vs 身份伪造」那一问。
 # 与 G6 同一族：这一格钉的是当轮常数，涨问数是本票的产出，不跟着改就把「文档写多了」报成防线失效。
-check("E5 问答库 92 问、头部计数 = 正文 Q 条目 = 答案条数",
-      head_line is not None and int(head_line.group(1)) == 92 == body_q == body_a and body_a == 92,
+# 换代指针（第十三轮票 22）：92 涨到 93——票 22 在 Ticket 11 那节补了「同店铺两个买家共用会话 id」那一问。
+check("E5 问答库 93 问、头部计数 = 正文 Q 条目 = 答案条数",
+      head_line is not None and int(head_line.group(1)) == 93 == body_q == body_a and body_a == 93,
       f"头部 {head_line.group(1) if head_line else '-'}，正文 Q {body_q}，A {body_a}")
 check("E5b 问答库覆盖 20 个 ticket 且无缺收尾记录",
       head_line is not None and head_line.group(2) == "20" and "缺收尾记录" not in qa,
@@ -614,11 +615,14 @@ check_local("G5b README 索引行与落点矩阵同读数", [LANDING_LOG],
                      f"矩阵解析出 {len(steps)} 步；README 含 80s/12s/511s = "
                      f"{'80s' in readme and '12s' in readme and '511s' in readme}"))
 
-G6 = "G6 surefire 3 + 12 + 125 = 140（build 与 unit 两份日志的 Results 段各自核过）"
+G6 = "G6 surefire 3 + 12 + 133 = 148（build 与 unit 两份日志的 Results 段各自核过）"
 # 换代指针（第十三轮票 21 落点）：G3/G4/G5/G5b 钉的是第十二轮那份矩阵文件名，换轮不动它们；
 # G6 读的却是 logs/acceptance/{build,unit}.log 这两份**每跑必覆盖**的最新日志，所以它天然跟着
 # 最近一次门禁走。票 21 把网关单测从 89 加到 125（新增 DevDefaultsPolicy 等 36 条 + 静态页无凭证 2 条），
 # 这一格不同步改数就会把「测试变多了」报成防线失效。见 ADR 0023 的逐轮重锚与 README 的票 21 落点段。
+# 换代指针（第十三轮票 22 落点）：网关 125 涨到 133，新增的是 ConversationOwnershipTest 8 条
+# （键含买家段、跨买家载不出/写不进/续办不了、旧键不迁移、无买家声明退化、正对照、静态页换身份清屏）。
+# 同一条理由：这一格是当轮常数，不跟着改就把「测试变多了」报成防线失效。
 unit_log, build_log = read_opt(LOGS / "acceptance" / "unit.log"), read_opt(LOGS / "acceptance" / "build.log")
 if unit_log is None or build_log is None:
     check(G6, False, _why(LOGS / "acceptance" / "unit.log" if unit_log is None else LOGS / "acceptance" / "build.log"),
@@ -627,8 +631,8 @@ else:
     SUM_RE = r"(?m)^\[INFO\] Tests run: (\d+), Failures: 0, Errors: 0, Skipped: 0$"
     unit_totals = [int(x) for x in re.findall(SUM_RE, unit_log)]
     build_totals = [int(x) for x in re.findall(SUM_RE, build_log)]
-    check(G6, unit_totals == [3, 12, 125] and build_totals == [3, 12, 125]
-          and sum(unit_totals) == sum(build_totals) == 140,
+    check(G6, unit_totals == [3, 12, 133] and build_totals == [3, 12, 133]
+          and sum(unit_totals) == sum(build_totals) == 148,
           f"unit 模块小计 {unit_totals}，build 模块小计 {build_totals}")
 
 G7 = "G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0"

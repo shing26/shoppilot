@@ -159,6 +159,14 @@ function newConv() {
   $('conv').textContent = state.conv;
 }
 
+// 换身份时整段作废：会话 id 换一个，对话区与时间线一并清掉。
+// 服务端已经不认上一位买家的会话了（ADR 0025），页面留着那些气泡就是替别人复述对话。
+function resetConversation() {
+  $('chat').innerHTML = '';
+  clearTimeline();
+  newConv();
+}
+
 // ---- SSE 帧解析：与 ticket 05 同一套，EventSource 不支持 POST，只能手解 ----
 async function readSse(response, onFrame) {
   const reader = response.body.getReader();
@@ -207,10 +215,14 @@ async function loadTenants() {
 async function login() {
   // 下拉可能还没被代理数据填上（首次签发就发生在拉取店铺清单之前），此时用默认值而不是空串：
   // 空 tenantId 签出来的 token 会让整条链路以"无租户"身份跑下去，症状是流式端点悄悄不出 done 帧。
-  state.tenant = $('tenant').value || state.tenant;
-  state.customer = $('customer').value.trim() || 'C001';
-  const res = await api('POST', '/auth/mock-token', { tenantId: state.tenant, customerId: state.customer }, false);
+  const tenant = $('tenant').value || state.tenant;
+  const customer = $('customer').value.trim() || 'C001';
+  const res = await api('POST', '/auth/mock-token', { tenantId: tenant, customerId: customer }, false);
   if (res.status !== 200) { $('claims').textContent = '签发失败 ' + res.status; return; }
+  // 只在身份真的变了时清屏：同一个人重签一次不该把对话抹掉。
+  if (tenant !== state.tenant || customer !== state.customer) resetConversation();
+  state.tenant = tenant;
+  state.customer = customer;
   state.token = res.body.token;
   $('claims').textContent = JSON.stringify(decodeJwt(state.token), null, 1);
   $('health').classList.remove('bad');
