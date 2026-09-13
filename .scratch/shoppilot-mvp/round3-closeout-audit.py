@@ -66,7 +66,14 @@ _DEF_LANDED = 0
 # G6 的当轮常数：三份 surefire 模块小计。一处定义、三处引用（下面的本机限定清单、那一格的名称、
 # 名称里的算式）。「名称写 149 而断言判 148」这种分家，第十三轮票 22 落点靠实跑才抓出来一次，
 # 收成一个来源之后它就长不出来了——本项的判据形状（读哪两份日志、比什么）一字未动。
-G6_EXPECT = [3, 12, 140]
+# 换代指针（第十三轮票 24 / 票 25 / 票 26 共用落点）：网关 140 涨到 174。
+# 票 24 +18（RequestTraceTest 7、AuthFilterTest 4→8、LogbackRotationTest 5、TraceCorrelationAcrossAsyncTest 2）；
+# 票 25 +14（RestErrorEnvelopeTest 10、AuthFilterTest 8→9、DevDefaultsStartupBlockerTest 3），
+# 其收尾审查又补 2 条进同一测试类：流式那一支的 400 信封（票 26 的回显断言靠它有东西可显）、
+# 「请求体读不出来」那一支仍是 400（那条 catch-all 把 NestedRuntimeException 的后代吸进 500，是本票自己新造的缺陷）；
+# 票 26 不加 JVM 用例，它把九处缺陷落成浏览器那一侧的 17 格（console 18 项 → 35 项）。
+# 本项判据形状（读哪两份日志、比什么）一字未动，动的只有这一格常数。
+G6_EXPECT = [3, 12, 174]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 
