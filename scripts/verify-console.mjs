@@ -217,6 +217,18 @@ const scrimClosed = await page.evaluate(() => ({
 check('clicking the scrim closes the drawer', scrimClosed.open === 0 && scrimClosed.scrimHidden,
   JSON.stringify(scrimClosed));
 
+// 次一级那三项各要一格（票 26 第 10 勾）：时间戳是真渲染出来的、买家 id 有长度上限、
+// 下发的那份 HTML 末尾不再躺着两根连着的闭合标签。最后一条量的是**服务器下发的那一份**，
+// 不是 page.content() 里被解析器修过的那一份——游离标签恰恰会被解析器吃掉，量 DOM 等于自证。
+const ticketMeta = await page.$$eval('#tickets .tk .id', (els) => els.map((e) => e.textContent));
+const servedHtml = await page.evaluate(() => fetch('/').then((r) => r.text()));
+const customerMax = await page.getAttribute('#customer', 'maxlength');
+const strayScripts = (servedHtml.match(/<\/script>/g) || []).length;
+check('ticket cards carry a real timestamp, identity input is capped, served html closes script once',
+  ticketMeta.length > 0 && ticketMeta.every((t) => /\d{2}:\d{2}:\d{2}/.test(t))
+    && customerMax === '32' && strayScripts === 1,
+  `${ticketMeta.length} cards, maxlength=${customerMax}, /script x${strayScripts}`);
+
 // 走查第 12 项：小字对比度。量的是算出来的比值，不靠人眼看「差不多够深」。
 // 清单按那一轮点名的那一族小字来（label / .dim / #mode），再加本票新写的三处（.hint、
 // #opslog .cap、.opslog .empty）——同一支 --ink-3 换到浅灰底上会掉到 AA 线下，只量白底等于没量。
