@@ -563,6 +563,35 @@ PowerShell 不允许从 try/catch 直接开管道，整脚本 parse 失败——
 而语法错只有等下一次执行才看得见（我改完只看了 diff，没跑解析）。现在 `syntax` 排在所有步骤之前，
 解析 `scripts\` 下全部 `.ps1`；反例实测过：把那个非法管道临时塞进去，它立刻报"文件:行 + 原因"并 exit 1。
 
+**票 21 的落点（第十三轮，实现轮中途）**：`logs/acceptance-run-20260913-142932.log`，
+`commit=7144b9f 开跑时工作树=clean`，`开始 14:21:10 结束 14:29:32 总耗时 502s`，17 步全绿。
+surefire 三份模块小计 3 + 12 + 125 = 140（网关那一格从上一轮的 89 涨到 125：本票新增
+`DevDefaultsPolicyTest` 16、`DevDefaultsEnvironmentPostProcessorTest` 7、`OpsAccessTest` 5、
+`MockIdentityConditionTest` 6、`ServedConsoleHidesDevDefaultsTest` 2）。审计量具的 G6 跟着这次落点换代到 140，
+那是它自己的当轮常数，理由写在那一行旁边。跑完复读 `GET /ops/circuit` 得到 `tokensUsedToday=0`、
+`bindLoopback=true`、`devDefaultsInUse` 点名三处默认值——这一句是本票观测面自证，是一次性活体读数，别长期引用。
+
+同一批代码在这份绿之前有四轮没拿全绿，四轮都照登，不挑一次好看的写：
+
+- `logs/acceptance-run-20260913-094033.log`（`da421d0`，756s）15/17，红在 `polarity` 与 `console`。
+  `console` 那三格是本票真抓出来的**连带缺陷**，不是环境：页面不再预填运维令牌之后，`verify-console.mjs`
+  的故障注入吃 403，而 `refreshOps()` 在 boot 时无条件读运维凭证守护的 `/ops/stats`，令牌框空着就是
+  每开一次页面往控制台留一发 403。修法见 `7144b9f`：令牌改由脚本代敲（与各 `verify-*.ps1` 的 `$OpsToken`
+  同一家法），页面在令牌为空时不发那一枪、敲上之后由 change 事件补读；15 条断言一字未动，
+  改的只是「谁提供凭证」这步前置。ADR 0029 那句「验证脚本一行不改」当场按实测改口。
+  `polarity` 红在守卫计数器增量 0，而同一条脚本在空机上单跑 24 s 时增量是 1、`exit 0`——
+  那一刻 `up.ps1` 连知识库入库一起跑，向量化把 Ollama 压住，L2 取不到候选，守卫没有可判的东西。
+  判据一字未改。
+- `logs/acceptance-run-20260913-134050.log`（`7144b9f`，606s）**作废，不作为任何主张的证据**：
+  那一次门禁是我接在管道后面、非交互式终端里起的，子进程脱离、外层立刻返回 0，矩阵把 `plan` 记成
+  「PASS 0s」这种不可能的读数、把 `stack` 记成红，而同一次的 `console.log` 里其实写着 15/15。
+  产物挪到仓外 `D:\tmp\void-run-134050`，教训一句话：门禁要在交互式终端里整跑。
+- `logs/acceptance-run-20260913-141240.log`（`7144b9f`，556s）14/17，红在 `plan`、`idem`、`polarity`。
+  `idem` 以 `0xC0000409` 硬崩；`plan` 撞上门禁起栈那一步自己的 JDK 探测（`找不到 JDK 21+`，而
+  `E:\java\jdk21` 事后单验是 21.0.12.1，那一刻是子进程起不来）；`polarity` 是源问法没写回。
+  三条同因：可用内存只剩 1.4-2.6 GB，`logs/gateway-local.out` 连着四行「向量化失败…request timed out」。
+  处置是先空跑 90 s 等 Ollama 让出模型，也就是上面那份 502s 的绿；不改任何一步判据。
+
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
 | 01 | `run-acceptance.ps1` 的 stop / build / unit / stack 四步（`mvnw verify` + `mvn -o test` + `up.ps1`）；`verify-plan-actions.ps1` 第 01 段判"三中间件在跑、两服务健康 UP" |

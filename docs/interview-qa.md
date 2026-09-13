@@ -3,7 +3,7 @@
 生成方式：`python scripts/collect_interview_questions.py`。
 每题答案直接取自当时写下的收尾记录，不做事后润色——答不上来的就是当时没想清楚的。
 
-共 91 问，覆盖 20 个 ticket。
+共 92 问，覆盖 20 个 ticket。
 
 用法：每条先只看问题，自己答 30 秒，再对答案。答不出细节的题回去读对应 ticket。
 
