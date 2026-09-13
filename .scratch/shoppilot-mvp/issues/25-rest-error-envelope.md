@@ -16,4 +16,14 @@
 - [ ] 校验失败的文案进 `message` 回带（前端回显是票 26，本票只保证有东西可显）
 - [ ] 运维失败的两个 code 与既有 403 文案对得上，不新增第三种含义
 - [ ] 全仓手搓错误体剩余处数由 grep 现算引用，文档里不写死数字（第十一轮 S10 的规矩）
+
+## 承接（票 21 收尾双轴审查转过来的两条）
+
+- **S5**：票 21 把运维 403 的响应体换成了 `{"code":...,"message":...}`，但**没有一条 HTTP 层的用例钉住这个 body**
+  （`OpsAccessTest` 只测枚举本身，实跑那一次 403 的报文是一时活体读数，不许长期引用）。
+  本票第一条勾落地时补一条 MockMvc/WebTestClient 用例：错令牌与开关关闭各自出 `code=ops.token_mismatch` /
+  `code=ops.disabled`，且 body 就是 advice 那一套 `code`/`message`/`traceId` 形状。
+- **S2**：「非回环绑定上仍用着仓库默认凭证」这句报错在 `DevDefaultsEnvironmentPostProcessor` 与
+  `DevDefaultsConfiguration` 各写一份、措辞不同。第二道阻断不能删（它防的是绕过环境后置处理器的启动方式），
+  但该把句子收成一个工厂方法，别让它长成第三种错误形状。
 - [ ] 零额度；审计项数保持 95
