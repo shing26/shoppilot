@@ -596,6 +596,25 @@ surefire 三份模块小计 3 + 12 + 125 = 140（网关那一格从上一轮的 
   三条同因：可用内存只剩 1.4-2.6 GB，`logs/gateway-local.out` 连着四行「向量化失败…request timed out」。
   处置是先空跑 90 s 等 Ollama 让出模型，也就是上面那份 502s 的绿；不改任何一步判据。
 
+**票 22 的落点（第十三轮，实现轮中途）**：`logs/acceptance-run-20260913-170410.log`，
+`commit=8c66d6e 开跑时工作树=clean`，`开始 16:54:08 结束 17:04:10 总耗时 602s`，17 步全绿。
+surefire 三份模块小计 3 + 12 + 134 = 149，网关那一格从上一轮的 125 涨到 134，多出的 9 条全是本票新增的
+`ConversationOwnershipTest`；G6 与问答库头数（92 到 93）这两处当轮常数跟着换代，理由写在审计量具各自旁边。
+`console` 15/15，本票没动它任何一条断言——页面那处改动只挂在「身份真的变了」这一个分支上，
+验收脚本走的路径根本不点换身份按钮。`eval` 冒烟 24 条 0 失败
+（`EVAL DONE cases=24 errors=0 mode=local limit=24`），产物照旧挪出仓外 `D:\tmp\parked-artifacts\gate-170410`，
+`eval/` 在 B7 的内容级禁面里，挪出去正是为了让那一格判得出「本轮没碰 gold 与判据所在目录」。
+同一批代码在这份绿之前还有一份全绿的 `16:36:12` 落点（`logs/acceptance-run-20260913-163612.log`，
+`commit=020674e`，133 / 148）：它测的是收尾审查之前的那份代码，那处 `trim` 还在键里，所以它不算本票落点，只照登在这里。
+
+票面那句「页面上换身份问一句，能 demo 出载不出对方上下文」当场跑过，两条都是**一次性活体读数**，只登记当时状态：
+其一，C001 在会话 `probe-22-3885` 里报出手机号并被追问订单号（`askSlot=orderNo`），换 C002 拿同一个
+`X-Conversation-Id` 问「我刚才告诉过你的手机号是多少」，答「没有」；`redis-cli --scan` 那一刻数出两条键，
+`shoppilot:session:T001:C001:probe-22-3885` 带着 `pendingTool=queryOrderDetail`，`...:C002:...` 只有 C002 自己的两轮、
+`pendingTool` 为空——别人的待办动作没被续办，也没写回对方会话。其二，Playwright 里先造两条气泡再把买家框从 C001 改成 C002
+点「换身份」：`#chat .msg` 由 2 条变 0 条、会话 id 换掉、时间线清空，而同一个身份再点一次换身份气泡数不变（1 变 1），
+无 pageerror。长期可复跑的证据是那 9 条 JVM 用例，其中一条是正对照。
+
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
 | 01 | `run-acceptance.ps1` 的 stop / build / unit / stack 四步（`mvnw verify` + `mvn -o test` + `up.ps1`）；`verify-plan-actions.ps1` 第 01 段判"三中间件在跑、两服务健康 UP" |

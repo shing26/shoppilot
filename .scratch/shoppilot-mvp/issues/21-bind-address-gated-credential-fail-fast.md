@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** done（落点 `logs/acceptance-run-20260913-142932.log` 17/17，双轴审账见文末；本行由票 22 收尾时代偿补上——票 21 只落了审账没改状态位，frontier 于是把它重新摆回了可领取）
 
 **Verify:** 单测面零额度断言（回环与非回环两侧各一组）-> 回环上起栈与三条演示一字不改地跑通 -> 17 步门禁全绿且未改任何一步判据 -> 零额度读数为 0。
 

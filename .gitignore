@@ -30,3 +30,5 @@ loadtest/results/*_failures.csv
 loadtest/results/*_exceptions.csv
 loadtest/results/*_cpu.txt
 loadtest/results/tmp-multi/
+# 别的 agent 在本仓工作时自己落的状态目录，与 .tools/.cache 同族：不入库，也不该被收口审计判成脏
+.workbuddy/
