@@ -447,7 +447,7 @@ pwsh -NoProfile -File scripts/verify-fallback.ps1       # 七种降级原因 + �
 pwsh -NoProfile -File scripts/verify-idempotency.ps1    # 并发同 token 与状态前置校验
 pwsh -NoProfile -File scripts/verify-ratelimit.ps1      # 同步 429 与 SSE rate_limited
 pwsh -NoProfile -File scripts/verify-polarity.ps1       # 反义对不互命中（要求 local/dev 模式）
-node scripts/verify-console.mjs                         # 调试台 18 项（Playwright）
+node scripts/verify-console.mjs                         # 调试台 35 项（Playwright）
 # dev 评测（唯一要云端 key 的一格）：默认只自查与摆位置，不发任何计费请求
 pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12        # 干跑：查配置、报缺什么
 pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12 -Run   # 真跑 12 条；去掉 -Limit 是 180 条全量
@@ -481,7 +481,7 @@ fallback      0  25s           # 七种降级原因 + 工单反查
 ratelimit     0   1s           # 同步 429 与 SSE rate_limited
 polarity      0  26s           # 同桶反义在守卫层被拒（前提不成立时改报 exit 3，见下）
 l2            0   8s           # tenant/scope/intent/kb_epoch 四条 must-filter（前提阶段会重试，见下）
-console       0  21s           # Playwright 18 项
+console       0  21s           # Playwright 35 项
 demo          0  12s           # 三条演示
 eval          0 123s           # 24 条按意图分层的评测链路冒烟（挪到最后一步，理由见下）；日志第一行是 SCORER SELFCHECK ok=16
 ```
@@ -667,6 +667,50 @@ Qdrant、ES、知识库装载三格，向量化那条路的降级早写在读路
 `probe_embedding_latency.py`），加一格等于替 ADR 追加一条它没写过的决定。同理 `knowledgeBase` 只数
 两引擎的条目，不去判「语料对不对」——那是入库与 `retrieval_compare.py` 的地盘。
 
+**票 24、票 25 与票 26 共用一份落点（第十三轮，实现轮中途）**：`logs/acceptance-run-20260914-060509.log`，
+`commit=4031b75 开跑时工作树=dirty（5 个未提交改动，全是三票的票面文档、审计那格常数与本行）`，
+`开始 05:56:45 结束 06:05:09 总耗时 504s`，17 步全绿。surefire 三份模块小计 3 + 12 + 174 = 189，
+网关那一格从票 23 的 140 涨到 174：票 24 加 18 条（`RequestTraceTest` 7、`AuthFilterTest` 4→8、
+`LogbackRotationTest` 5、`TraceCorrelationAcrossAsyncTest` 2），票 25 加 14 条
+（`RestErrorEnvelopeTest` 10、`AuthFilterTest` 8→9、`DevDefaultsStartupBlockerTest` 3），票 25 的收尾审查
+再加 2 条进同一个测试类（流式那一支的 400 信封、请求体读不出来那一支的 400——后一条见下）。
+票 26 一条 JVM 用例都不加，它买的是浏览器那一侧：`console` 从 18 项涨到 35 项。
+**审计项数仍是 95**，三票都没新增审计项，G6 那处当轮常数跟着换代，理由写在量具旁边。
+
+同一批代码在这份绿之前还有两份 17/17：`20260914-052018.log`（506s，`commit=5e09e57`）与
+`20260914-053852.log`（503s，`commit=cf638ae`）。它们各自缺后面那两笔——前者缺 advice 那一笔状态码修复，
+后者缺浅灰底那一格对比度与截图次序——所以都不算落点，只照登在这里，免得下一个人以为门禁绿过一次就够。
+
+票 24 落在那份日志里的活体证据：网关日志的模板现在每行都带四个坐标，
+`[cache-write-back]` 与 `[virtual-N]` 两种线程上的 WARN 行带着**触发它那一单**的
+`traceId`/`tenantId`/`customerId`/`conversationId`——响应已经发出去之后才发生的写回，
+第一次能认回是谁的一单。`logs/` 整目录不入库，所以这句只能按落点当时的本机读数照登。
+
+票 25 的边界也照登在这儿，免得下一轮把它当遗漏修掉（ADR 0028 的 Consequences 明写要写清）：
+REST 面上从此并存两种形状——网关自产的走 `code` / `message` / `traceId`，
+代理透传的下游体逐字节原样出，谁拒的可分辨；`AuthFilter` 那一处 401 与 advice 共用同一个 writer。
+advice 的边界由**继承** `ResponseEntityExceptionHandler` 来划：入参异常的状态码仍由它判（本类一个都不改），
+落笔交回同一个 writer；catch-all 的 `RuntimeException` 那一支只收没人接的运行时异常。
+手搓错误体的剩余处数按 `rg -n '"\{\\"(error|code)' shoppilot-gateway/src/main/java` 现算，
+本票不在文档里写死那个数；现算结果里唯一还在 REST 面上的是检索探针那条「200 带 error 键」的降级返回，
+它不换形状是因为换成 `code=internal_error` 而状态码仍是 200，等于新造一种没人要的含义。
+
+票 25 的收尾审查还抓出自己**新造**了一处状态码变更（不是遗漏旧缺陷，是本票带来的）：第一版 advice 只写了一条
+catch-all 的 `@ExceptionHandler(RuntimeException.class)`，注释里那句「Spring 那批 4xx 全是 `ServletException`
+的后代」对 405 成立、对「请求体读不出来」那一支不成立——它是 `NestedRuntimeException` 的后代，于是同一枪从
+Spring 判的 400 被吸成 500，报文里还带着 `internal_error` 去冤枉网关自己。第一轮的变异只量了「放宽到
+`Exception.class`」那一支（405 当场判红），而这条勾是个合取谓词，只量一族等于只量半条勾。处置是边界改由继承
+`ResponseEntityExceptionHandler` 来划：入参异常的状态码由它判，落笔仍走同一个 writer；补的那格在旧版上实测
+`expected: 400` 判红、新版转绿，405 与 500 那两格同批复跑仍绿。
+
+**票 26 的落点读数是 `console` 那一步本身**（它与上面两票同一份日志）：35 项全过，其中 17 项属本票。
+走查那 12 项里剩下的九项各有自己的格，两处最容易「修了又说没修」的地方留了可分辨的读数：对比度那一格报回的是
+算出来的比值而不是颜色（`label`/`.dim`/`#mode`/`.ev.status .k` 4.83、`#opslog .cap` 与 `.opslog .empty` 5.21、
+`.hint` 5.02，门槛 4.5），窄屏那两格报的是几何（900px 下时间线高 236px、12 行、顶边在对话列底边之下；
+390px 下页脚 `scrollWidth` 与可见宽同为 390px——走查当时的实测是「需 1264px」）。抽屉那一格
+（`elementFromPoint` 打在「工单队列」正中，命中 id 仍是它本身）防的是「遮罩修好了、按钮又被自己盖住」，
+那一轮的人工跑器正是死在这里崩过一次。`docs/console.png` 由该步每次重写，是这一轮的截图。
+
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
 | 01 | `run-acceptance.ps1` 的 stop / build / unit / stack 四步（`mvnw verify` + `mvn -o test` + `up.ps1`）；`verify-plan-actions.ps1` 第 01 段判"三中间件在跑、两服务健康 UP" |
@@ -683,7 +727,7 @@ Qdrant、ES、知识库装载三格，向量化那条路的降级早写在读路
 | 12 | `verify-idempotency.ps1`、`IdempotencyServiceTest` |
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
-| 15 | `node scripts/verify-console.mjs`（Playwright 18 项，含"页面拿不到内部 token"、健康灯三态） |
+| 15 | `node scripts/verify-console.mjs`（Playwright 35 项，含"页面拿不到内部 token"、健康灯三态、首字进行态、抽屉遮罩/Esc/不拦 pointer events、小字对比度量 AA 比值） |
 | 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260911-211809-local-smoke*`，10/10 意图各有 2-3 条，日志首行是 `SCORER SELFCHECK ok=16`）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（40 条断言：四处评分缺陷各一次变异反证、10 条标注校验器防呆、6 条对偶矛盾边界、5 条 gold 形态与串号标记值对拍、4 条共享词表与两份 `accepted_tools` 跨实现对拍、生成物字节稳定、判据只有一份、17 个文件的换行符基线、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（16 条夹具，真跑前执行）；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
