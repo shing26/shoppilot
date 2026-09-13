@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.InputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -60,6 +61,38 @@ class LogbackRotationTest {
         System.clearProperty("LOG_APP");
         System.clearProperty("LOG_MAX_FILE_SIZE");
         RequestTrace.clear();
+        // 归档是 .gz：logback 把压缩丢在自己的执行器线程上，context.stop() 只不等它释放句柄。
+        // 实测 172 格里这一格偶发判红（Failed to delete temp directory ... ingest-*.log.gz），
+        // 所以这里带截止时间自己删一遍，JUnit 再看到这个目录时已经是空的，无句柄可争。
+        deleteWithRetries(dir);
+    }
+
+    /** 尽力删临时目录：删不动就退避重试，总预算 5 秒；删不干净也不掩盖，留给 JUnit 自己报错。 */
+    private static void deleteWithRetries(Path root) {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            List<Path> remaining = new ArrayList<>();
+            try (Stream<Path> walk = Files.walk(root)) {
+                walk.sorted((a, b) -> b.getNameCount() - a.getNameCount()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (IOException stillHeld) {
+                        remaining.add(p);
+                    }
+                });
+            } catch (IOException gone) {
+                return;
+            }
+            if (remaining.isEmpty()) {
+                return;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     @Test
