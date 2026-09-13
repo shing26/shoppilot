@@ -224,6 +224,22 @@ class RestErrorEnvelopeTest {
     }
 
     @Test
+    @DisplayName("请求体读不出来：那是客户端的 400，advice 不许把它抬成 500（勾 2 的另一半）")
+    void unreadableBodyKeepsItsStatusNotJustAnyStatus() throws Exception {
+        // 405 那格挡的是 ServletException 那一支；这一支（HttpMessageNotReadableException）是
+        // NestedRuntimeException 的后代，catch-all 的 RuntimeException 处理器会把它吸进去。
+        // 收进统一形状可以，改状态码不行：报文读不出来是调用方的错，不是网关的错。
+        MvcResult result = mvc().perform(post("/api/v1/support/chat")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"query\":"))
+            .andReturn();
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(400);
+        assertThat(envelope(result).get("code").asText()).isEqualTo(ApiError.INVALID_REQUEST);
+        assertThat(envelope(result).get("message").asText()).contains("无法解析");
+    }
+
+    @Test
     @DisplayName("message 里的引号与换行不再产出非法 JSON（原先那里是拼字符串）")
     void messageIsSerialisedNotConcatenated() throws Exception {
         doThrow(new IllegalArgumentException("模式 \"x\" 不存在\n第二行"))

@@ -46,6 +46,15 @@ public class ApiErrorWriter {
                 .body(body(code, message));
     }
 
+    /**
+     * {@code ResponseEntityExceptionHandler} 那两个钩子的签名要的是 {@code ResponseEntity<Object>}。
+     * 同一支笔，只是泛型对不上；这里只做一次无害的形参化，落笔仍然只有 {@link #entity} 一处。
+     */
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<Object> entityForAdvice(int status, String code, String message) {
+        return (ResponseEntity<Object>) (ResponseEntity<?>) entity(status, code, message);
+    }
+
     /** filter 用的出口：直写 response，形状与 {@link #entity} 完全一致。 */
     public void write(HttpServletResponse response, int status, String code, String message) throws IOException {
         response.setStatus(status);
