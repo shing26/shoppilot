@@ -6,7 +6,6 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -30,12 +29,9 @@ public class DevDefaultsEnvironmentPostProcessor implements EnvironmentPostProce
                 environment.getProperty("shoppilot.ops.token", ""),
                 Boolean.TRUE.equals(environment.getProperty("shoppilot.ops.enabled", Boolean.class, Boolean.TRUE)));
 
-        List<String> blockers = policy.startupBlockers();
-        if (!blockers.isEmpty()) {
-            throw new IllegalStateException("拒绝启动：当前监听 "
-                    + (address.isBlank() ? "所有网卡（server.address 未设置）" : address)
-                    + "，不是回环，而以下凭证仍是仓库里的默认值——" + String.join("；", blockers)
-                    + "。要用默认值跑演示就把 server.address 改回 127.0.0.1（ADR 0029）。");
+        if (!policy.startupBlockers().isEmpty()) {
+            // 句子由 policy 给：第二道阻断（DevDefaultsConfiguration）出同一句，别长成两种形状
+            throw new IllegalStateException(policy.startupBlockerMessage());
         }
         if (!policy.loopback()) {
             return;

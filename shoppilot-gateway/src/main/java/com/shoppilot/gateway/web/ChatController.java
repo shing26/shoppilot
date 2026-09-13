@@ -149,7 +149,10 @@ public class ChatController {
         return fallbackService.escalateRateLimited(query, identity.tenantId(), identity.customerId());
     }
 
-    public record ChatRequest(@NotBlank @Size(max = 500) String query, String idempotencyToken) {
+    /** 校验文案写成中文的可显示句子（ADR 0028：400 的文案进 {@code message} 回带，回显那一半在票 26）。 */
+    public record ChatRequest(@NotBlank(message = "问题不能为空")
+                              @Size(max = 500, message = "问题太长，上限 500 字，请精简后再问")
+                              String query, String idempotencyToken) {
     }
 
     public record ChatResponse(String answerId, String answer, String intent, String triageLayer,

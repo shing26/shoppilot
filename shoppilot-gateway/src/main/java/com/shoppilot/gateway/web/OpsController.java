@@ -43,6 +43,9 @@ import java.util.Map;
  *
  * <p>工单是租户级数据，身份取自已验签的 {@link TenantContext}，不接受路径或查询参数里的租户号。
  * 故障注入与演示复位是平台级动作，额外要求运维凭证。
+ *
+ * <p>错误体两分（ADR 0028）：网关自己拒的一律经 {@link ApiErrorWriter} 出 {@code code} / {@code message}
+ * / {@code traceId}；代理透传回来的下游体逐字节原样出，包一层外壳就把「谁拒的」这个信息抹平了。
  */
 @RestController
 @RequestMapping("/api/v1/support/ops")
@@ -58,11 +61,12 @@ public class OpsController {
     private final TokenBudget tokenBudget;
     private final HybridRetriever retriever;
     private final DevDefaultsPolicy devDefaults;
+    private final ApiErrorWriter errors;
 
     public OpsController(HttpClient http, GatewayProperties properties, BizMockClient bizMockClient,
                          ObjectMapper mapper, LlmFaultInjector llmFaultInjector, CacheService cacheService,
                          KbEpoch kbEpoch, TokenBudget tokenBudget,
-                         HybridRetriever retriever, DevDefaultsPolicy devDefaults) {
+                         HybridRetriever retriever, DevDefaultsPolicy devDefaults, ApiErrorWriter errors) {
         this.http = http;
         this.properties = properties;
         this.bizMockClient = bizMockClient;
@@ -73,6 +77,7 @@ public class OpsController {
         this.tokenBudget = tokenBudget;
         this.retriever = retriever;
         this.devDefaults = devDefaults;
+        this.errors = errors;
     }
 
     /** 本店工单队列，按当前身份的租户隔离。 */
@@ -211,7 +216,7 @@ public class OpsController {
             llmFaultInjector.configure(String.valueOf(body.getOrDefault("mode", "none")));
             return ResponseEntity.ok(mapper.writeValueAsString(getLlmFault()));
         } catch (IllegalArgumentException | JsonProcessingException rejected) {
-            return ResponseEntity.badRequest().body("{\"error\":\"" + safe(rejected.getMessage()) + "\"}");
+            return errors.entity(400, ApiError.INVALID_REQUEST, "故障模式设置失败：" + rejected.getMessage());
         }
     }
 
@@ -229,10 +234,11 @@ public class OpsController {
         try {
             intent = Intent.valueOf(String.valueOf(body.getOrDefault("intent", Intent.POLICY_RETURN.name())));
         } catch (IllegalArgumentException unknownIntent) {
-            return ResponseEntity.badRequest().body("{\"error\":\"unknown intent\"}");
+            return errors.entity(400, ApiError.INVALID_REQUEST,
+                    "未知意图：" + body.getOrDefault("intent", ""));
         }
         if (query.isBlank()) {
-            return ResponseEntity.badRequest().body("{\"error\":\"query required\"}");
+            return errors.entity(400, ApiError.INVALID_REQUEST, "query 不能为空");
         }
         TenantContext.Identity identity = TenantContext.current();
         cacheService.markNegative(identity.tenantId(), intent, kbEpoch.current(), query);
@@ -246,8 +252,7 @@ public class OpsController {
     }
 
     private ResponseEntity<String> denied(OpsAccess access) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body("{\"code\":\"" + access.code() + "\",\"message\":\"" + access.message() + "\"}");
+        return errors.entity(HttpStatus.FORBIDDEN.value(), access.code(), access.message());
     }
 
     /**
@@ -337,8 +342,8 @@ public class OpsController {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(response.body());
         } catch (Exception downstreamUnavailable) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                    .body("{\"error\":\"biz-mock unreachable: " + safe(downstreamUnavailable.getMessage()) + "\"}");
+            return errors.entity(HttpStatus.BAD_GATEWAY.value(), ApiError.DOWNSTREAM_UNREACHABLE,
+                    "业务中台不可达：" + downstreamUnavailable.getMessage());
         }
     }
 
@@ -348,9 +353,5 @@ public class OpsController {
         } catch (JsonProcessingException unserializable) {
             return "{}";
         }
-    }
-
-    private static String safe(String message) {
-        return message == null ? "" : message.replace('"', '\'');
     }
 }

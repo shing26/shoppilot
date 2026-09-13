@@ -22,6 +22,7 @@ public final class DevDefaultsPolicy {
     public static final String OPS_TOKEN = "dev-ops-token";
 
     private final boolean loopback;
+    private final String bindAddress;
     private final String jwtSecret;
     private final String internalToken;
     private final String opsToken;
@@ -30,6 +31,7 @@ public final class DevDefaultsPolicy {
     public DevDefaultsPolicy(String bindAddress, String jwtSecret, String internalToken,
                             String opsToken, boolean opsEnabled) {
         this.loopback = isLoopback(bindAddress);
+        this.bindAddress = bindAddress == null ? "" : bindAddress;
         this.jwtSecret = jwtSecret;
         this.internalToken = internalToken;
         this.opsToken = opsToken;
@@ -88,6 +90,20 @@ public final class DevDefaultsPolicy {
             blockers.add("SHOPPILOT_OPS_TOKEN 未覆盖，运维端点也没显式关闭（SHOPPILOT_OPS_ENABLED=false）：故障注入与缓存清理是改状态的动作");
         }
         return List.copyOf(blockers);
+    }
+
+    /**
+     * 启动阻断那句话的唯一写法（票 25 承接 21 的 S2）。
+     *
+     * <p>两道阻断都要保留：第一道抢在 bean 之前报根因，第二道防的是绕过环境后置处理器的启动方式
+     * （测试里直接建上下文）。但句子原先在两边各写一遍、措辞不同，等于同一种失败有两种形状——
+     * 现在两处都调这里。
+     */
+    public String startupBlockerMessage() {
+        String listening = bindAddress.isBlank() ? "所有网卡（server.address 未设置）" : bindAddress;
+        return "拒绝启动：当前监听 " + listening + "，不是回环，而以下凭证仍是仓库里的默认值——"
+                + String.join("；", startupBlockers())
+                + "。要用默认值跑演示就把 server.address 改回 127.0.0.1（ADR 0029）。";
     }
 
     /** 未设置、空串、等于仓库默认值，三者都算「仍在吃默认值」。 */

@@ -26,8 +26,8 @@ public class DevDefaultsConfiguration {
                 env.getProperty("shoppilot.ops.token", ""),
                 Boolean.TRUE.equals(env.getProperty("shoppilot.ops.enabled", Boolean.class, Boolean.TRUE)));
         if (!policy.startupBlockers().isEmpty()) {
-            throw new IllegalStateException("非回环绑定上仍用着仓库默认凭证："
-                    + String.join("；", policy.startupBlockers()));
+            // 这道是第二道阻断，防的是绕过环境后置处理器的启动方式；句子与第一道同源
+            throw new IllegalStateException(policy.startupBlockerMessage());
         }
         if (!policy.devDefaultsInUse().isEmpty()) {
             log.warn("回环绑定，用着仓库默认凭证 {}；改绑非回环地址会直接拒绝启动（ADR 0029）",

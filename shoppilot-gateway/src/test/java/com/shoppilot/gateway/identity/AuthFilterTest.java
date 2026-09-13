@@ -3,6 +3,9 @@ package com.shoppilot.gateway.identity;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.shoppilot.gateway.web.ApiError;
+import com.shoppilot.gateway.web.ApiErrorWriter;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,7 +32,8 @@ class AuthFilterTest {
 
     private static final String SECRET = "unit-test-secret-value-at-least-32-bytes!!";
     private final JwtService jwtService = new JwtService(SECRET);
-    private final AuthFilter filter = new AuthFilter(jwtService);
+    private final ApiErrorWriter errors = new ApiErrorWriter(new ObjectMapper());
+    private final AuthFilter filter = new AuthFilter(jwtService, errors);
 
     @AfterEach
     void wipeContext() {
@@ -218,5 +222,22 @@ class AuthFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         filter.doFilter(request, response, chain);
         return response.getStatus();
+    }
+
+    @Test
+    @DisplayName("401 那一处与 advice 出同一形状：code / message / traceId 三键，且经序列化而非字符串拼接")
+    void rejectionBodyIsTheSharedEnvelope() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/support/chat");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, chain(new AtomicReference<>(false)));
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        var node = new ObjectMapper().readTree(response.getContentAsString());
+        assertThat(node.fieldNames()).toIterable().containsExactly("code", "message", "traceId");
+        assertThat(node.get("code").asText()).isEqualTo(ApiError.UNAUTHORIZED);
+        assertThat(node.get("message").asText()).isEqualTo("missing bearer token");
+        // 拒绝发生在链路装填之后，所以错误体里那个 id 与日志里的对得上（票 24 装的源）
+        assertThat(node.get("traceId").isNull()).isFalse();
     }
 }

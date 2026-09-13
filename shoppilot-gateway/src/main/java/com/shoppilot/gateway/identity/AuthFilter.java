@@ -4,6 +4,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.shoppilot.gateway.web.ApiError;
+import com.shoppilot.gateway.web.ApiErrorWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -20,6 +22,9 @@ import java.util.UUID;
  *
  * <p>顺序有讲究：链路号先装填，再判要不要发那条告警。否则"有人在试探"这行恰恰是全仓唯一
  * 不带链路号的日志，最该被追到的一行追不到。
+ *
+ * <p>拒绝那一处与 {@code GatewayErrorHandler} 共用 {@link ApiErrorWriter}（ADR 0028）：filter 跑在
+ * DispatcherServlet 之前，advice 看不见这里，两边各写一遍就会长成两种形状。
  */
 @Component
 public class AuthFilter extends OncePerRequestFilter {
@@ -27,9 +32,11 @@ public class AuthFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(AuthFilter.class);
 
     private final JwtService jwtService;
+    private final ApiErrorWriter errors;
 
-    public AuthFilter(JwtService jwtService) {
+    public AuthFilter(JwtService jwtService, ApiErrorWriter errors) {
         this.jwtService = jwtService;
+        this.errors = errors;
     }
 
     @Override
@@ -48,7 +55,7 @@ public class AuthFilter extends OncePerRequestFilter {
             warnOnClientSuppliedTenant(request);
             String header = request.getHeader("Authorization");
             if (header == null || !header.startsWith("Bearer ")) {
-                reject(response, "missing bearer token");
+                reject(response, ApiError.UNAUTHORIZED, "missing bearer token");
                 return;
             }
             String conversationId = request.getHeader("X-Conversation-Id");
@@ -57,7 +64,7 @@ public class AuthFilter extends OncePerRequestFilter {
             }
             var identity = jwtService.verify(header.substring(7).trim(), conversationId);
             if (identity.isEmpty()) {
-                reject(response, "invalid or expired token");
+                reject(response, ApiError.UNAUTHORIZED, "invalid or expired token");
                 return;
             }
             TenantContext.set(identity.get());
@@ -77,9 +84,7 @@ public class AuthFilter extends OncePerRequestFilter {
         }
     }
 
-    private static void reject(HttpServletResponse response, String message) throws IOException {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"error\":\"" + message + "\"}");
+    private void reject(HttpServletResponse response, String code, String message) throws IOException {
+        errors.write(response, HttpServletResponse.SC_UNAUTHORIZED, code, message);
     }
 }
