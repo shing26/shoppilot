@@ -122,7 +122,9 @@
   .ops .v { min-width: 0; overflow-wrap: anywhere; }
   .ops.ok .v { color: var(--green); }
   .ops.bad .v { color: var(--rose); }
-  .opslog .empty { padding: 6px 10px; }
+  /* 这一格坐在 line-2 的浅灰底上：同一支 --ink-3 在白底是 4.83:1，落在这里只有 4.16:1，
+     走查第 12 项量的正是「同一族小字」，不是只量白底那几处。深一档到 --ink-2 即 5.5:1 起。 */
+  .opslog .empty { padding: 6px 10px; color: var(--ink-2); }
   /* 遮罩压在抽屉下面、内容上面；抽屉从 header 下沿开始，不再盖住那颗「工单队列」按钮。 */
   .scrim { position: fixed; inset: 49px 0 0 0; background: rgba(20,22,26,.28); z-index: 19; }
   .scrim[hidden] { display: none; }

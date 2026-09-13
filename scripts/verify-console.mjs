@@ -217,7 +217,11 @@ const scrimClosed = await page.evaluate(() => ({
 check('clicking the scrim closes the drawer', scrimClosed.open === 0 && scrimClosed.scrimHidden,
   JSON.stringify(scrimClosed));
 
-// 走查第 12 项：小字对比度。量的是算出来的比值，不靠人眼看「差不多够深」
+// 走查第 12 项：小字对比度。量的是算出来的比值，不靠人眼看「差不多够深」。
+// 清单按那一轮点名的那一族小字来（label / .dim / #mode），再加本票新写的三处（.hint、
+// #opslog .cap、.opslog .empty）——同一支 --ink-3 换到浅灰底上会掉到 AA 线下，只量白底等于没量。
+// .empty 只在空态存在，跑到这里已被内容替换：临时在 .opslog 里插一个同结构的节点量一次再撤，
+// 量的是那段真实级联，不是在脚本里重算一个背景色。
 const contrast = await page.evaluate(() => {
   const chan = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
   const lum = (c) => { const m = c.match(/[\d.]+/g).map(Number); return 0.2126 * chan(m[0]) + 0.7152 * chan(m[1]) + 0.0722 * chan(m[2]); };
@@ -226,10 +230,18 @@ const contrast = await page.evaluate(() => {
   const backOf = (el) => { for (let n = el; n; n = n.parentElement) { const c = getComputedStyle(n).backgroundColor; if (c && opaque(c)) return c; } return 'rgb(255, 255, 255)'; };
   const probe = (sel) => { const el = document.querySelector(sel); if (!el) return null;
     return { sel, r: +ratio(getComputedStyle(el).color, backOf(el)).toFixed(2) }; };
-  return ['label', '#mode', '.ev.status .k', '#opslog .cap', '.empty'].map(probe).filter(Boolean);
+  const host = document.querySelector('.opslog');
+  const ghost = document.createElement('div');
+  ghost.className = 'empty';
+  ghost.textContent = 'contrast-probe';
+  host.appendChild(ghost);
+  const rows = ['label', '.dim', '#mode', '.ev.status .k', '#opslog .cap', '.hint', '.opslog .empty']
+    .map(probe);
+  ghost.remove();
+  return rows.filter(Boolean);
 });
 check('secondary text clears WCAG AA (>= 4.5:1)',
-  contrast.length >= 4 && contrast.every((c) => c.r >= 4.5), JSON.stringify(contrast));
+  contrast.length >= 6 && contrast.every((c) => c.r >= 4.5), JSON.stringify(contrast));
 
 // 布局稳定性：长事件文本不得把时间线挤变形
 const widths = await page.evaluate(() => {
