@@ -6,6 +6,7 @@ import com.shoppilot.gateway.cache.QueryNormalizer;
 import com.shoppilot.gateway.cache.SingleFlight;
 import com.shoppilot.gateway.cache.WriteBackPolicy;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.identity.RequestTrace;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
@@ -385,13 +386,14 @@ public class AgentStateMachine {
                 written = prepared;
                 CacheService.Lookup forWrite = lookup;
                 CacheEntry entry = prepared.get();
-                writeBackExecutor.execute(() -> {
+                // 响应已经发出去了，写回线程本来认不回这是谁的一单；wrap 一次，失败日志才带得上链路号
+                writeBackExecutor.execute(RequestTrace.wrap(() -> {
                     try {
                         cacheService.writeBack(entry, forWrite);
                     } catch (Exception failure) {
                         log.warn("异步写回失败，不影响本次响应: {}", failure.getMessage());
                     }
-                });
+                }));
             }
         } else {
             step(trace, sink, AgentState.CACHE_WRITE, "rejected:" + verdict.reason());

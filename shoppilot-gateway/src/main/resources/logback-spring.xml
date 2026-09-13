@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  网关日志落盘与轮转（ADR 0027）。
+
+  刻意只用原生 logback 属性、不用 <springProperty> / <springProfile>：
+  LogbackConfigTest 要用裸 JoranConfigurator 解析这份文件并断言轮转策略与四个 MDC 键，
+  一旦掺进 Spring 专有标签，测试面就只能靠起容器，等于这格没人守。
+
+  CONSOLE 必须留着：run_experiment_suite.ps1 与验收门禁靠 grep stdout 里的
+  "profile(s) is active" 判定实验档真的换到了 profile，摘掉它会把实验面整片判瞎。
+-->
+<configuration>
+    <property name="LOG_DIR" value="${LOG_DIR:-logs}"/>
+    <!-- 同一份 jar 也会被 ingest 跑一次，两个进程写同一个文件会在轮转时互相踩；用 LOG_APP 分名 -->
+    <property name="LOG_APP" value="${LOG_APP:-gateway}"/>
+    <property name="TRACE_PATTERN"
+              value="traceId=%X{traceId:-} tenantId=%X{tenantId:-} customerId=%X{customerId:-} conversationId=%X{conversationId:-}"/>
+    <property name="LOG_LINE"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [${LOG_APP}] [%thread] [${TRACE_PATTERN}] %logger{36} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_LINE}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 按大小与时间两条策略齐备：SizeAndTimeBasedRollingPolicy 是唯一同时具备两者的那一个 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${LOG_APP}.log</file>
+        <!-- 轮转阈值留一个可覆盖的口子：LogbackRotationTest 用 1KB 真跑一次轮转，证明这条策略是活的 -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/${LOG_APP}-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>${LOG_MAX_FILE_SIZE:-20MB}</maxFileSize>
+            <maxHistory>14</maxHistory>
+            <totalSizeCap>500MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_LINE}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>

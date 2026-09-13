@@ -13,10 +13,13 @@ import java.io.IOException;
 import java.util.UUID;
 
 /**
- * 验签并把身份写入 {@link TenantContext}。
+ * 验签并把身份写入 {@link TenantContext}，同时把四个请求坐标装进 MDC（ADR 0027）。
  *
  * <p>刻意不读任何来自 body / query / 普通 header 的 tenantId（ADR 0005 防线一）。
  * 若请求里出现这类字段，只记告警不改上下文——告警本身就是"有人在试探"的证据。
+ *
+ * <p>顺序有讲究：链路号先装填，再判要不要发那条告警。否则"有人在试探"这行恰恰是全仓唯一
+ * 不带链路号的日志，最该被追到的一行追不到。
  */
 @Component
 public class AuthFilter extends OncePerRequestFilter {
@@ -39,26 +42,30 @@ public class AuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        warnOnClientSuppliedTenant(request);
-        String header = request.getHeader("Authorization");
-        if (header == null || !header.startsWith("Bearer ")) {
-            reject(response, "missing bearer token");
-            return;
-        }
-        String conversationId = request.getHeader("X-Conversation-Id");
-        if (conversationId == null || conversationId.isBlank()) {
-            conversationId = UUID.randomUUID().toString();
-        }
-        var identity = jwtService.verify(header.substring(7).trim(), conversationId);
-        if (identity.isEmpty()) {
-            reject(response, "invalid or expired token");
-            return;
-        }
+        // 清场放在最外层：401 的三条返回路径同样要清，否则线程归还池子时带着上一单的坐标
         try {
+            RequestTrace.start();
+            warnOnClientSuppliedTenant(request);
+            String header = request.getHeader("Authorization");
+            if (header == null || !header.startsWith("Bearer ")) {
+                reject(response, "missing bearer token");
+                return;
+            }
+            String conversationId = request.getHeader("X-Conversation-Id");
+            if (conversationId == null || conversationId.isBlank()) {
+                conversationId = UUID.randomUUID().toString();
+            }
+            var identity = jwtService.verify(header.substring(7).trim(), conversationId);
+            if (identity.isEmpty()) {
+                reject(response, "invalid or expired token");
+                return;
+            }
             TenantContext.set(identity.get());
+            RequestTrace.bind(identity.get());
             chain.doFilter(request, response);
         } finally {
             TenantContext.clear();
+            RequestTrace.clear();
         }
     }
 

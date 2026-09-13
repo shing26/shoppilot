@@ -7,6 +7,7 @@ import com.shoppilot.gateway.agent.FallbackReason;
 import com.shoppilot.gateway.agent.EventSink;
 import com.shoppilot.gateway.agent.FallbackService;
 import com.shoppilot.gateway.cache.CacheService;
+import com.shoppilot.gateway.identity.RequestTrace;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.ratelimit.RateLimitService;
 import com.shoppilot.tool.Intent;
@@ -30,7 +31,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -85,7 +85,12 @@ public class ChatController {
             return builder.build();
         }
         AgentResult result = agent.run(request.query(), request.idempotencyToken(), EventSink.NOOP);
-        return ResponseEntity.ok(ChatResponse.of(UUID.randomUUID().toString(), result));
+        // 链路号取自鉴权入口，不在这儿另起一个：REST 与流式共用一个来源，日志与响应体才认得回同一条链
+        String traceId = RequestTrace.traceId();
+        // 一行"这一单办完了"：四个坐标由日志模板带出来，按 traceId grep 才捞得到东西
+        log.info("同步问答完成 intent={} cache={} degraded={}", result.intent(), result.cacheLayer(),
+                result.degraded());
+        return ResponseEntity.ok(ChatResponse.of(traceId, result));
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -93,7 +98,7 @@ public class ChatController {
         cacheService.recordRequest();
         // 身份必须在请求线程上取出后带进工作线程：ThreadLocal 不会跟着任务跑
         TenantContext.Identity identity = TenantContext.current();
-        String traceId = UUID.randomUUID().toString();
+        String traceId = RequestTrace.traceId();
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
         SseEventSink sink = new SseEventSink(emitter, mapper, traceId, ttftTimer, System.nanoTime());
         emitter.onTimeout(emitter::complete);
@@ -111,12 +116,15 @@ public class ChatController {
             return emitter;
         }
 
-        streamExecutor.execute(() -> {
+        // 编排跑在工作线程上，那儿的日志要靠这次 wrap 才认得回是谁触发的
+        streamExecutor.execute(RequestTrace.wrap(() -> {
             TenantContext.set(identity);
             try {
                 AgentResult result = agent.run(request.query(), request.idempotencyToken(), sink);
                 sink.done(traceId, result.citations(), result.promptTokens(), result.completionTokens());
                 emitter.complete();
+                log.info("流式问答完成 intent={} cache={} degraded={}", result.intent(), result.cacheLayer(),
+                        result.degraded());
             } catch (RuntimeException failure) {
                 // 未预期的异常是缺陷，不当成降级路径伪装成功；也不能 completeWithError——那会让容器
                 // 拿 text/event-stream 去渲染错误体，客户端连已收到的帧都读不到
@@ -126,7 +134,7 @@ public class ChatController {
             } finally {
                 TenantContext.clear();
             }
-        });
+        }));
         return emitter;
     }
 
