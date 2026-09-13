@@ -105,7 +105,7 @@
   <h1>ShopPilot 调试台</h1>
   <span class="dim" id="mode">mode -</span>
   <span class="grow"></span>
-    <div class="ctl"><span class="t">ops</span><input type="text" id="opsToken" size="14" placeholder="运维令牌"></div>
+  <div class="ctl"><span class="t">ops</span><input type="text" id="opsToken" size="14" placeholder="运维令牌"></div>
   <button id="btnTickets">工单队列</button>
 </header>
 <main>
@@ -373,6 +373,10 @@ async function refreshOps() {
     $('circuit').textContent = circuit.body.circuitState + ' / ' + circuit.body.llmMode;
     $('mode').textContent = 'mode ' + circuit.body.llmMode;
   }
+  // stats 是运维凭证守护的端点，令牌框空着去读必然吃一发 403（票 21 起页面不再预填令牌，
+  // ADR 0029）。没凭证就是「没得看」而不是「出错了」：这里不发那一枪，浏览器控制台才不会
+  // 每次开页面都留下红字，验收里「页面无失败请求」那条断言量的才是真失败。
+  if (!$('opsToken').value.trim()) return;
   const stats = await api('GET', '/api/v1/support/ops/stats', null, true);
   if (stats.status === 200) $('refunds').textContent = String(stats.body.refunds);
 }
@@ -428,6 +432,8 @@ $('failRate').oninput = syncSliders;
 $('llmSeg').querySelectorAll('button').forEach((b) => { b.onclick = () => setLlmMode(b.dataset.mode); });
 $('btnApply').onclick = applyFaults;
 $('btnClear').onclick = clearFaults;
+// 令牌是人敲进来的，敲完顺手把运维读数补上（不然 refunds 会一直停在初始值）
+$('opsToken').onchange = () => { refreshOps(); };
 $('btnFlush').onclick = async () => {
   const r = await api('POST', '/api/v1/support/ops/cache/flush', {});
   report(r.status === 200, '清缓存 ' + JSON.stringify(r.body));

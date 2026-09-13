@@ -6,6 +6,10 @@ import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');
 
 const BASE = process.env.SHOPPILOT_CONSOLE_BASE || 'http://127.0.0.1:8082';
+// 票 21（ADR 0029）起页面不再预填运维令牌：凭证不该出现在网关下发的静态资源里。
+// 本脚本按各 verify-*.ps1 的 $OpsToken 家法自带这个值，代人在输入框里敲一次。
+// 15 条断言一字未改，改的只是「谁来提供凭证」这一步前置。
+const OPS_TOKEN = process.env.SHOPPILOT_OPS_TOKEN || 'dev-ops-token';
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
@@ -40,6 +44,10 @@ process.on('unhandledRejection', async (err) => {
 });
 
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+
+// 运维令牌由输入框提供，页面每个请求都带上它，只有 ops 端点会读。必须在点「注入」之前填好。
+// fill 会触发 change，于是 boot 时因令牌为空而跳过的那次 ops 读数补回来。
+await page.fill('#opsToken', OPS_TOKEN);
 
 // 身份区：claims 必须解出来，租户下拉必须来自代理而不是写死
 const claims = await page.textContent('#claims');
