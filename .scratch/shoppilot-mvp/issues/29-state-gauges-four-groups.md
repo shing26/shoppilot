@@ -4,7 +4,7 @@
 
 **Blocked by:** 27 — 写回池停机 seam 与饱和计数（第四组的队列深度与代跑计数由该 seam 暴露）
 
-**Status:** implemented（`RuntimeStateMetricsTest` 5/5；全量 JVM 测试 184/184；transition 变异反证已打；轮次门禁按 round14 约定留给五票共用落点）
+**Status:** implemented（`RuntimeStateMetricsTest` 5/5；网关 JVM 184/184，三模块合计 199/199；transition 变异反证已打；轮次门禁按 round14 约定留给五票共用落点）
 
 - [x] 自注册，不引入 `resilience4j-micrometer` 桥（本仓只依赖 circuitbreaker 本体）；命名统一 `shoppilot_*`
 - [x] 组一：`shoppilot_circuit_state` gauge（0/1/2）**必配** `shoppilot_circuit_transition_total{from,to}`——瞬时值会漏掉两次抓取之间的闪断，两者成对才算一组
