@@ -157,6 +157,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 **这张表逐条写"怎么量的"，未达成的照写未达成。**所有数字来自 `loadtest/results/` 下的产物，
 表格由 `python scripts/build_loadtest_report.py` 生成，本文不誊写第二个数字。
 吞吐与延迟类指标衡量的是**网关编排层**，生成侧是固定延迟的 Mock，不含模型推理（ADR 0001）。
+本轮新增指标名以全仓 grep `shoppilot_*` 现算为准；总数换代由票 30 统一执行。
 
 | 指标 | 判据 | 实测 | 口径 | 证据 |
 | --- | --- | --- | --- | --- |

@@ -7,7 +7,6 @@ import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.tool.ToolName;
 import com.shoppilot.tool.view.ToolStatus;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -43,18 +42,12 @@ public class BizMockClient {
     private final Counter unavailableCounter;
     private final AtomicLong lastLatencyMs = new AtomicLong();
 
-    public BizMockClient(HttpClient http, ObjectMapper mapper, GatewayProperties properties, MeterRegistry registry) {
+    public BizMockClient(HttpClient http, ObjectMapper mapper, GatewayProperties properties,
+                         CircuitBreaker circuitBreaker, MeterRegistry registry) {
         this.http = http;
         this.mapper = mapper;
         this.config = properties.bizmock();
-        this.circuitBreaker = CircuitBreaker.of("bizmock", CircuitBreakerConfig.custom()
-                .failureRateThreshold(50)
-                .slidingWindowSize(20)
-                .minimumNumberOfCalls(10)
-                .waitDurationInOpenState(Duration.ofSeconds(10))
-                .permittedNumberOfCallsInHalfOpenState(3)
-                .automaticTransitionFromOpenToHalfOpenEnabled(true)
-                .build());
+        this.circuitBreaker = circuitBreaker;
         this.timeoutCounter = Counter.builder("shoppilot_tool_timeout_total").register(registry);
         this.unavailableCounter = Counter.builder("shoppilot_tool_unavailable_total").register(registry);
     }
