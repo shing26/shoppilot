@@ -31,7 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
+import com.shoppilot.gateway.cache.WriteBackPool;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -274,7 +274,7 @@ class ConversationOwnershipTest {
         when(epoch.current()).thenReturn(7L);
         return new AgentStateMachine(triage, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
                 mock(HybridRetriever.class), llm, dispatcher, store, mock(FallbackService.class), properties(),
-                mock(ExecutorService.class), new SimpleMeterRegistry());
+                mock(WriteBackPool.class), new SimpleMeterRegistry());
     }
 
     private static GatewayProperties properties() {

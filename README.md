@@ -49,6 +49,9 @@ UP/DOWN（ADR 0026）。这一组**刻意不进 readiness**——缓存、模型
 调试台左上角那颗灯读 `deps`，它从这一轮起才有能力变红（三态：齐 / 降级 / 读不到读数）。
 
 要停：`pwsh -NoProfile -File scripts/down.ps1`（加 `-Containers` 连中间件一起停，数据卷保留）。
+停机预算 35 秒（票 27）：HTTP 收尾走 `server.shutdown: graceful` 的 Spring 默认 30 秒，缓存写回池 drain 另给
+5 秒——宽限内落不完的笔数记在 `shoppilot_writeback_dropped_total` 上；`stop.ps1` 等端口释放的超时默认 40 秒，
+不小于这个预算，预算没走完不报「停了」。
 
 <details>
 <summary>手动分步（想知道 up.ps1 到底干了什么，或者不想用 pwsh）</summary>

@@ -14,6 +14,7 @@ import com.shoppilot.gateway.cache.CacheEntry;
 import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.cache.SingleFlight;
 import com.shoppilot.gateway.cache.WriteBackPolicy;
+import com.shoppilot.gateway.cache.WriteBackPool;
 import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.identity.RequestTrace;
 import com.shoppilot.gateway.identity.TenantContext;
@@ -40,9 +41,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,7 +59,7 @@ import static org.mockito.Mockito.when;
  * 缓存写回最容易骗人——它在响应之后才跑，日志时序上看完全正常，出事时却一行都捞不到；工单升级
  * 发生在流式工作线程上，同理。
  *
- * <p>两处都用**真实**线程池跑：写回用与 {@code AsyncConfig} 同形的有界池 + CallerRuns，流式用
+ * <p>两处都用**真实**线程池跑：写回用与 {@code AsyncConfig} 同形的 {@code WriteBackPool}，流式用
  * {@code ChatController} 自己那个虚拟线程执行器。摘掉任一处 {@code RequestTrace.wrap}，对应那格当场判红。
  */
 class TraceCorrelationAcrossAsyncTest {
@@ -88,9 +86,8 @@ class TraceCorrelationAcrossAsyncTest {
         appender.start();
         machineLogger.addAppender(appender);
 
-        // 与 AsyncConfig 的写回池同形：小池、有界队列、CallerRuns
-        ThreadPoolExecutor writeBack = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(1), new ThreadPoolExecutor.CallerRunsPolicy());
+        // 与 AsyncConfig 的写回池同形：小池、有界队列、饱和与关闭后走提交线程代跑
+        WriteBackPool writeBack = new WriteBackPool(1, 1, 0L, 1, new SimpleMeterRegistry());
         CacheService cache = mock(CacheService.class);
         when(cache.prepareWrite(any(), any(), anyLong(), any(), any(), any(), any(), any()))
                 .thenReturn(Optional.of(entry()));
@@ -103,8 +100,7 @@ class TraceCorrelationAcrossAsyncTest {
         try {
             machine.run(QUERY, "tok-write-back", EventSink.NOOP);
 
-            writeBack.shutdown();
-            assertThat(writeBack.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+            writeBack.close(Duration.ofSeconds(10));
 
             ILoggingEvent failure = appender.list.stream()
                     .filter(event -> event.getFormattedMessage().contains("异步写回失败"))
@@ -118,7 +114,7 @@ class TraceCorrelationAcrossAsyncTest {
                     .containsEntry(RequestTrace.CONVERSATION_ID, CONV);
         } finally {
             machineLogger.detachAppender(appender);
-            writeBack.shutdownNow();
+            writeBack.close(Duration.ofSeconds(5));
         }
     }
 
@@ -191,7 +187,7 @@ class TraceCorrelationAcrossAsyncTest {
                 new SimpleMeterRegistry(), mock(FallbackService.class));
     }
 
-    private AgentStateMachine machine(CacheService cache, ExecutorService writeBack) {
+    private AgentStateMachine machine(CacheService cache, WriteBackPool writeBack) {
         TriageEngine triage = mock(TriageEngine.class);
         // dynamic：cacheAdmissible=false，直接走模型路径，写回判定仍在末尾
         when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(

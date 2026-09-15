@@ -5,8 +5,8 @@ import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.cache.QueryNormalizer;
 import com.shoppilot.gateway.cache.SingleFlight;
 import com.shoppilot.gateway.cache.WriteBackPolicy;
+import com.shoppilot.gateway.cache.WriteBackPool;
 import com.shoppilot.gateway.config.GatewayProperties;
-import com.shoppilot.gateway.identity.RequestTrace;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
@@ -30,7 +30,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
 
 /**
  * 有界 Agent 状态机（ADR 0008）。
@@ -78,7 +77,7 @@ public class AgentStateMachine {
     private final SessionStore sessionStore;
     private final FallbackService fallbackService;
     private final GatewayProperties properties;
-    private final ExecutorService writeBackExecutor;
+    private final WriteBackPool writeBackPool;
     private final Counter toolRoundExhaustedCounter;
     private final Counter negativeSuppressedCounter;
     private final Counter writeNudgeCounter;
@@ -87,7 +86,7 @@ public class AgentStateMachine {
                              WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, HybridRetriever retriever,
                              LlmGateway llm, ToolDispatcher dispatcher, SessionStore sessionStore,
                              FallbackService fallbackService, GatewayProperties properties,
-                             ExecutorService writeBackExecutor, MeterRegistry registry) {
+                             WriteBackPool writeBackPool, MeterRegistry registry) {
         this.triageEngine = triageEngine;
         this.cacheService = cacheService;
         this.singleFlight = singleFlight;
@@ -99,7 +98,7 @@ public class AgentStateMachine {
         this.sessionStore = sessionStore;
         this.fallbackService = fallbackService;
         this.properties = properties;
-        this.writeBackExecutor = writeBackExecutor;
+        this.writeBackPool = writeBackPool;
         this.toolRoundExhaustedCounter = Counter.builder("shoppilot_tool_round_exhausted_total").register(registry);
         // 被拦下来的"不该写的负缓存"要看得见：它是这条防线在中间件抖动时确实生效的唯一证据
         this.negativeSuppressedCounter = Counter.builder("shoppilot_cache_negative_suppressed_total")
@@ -386,14 +385,14 @@ public class AgentStateMachine {
                 written = prepared;
                 CacheService.Lookup forWrite = lookup;
                 CacheEntry entry = prepared.get();
-                // 响应已经发出去了，写回线程本来认不回这是谁的一单；wrap 一次，失败日志才带得上链路号
-                writeBackExecutor.execute(RequestTrace.wrap(() -> {
+                // 坐标包装在 WriteBackPool.submit 内部完成（票 27）：提交点不再各自记得 wrap
+                writeBackPool.submit(() -> {
                     try {
                         cacheService.writeBack(entry, forWrite);
                     } catch (Exception failure) {
                         log.warn("异步写回失败，不影响本次响应: {}", failure.getMessage());
                     }
-                }));
+                });
             }
         } else {
             step(trace, sink, AgentState.CACHE_WRITE, "rejected:" + verdict.reason());
