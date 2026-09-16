@@ -478,14 +478,14 @@ qa = read(REPO / "docs" / "interview-qa.md")
 head_line = re.search(r"共 (\d+) 问，覆盖 (\d+) 个 ticket", qa)
 body_q = qa.count("*Q：")
 body_a = len(re.findall(r"(?m)^A：", qa))
-# 换代指针（第十三轮票 21）：问答库从 91 问涨到 92 问——票 21 补了「身份领取 vs 身份伪造」那一问。
-# 与 G6 同一族：这一格钉的是当轮常数，涨问数是本票的产出，不跟着改就把「文档写多了」报成防线失效。
-# 换代指针（第十三轮票 22）：92 涨到 93——票 22 在 Ticket 11 那节补了「同店铺两个买家共用会话 id」那一问。
-check("E5 问答库 93 问、头部计数 = 正文 Q 条目 = 答案条数",
-      head_line is not None and int(head_line.group(1)) == 93 == body_q == body_a and body_a == 93,
+# 换代指针（第十三轮票 21/22）：问答库从 91 涨到 93。
+# 换代指针（v1.0 交接补录）：票 21-32 的 Handoff notes 全部进入生成源，问答库从 93 涨到 127，
+# 覆盖从 20 个 ticket 扩到全部 32 个。与 G6 同一族：涨问答是文档产出，不跟着改会把新内容报成防线失效。
+check("E5 问答库 127 问、头部计数 = 正文 Q 条目 = 答案条数",
+      head_line is not None and int(head_line.group(1)) == 127 == body_q == body_a and body_a == 127,
       f"头部 {head_line.group(1) if head_line else '-'}，正文 Q {body_q}，A {body_a}")
-check("E5b 问答库覆盖 20 个 ticket 且无缺收尾记录",
-      head_line is not None and head_line.group(2) == "20" and "缺收尾记录" not in qa,
+check("E5b 问答库覆盖 32 个 ticket 且无缺收尾记录",
+      head_line is not None and head_line.group(2) == "32" and "缺收尾记录" not in qa,
       f"头部行 {head_line.group(0) if head_line else '-'}；正文无缺收尾记录={'缺收尾记录' not in qa}")
 
 ticket20 = read(REPO / ".scratch" / "shoppilot-mvp" / "issues" / "20-action-order-attribution.md")
