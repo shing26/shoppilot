@@ -81,3 +81,23 @@ ES、知识库装载三格，向量化那条路的降级早写在读路径里（
   就读得懂未分组那一格。
 - S3 [P3] 读一次 `/actuator/health/deps` 会打出四次引擎往返（两格 ping 加两次 `count`）。运维口的轮询频率远
   低于业务口，且这一格不参与摘流量，不值得为它加一层缓存——加了反而要回答「缓存没过期的那一刻，灯说的话算不算」。
+
+## Handoff notes
+
+**关键决策**
+
+1. **依赖健康与 readiness 分家。** Qdrant、ES、知识库装载挂在新的 `deps` 组；readiness 成员一字未动。缓存、检索和模型都按设计可降级，把它们并进就绪门会把 fail-open 从运维口改回 fail-closed。
+2. **降级模式必须能被真实起栈。** `nodeps` 实验档把两个检索地址指向空端口后，readiness 仍 UP、服务仍启动、业务请求返回降级答案；门禁的放行谓词因此没有被本票改向。
+3. **调试台读 `deps`，不读总健康。** 灯补上红/未知分支，且每次问答后刷新；登录 token 不再把灯抹绿，否则页面永远看不到真实依赖性。
+4. **总健康仍只作诊断。** 注册三个 `HealthIndicator` 后，未分组的 `/actuator/health` 会连同可降级依赖一起变红，所以实验、压测和计划脚本全部改读 readiness。
+5. **`deps` 不追加 embedding 格。** ADR 0026 只点名 Qdrant、ES、知识库三格；Ollama/embedding 的降级已由读路径与专项测试负责，加一格等于替 ADR 追加决定。
+
+**你需要能当场回答的三个追问**
+
+- *Q：为什么 Qdrant / ES / 知识库不进 readiness？* A：它们降级后系统仍能给降级答案或转人工，ready 的定义是“能否接流量”，不是“全部依赖齐不齐”。并进 readiness 会让实验档在人为弄残依赖时被门禁直接拒绝，等于把 fail-open 改回 fail-closed。
+- *Q：`deps` 组修了“假健康灯”的哪一端？* A：修了两端：服务端第一次能明确区分“可接流量但已降级”和“依赖全齐”；调试台第一次能根据真实 `deps` 显示红灯，而不是只在登录时显示一次绿色。
+- *Q：如果以后上 K8s，希望 ES 挂时摘流量，要改什么？* A：先写新 ADR 明确这条依赖从可降级变为放行条件，再把对应 indicator 纳入 readiness 或单独的 ingress gate；不能只改脚本或页面，因为那会把运行时语义偷偷改成 stop-the-world。
+
+**验证记录**
+
+`DependencyHealthTest` 六条、`verify-console.mjs` 三态断言、`nodeps` 活体起栈和 `local` 全量 17/17 共同收口。已知边界：`deps` 配了 `show-details: never`，页面只说哪一格不为 UP，不暴露内部端口；该端点每次读取会打引擎 ping/count，未加缓存。

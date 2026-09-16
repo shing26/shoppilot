@@ -10,7 +10,7 @@
 
 **Spec:** `D:\WorkBuddyData\ShopPilot-定位与方向决策-20260916.md`。该文件出具时的代码基线 `cf887f1` 已过期；本计划以当前仓库基线为准重新校准。
 
-**Current baseline:** `HEAD 11cd26c`，`origin/main` 同步；CI run `35092864900` 成功，49 秒；收口审计 `PASS 93 / FAIL 0 / SKIP 2`；票 01-32 已收口。
+**Plan baseline:** `HEAD 11cd26c`，`origin/main` 同步；CI run `35092864900` 成功，49 秒；收口审计 `PASS 93 / FAIL 0 / SKIP 2`；票 01-32 已收口。
 
 ## Global Constraints
 
@@ -75,7 +75,7 @@ git commit -m "docs(v1.0): add freeze and portfolio plan"
 - Consumes: ADR 0030 的五条触发条件
 - Produces: 第六条触发条件；所有冻结期改动必须引用它或前述五条之一
 
-- [ ] **Step 1: Write ADR 0031**
+- [x] **Step 1: Write ADR 0031**
 
 创建 ADR，正文必须包含：
 
@@ -91,7 +91,7 @@ Consequences: 未触发时不做是决定，不是拖延；同一缺口达到两
 
 不要修改 ADR 0030；新增 ADR 只接入第六个信号源。
 
-- [ ] **Step 2: Mark the tracker policy**
+- [x] **Step 2: Mark the tracker policy**
 
 在 `.scratch/shoppilot-mvp/README.md` 的“当前状态”下增加：
 
@@ -99,7 +99,7 @@ Consequences: 未触发时不做是决定，不是拖延；同一缺口达到两
 - v1.0.0 冻结后默认不开功能票；重开条件见 ADR 0030 五条与 ADR 0031 的面试反馈触发。
 ```
 
-- [ ] **Step 3: Add the rule to AGENTS**
+- [x] **Step 3: Add the rule to AGENTS**
 
 在 `AGENTS.md` 的“必须遵守”下增加：
 
@@ -107,7 +107,7 @@ Consequences: 未触发时不做是决定，不是拖延；同一缺口达到两
 - v1.0.0 冻结后，新功能票必须引用 ADR 0030 或 ADR 0031 的触发条件；没有触发就登记，不执行。
 ```
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 git diff --check
@@ -128,7 +128,7 @@ Expected: 审计 `FAIL 0`。
 - Consumes: `README.md`、`docs/EVIDENCE.md`、ADR 0024、ADR 0030、ADR 0031
 - Produces: 一个面试官和外部读者都能先读的发布入口
 
-- [ ] **Step 1: Write `RELEASE.md`**
+- [x] **Step 1: Write `RELEASE.md`**
 
 只写六节，不复制 README 的完整指标表：
 
@@ -154,7 +154,7 @@ H2、mock 身份、单实例、数据规模与异机未验。
 v1.0.0 后只接受 ADR 0030/0031 触发或事实性修正。
 ```
 
-- [ ] **Step 2: Put the release entry at the top of README**
+- [x] **Step 2: Put the release entry at the top of README**
 
 在 README 第一屏的接手导航前增加一行：
 
@@ -162,7 +162,7 @@ v1.0.0 后只接受 ADR 0030/0031 触发或事实性修正。
 这是冻结版 v1.0.0：先读 `RELEASE.md`，再按需要进入作品集、代码地图或证据库。
 ```
 
-- [ ] **Step 3: Verify links and release facts**
+- [x] **Step 3: Verify links and release facts**
 
 ```powershell
 git diff --check
@@ -171,7 +171,7 @@ python scripts/verify_eval_judge.py
 
 Expected: `40/40`；`RELEASE.md` 中每个数字都能在 README/EVIDENCE 找到同源。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add RELEASE.md README.md
@@ -190,7 +190,7 @@ git commit -m "docs(v1.0): add release notes"
 - Consumes: `RELEASE.md`、README 的架构图与指标、`docs/interview-qa.md`
 - Produces: HR 初筛版与面试官会前版；不替代 README 证据库
 
-- [ ] **Step 1: Write `docs/portfolio-hr.md`**
+- [x] **Step 1: Write `docs/portfolio-hr.md`**
 
 严格控制在 5 行内容以内：
 
@@ -202,7 +202,7 @@ git commit -m "docs(v1.0): add release notes"
 技术关键词：Java 21 / Spring Boot / Function Calling / RAG / Redis / Qdrant / ES。
 ```
 
-- [ ] **Step 2: Write `docs/portfolio-interview.md`**
+- [x] **Step 2: Write `docs/portfolio-interview.md`**
 
 固定为四块：
 
@@ -217,7 +217,7 @@ git commit -m "docs(v1.0): add release notes"
 完整证据、未达成项与限制见 `README.md` 和 `docs/EVIDENCE.md`。
 ```
 
-- [ ] **Step 3: Add README entry points**
+- [x] **Step 3: Add README entry points**
 
 在“接手导航”中前三行改为读者分流：
 
@@ -253,7 +253,9 @@ git commit -m "docs(v1.0): add release notes"
 
 答不出任意一项就继续删内容，不补新内容。
 
-- [ ] **Step 6: Commit**
+当前完成的是结构与数字自检；独立读者的三分钟 cold-read 仍需在发布前由未参与项目的人执行。
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add README.md docs/portfolio-hr.md docs/portfolio-interview.md
@@ -328,7 +330,7 @@ git push origin main
 - Consumes: 七张 ticket 的决策、代码、ADR 与验证记录
 - Produces: 完整 Handoff notes 与重新生成的面试问答库
 
-- [ ] **Step 1: Add `## Handoff notes` to tickets 21-27**
+- [x] **Step 1: Add `## Handoff notes` to tickets 21-27**
 
 每张票写三条可与本人现场对话的追问与答案。建议起问：
 
@@ -344,7 +346,7 @@ git push origin main
 
 答案必须来自 ticket、ADR 和实现，不写“以后会”或未验证承诺。
 
-- [ ] **Step 2: Regenerate the Q&A**
+- [x] **Step 2: Regenerate the Q&A**
 
 ```powershell
 python scripts/collect_interview_questions.py
@@ -352,7 +354,7 @@ python scripts/collect_interview_questions.py
 
 Expected: 不再列出票 21-27；覆盖 ticket 数应为 32/32。若某张票的格式未被解析，修 ticket 格式，不改生成器来猜自由文本。
 
-- [ ] **Step 3: Verify the generated artifact**
+- [x] **Step 3: Verify the generated artifact**
 
 ```powershell
 git diff --check
@@ -361,7 +363,7 @@ python scripts/verify_eval_judge.py
 
 Expected: `40/40`。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add .scratch/shoppilot-mvp/issues docs/interview-qa.md
@@ -433,7 +435,7 @@ git commit -m "docs(interview): add v1 walkthrough"
 - Consumes: ADR 0031
 - Produces: 冻结期的外部信号账本
 
-- [ ] **Step 1: Create the feedback ledger**
+- [x] **Step 1: Create the feedback ledger**
 
 ```markdown
 # Interview Feedback Ledger
@@ -443,7 +445,7 @@ git commit -m "docs(interview): add v1 walkthrough"
 | | | | 0 | yes/no | ADR 0030 #? / ADR 0031 / none | register / open ticket |
 ```
 
-- [ ] **Step 2: Apply the freeze rule**
+- [x] **Step 2: Apply the freeze rule**
 
 ```text
 0-1 occurrence: record only
@@ -453,7 +455,7 @@ metric/criterion change: ADR 0030 trigger required
 architectural rewrite: new effort; do not reopen v1.0 quietly
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```powershell
 git add docs/interview-feedback.md
@@ -530,4 +532,4 @@ Known red metrics and limits remain documented.
 
 **Placeholder scan:** 未使用 TBD/TODO；每个新增文件都有内容边界、验证动作和完成判据。
 
-**Type consistency:** 冻结触发统一称为 ADR 0030 五条与 ADR 0031 第六条；作品集文件统一为 HR / Interview / 条件式 AI Agent 三层；当前基线统一为 `11cd26c`、221 tests、95 checks。
+**Type consistency:** 冻结触发统一称为 ADR 0030 五条与 ADR 0031 第六条；作品集文件统一为 HR / Interview / 条件式 AI Agent 三层；规划基线统一为 `11cd26c`、221 tests、95 checks。

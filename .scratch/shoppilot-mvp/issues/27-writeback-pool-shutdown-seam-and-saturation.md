@@ -18,3 +18,23 @@
 - [x] 审计 95 项与 G6 常数换代（3+12+206=221）在同一次 round14 共用门禁落点复跑全绿（round13 同法）
 
 **Verify:** JVM 单测面五用例 + 三变异反证 -> 本地起栈跑 `stop.ps1` 目测端口释放时序（活体只登记当时状态，不当证据）-> 门禁全绿。
+
+## Handoff notes
+
+**关键决策**
+
+1. **写回从状态机直接持线程池，迁进 `cache/WriteBackPool` seam。** 状态机只提交任务，seam 统一负责 `RequestTrace.wrap`、队列、拒绝策略、停机与读数。
+2. **停机语义是 shutdown → awaitTermination → 超时 shutdownNow。** 宽限内尽量落完；强制结束后没被线程拿走的任务进 `shoppilot_writeback_dropped_total`。dropped 不宣称“一条不漏”，只精确表示拒绝时仍在队列里的笔数。
+3. **拒绝策略必须自造，不能直接用现成 `CallerRunsPolicy`。** 现成策略在 executor shutdown 后静默丢弃；本实现让池关闭后的提交走调用线程，最坏是慢，不是黑洞，并且每次代跑进 `shoppilot_writeback_caller_runs_total`。
+4. **队列深度是 TP99 口径的一部分。** `queueDepth()` 与 caller-runs 计数让“命中路径 22 ms 是未饱和读数”可验证；饱和时请求线程可能替池去付远程 I/O。
+5. **停机预算固定为 HTTP 30s + 写回 drain 5s。** `server.shutdown: graceful` 负责 HTTP 收尾，`stop.ps1` 等待端口释放默认 40s，不能早于预算宣告“停了”。
+
+**你需要能当场回答的三个追问**
+
+- *Q：为什么写回需要一个专用 seam，不能直接给 `ExecutorService` 多包几个监听？* A：停机、队列深度、代跑计数和 trace 传播需要共享同一套状态；散在状态机与裸池上无法保证同一时刻读到一致语义，也无法在拒绝策略里准确计数。seam 把这些行为收在一个可测试对象里。
+- *Q：为什么不直接使用 JDK 的 `CallerRunsPolicy`？* A：源码在 executor shutdown 后会判断 `isShutdown()` 并静默返回，任务就丢了。本实现自造拒绝策略，关闭后仍让提交线程执行并计 `caller_runs`，所以“慢”是可见的，“丢”只在宽限耗尽后明确计数。
+- *Q：`dropped` 与 `caller_runs` 分别是什么？* A：`dropped` 是强制停机时仍在队列、没被工作线程取走的写回；`caller_runs` 是队列饱和或池关闭后，由调用线程代跑的次数。前者表示停机损失，后者表示饱和代价，不能合并成一个数。
+
+**验证记录**
+
+`WriteBackPoolTest` 五条覆盖宽限内完成、超时丢弃、关闭后提交、饱和代跑与队列深度；两发变异分别摘掉 await 和换回现成策略，均使对应断言当场判红。已知边界：五条用例都在 JVM 内，真停栈时序只记当时活体观察；历轮压测读数来自显式堆上限之前的启动形态，跨形态不承诺逐位复现。

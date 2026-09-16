@@ -29,6 +29,6 @@
 
 **你需要能当场回答的三个追问**
 
-1. 为什么不用 `resilience4j-micrometer` 桥？——本仓只需要 circuitbreaker 本体，桥会额外引入一整层自动命名与标签规则；这里 gauge/counter 各自只有一条清晰语义。
-2. 为什么只报 `shoppilot_circuit_state` 不够？——两次 Prometheus 抓取之间可以 OPEN 后立刻 CLOSED，瞬时 gauge 看不见；`transition_total{from,to}` 专门保留这类闪断。
-3. 依赖指标为什么不直接调 Qdrant / ES？——那会复制 `DependencyHealthConfiguration` 的判定；这里直接读 `deps` 健康组的端点读数，灯与指标天然说同一件事。
+1. "为什么不用 `resilience4j-micrometer` 桥？" —— 本仓只需要 circuitbreaker 本体，桥会额外引入一整层自动命名与标签规则；这里 gauge/counter 各自只有一条清晰语义。
+2. "为什么只报 `shoppilot_circuit_state` 不够？" —— 两次 Prometheus 抓取之间可以 OPEN 后立刻 CLOSED，瞬时 gauge 看不见；`transition_total{from,to}` 专门保留这类闪断。
+3. "依赖指标为什么不直接调 Qdrant / ES？" —— 那会复制 `DependencyHealthConfiguration` 的判定；这里直接读 `deps` 健康组的端点读数，灯与指标天然说同一件事。

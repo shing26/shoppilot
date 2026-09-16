@@ -13,7 +13,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 ISSUES = REPO / ".scratch" / "shoppilot-mvp" / "issues"
 
-# 两种记录格式：ticket 01-15 用 - *Q：…* A：…*，ticket 17 用 1. "…" —— …
+# 两种记录格式：早期 ticket 用 - *Q：…* A：…*，后续 ticket 用 1. "…" —— …
 FORMS = (
     re.compile(r"^-\s+\*Q[：:](.+?)\*\s+A[：:](.+)$"),
     re.compile(r"^\d+\.\s+[「\"](.+?)[」\"]\s+——\s+(.+)$"),
@@ -75,7 +75,8 @@ def main():
         lines.append("## 尚未记录追问的 ticket")
         lines.append("")
         lines.append("、".join(missing) + "（收尾时补 `## Handoff notes` 后重跑本脚本）")
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # `docs/interview-qa.md` 在 verify_eval_judge 的换行基线里是 CRLF，生成时必须显式守住。
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\r\n")
     shown = out.relative_to(REPO) if out.is_relative_to(REPO) else out
     print(f"写出 {shown}：{total} 问，覆盖 {len(files) - len(missing)}/{len(files)} 个 ticket")
     if missing:

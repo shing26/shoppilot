@@ -87,3 +87,23 @@
 
 **转票**：无。票 25 的 `traceId` 字段自此有了唯一来源，票 26 的调试台不受本票影响；本票欠的那一格（S1）
 按 ADR 0027 的口径留在 ADR 与本页，不进 25/26 的勾。
+
+## Handoff notes
+
+**关键决策**
+
+1. **四个坐标在鉴权入口一次装填。** `AuthFilter` 先 `RequestTrace.start()` 再打任何日志；那条“客户端自带 tenantId”的 WARN 本身也带 traceId，因为它是最需要追踪的试探现场。
+2. **异步传播靠手工 `RequestTrace.wrap`，不引 context-propagation 库。** ADR 0027 把两条异步提交点钉死：流式工作线程与缓存写回；宿主的工单升级在已包装的工作线程里，同源带出。未来新增提交点必须显式经过 wrap。
+3. **wrap 收尾恢复运行前快照，不盲目 `clear()`。** 写回池可能 `CallerRunsPolicy`，任务就在请求线程跑；如果收尾清空，会把请求后半程的日志坐标抹掉。
+4. **日志轮转按大小与时间同时生效。** `SizeAndTimeBasedRollingPolicy` 管 `logs/gateway.log`，入库进程通过 `LOG_APP=ingest` 落独立文件；JVM 参数传给 `spring-boot:run` 子 JVM 的路径实测不可靠，环境变量才可靠。
+5. **身份坐标进日志是演示形态。** 真实投产必须替换为假名标识，并把日志平台上的身份检索权限当作与数据库权限同级的边界。
+
+**你需要能当场回答的三个追问**
+
+- *Q：为什么不用上下文传播库，手工 wrap 不是更容易漏？* A：本仓异步提交点很少，ADR 0027 明确选择显式边界。手工 wrap 把“跨线程时坐标如何走”放在代码里可见，且不需要把第三方传播器带进热路径；代价是新增提交点没有机器守卫，这条欠账已登记。
+- *Q：具体跨了哪些异步边界？* A：流式聊天的工作线程和缓存写回提交。工单升级在 `agent.run(...)` 的已包装线程内，不需要第二个传播点。落点用三发变异证明：摘掉流式 wrap、摘掉写回 wrap、把 `start()` 挪到告警之后，各有对应用例判红。
+- *Q：为什么 wrap 结束要恢复快照，而不是清掉四个键？* A：`CallerRunsPolicy` 可能让任务在提交者线程直接执行。恢复快照能保证结束后外层请求仍保留自己的 trace、tenant、buyer、conversation；盲目 clear 只会让后半程日志失去归属。
+
+**验证记录**
+
+`RequestTraceTest`、`AuthFilterTest`、`LogbackRotationTest` 与 `TraceCorrelationAcrossAsyncTest` 覆盖装填时序、并发隔离、恢复语义与轮转策略；活体侧按响应 traceId 在全量日志中反查。已知边界：文件 appender 是同步的，perf 档未复量；日志坐标直接进日志只适用于合成数据，投产需假名化。

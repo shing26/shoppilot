@@ -104,3 +104,23 @@
 
 **转票**：无新增待办。票 26 拿走的是本票已经备好的两样东西：400 报文里的 `message`，和 403 报文里的 `code`。
 
+## Handoff notes
+
+**关键决策**
+
+1. **错误信封只网关自产。** `code / message / traceId` 是网关自己说错话的统一形状；来自 biz-mock 或其他下游的响应体逐字节透传，不能重新包装后把“谁拒的”抹掉。
+2. **只统一形状，不顺手统一状态码。** 400 仍是 400、405 仍是 405、下游状态码原样保留；改状态码是另一笔契约变更，与本票的目标分开。
+3. **鉴权直写 response 也走同一支笔。** `AuthFilter.reject` 使用 `ApiErrorWriter`，不再手拼 JSON；message 里有引号或换行时仍是合法 JSON。
+4. **框架异常必须继承 `ResponseEntityExceptionHandler`。** 只 catch `RuntimeException` 会把 `HttpMessageNotReadableException` 吸成 500；第一轮审查抓到的正是这个自造缺陷，现由 400/405/不可读 body 三格并排钉住。
+5. **校验文案由后端回带。** REST 与流式入参都带可显示的中文 message；SSE 端点仍返回 JSON 信封，不会因为 `Accept: text/event-stream` 被换成 406。
+
+**你需要能当场回答的三个追问**
+
+- *Q：为什么下游错误不也统一成同一个信封？* A：下游响应体属于另一个契约，可能包含业务状态、字段结构或将来接入的真实下游语义。网关重新包装会破坏字节级兼容，也会让排查者分不清错误由谁产生；所以只统一网关自产错误，并保留可分辨的 code。
+- *Q：为什么状态码一个都不许改？* A：信封解决“错误长什么样”，状态码解决“HTTP 层是什么结果”。同时改会让本票的影响面从序列化扩大到路由、客户端重试和缓存语义，无法在一个可审计的改动里判定回归。
+- *Q：为什么 catch-all 不能只收 `RuntimeException`？* A：Spring 判定的多个 4xx 异常也是运行时异常，`HttpMessageNotReadableException` 就是例子。继承 `ResponseEntityExceptionHandler` 后由框架先保留原状态码，本类只负责换形状；变异/回退用例保证 400 与 405 都还会红。
+
+**验证记录**
+
+`RestErrorEnvelopeTest` 覆盖形状、序列化、状态码、透传和运维 403；票 21 转来的 HTTP body 用例、票 23 转来的裸 500 也在此收口。已知边界：`codeFor` 的 4xx/5xx 两分法把 406/415 归入 `invalid_request`，这是明确的当前口径，不是遗漏。
+
