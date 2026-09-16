@@ -1,6 +1,6 @@
 # ShopPilot v1.0.0
 
-状态：release candidate。`v1.0.0` tag 只在本文所列验证全部通过后创建。
+状态：`v1.0.0` 已发布并冻结。Tag `v1.0.0` 指向 CI run `35104751284` 已验证的 release commit `7f4334c`。
 
 ## What it does
 

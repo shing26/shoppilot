@@ -12,7 +12,7 @@
 
 **Plan baseline:** `HEAD 11cd26c`，`origin/main` 同步；CI run `35092864900` 成功，49 秒；收口审计 `PASS 93 / FAIL 0 / SKIP 2`；票 01-32 已收口。
 
-**Execution status (2026-09-16):** Task 1-3、Task 5 与 Task 7 已落地；本地 JVM verify 为 `3 + 12 + 206 = 221` 全绿，`verify_eval_judge` 为 `40/40`，收口审计只剩未推送导致的 `A1`。GitHub 443 当前不可达；完成 push 与本轮 CI 成功后再执行 Task 4 的 tag 与冻结公告，当前对外状态仍是 release candidate。
+**Execution status (2026-09-16):** Task 1-5、Task 7 已落地；本地 JVM verify 为 `3 + 12 + 206 = 221` 全绿，`verify_eval_judge` 为 `40/40`，收口审计 `PASS 93 / FAIL 0 / SKIP 2`。CI run `35104751284` 成功后，tag `v1.0.0` 已指向 release commit `7f4334c` 并完成冻结公告。Task 6 与独立 cold-read 仍未执行，不回填成已完成。
 
 ## Global Constraints
 
@@ -273,7 +273,7 @@ git commit -m "docs(v1.0): add three-minute portfolio"
 - Consumes: Tasks 1-3 的全部产物
 - Produces: `v1.0.0` tag；后续改动必须有触发来源
 
-- [ ] **Step 1: Run the release gate locally**
+- [x] **Step 1: Run the release gate locally**
 
 ```powershell
 .\mvnw.cmd -B -ntp verify
@@ -284,7 +284,7 @@ git status --short --branch
 
 Expected: JVM 测试全绿；审计 `FAIL 0`；工作树 clean。
 
-- [ ] **Step 2: Push and wait for CI**
+- [x] **Step 2: Push and wait for CI**
 
 ```powershell
 git push origin main
@@ -293,7 +293,7 @@ gh run list --workflow ci-subset.yml --limit 1 --json databaseId,headSha,status,
 
 Expected: 最新 run 对应 release commit，conclusion 为 success。
 
-- [ ] **Step 3: Tag the exact release commit**
+- [x] **Step 3: Tag the exact release commit**
 
 ```powershell
 git tag -a v1.0.0 -m "ShopPilot v1.0.0"
@@ -302,7 +302,7 @@ git push origin v1.0.0
 
 Tag 必须指向 CI 已绿的 commit；CI 在 tag 后变红时先撤回 tag，不许把红提交留在版本号下。
 
-- [ ] **Step 4: Record the freeze**
+- [x] **Step 4: Record the freeze**
 
 在 tracker 当前状态段增加：
 
@@ -475,7 +475,7 @@ git commit -m "docs(v1.0): add interview feedback ledger"
 - Consumes: Tasks 1-7
 - Produces: 可宣布的 v1.0 冻结状态
 
-- [ ] **Step 1: Check the release gates**
+- [x] **Step 1: Check the release gates**
 
 ```powershell
 git status --short --branch
@@ -510,7 +510,7 @@ docs/interview-qa.md covers 32/32 tickets
 docs/interview-guide.md uses current 221-test baseline
 ```
 
-- [ ] **Step 4: Announce the freeze**
+- [x] **Step 4: Announce the freeze**
 
 冻结公告只写：
 

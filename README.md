@@ -2,7 +2,7 @@
 
 [![ci-subset](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
-这是 `v1.0.0` release candidate 的发布入口：[RELEASE.md](RELEASE.md)。想先看能否投递或快速理解，再进入作品集与证据库。
+这是已冻结的 `v1.0.0` 发布入口：[RELEASE.md](RELEASE.md)。想先看能否投递或快速理解，再进入作品集与证据库。
 
 面向电商大促的高并发智能客服与业务网关：**静态政策 RAG + 动态业务 Tool Calling + 两级缓存 + 降级工单**，
 跑在 Java 21 虚拟线程与 Spring Boot 3.3.5 上。
