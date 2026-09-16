@@ -7,6 +7,7 @@
 ## 当前状态
 
 - 当前交付路线见 [`docs/PROJECT_PLAN.md`](../../docs/PROJECT_PLAN.md)：v1.0 收口、3 分钟作品集、面试掌握与冻结；它不新增功能 frontier。
+- `v1.0.0` 冻结后默认不开功能票；重开条件见 ADR 0030 五条与 ADR 0031 的面试反馈触发。
 - 当前没有 `ready-for-agent` 的开放 ticket。票 01-32 均已收口。
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
 - Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建与 JVM 测试；全量 17 步活体验收仍是作者本机证据。
