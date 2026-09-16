@@ -46,7 +46,7 @@ CI 的判定不是「17 步换一种跑法」，而是独立的小门：干净�
 
 ## Verification
 
-- 最终 commit `15ea402` 的 Ubuntu/Temurin 21 run `https://github.com/shing26/shoppilot/actions/runs/35062472053` 成功，耗时 `1m4s`，Surefire 小计 `3 + 12 + 206 = 221`。
+- 审查后的代码 commit `3de06d7` 的 Ubuntu/Temurin 21 run `https://github.com/shing26/shoppilot/actions/runs/35063263167` 成功，耗时 `46s`，Surefire 小计 `3 + 12 + 206 = 221`。
 - 首次远端复跑在 Linux 上暴露 `LogbackRotationTest` 清理竞态：`Files.walk` 遍历属性时，logback 压缩线程会移走 `.tmp` 文件，导致 `NoSuchFileException`。`15ea402` 改用 `walkFileTree`，只把并发删除后的不存在视为幂等成功，真实句柄/权限失败仍退避重试。
 - 本地修复后 `mvnw.cmd -B -ntp verify` 全绿，三项模块分别为 `3 + 12 + 206 = 221`。
 
