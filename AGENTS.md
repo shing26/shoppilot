@@ -23,6 +23,7 @@
 | 领域术语和边界 | `CONTEXT.md` |
 | 公开指标与未达成项 | `README.md`，详细口径与产物见 `docs/EVIDENCE.md` |
 | 代码所有权与首改位置 | `docs/CODE_MAP.md` |
+| 当前交付方向、冻结线与执行顺序 | `docs/PROJECT_PLAN.md` |
 | 干净 runner 的构建/单测结果 | `.github/workflows/ci-subset.yml` 与对应 GitHub Actions run |
 
 ## 必须遵守
