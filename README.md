@@ -1,5 +1,7 @@
 # ShopPilot
 
+[![ci-subset](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
+
 面向电商大促的高并发智能客服与业务网关：**静态政策 RAG + 动态业务 Tool Calling + 两级缓存 + 降级工单**，
 跑在 Java 21 虚拟线程与 Spring Boot 3.3.5 上。
 
@@ -450,7 +452,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元与架构测试（104 项）
+# 单元与架构测试（3 + 12 + 206 = 221 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -478,6 +480,15 @@ pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12 -Run   # 真跑 12 条�
 pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1            # 干跑：查配置、报这次会花多少余量
 pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七道防线（本轮实花约 4.6 万 tokens）
 ```
+
+### CI 子集门禁
+
+`.github/workflows/ci-subset.yml` 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的
+`ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
+Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
+
+这条门禁只覆盖干净 runner 上的构建与 221 条 JVM 测试；它不替代本机 17 步全量验收，后者仍然包含活体中间件、
+浏览器、评测与一键演示。CI 报红先修真实失败，不通过加跳过、改期望数或取消测试来换绿。
 
 ### 逐 ticket 验收动作 → 覆盖命令
 
