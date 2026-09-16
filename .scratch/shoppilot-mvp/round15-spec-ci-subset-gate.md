@@ -1,6 +1,6 @@
 # round15 spec：CI 子集门禁
 
-**Status:** implementing。来源是 ADR 0030 第 1 条：round14 收口后，下一轮第一票固定为 CI 子集门禁；若异机跑通需要先偿还未落地的隐性环境债，偿债票排它前面。
+**Status:** done。来源是 ADR 0030 第 1 条：round14 收口后，下一轮第一票固定为 CI 子集门禁；若异机跑通需要先偿还未落地的隐性环境债，偿债票排它前面。
 
 ## Problem Statement
 
@@ -31,7 +31,7 @@ CI 的判定不是「17 步换一种跑法」，而是独立的小门：干净�
 ## Implementation Decisions
 
 - runner 先用 `ubuntu-latest`：它比 Windows runner 更快、更便宜，也更能暴露「只在作者 Windows 机器上成立」的隐性依赖。若测试本身真需要 Windows，再按实际失败补独立 job，不把 Ubuntu 结果伪造成跨平台结果。
-- 使用 `actions/setup-java@v4` 的 `temurin` 21 与 Maven cache；使用 `bash ./mvnw` 兼容当前仓库里 `mvnw` 的 Git mode（`100644`），不依赖 checkout 后保留可执行位。
+- 使用 `actions/setup-java@v6` 的 `temurin` 21 与 Maven cache；使用 `bash ./mvnw` 兼容当前仓库里 `mvnw` 的 Git mode（`100644`），不依赖 checkout 后保留可执行位。
 - 单 job 单命令，直接跑 reactor `verify`。CI 不使用 `-o`，因为干净 runner 必须先下载 Maven 依赖。
 - `timeout-minutes: 20` 是防跑挂的上限，不是性能承诺。已有本机全量 Maven 读数约 53 秒，20 分钟给冷缓存和 runner 抖动留足空间。
 - 失败产物只上传 `**/target/surefire-reports/**`，不做覆盖率、扫描、部署、发布或通知。
@@ -43,6 +43,12 @@ CI 的判定不是「17 步换一种跑法」，而是独立的小门：干净�
 - 远端真实复跑：推送 workflow 后在 GitHub Actions 查看 run，必须正常终态成功。
 - 首轮 CI 预期模块小计为 `3 + 12 + 206 = 221`；若 runner 上数量不同，先查是否漏编译、跳测或环境分支，不直接改期望值。
 - 不新增审计项，不改 round14 的 95 项收口审计，不改任何业务测试与判据。
+
+## Verification
+
+- 最终 commit `15ea402` 的 Ubuntu/Temurin 21 run `https://github.com/shing26/shoppilot/actions/runs/35062472053` 成功，耗时 `1m4s`，Surefire 小计 `3 + 12 + 206 = 221`。
+- 首次远端复跑在 Linux 上暴露 `LogbackRotationTest` 清理竞态：`Files.walk` 遍历属性时，logback 压缩线程会移走 `.tmp` 文件，导致 `NoSuchFileException`。`15ea402` 改用 `walkFileTree`，只把并发删除后的不存在视为幂等成功，真实句柄/权限失败仍退避重试。
+- 本地修复后 `mvnw.cmd -B -ntp verify` 全绿，三项模块分别为 `3 + 12 + 206 = 221`。
 
 ## Out of Scope
 

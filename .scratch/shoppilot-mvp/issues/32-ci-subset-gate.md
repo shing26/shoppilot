@@ -4,7 +4,7 @@
 
 **Blocked by:** None。ADR 0030 第 1 条已把本票固定为下一轮第一票。
 
-**Status:** implementing（workflow 与本地等价复跑已落地；`mvnw.cmd -B -ntp verify` 全绿、3+12+206=221；远端 Actions run 待触发）
+**Status:** implemented（Ubuntu Actions run 成功；commit `15ea402`，run `35062472053`，1m4s；3+12+206=221）
 
 - [x] `.github/workflows/ci-subset.yml`：`push(main)`、`pull_request`、`workflow_dispatch` 三类触发
 - [x] Ubuntu + Temurin 21 + Maven cache；使用 `bash ./mvnw -B -ntp verify`
@@ -12,7 +12,7 @@
 - [x] job `timeout-minutes: 20`，同 ref 新 run 取消旧 run
 - [x] 失败上传 `**/target/surefire-reports/**`，无文件时不报二次错误
 - [x] 本地等价复跑 `mvnw.cmd -B -ntp verify` 全绿，模块小计 `3 + 12 + 206 = 221`
-- [ ] 推送后 GitHub Actions run 真正成功；不是只验证 YAML 能解析
+- [x] 推送后 GitHub Actions run 真正成功：`https://github.com/shing26/shoppilot/actions/runs/35062472053`（1m4s，Ubuntu/Temurin 21 跑出 `3 + 12 + 206 = 221`）
 - [x] README 登记 CI 子集、触发条件与「不替代 17 步全量落点」边界
 - [x] 审计项数保持 95；不改判据、阈值、gold、既有业务测试
 
