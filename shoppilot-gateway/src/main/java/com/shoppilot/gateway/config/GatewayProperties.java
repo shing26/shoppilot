@@ -1,27 +1,44 @@
 package com.shoppilot.gateway.config;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
+import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
 
 /** 全量配置集中声明，避免各处 @Value 散落。 */
+@Validated
 @ConfigurationProperties(prefix = "shoppilot")
 public record GatewayProperties(
-        Llm llm,
-        Embedding embedding,
-        Retrieval retrieval,
-        Cache cache,
-        BizMock bizmock,
-        Agent agent,
-        RateLimit ratelimit,
-        Ingest ingest,
-        Triage triage,
-        Ops ops) {
+        @Valid Llm llm,
+        @Valid Embedding embedding,
+        @Valid Retrieval retrieval,
+        @Valid Cache cache,
+        @Valid BizMock bizmock,
+        @Valid Agent agent,
+        @Valid RateLimit ratelimit,
+        @Valid Ingest ingest,
+        @Valid Triage triage,
+        @Valid Ops ops) {
 
-    public record Llm(String mode, String baseUrl, String apiKey, String model, double temperature,
-                      Duration connectTimeout, Duration readTimeout, long dailyTokenBudget,
+    public record Llm(String mode, String baseUrl, String apiKey, String model,
+                      @DecimalMin("0.0") @DecimalMax("2.0") double temperature,
+                      @DurationMin(nanos = 1, message = "shoppilot.llm.connect-timeout must be greater than 0")
+                      Duration connectTimeout,
+                      @DurationMin(nanos = 1, message = "shoppilot.llm.read-timeout must be greater than 0")
+                      Duration readTimeout,
+                      long dailyTokenBudget,
                       String localBaseUrl, String localModel,
-                      Duration perfFirstTokenLatency, Duration perfTotalLatency) {
+                      @DurationMin(nanos = 1,
+                              message = "shoppilot.llm.perf-first-token-latency must be greater than 0")
+                      Duration perfFirstTokenLatency,
+                      @DurationMin(nanos = 1,
+                              message = "shoppilot.llm.perf-total-latency must be greater than 0")
+                      Duration perfTotalLatency) {
 
         public boolean dev() {
             return "dev".equalsIgnoreCase(mode);
@@ -41,8 +58,15 @@ public record GatewayProperties(
      *                       {@code no-embedding-cache} profile 关掉它，用来把
      *                       "L2 曲线的天花板是编排层还是本地 bge-m3 推理"这件事分开归因。
      */
-    public record Embedding(String baseUrl, String model, int dimension, Duration timeout,
-                            Duration warmupTimeout, boolean inProcessCache) {
+    public record Embedding(
+            String baseUrl,
+            String model,
+            int dimension,
+            @DurationMin(nanos = 1, message = "shoppilot.embedding.timeout must be greater than 0")
+            Duration timeout,
+            @DurationMin(nanos = 1, message = "shoppilot.embedding.warmup-timeout must be greater than 0")
+            Duration warmupTimeout,
+            boolean inProcessCache) {
     }
 
     public record Retrieval(String qdrantUrl, String esUrl, String ruleCollection, String cacheCollection,
@@ -53,14 +77,34 @@ public record GatewayProperties(
      * @param singleflightEnabled 防击穿合并开关。Token 节约率的基线组要把它和缓存一起关掉，
      *                            否则"基线"里仍然有合并替模型省调用，测出来的节约率是假的。
      */
-    public record Cache(boolean enabled, Duration l1Ttl, double semanticThreshold, Duration negativeTtl,
-                        Duration singleflightWaitTimeout, boolean singleflightEnabled) {
+    public record Cache(
+            boolean enabled,
+            @DurationMin(nanos = 1, message = "shoppilot.cache.l1-ttl must be greater than 0")
+            Duration l1Ttl,
+            @DecimalMin("0.0") @DecimalMax("1.0") double semanticThreshold,
+            @DurationMin(nanos = 1, message = "shoppilot.cache.negative-ttl must be greater than 0")
+            Duration negativeTtl,
+            @DurationMin(nanos = 1,
+                    message = "shoppilot.cache.singleflight-wait-timeout must be greater than 0")
+            Duration singleflightWaitTimeout,
+            boolean singleflightEnabled) {
     }
 
-    public record BizMock(String baseUrl, String internalToken, Duration connectTimeout, Duration readTimeout) {
+    public record BizMock(
+            String baseUrl,
+            String internalToken,
+            @DurationMin(nanos = 1, message = "shoppilot.bizmock.connect-timeout must be greater than 0")
+            Duration connectTimeout,
+            @DurationMin(nanos = 1, message = "shoppilot.bizmock.read-timeout must be greater than 0")
+            Duration readTimeout) {
     }
 
-    public record Agent(int maxToolRounds, int maxSlotAsks, Duration sessionTtl, int historyTurns) {
+    public record Agent(
+            @Min(1) int maxToolRounds,
+            int maxSlotAsks,
+            @DurationMin(nanos = 1, message = "shoppilot.agent.session-ttl must be greater than 0")
+            Duration sessionTtl,
+            int historyTurns) {
     }
 
     /**
