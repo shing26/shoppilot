@@ -1,6 +1,6 @@
 # round14 spec：停机 seam、状态指标面与证据收口（票 27-31）
 
-**Status:** ready-for-agent。本仓的 tracker 是 `.scratch/shoppilot-mvp/issues/NN-slug.md` 那批文件，没有 native label，就绪态按票面 Status 字段记。
+**Status:** done。票 27-31 已落地；round14 共用门禁 `logs/acceptance-run-20260916-095520.log` 17/17、543s，三模块 `3+12+206=221`，审计 95 项全绿。本仓的 tracker 是 `.scratch/shoppilot-mvp/issues/NN-slug.md` 那批文件，没有 native label，状态按票面 Status 字段记。
 
 来源：2026-09-15 的 `/grill-with-docs` 会话——先收 round13 交接里已锁未落盘的五条决策（停机 seam、停机预算、配置校验、状态指标面、本轮定位），再对同日独立取证复核带来的三条 P0 与一条 CI 判断逐条裁决。落盘为 ADR 0030 与 `CONTEXT.md` 新词条「可查工单」，本文件只综合，不新增决策。
 

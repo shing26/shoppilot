@@ -745,3 +745,11 @@
 一次性活体读数，只登记当时状态，不得当证据引用：本轮开跑时 8082/8091/16379/16333/19200 五端口在听、`/actuator/health` 回 UP；Ollama 11434 起初无人监听，我跑 `ollama list` 把它顺手拉起来了，之后 5 个模型在库；一次问答首字实测 11591 ms；机器可用内存一度 1.51 GB。
 
 环境副作用：故障注入已复位（`fail=0 delay=0 circuit="CLOSED / local"`）；本机 `.cache/intent-centroids.json` 可能被问答重建过；`logs/` 下有本轮新增的 acceptance 日志（不入库）。
+
+## round13 / round14 补账（收口时补）
+
+- round13：票 21-26 已落地；共用门禁 `logs/acceptance-run-20260914-060509.log` 17/17、504s，
+  当轮 surefire 小计 `3 + 12 + 174 = 189`，审计 95 项。
+- round14：票 27-31 已落地；共用门禁 `logs/acceptance-run-20260916-095520.log` 17/17、543s，
+  当轮 surefire 小计 `3 + 12 + 206 = 221`，审计 95 项。轮次定位、触发式重开条件与 P1 挂账
+  以 ADR 0030 为准，本计划只补运行日志，不重开判据或阈值。

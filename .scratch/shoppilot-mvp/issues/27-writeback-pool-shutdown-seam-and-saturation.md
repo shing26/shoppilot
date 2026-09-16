@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** implemented（五用例绿 + 两发变异反证已打；G6 常数换代与 README 其余记账按惯例留给落点，票 30 承接）
+**Status:** implemented（五用例绿 + 两发变异反证已打；round14 共用门禁 `logs/acceptance-run-20260916-095520.log` 17/17、543s，G6 已换代）
 
 - [x] 新 seam `cache/WriteBackPool`：`submit()` 内部自带 `RequestTrace.wrap`（提交点不再各自记得包）；`AgentStateMachine` 的写回提交点整体迁入，状态机不再直接持有执行器
 - [x] `close(Duration)`：shutdown → awaitTermination → 超时则 shutdownNow 并计 `shoppilot_writeback_dropped_total`（dropped 只数「没被线程拿走」的，边界写在 javadoc，不假装一条不漏）
@@ -15,6 +15,6 @@
 - [x] `stop.ps1` 加一格「等端口释放超时 ≥ 停机预算」（默认 40s），不在预算用尽前误判「停了」
 - [x] 五条不起容器用例（`WriteBackPoolTest` 5/5 绿）：宽限内跑完不丢 / 超时才丢且 dropped 计数对 / 池关后提交走调用线程 / 队列满时代跑被计数 / 队列深度读数随实际积压变化
 - [x] 变异反证两发已打：摘掉宽限（await 改 0ms）→ 「宽限内跑完」与「饱和不丢」两格当场红；换回现成 `CallerRunsPolicy` → 「关后代跑」与「代跑计数」两格当场红。计数断言是硬断言，摘表即摘线
-- [ ] 审计 95 项与 G6 常数换代（3+12+174→3+12+179=194）待落点复跑；本轮与票 28-31 共用一次门禁（round13 同法）
+- [x] 审计 95 项与 G6 常数换代（3+12+206=221）在同一次 round14 共用门禁落点复跑全绿（round13 同法）
 
 **Verify:** JVM 单测面五用例 + 三变异反证 -> 本地起栈跑 `stop.ps1` 目测端口释放时序（活体只登记当时状态，不当证据）-> 门禁全绿。

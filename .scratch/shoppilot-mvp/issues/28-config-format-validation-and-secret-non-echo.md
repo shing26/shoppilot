@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** implemented（`ConfigValidationTest` 22/22；完整 JVM 面 3+12+206=221 绿；回环默认配置真实启动到 `Started GatewayApplication`；轮次门禁按 round14 约定留给五票共用落点）
+**Status:** implemented（`ConfigValidationTest` 22/22；完整 JVM 面 3+12+206=221 绿；回环默认配置真实启动到 `Started GatewayApplication`；round14 共用门禁 `logs/acceptance-run-20260916-095520.log` 17/17、543s，审计 95 项全绿）
 
 - [x] 校验范围照单执行：端口、duration > 0、阈值 0-1、温度 0-2、轮次 ≥1；每一处判错各一条用例，报错点名到字段
 - [x] 不给「dev 默认值合法」的字段加任何必填类注解；回环绑定下带默认值启动必须仍然成功（ADR 0020 干净克隆判据的起栈形态不许被校验器打死）

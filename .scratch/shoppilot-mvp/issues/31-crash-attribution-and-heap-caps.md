@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** implemented（README 归因表覆盖 14 份日志并回引具体文件名；三条机器判据通过；脚本语法检查通过；真实起栈生成 `-XX:MaxRAMPercentage=3` 后已清理；轮次门禁按 round14 约定留给五票共用落点）
+**Status:** implemented（README 归因表覆盖 14 份日志并回引具体文件名；三条机器判据通过；脚本语法检查通过；真实起栈生成 `-XX:MaxRAMPercentage=3` 后已清理；round14 共用门禁 `logs/acceptance-run-20260916-095520.log` 17/17、543s，审计 95 项全绿）
 
 - [x] 读 14 份 `hs_err_pid*.log`（连同 replay 日志）出归因表：崩溃类型（native 内存 OOM）、时间簇、网关与业务 Mock 各自的份、崩溃瞬间系统空闲内存区间；表述以日志原文为据，引用日志文件名
 - [x] README 技术债「归因未定」那条改有因结论；「没有 hs_err_pid 日志」的字样在仓内不得再出现

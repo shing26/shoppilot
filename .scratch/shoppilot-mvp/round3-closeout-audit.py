@@ -73,7 +73,11 @@ _DEF_LANDED = 0
 # 「请求体读不出来」那一支仍是 400（那条 catch-all 把 NestedRuntimeException 的后代吸进 500，是本票自己新造的缺陷）；
 # 票 26 不加 JVM 用例，它把九处缺陷落成浏览器那一侧的 17 格（console 18 项 → 35 项）。
 # 本项判据形状（读哪两份日志、比什么）一字未动，动的只有这一格常数。
-G6_EXPECT = [3, 12, 174]
+# 换代指针（round14 票 27-31 共用落点）：网关 174 涨到 206。
+# 票 27 新增 WriteBackPoolTest 5 条；票 28 新增 ConfigValidationTest 22 条；
+# 票 29 新增 RuntimeStateMetricsTest 5 条；票 30/31 是文档与脚本票，不加 JVM 用例。
+# 本项判据形状仍是一字未动，动的只有这一格常数。
+G6_EXPECT = [3, 12, 206]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 

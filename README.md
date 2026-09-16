@@ -734,6 +734,13 @@ Spring 判的 400 被吸成 500，报文里还带着 `internal_error` 去冤枉�
 （`elementFromPoint` 打在「工单队列」正中，命中 id 仍是它本身）防的是「遮罩修好了、按钮又被自己盖住」，
 那一轮的人工跑器正是死在这里崩过一次。`docs/console.png` 由该步每次重写，是这一轮的截图。
 
+**round14 五票共用一份落点**：`logs/acceptance-run-20260916-095520.log`，`commit=8c4b616`
+`开跑时工作树=dirty（2 个未提交改动：G6 当轮常数与未跟踪项目梳理快照）`，
+`开始 09:46:18 结束 09:55:20 总耗时 543s`，17 步全绿；surefire 三份模块小计
+`3 + 12 + 206 = 221`。这一轮把写回池停机 seam、配置格式校验、四组状态指标、记账收口与
+native OOM 归因分五票落地，指标名按三模块 `src/main` 去重后为 41；判据、阈值、gold 与评测口径未动。
+`docs/console.png` 与 `logs/acceptance/eval.log` 是这次落点的浏览器与冒烟证据。
+
 | PLAN 行 | 覆盖它的命令 |
 | --- | --- |
 | 01 | `run-acceptance.ps1` 的 stop / build / unit / stack 四步（`mvnw verify` + `mvn -o test` + `up.ps1`）；`verify-plan-actions.ps1` 第 01 段判"三中间件在跑、两服务健康 UP" |
