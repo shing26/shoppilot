@@ -52,6 +52,9 @@ UP/DOWN（ADR 0026）。这一组**刻意不进 readiness**——缓存、模型
 停机预算 35 秒（票 27）：HTTP 收尾走 `server.shutdown: graceful` 的 Spring 默认 30 秒，缓存写回池 drain 另给
 5 秒——宽限内落不完的笔数记在 `shoppilot_writeback_dropped_total` 上；`stop.ps1` 等端口释放的超时默认 40 秒，
 不小于这个预算，预算没走完不报「停了」。
+两个服务从票 31 起都带显式堆上限：网关 `-XX:MaxRAMPercentage=3`（16 G 机上约 491 MB），业务 Mock
+`-XX:MaxRAMPercentage=2`（约 327 MB）；看门狗重启业务 Mock 时抬到 4%。历轮压测读数按当时 `-Xmx512m` /
+`-Xmx256m` 的启动形态原样供着，**不承诺换到这个起栈形态后逐位复现**。
 
 <details>
 <summary>手动分步（想知道 up.ps1 到底干了什么，或者不想用 pwsh）</summary>
@@ -167,7 +170,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | 未命中 TTFT（知识路径） | <500 ms | **未达成**：P50 690 ms（1 并发串行）→ 1031 / 1036 / 1049 ms（50 / 100 / 200 并发）→ 1499 ms（500 并发） | 客户端发请求→第一个 `event: token` 帧；样本只取 `meta.cacheLayer=NONE` 且非动作意图（`scripts/run_sse_ttft.py` 分桶）；perf 的 Mock 首字固定占 300 ms | `sse-ttft-20260909-151606-1-attrib.csv`、`sse-ttft-20260909-144654-50-sweepmix.csv` 等 4 份 |
 | 未命中 TTFT（动作路径） | 不设判据 | P50 1146 / 1148 / 1160 / 1634 ms（50→500 并发） | 动作意图按设计要走两轮工具调用，perf 下每轮 Mock 各 300 ms，与 500 ms 不是同一预算，故单列不并入上一条 | 同上（`action_*` 列） |
 | 未命中 TTFT 的归因 | 报出谁花的 | 服务端 TTFT 均值 725 ms = Mock 首字下限 300 + 本机单条新问句向量化 311 + 稠密检索 4.8 + 词法检索 5.8 + **编排余量 104 ms** | 单连接串行、网关刚重启（服务端计时器按进程累计）；向量化那一步服务端没有计时器包住，由探针实测 | `ttft-attribution-20260909-151609-1conn.csv`、`probe_embedding_latency.py` |
-| 吞吐极限 | ≥1200 QPS 且错误率<0.1% | **1013 QPS**@800（L1 主导）/ **1141 QPS**@400（L2 主导），错误率 0% | `qps_scope=chat-only`，Locust 4 进程同机发压 | `ladder-l1-…-final.csv`、`ladder-l2-…-l2.csv` |
+| 吞吐极限 | ≥1200 QPS 且错误率<0.1% | **1013 QPS**@800（L1 主导）/ **1141 QPS**@400（L2 主导），错误率 0% | `qps_scope=chat-only`，Locust 4 进程同机发压；@800 峰值 CPU 94%、最低空闲内存 0.0 GB；@400 峰值 CPU 93%、最低空闲内存 0.0 GB；均为登记当时状态，不作跨轮证据 | `ladder-l1-…-final.csv`、`env-l1-perf-20260908-231233-final.json`；`ladder-l2-…-l2.csv`、`env-l2-perf-20260909-000535-l2.json` |
 | L2 路径吞吐 | 报天花板与归因 | **23.8-64.8 QPS**（每请求真打 bge-m3）vs 同档 845-1141 QPS（有进程内向量缓存），同并发差 **18-36 倍** | profile `perf,no-embedding-cache`，`embed_cached` 全程 0、远程向量化≈非命中请求数（L1 命中不需要向量）；生产侧解法见 ADR 0011：embedding 拆独立批处理服务 + 向量缓存命中率当一等指标 | `ladder-l2-perf,no-embedding-cache-20260909-133010-l2emb.csv` |
 | 虚拟线程收益 | 开关两组 | 400 并发 **+64%**、800 并发 **+65%**；100 并发 -3%、200 并发 -3% | 同模型同并发，只关 `spring.threads.virtual.enabled` + 200 平台线程池 | `ladder-l1-perf,no-virtual-20260909-011351-novirtual.csv` |
 | Token 节约率 | 关缓存基线对比 | **62.4%**（1096.8 → 412.3 token/请求）；拆开：穿透合并单独省 50.3%，缓存再省 24.4% | perf 模式 `shoppilot_llm_tokens_total` 差值/请求数，三档只差防线开关；token 由 Mock 按模板估算 | `ladder-l1-perf,nocache,nosf-…`、`ladder-l1-perf,nocache-…`、`ladder-l1-perf-…-cacheton.csv` |
@@ -200,7 +203,8 @@ slot_ask | fallback | duplicate_submit | rate_limited
   的实测）。要把 80% 凑上，得把分母改成"准入内命中率"——那个数确实是 100%，但换个口径刷绿没有意义，
   所以两列都留着。
 - **吞吐 1013 而不是 1200**：发压机（Locust 4 进程）与被压网关在同一台 16 G 笔记本上，
-  峰值档 CPU 采样 94-98%、最低空闲内存 0.0 GB，拐点由两边共同决定。网关侧错误率全程 0，
+  峰值档 CPU 采样 94-98%、最低空闲内存 0.0 GB（1013 那轮 `env-l1-perf-20260908-231233-final.json`），
+  拐点由两边共同决定。网关侧错误率全程 0，
   虚拟线程对照组在 800 并发下反而只有 615 QPS。这条要在真机上复核需要一个独立发压节点。
 - **未命中 TTFT 690-1049 ms 而不是 <500 ms**：这条判据先要有一个能谈的口径。旧产物那条 592 ms 是
   "第一个 SSE 分片"，而服务端在检索与模型之前就推 `status`/`meta` 帧，并且把命中与未命中混在同一个
@@ -258,9 +262,9 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 | 命中路径 TP99 | <30 ms | **低并发达成**：200 并发 22 ms；100 并发 32 ms 已贴线，400 起 90→970 ms，同机发压把拐点提前 |
 | 未命中 TTFT | <500 ms | **未达成**：未命中知识路径 P50 690 ms（1 并发串行）/ 1031-1049 ms（50-200 并发）/ 1499 ms（500 并发）。归因后不是编排慢：300 ms 是 Mock 首字下限、311 ms 是单机 CPU 跑一条新问句的 bge-m3 向量化，网关自己只占 104 ms；判据在该形态下光靠固定项就到不了 500 ms |
 | 工具调用准确率 | 选对工具与填对参数各 ≥95% | **未达成**：dev 模式 `qwen-plus` 修完四组缺陷后 选对工具 93.3%、填对参数 90.5%（同口径修复前 87.2% / 73.0%）。最低行 ACTION_ORDER 72.2%：18 条里错 5 条，4 条是 `到哪了`、`是不是已经发出去了` 这类标注边界——gold 要 `queryOrderDetail`，模型给 `queryLogistics`，两个工具都能答上用户，全量与补跑逐格一致，不是抖动；第 5 条是"改地址+问状态"双诉求只办了后者。四条 POLICY 与 LOGISTICS 全 100%，ADDRESS 与 REFUND 各 94.4%。<br>9-11 把这 4 条按「对偶矛盾」放开合格答案集后离线重算，选对工具 **93.3% → 95.6%**、ORDER 行 72.2% → 94.4%（ADR 0021），**这一格仍是未达成，而且不是因为数字不够高**：判据的量纲是分意图各自 ≥95%，新判据下仍有 5 行未达线（ORDER / ADDRESS / REFUND 各 94.4%、ESCALATE 88.9%、UNKNOWN 83.3%）。聚合那格并列两套读数，正是为了不让 95.6% 被单独引用成"过了" |
-| 大促吞吐 | ≥1200 QPS 且错误率 <0.1% | **未达成**：1013 QPS@800，错误率全程 0；拐点由网关与发压机共同决定 |
+| 大促吞吐 | ≥1200 QPS 且错误率 <0.1% | **未达成**：1013 QPS@800 / 1141 QPS@400，错误率全程 0；1013 那轮峰值 CPU 94%、最低空闲内存 0.0 GB，1141 那轮峰值 CPU 93%、最低空闲内存 0.0 GB。拐点由网关与发压机共同决定；条件引用 `env-l1-perf-20260908-231233-final.json`、`env-l2-perf-20260909-000535-l2.json`，均为登记当时状态，不作跨轮证据 |
 | L2 路径定性 | 报出天花板并归因 | **达成**：23.76 / 38.10 / 64.82 QPS @ 100/200/400（每请求真打 bge-m3）vs 同档 845 / 1124 / 1141 QPS，差 18-36 倍，归因到远程向量化调用次数≈非命中请求数 |
-| 向量服务停用的代价 | 报降级曲线并归因 | **达成**：冷缓存 136 / 265 / 482 QPS（对照组 296 / 580 / 976），纯缓存拦截率归 0、总拦截靠穿透合并撑在 21.8%-37.4%；错误率 0，p99 1200-1300 ms。有存量时另测：L1 命中 608/1123/2035 次、纯缓存拦截 7.3%。口径：profile `perf,no-ollama` 只把 `embedding.base-url` 指到空端口，等价于 Ollama 进程停用且不外溢；两道写回门各挡了什么见 ADR 0018；证据 `ladder-l1-perf,no-ollama-20260909-123509-noollama.csv` |
+| 向量服务停用的代价 | 报降级曲线并归因 | **达成**：冷缓存 136 / 265 / 482 QPS（对照组 296 / 580 / 976），纯缓存拦截率归 0、总拦截靠穿透合并撑在 21.8%-37.4%；错误率 0，p99 1200-1300 ms。482 那档峰值 CPU 93%、最低空闲内存 0.0 GB，登记当时状态、不作跨轮证据。有存量时另测：L1 命中 608/1123/2035 次、纯缓存拦截 7.3%。口径：profile `perf,no-ollama` 只把 `embedding.base-url` 指到空端口，等价于 Ollama 进程停用且不外溢；两道写回门各挡了什么见 ADR 0018；证据 `ladder-l1-perf,no-ollama-20260909-123509-noollama.csv`、`env-l1-perf,no-ollama-20260909-123509-noollama.json` |
 | 虚拟线程收益 | 开关两组数据 | **达成**：400/800 并发 +64%/+65%，100/200 并发 -3%/-3%，低并发档负收益照登 |
 | Token 节约率 | 关缓存基线对比 | **达成**：62.4%（1096.8 → 412.3 token/请求），三档只差防线开关，perf 模式估算口径注明 |
 | 实测数字诚实 | 表旁标口径与来源文件 | **达成**：上表每行都有口径列与 `loadtest/results/`、`eval/results/`、`docs/` 下的具体产物 |
@@ -316,9 +320,20 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 - **压测与发压同机**（见上一节），峰值 QPS 是网关与发压器的共同上限。
 - **2 轮工具上限只在活体链路上跑到**：压测与 `verify-action-loop.ps1` 的事件序列证明它生效，
   但没有一条 JVM 内用例直接断言"第 3 轮会被拒"。
-- **这台机器上 JVM 会在高并发下无日志消失**：凌晨两次 400 并发的业务重放后网关进程凭空不见，
-  没有 `hs_err_pid*.log`、没有 Windows 应用日志条目、stderr 为空。同一档在 23:12 那轮跑到了 1600 并发
-  且错误率 0。归因未定，但压测脚本每档都做健康与计数器单调性检查，宁可中止阶梯也不留下负差值的废数据
+- **JVM 退出已由仓内日志归因到 native 内存 OOM**：14 份 `hs_err_pid*.log` 的开头都是
+  `There is insufficient memory for the Java Runtime Environment to continue.`，随后分别是
+  `Native memory allocation (malloc/mmap) failed ...` 与 `Out of Memory Error`；崩溃瞬间系统空闲物理内存
+  只有 258-1216 MB（16 G 机器），时间四簇与本轮压测夜及 09-13/09-14 凌晨段重合。按应用归属是 biz-mock 5 份、
+  gateway 1 份、Maven/其他 Java 启动器 8 份；因果链只写到 native OOM 与主机内存压力为止，不替读者多跳一步。
+
+| 时间簇 | 进程 | `hs_err_pid*.log` | 崩溃原句 | 崩溃瞬间空闲 |
+| --- | --- | --- | --- | --- |
+| 09-09 16:33 | biz-mock（1/5） | `hs_err_pid68928.log`（侧车 `replay_pid68928.log`） | `malloc ... Chunk::new` / `arena.cpp:168` | 616 MB |
+| 09-11 11:51-11:56 | Maven/其他 Java 启动器 6 + biz-mock 1 | `hs_err_pid22892.log`、`hs_err_pid63156.log`、`hs_err_pid71760.log`、`hs_err_pid28792.log`、`hs_err_pid36420.log`、`hs_err_pid37344.log`、`hs_err_pid45344.log`（侧车 `replay_pid45344.log`） | `mmap ... G1 virtual space` / `os_windows.cpp:3732`；`hs_err_pid45344.log` 为 `malloc ... Chunk::new` | 258-882 MB |
+| 09-13 13:51-13:54 | 其他 Java 启动器 2 + gateway 1 | `hs_err_pid39716.log`、`hs_err_pid3048.log`、`hs_err_pid42336.log`（侧车 `replay_pid42336.log`） | `mmap ... G1 virtual space` / `os_windows.cpp:3732`；`hs_err_pid42336.log` 为 `malloc ... Chunk::new`，命令行为 `-Xmx512m` | 419-713 MB |
+| 09-14 00:37-02:07 | biz-mock（3/5） | `hs_err_pid38084.log`、`hs_err_pid26260.log`、`hs_err_pid34196.log`（`replay_pid26260.log`；`replay_pid34196.log` 为 0 字节） | `mmap ... G1 virtual space`；`hs_err_pid26260.log` / `hs_err_pid34196.log` 为 `malloc ... Chunk::new` | 563-1216 MB |
+
+  压测脚本每档仍做健康与计数器单调性检查，宁可中止阶梯也不留下负差值的废数据
   （`scripts/run_loadtest.py` 的 `gateway_healthy`）。
 - **perf 模式的 token 数由 Mock 按提示模板估算**，62.4% 的节约率要在 dev 模式重放同一流量模型复核真实计费 token。
 - **网关侧没有 JVM 内端到端用例**：端到端验证靠 `scripts/verify-*.ps1` 打活体服务（真跨进程），

@@ -115,8 +115,8 @@ Run-Step '前置检查（固定容器名与原栈端口）' {
         }
     }
     # 空闲内存打出来：这台 16 G 机器上另有两个项目的容器在跑，克隆出来的第二套全栈
-    # （ES 512m + Qdrant + 两个 JVM）挤进去时，JVM 会在分配不到内存时无日志消失——
-    # README 已知限制里记过这个现象，2026-09-10 那次干净检出检查就是死在 seed 之后。
+    # （ES 1G + Qdrant + 两个 JVM）挤进去时，JVM 会在 native 内存 OOM 后退出并留下 hs_err——
+    # README 归因表已按进程与时间簇收口；2026-09-10 那次干净检出检查就是死在 seed 之后。
     $freeGb = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB, 1)
     Write-Host "  当前空闲物理内存 $freeGb GB（冷构建+冷入库那一分钟最挤，低于 ~3 GB 建议先停掉别的项目的容器）" -ForegroundColor Cyan
     if ($stale.Count -gt 0) {

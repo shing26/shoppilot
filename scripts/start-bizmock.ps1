@@ -1,6 +1,7 @@
 ﻿# 启动业务 Mock 中台（:8091），与网关是两个进程，走真实 HTTP 边界（ADR 0002）。
 param(
-    [string]$Xmx = "256m",
+    # 16G 机器上约 327 MB。看门狗重启时可显式放宽到 4%（票 31）。
+    [int]$MaxRamPercentage = 2,
     [int]$SeedOrders = 0,
     # HikariCP 饱和点对比实验（ticket 18）：留空用 application.yml 默认值。
     # 走环境变量而不是命令行，是为了和网关那边同一套传参口径（cmd 吃逗号）。
@@ -23,7 +24,8 @@ $jar = Get-ChildItem (Join-Path $root "shoppilot-biz-mock\target") -Filter "shop
     -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
 
 if ($jar) {
-    $argsList = @("-Xmx$Xmx", "-Dfile.encoding=UTF-8", "-jar", $jar.FullName)
+    $argsList = @("-XX:MaxRAMPercentage=$MaxRamPercentage", "-Dfile.encoding=UTF-8",
+        "-jar", $jar.FullName)
     if ($SeedOrders -gt 0) { $argsList += "--shoppilot.bizmock.seed.orders=$SeedOrders" }
     $cmdPid = Start-ShoppilotService -Name "bizmock" -WorkingDirectory $root `
         -FilePath $java -ArgumentList $argsList -StandardOutput $out -Environment $envVars
@@ -31,7 +33,9 @@ if ($jar) {
     Write-Host "未找到 fat jar，退回 mvn spring-boot:run"
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
-    $mvnArgs = @("-B", "-ntp", "-o", "-pl", "shoppilot-biz-mock", "spring-boot:run")
+    # 用户属性覆盖 POM 默认值；直接写 spring-boot.run.jvmArguments 会被 POM 配置压掉。
+    $mvnArgs = @("-B", "-ntp", "-o", "-pl", "shoppilot-biz-mock",
+        "-Dshoppilot.jvm.max-ram-percentage=$MaxRamPercentage", "spring-boot:run")
     if ($PoolSize) { $env:SHOPPILOT_BIZMOCK_POOL_SIZE = $PoolSize }
     $cmdPid = Start-ShoppilotService -Name "bizmock" -WorkingDirectory $root `
         -FilePath "mvn.cmd" -ArgumentList $mvnArgs -StandardOutput $out -Environment $envVars

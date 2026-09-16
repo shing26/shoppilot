@@ -7,7 +7,8 @@
 param(
     [int]$IntervalSeconds = 10,
     [int]$MaxMinutes = 240,
-    [string]$BizMockXmx = "512m",
+    # 重启时比普通起栈的 2% 放宽一档，仍由同一个 MaxRAMPercentage 参数控制。
+    [int]$BizMockMaxRamPercentage = 4,
     # 后台实例自己带的标记。不能用 $MyInvocation.InvocationName 区分父/子：
     # 经 -File 起来的子进程里它也拿不到 '&'，结果子进程又拉起孙子，变成 forks 链。
     [switch]$Child
@@ -36,7 +37,8 @@ if (-not $Child) {
         -FilePath 'powershell.exe' -ArgumentList @(
             '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$PSCommandPath",
             '-IntervalSeconds', "$IntervalSeconds", '-MaxMinutes', "$MaxMinutes",
-            '-BizMockXmx', $BizMockXmx, '-Child') -StandardOutput (Join-Path $root 'logs\watchdog.out')
+            '-BizMockMaxRamPercentage', $BizMockMaxRamPercentage,
+            '-Child') -StandardOutput (Join-Path $root 'logs\watchdog.out')
     Set-Content -Path (Join-Path $root 'logs\watchdog.pid') -Value $launcher -Encoding ascii
     Say "看门狗启动（后台实例 launcher PID $launcher）"
     exit 0
@@ -51,7 +53,8 @@ while ((Get-Date) -lt $deadline) {
         # 沿用最后一次显式指定的连接池大小，否则池实验中途被拉回来会静默回到默认值。
         $poolFile = Join-Path $root 'logs\bizmock.pool'
         $pool = if (Test-Path $poolFile) { (Get-Content $poolFile -Raw).Trim() } else { '' }
-        & (Join-Path $root 'scripts\start-bizmock.ps1') -Xmx $BizMockXmx -PoolSize $pool | Out-Null
+        & (Join-Path $root 'scripts\start-bizmock.ps1') `
+            -MaxRamPercentage $BizMockMaxRamPercentage -PoolSize $pool | Out-Null
         $until = (Get-Date).AddSeconds(180)
         while ((Get-Date) -lt $until) {
             Start-Sleep -Seconds 5

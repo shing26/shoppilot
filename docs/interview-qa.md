@@ -406,7 +406,7 @@ A：口径冲突不是没做完。74% 是 L1 主导曲线的总拦截率，78% �
 
 **Q：已知限制里那条进程静默消失，下一步怎么查？**
 
-A：先分诊"是 OS 杀的还是 JVM 自己崩的"：没有 `hs_err_pid*.log`、没有 WER 事件、stderr 为空，这三条同时指向外部终止。下一步是 `-XX:+HeapDumpOnOutOfMemoryError` + WER 本地 dump + `jcmd` 定时采样，并把发压端挪到另一台机器排除同机争抢（本机 16GB、阶梯谷底 free 0.0GB）。在换机复现之前不动业务代码。
+A：这条先前的判断已经被仓内一手日志纠正：根目录 14 份 `hs_err_pid*.log` 全部是 native 内存 OOM，崩溃瞬间系统空闲内存只有 258-1216 MB；按应用归属是 biz-mock 5、gateway 1、Maven/其他 Java 启动器 8，具体时间簇、文件名与 replay sidecar 在 README 归因表。起栈从此显式设 `-XX:MaxRAMPercentage`，但历轮压测数字仍按当时的 `-Xmx` 形态原样保留；下一步若继续追，应把发压端挪到另一台机器，验证同机内存与 CPU 争抢是否是拐点的外部上限。
 
 **Q：十分钟那条是你自己跑的，凭什么算过？**
 

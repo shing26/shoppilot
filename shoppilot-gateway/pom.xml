@@ -13,6 +13,10 @@
   <name>shoppilot-gateway</name>
   <description>网关与编排核心：鉴权 / 限流 / 意图判定 / 缓存准入 / Agent 状态机 / SSE（ADR 0002）</description>
 
+  <properties>
+    <shoppilot.jvm.max-ram-percentage>3</shoppilot.jvm.max-ram-percentage>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>com.shoppilot</groupId>
@@ -84,7 +88,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <configuration>
-          <jvmArguments>-Xmx512m</jvmArguments>
+          <jvmArguments>-XX:MaxRAMPercentage=${shoppilot.jvm.max-ram-percentage}</jvmArguments>
           <!-- 从仓库根启动：政策语料、.env、日志路径都以根目录为基准 -->
           <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
         </configuration>

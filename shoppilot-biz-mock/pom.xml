@@ -13,6 +13,10 @@
   <name>shoppilot-biz-mock</name>
   <description>Mock 业务中台：独立进程、真 HTTP 边界（ADR 0002）</description>
 
+  <properties>
+    <shoppilot.jvm.max-ram-percentage>2</shoppilot.jvm.max-ram-percentage>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>com.shoppilot</groupId>
@@ -56,7 +60,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <configuration>
-          <jvmArguments>-Xmx256m</jvmArguments>
+          <jvmArguments>-XX:MaxRAMPercentage=${shoppilot.jvm.max-ram-percentage}</jvmArguments>
         </configuration>
         <executions>
           <execution>
