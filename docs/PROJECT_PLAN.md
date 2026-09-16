@@ -12,6 +12,8 @@
 
 **Plan baseline:** `HEAD 11cd26c`，`origin/main` 同步；CI run `35092864900` 成功，49 秒；收口审计 `PASS 93 / FAIL 0 / SKIP 2`；票 01-32 已收口。
 
+**Execution status (2026-09-16):** Task 1-3、Task 5 与 Task 7 已落地；本地 JVM verify 为 `3 + 12 + 206 = 221` 全绿，`verify_eval_judge` 为 `40/40`，收口审计只剩未推送导致的 `A1`。GitHub 443 当前不可达；完成 push 与本轮 CI 成功后再执行 Task 4 的 tag 与冻结公告，当前对外状态仍是 release candidate。
+
 ## Global Constraints
 
 - `v1.0.0` 之后不再新增功能。只允许修事实性错误、崩溃/回归、以及 ADR 0031 明确触发的变更。
