@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>06 业务中台与隔离</title>
+  <style>
+    :root { --ink:#18211b; --muted:#5c685f; --paper:#fbfaf5; --panel:#fff; --line:#cbd5cd; --accent:#176b4d; --soft:#edf4ef; --warn:#9b3828; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.68 Georgia, "Noto Serif SC", serif; }
+    main { max-width:900px; margin:0 auto; padding:42px 24px 70px; } h1 { font-size:clamp(2.1rem,6vw,4.3rem); line-height:1.02; margin:.2rem 0 1rem; letter-spacing:0; }
+    h2 { margin:2.3rem 0 .7rem; font-size:1.45rem; } p, li { color:var(--muted); } .eyebrow { color:var(--accent); font:700 .8rem/1.2 ui-monospace, monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:18px 0; } .lead { font-size:1.07rem; color:var(--ink); }
+    pre { overflow:auto; background:#15221b; color:#edf7f0; border-radius:8px; padding:16px; font:13px/1.55 ui-monospace, Consolas, monospace; } code { font-family:ui-monospace, Consolas, monospace; font-size:.9em; }
+    details { background:var(--soft); border-left:4px solid var(--accent); margin:10px 0; padding:10px 14px; } summary { cursor:pointer; color:var(--ink); font-weight:700; }
+    table { width:100%; border-collapse:collapse; background:white; margin-top:12px; } th, td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:top; } th { background:var(--soft); }
+    a { color:var(--accent); } .warn { color:var(--warn); font-weight:700; } .followup { margin-top:34px; padding-top:18px; border-top:1px solid var(--line); }
+    @media print { body { background:white; } main { max-width:none; padding:0; } pre { white-space:pre-wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ShopPilot 八站路线 · 06 / 08</p>
+  <h1>业务中台与隔离</h1>
+  <p class="lead">60 秒版：biz-mock 是独立进程的业务系统替身，用真实 HTTP 边界承载工具契约、租户隔离、退款幂等、改址历史和工单状态机。隔离取共享表上的行级逻辑隔离，不是物理隔离；最关键的一道防线是租户和买家只能来自网关注入的服务端上下文。</p>
+
+  <section class="box">
+    <h2>Decision</h2>
+    <p><strong>独立进程：</strong>业务调用经工具 API 跨 HTTP 边界，既能验证 schema 和错误映射，也能注入业务依赖故障来证明 fallback，而不是在网关里调用本地方法做假闭环。</p>
+    <p><strong>租户隔离三道防线：</strong>身份从鉴权结果进入租户上下文；查询通过 Hibernate <code>@TenantId</code> 与仓储自动拼归属条件；跨租户越权进 CI 和活体验收。文档只称“租户隔离”，不能称“物理隔离”。</p>
+    <p><strong>写操作先查后绝：</strong>退款先查同一订单与幂等 token，再由数据库唯一约束兜底；改址做状态与归属前置校验并保存版本历史；工单按显式状态机流转。</p>
+  </section>
+
+  <section>
+    <h2>Reproduce</h2>
+    <pre>.\mvnw.cmd -B -ntp -pl shoppilot-biz-mock -am `
+  -Dtest=TenantIsolationAndIdempotencyTest,TicketWorkflowTest,TicketIdTest `
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+# 需先起栈
+pwsh -NoProfile -File scripts/verify-idempotency.ps1
+pwsh -NoProfile -File scripts/verify-action-loop.ps1</pre>
+    <p>重点观察：50 并发同 token 最终只有一条退款；换店或换买家查同一订单得到未归属，不泄露字段；非法工单状态迁移被拒绝；内部工具接口不能绕过内部 token。</p>
+  </section>
+
+  <section>
+    <h2>Three questions</h2>
+    <details>
+      <summary>Q1：为什么把 biz-mock 做成独立进程？</summary>
+      <p>因为“真的办成业务”需要文件、网络、事务和故障边界。独立进程能证明工具 schema、HTTP 错误、超时、幂等和 fallback 串在一起；如果只是网关内部的方法调用，面试官追问“业务依赖挂了怎么办”时没有真实故障面可演示。</p>
+    </details>
+    <details>
+      <summary>Q2：为什么选行级逻辑隔离，而不是每租户一个库？</summary>
+      <p>本轮目标是面试作品且数据规模为三租户，行级隔离能用共享表加强制谓词覆盖查询、种子和压测，不需要动态路由和 collection 爆炸。代价是隔离强度依赖代码纪律与自动化用例，所以文档明确不宣称物理隔离。</p>
+    </details>
+    <details>
+      <summary>Q3：有 Redis 幂等守卫了，为什么还要数据库唯一约束？</summary>
+      <p>Redis 可能不可用，网关进程也可能重试；内存状态不是最后真相。数据库唯一约束是完成写入后的最终防线，保证跨进程、跨重试和 Redis 故障时仍只有一条记录。两层分别降低常见冲突和封住不可恢复的重复写。</p>
+    </details>
+  </section>
+
+  <section class="box">
+    <h2>Failure symptom</h2>
+    <table>
+      <tr><th>症状</th><th>含义</th></tr>
+      <tr><td>A 店通过订单号查到 B 店订单</td><td>身份注入、@TenantId 谓词或归属双条件失效。</td></tr>
+      <tr><td>同一退款 token 在并发下写入多行</td><td>数据库唯一约束或事务回查失效。</td></tr>
+      <tr><td>改变地址时不校验订单状态或覆盖历史</td><td>业务前置条件与审计版本不成立。</td></tr>
+      <tr><td>工单能从任意状态跳到任意状态</td><td>状态机退化，人工队列语义不可信。</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Evidence link</h2>
+    <ul>
+      <li>源码：<a href="../../../shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/service/BizMockService.java">BizMockService.java</a>、<a href="../../../shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/repo/">repo/</a>、<a href="../../../shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/domain/">domain/</a></li>
+      <li>决策：<code>ADR 0002</code>、<code>ADR 0004</code>、<code>ADR 0005</code>、<code>ADR 0009</code></li>
+      <li>证据：<a href="../../EVIDENCE.md">docs/EVIDENCE.md</a> 的“幂等、fallback、串号、身份否决项”行；<a href="../../interview-qa.md">docs/interview-qa.md</a> 中的越权与幂等问题</li>
+    </ul>
+  </section>
+
+  <p class="followup">主资源：<a href="https://docs.spring.io/spring-boot/3.3.5/reference/">Spring Boot 3.3.5 Reference</a>。遇到不清楚的地方，把具体查询路径发给当前 agent，让它从 gateway identity 一路追到 repository predicate。</p>
+  <p><a href="0005-agent-and-tools.html">上一站</a> · <a href="../reference/eight-station-map.html">八站速查卡</a> · 下一站：<a href="0007-fallback-ratelimit-observability.html">降级、限流、可观测</a></p>
+</main>
+</body>
+</html>

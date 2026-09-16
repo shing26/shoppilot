@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>04 检索与入库</title>
+  <style>
+    :root { --ink:#18211b; --muted:#5c685f; --paper:#fbfaf5; --panel:#fff; --line:#cbd5cd; --accent:#176b4d; --soft:#edf4ef; --warn:#9b3828; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.68 Georgia, "Noto Serif SC", serif; }
+    main { max-width:900px; margin:0 auto; padding:42px 24px 70px; } h1 { font-size:clamp(2.1rem,6vw,4.3rem); line-height:1.02; margin:.2rem 0 1rem; letter-spacing:0; }
+    h2 { margin:2.3rem 0 .7rem; font-size:1.45rem; } p, li { color:var(--muted); } .eyebrow { color:var(--accent); font:700 .8rem/1.2 ui-monospace, monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:18px 0; } .lead { font-size:1.07rem; color:var(--ink); }
+    pre { overflow:auto; background:#15221b; color:#edf7f0; border-radius:8px; padding:16px; font:13px/1.55 ui-monospace, Consolas, monospace; } code { font-family:ui-monospace, Consolas, monospace; font-size:.9em; }
+    details { background:var(--soft); border-left:4px solid var(--accent); margin:10px 0; padding:10px 14px; } summary { cursor:pointer; color:var(--ink); font-weight:700; }
+    table { width:100%; border-collapse:collapse; background:white; margin-top:12px; } th, td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:top; } th { background:var(--soft); }
+    a { color:var(--accent); } .warn { color:var(--warn); font-weight:700; } .followup { margin-top:34px; padding-top:18px; border-top:1px solid var(--line); }
+    @media print { body { background:white; } main { max-width:none; padding:0; } pre { white-space:pre-wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ShopPilot 八站路线 · 04 / 08</p>
+  <h1>检索与入库</h1>
+  <p class="lead">60 秒版：政策知识先离线切成稳定 ruleId 的 Markdown 块，再分别写入 Qdrant dense 索引和 Elasticsearch BM25 索引；运行时两路各召回 top-20，用 RRF 融合取 top-5 注入提示词。重点不是“用了两个向量库”，而是把召回、融合、降级和负缓存边界写清。</p>
+
+  <section class="box">
+    <h2>Decision</h2>
+    <p><strong>双引擎是链路形态选择：</strong>Qdrant 负责语义接近，ES 负责精确术语和可解释词法命中；RRF 按名次融合，<code>k=60</code>，fused top-5 进入上下文。</p>
+    <p><strong>入库不重叠、可重跑：</strong>按 Markdown 二级标题切块，合并过短块，ruleId 由内容稳定派生；以同一 id 写 ES 与 Qdrant，重跑是幂等 upsert，不引入运行时双写一致性窗口。</p>
+    <p><strong>“检索失败”不等于“没有结果”：</strong>单路异常时另一路继续工作，但结果必须带 degraded 标记；上层据此禁止把一次中间件抖动写成 60 秒负缓存。</p>
+  </section>
+
+  <section>
+    <h2>Reproduce</h2>
+    <pre>.\mvnw.cmd -B -ntp -pl shoppilot-gateway -am `
+  -Dtest=EmbeddingSingleFlightTest,EmbeddingWarmupRetryTest,QdrantRestClientWireTest `
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+# 需网关与三中间件在跑
+python scripts/retrieval_compare.py</pre>
+    <p>对比报告的当前事实是 dense-only 与 hybrid 都是 16/16，不能宣称 hybrid 修复了当前语料上的召回问题。保留双引擎的理由是未来万级条款、相似命名和政策术语的链路形态与可解释性，报告把“没测出收益”也保留。</p>
+  </section>
+
+  <section>
+    <h2>Three questions</h2>
+    <details>
+      <summary>Q1：既然 hit@5 打平，为什么还保留 ES？</summary>
+      <p>当前只有 90 个块，任一路都能把语料排完，所以这不是“当前已收益”的证据。双引擎保证术语精确匹配和多路降级，在跨店条款命名相似、语料上万后更有意义；代价是 ES 内存和运维，因此以 512 MB 堆、单节点、离线同步控制成本。</p>
+    </details>
+    <details>
+      <summary>Q2：为什么切块不重叠，ruleId 还要稳定？</summary>
+      <p>重叠块会让同一条款在 RRF 中被计两次，自己抬高自己的排名。稳定 ruleId 则让重跑是同一 id 的 upsert，不需要维护“哪次写入更新”的一致性窗口，清空重建和增量重跑都更可预测。</p>
+    </details>
+    <details>
+      <summary>Q3：为什么必须区分“失败”和“空结果”？</summary>
+      <p>如果向量服务超时被当成“库里没有这条政策”，上层就会写负缓存，后续请求在 60 秒内直接转人工；一次依赖抖动被系统固化成服务中断。degraded 标记让负缓存只对真实空结果生效。</p>
+    </details>
+  </section>
+
+  <section class="box">
+    <h2>Failure symptom</h2>
+    <table>
+      <tr><th>症状</th><th>含义</th></tr>
+      <tr><td>同一条款在 top-5 重复出现并挤掉其他块</td><td>切块重叠或 ruleId 不稳定，RRF 被重复命中污染。</td></tr>
+      <tr><td>单路超时后所有政策问题都转人工 60 秒</td><td>失败被误判为空结果，负缓存写错对象。</td></tr>
+      <tr><td>数字写法和中文写法被说成 hybrid 的收益</td><td>使用了当前对比没有支持的结论。</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Evidence link</h2>
+    <ul>
+      <li>源码：<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/knowledge/HybridRetriever.java">HybridRetriever.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/knowledge/EmbeddingClient.java">EmbeddingClient.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/ingest/MarkdownChunker.java">MarkdownChunker.java</a></li>
+      <li>决策：<code>ADR 0010</code>、<code>ADR 0018</code></li>
+      <li>证据：<a href="../../retrieval-comparison.md">docs/retrieval-comparison.md</a> 与 <a href="../../EVIDENCE.md">docs/EVIDENCE.md</a> 的 Hybrid 对比行</li>
+    </ul>
+  </section>
+
+  <p class="followup">主资源：<a href="https://www.elastic.co/docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion">Elasticsearch RRF</a>。遇到不清楚的地方，把具体 query、dense top-5、RRF top-5 发给当前 agent，让答案落在检索链上。</p>
+  <p><a href="0003-two-level-cache.html">上一站</a> · <a href="../reference/eight-station-map.html">八站速查卡</a> · 下一站：<a href="0005-agent-and-tools.html">Agent 编排与工具</a></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>02 意图三级级联</title>
+  <style>
+    :root { --ink:#18211b; --muted:#5c685f; --paper:#fbfaf5; --panel:#fff; --line:#cbd5cd; --accent:#176b4d; --soft:#edf4ef; --warn:#9b3828; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.68 Georgia, "Noto Serif SC", serif; }
+    main { max-width:900px; margin:0 auto; padding:42px 24px 70px; } h1 { font-size:clamp(2.1rem,6vw,4.3rem); line-height:1.02; margin:.2rem 0 1rem; letter-spacing:0; }
+    h2 { margin:2.3rem 0 .7rem; font-size:1.45rem; } p, li { color:var(--muted); } .eyebrow { color:var(--accent); font:700 .8rem/1.2 ui-monospace, monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:18px 0; } .lead { font-size:1.07rem; color:var(--ink); }
+    pre { overflow:auto; background:#15221b; color:#edf7f0; border-radius:8px; padding:16px; font:13px/1.55 ui-monospace, Consolas, monospace; } code { font-family:ui-monospace, Consolas, monospace; font-size:.9em; }
+    details { background:var(--soft); border-left:4px solid var(--accent); margin:10px 0; padding:10px 14px; } summary { cursor:pointer; color:var(--ink); font-weight:700; }
+    table { width:100%; border-collapse:collapse; background:white; margin-top:12px; } th, td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:top; } th { background:var(--soft); }
+    a { color:var(--accent); } .warn { color:var(--warn); font-weight:700; } .followup { margin-top:34px; padding-top:18px; border-top:1px solid var(--line); }
+    @media print { body { background:white; } main { max-width:none; padding:0; } pre { white-space:pre-wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ShopPilot 八站路线 · 02 / 08</p>
+  <h1>意图三级级联</h1>
+  <p class="lead">60 秒版：分类不能另花一次模型请求，否则缓存省下的成本会被分类器吃回去。系统先用 T0 规则和实体扫描快速决断，再用 T1 意图质心处理规则外问法，最后才让模型以工具调用作为意图证据。十个意图里 <code>UNKNOWN</code> 是显式状态，缓存放行必须 fail-closed。</p>
+
+  <section class="box">
+    <h2>Decision</h2>
+    <p><strong>T0 规则层：</strong>关键词、实体正则和所有格动作词表决定 cacheable/dynamic，目标是低于 1 ms 的早停；检测到动作意图时动作优先。</p>
+    <p><strong>T1 质心层：</strong>每个意图由 8-15 条样例句形成质心，最近邻需要置信度和 top-1/top-2 margin 同时达标；该层复用 L2 语义缓存所需的 query vector，避免重复向量化。</p>
+    <p><strong>T2 模型层：</strong>只有前两层都判不动才进入正常模型调用，模型返回的 tool call 作为意图证据，不额外增加一次分类请求。判不动则 <code>UNKNOWN</code>，不查缓存，必要时转人工。</p>
+  </section>
+
+  <section>
+    <h2>Reproduce</h2>
+    <pre>.\mvnw.cmd -B -ntp -pl shoppilot-gateway -am `
+  -Dtest=T0RuleLayerTest `
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+Get-Content shoppilot-gateway/src/main/resources/intent-samples.json
+
+# 需先起栈；输出里应能看到 intent 与 triage 层
+pwsh -NoProfile -File scripts/demo.ps1 -Which cache</pre>
+    <p>重点看三类例子：含订单号或“我的”动作请求必须 dynamic；纯政策问法可 cacheable；T0 判不出的反义或含糊问法不能因为“像政策”就直接进缓存。</p>
+  </section>
+
+  <section>
+    <h2>Three questions</h2>
+    <details>
+      <summary>Q1：为什么不为分类单独调一次模型？</summary>
+      <p>因为缓存的价值来自减少模型调用。若每个请求先花一次分类模型，再决定缓存是否命中，热点重问仍然支付分类成本，收益结构被破坏。三级级联用规则、质心和已有工具调用证据完成分类。</p>
+    </details>
+    <details>
+      <summary>Q2：T1 为什么复用 L2 的向量？</summary>
+      <p>同一条 query 在意图判定和语义缓存中都需要 embedding。复用一次向量避免同一请求打两次向量服务，也把新增的约 10 ms 比较成本控制在可预算范围内。缓存命中路径再通过进程内向量缓存做到零远程 embedding。</p>
+    </details>
+    <details>
+      <summary>Q3：为什么动作优先，又为什么保留 <code>UNKNOWN</code>？</summary>
+      <p>动作链路可以附带政策上下文，政策链路却不能替买家执行订单操作，所以多意图取动作优先。显式 <code>UNKNOWN</code> 把不确定变成可观测状态，确保不进入缓存读取，也便于降级为人工处理。</p>
+    </details>
+  </section>
+
+  <section class="box">
+    <h2>Failure symptom</h2>
+    <table>
+      <tr><th>症状</th><th>含义</th></tr>
+      <tr><td>“我的订单到哪了”返回通用政策答案</td><td>动态请求被误判为 cacheable，缓存准入或动作优先失效。</td></tr>
+      <tr><td>反义问法因 T0 识别失败而进入 L2</td><td><code>UNKNOWN</code> 没有按 fail-closed 处理。</td></tr>
+      <tr><td>同一请求在 T1 和 L2 各打一次 embedding</td><td>向量复用断开，TTFT 与远程调用量被重复支付。</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Evidence link</h2>
+    <ul>
+      <li>源码：<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/triage/TriageEngine.java">TriageEngine.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/triage/T0RuleLayer.java">T0RuleLayer.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/triage/T1CentroidLayer.java">T1CentroidLayer.java</a></li>
+      <li>决策：<code>ADR 0003</code>、<code>ADR 0007</code>、<code>ADR 0017</code></li>
+      <li>证据：<a href="../../threshold-calibration.md">docs/threshold-calibration.md</a> 的“准入层 fail-closed”归因，以及 <a href="../../EVIDENCE.md">docs/EVIDENCE.md</a> 中语义缓存与意图相关行</li>
+    </ul>
+  </section>
+
+  <p class="followup">主资源：<a href="https://docs.spring.io/spring-boot/3.3.5/reference/">Spring Boot 3.3.5 Reference</a>。有不理解的地方，直接把具体误判例子发给当前 agent，让它沿 T0/T1/T2 三层逐层追。</p>
+  <p><a href="0001-entry-and-identity.html">上一站</a> · <a href="../reference/eight-station-map.html">八站速查卡</a> · 下一站：<a href="0003-two-level-cache.html">两级缓存与穿透合并</a></p>
+</main>
+</body>
+</html>

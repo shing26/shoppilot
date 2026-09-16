@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>01 入口与身份</title>
+  <style>
+    :root { --ink:#18211b; --muted:#5c685f; --paper:#fbfaf5; --panel:#fff; --line:#cbd5cd; --accent:#176b4d; --soft:#edf4ef; --warn:#9b3828; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.68 Georgia, "Noto Serif SC", serif; }
+    main { max-width:900px; margin:0 auto; padding:42px 24px 70px; }
+    h1 { font-size:clamp(2.1rem,6vw,4.3rem); line-height:1.02; margin:.2rem 0 1rem; letter-spacing:0; }
+    h2 { margin:2.3rem 0 .7rem; font-size:1.45rem; }
+    p, li { color:var(--muted); }
+    .eyebrow { color:var(--accent); font:700 .8rem/1.2 ui-monospace, monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:18px 0; }
+    .lead { font-size:1.07rem; color:var(--ink); }
+    pre { overflow:auto; background:#15221b; color:#edf7f0; border-radius:8px; padding:16px; font:13px/1.55 ui-monospace, Consolas, monospace; }
+    code { font-family:ui-monospace, Consolas, monospace; font-size:.9em; }
+    details { background:var(--soft); border-left:4px solid var(--accent); margin:10px 0; padding:10px 14px; }
+    summary { cursor:pointer; color:var(--ink); font-weight:700; }
+    table { width:100%; border-collapse:collapse; background:white; margin-top:12px; }
+    th, td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    a { color:var(--accent); }
+    .warn { color:var(--warn); font-weight:700; }
+    .followup { margin-top:34px; padding-top:18px; border-top:1px solid var(--line); }
+    nav { display:flex; justify-content:space-between; gap:16px; margin-top:28px; }
+    @media print { body { background:white; } main { max-width:none; padding:0; } pre { white-space:pre-wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ShopPilot 八站路线 · 01 / 08</p>
+  <h1>入口与身份</h1>
+  <p class="lead">60 秒版：买家进入网关后，身份只来自验签通过的 JWT。网关把租户、买家和会话写进服务端上下文，忽略请求里客户端自带的租户字段；dev 默认凭证只在回环地址合法，绑定到非回环地址仍用默认值就直接拒绝启动。</p>
+
+  <section class="box">
+    <h2>Decision</h2>
+    <p><strong>身份不能由调用方声明。</strong><code>AuthFilter</code> 在控制器之前验 token，<code>JwtService</code> 验证签名与有效期，<code>TenantContext</code> 保存服务端派生出的身份。请求体、查询参数或 header 里的 <code>tenantId</code> 不能成为授权依据。</p>
+    <p><strong>观测坐标在入口建立。</strong><code>traceId</code>、<code>tenantId</code>、<code>customerId</code>、<code>conversationId</code> 进入 MDC；跨线程提交时手工包装上下文，避免异步写回和工单路径丢 trace。</p>
+    <p><strong>dev 便利性由绑定地址约束。</strong>回环地址允许默认密钥和 mock 签发端点，但启动 WARN 并在观测面暴露 <code>devDefaultsInUse</code>；非回环地址若仍使用默认值，<code>DevDefaultsPolicy</code> 阻止启动。</p>
+  </section>
+
+  <section>
+    <h2>Reproduce</h2>
+    <pre>.\mvnw.cmd -B -ntp -pl shoppilot-gateway -am `
+  -Dtest=AuthFilterTest,DevDefaultsPolicyTest,DevDefaultsStartupBlockerTest `
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+# 需先起栈；该脚本同时验证伪造 token 与跨租户越权
+pwsh -NoProfile -File scripts/verify-action-loop.ps1</pre>
+    <p>预期：JVM 测试通过；活体验收中伪造 token 得到 401，换店或换买家查同一订单得到“未在本店找到该订单”，不能看到对方的收货信息。</p>
+  </section>
+
+  <section>
+    <h2>Three questions</h2>
+    <details>
+      <summary>Q1：为什么不能相信客户端传的 <code>tenantId</code>？</summary>
+      <p>租户隔离的根必须只有鉴权结果。若 header 能改租户，A 店用户只需改一个字段就能查 B 店数据；即使 repository 写了归属条件，授权根也已经错了。因此网关忽略客户端租户字段，并从签名 token 重建上下文。</p>
+    </details>
+    <details>
+      <summary>Q2：为什么不直接加一个 prod profile 删掉默认值？</summary>
+      <p>这个项目没有 prod 档，而干净克隆又要求没有 <code>.env</code> 也能起栈。加一个永远不使用的 profile 会把问题从“可能误配置”变成“看似处理过”。绑定地址是能自动触发的条件：回环上允许演示，非回环上默认值立即成为启动阻断项。</p>
+    </details>
+    <details>
+      <summary>Q3：为什么 MDC 要在 <code>AuthFilter</code> 里装？</summary>
+      <p>鉴权入口已经同时拿到 token 身份、会话和请求坐标，是同步与 SSE 共用的最早位置。异步写回、工单升级和虚拟线程会跨线程，MDC 不会自动传播，所以在提交异步任务时还需要显式包装并清理。</p>
+    </details>
+  </section>
+
+  <section class="box">
+    <h2>Failure symptom</h2>
+    <table>
+      <tr><th>症状</th><th>含义</th></tr>
+      <tr><td>改 header 或参数中的 <code>tenantId</code> 后读到另一家店铺数据</td><td>授权根被调用方可控，租户隔离已经失效。</td></tr>
+      <tr><td><code>server.address</code> 改为非回环后仍能用默认密钥启动</td><td>dev 默认值边界没有执行，发布形态不安全。</td></tr>
+      <tr><td>SSE 有 traceId，但写回或工单日志没有</td><td>异步边界丢失 MDC，事后无法关联同一请求。</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Evidence link</h2>
+    <ul>
+      <li>源码：<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/identity/AuthFilter.java">AuthFilter.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/identity/JwtService.java">JwtService.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/identity/TenantContext.java">TenantContext.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/DevDefaultsPolicy.java">DevDefaultsPolicy.java</a></li>
+      <li>决策：<code>ADR 0014</code>、<code>ADR 0027</code>、<code>ADR 0029</code></li>
+      <li>证据：<a href="../../EVIDENCE.md">docs/EVIDENCE.md</a> 的“幂等、fallback、串号、身份否决项”与“干净克隆可复现性”两行</li>
+    </ul>
+  </section>
+
+  <p class="followup">主资源：<a href="https://docs.spring.io/spring-security/reference/servlet/architecture.html">Spring Security filter chain architecture</a>。有不理解的地方，直接把问题发给当前 agent，要求它用本仓源码或一手文档继续拆。</p>
+  <p><a href="../reference/eight-station-map.html">八站速查卡</a> · <a href="../../interview-guide.md">路线入口</a> · 下一站：<a href="0002-intent-cascade.html">意图三级级联</a></p>
+</main>
+</body>
+</html>

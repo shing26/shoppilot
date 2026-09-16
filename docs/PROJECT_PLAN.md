@@ -12,7 +12,7 @@
 
 **Plan baseline:** `HEAD 11cd26c`，`origin/main` 同步；CI run `35092864900` 成功，49 秒；收口审计 `PASS 93 / FAIL 0 / SKIP 2`；票 01-32 已收口。
 
-**Execution status (2026-09-16):** Task 1-5、Task 7 已落地；本地 JVM verify 为 `3 + 12 + 206 = 221` 全绿，`verify_eval_judge` 为 `40/40`，收口审计 `PASS 93 / FAIL 0 / SKIP 2`。CI run `35104751284` 成功后，tag `v1.0.0` 已指向 release commit `7f4334c` 并完成冻结公告。Task 6 与独立 cold-read 仍未执行，不回填成已完成。
+**Execution status (2026-09-17):** Task 1-7 已落地；本地 JVM verify 为 `3 + 12 + 206 = 221` 全绿，`verify_eval_judge` 为 `40/40`，收口审计 `PASS 93 / FAIL 0 / SKIP 2`（共 95 项）。CI run `35104751284` 成功后，tag `v1.0.0` 已指向 release commit `7f4334c` 并完成冻结公告。独立 cold-read 已判 `PASS as a three-minute introduction`；Task 6 八站路线、站点课程与证据速查卡已落地，Task 8 的 portfolio / interview 门禁已核对。
 
 ## Global Constraints
 
@@ -376,13 +376,14 @@ git commit -m "docs(interview): backfill round13-14 handoffs"
 
 **Files:**
 - Create: `docs/interview-guide.md`
+- Create: `docs/interview-mastery/MISSION.md`、`RESOURCES.md`、`NOTES.md`、`learning-records/`、`reference/`、`lessons/`
 - Modify: `README.md`
 
 **Interfaces:**
 - Consumes: `docs/PROJECT_PLAN.md`、`docs/CODE_MAP.md`、`docs/EVIDENCE.md`、当前 ticket 与命令
 - Produces: 不依赖外部桌面文件、可随仓库克隆走的 8 站掌握路线
 
-- [ ] **Step 1: Build eight lifecycle stations**
+- [x] **Step 1: Build eight lifecycle stations**
 
 按下面固定顺序建站；每站的 `First read` 使用这些路径，`Reproduce` 使用仓库当前命令，不得引用外部桌面文档：
 
@@ -399,7 +400,7 @@ git commit -m "docs(interview): backfill round13-14 handoffs"
 
 每站正文固定包含五段：`Decision`、`Reproduce`、`Three questions`、`Failure symptom`、`Evidence link`。`Three questions` 必须逐题给出答案，不能只列问题。
 
-- [ ] **Step 2: Replace stale numbers**
+- [x] **Step 2: Replace stale numbers**
 
 使用当前基线：
 
@@ -412,7 +413,7 @@ ADR range: 0001-0031 after Task 1
 
 不要复制外部《掌握路线图》里的 155 tests、28 ADR 或旧 ticket 状态。
 
-- [ ] **Step 3: Add README link**
+- [x] **Step 3: Add README link**
 
 在接手导航增加：
 
@@ -420,11 +421,11 @@ ADR range: 0001-0031 after Task 1
 - 想系统准备面试：`docs/interview-guide.md`
 ```
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 git diff --check
-git add docs/interview-guide.md README.md
+git add docs/interview-guide.md docs/interview-mastery README.md docs/PROJECT_PLAN.md
 git commit -m "docs(interview): add v1 walkthrough"
 ```
 
@@ -493,7 +494,7 @@ release commit CI success
 audit FAIL 0
 ```
 
-- [ ] **Step 2: Check the portfolio gates**
+- [x] **Step 2: Check the portfolio gates**
 
 ```text
 docs/portfolio-hr.md exists
@@ -502,7 +503,7 @@ cold-read test passes
 no duplicate metric table
 ```
 
-- [ ] **Step 3: Check the interview gates**
+- [x] **Step 3: Check the interview gates**
 
 ```text
 tickets 21-27 have Handoff notes

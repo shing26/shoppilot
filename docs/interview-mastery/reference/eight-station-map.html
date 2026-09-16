@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShopPilot 八站面试速查卡</title>
+  <style>
+    :root { --ink:#17211b; --muted:#5f6b63; --line:#ccd5ce; --paper:#fbfaf5; --accent:#176b4d; --warn:#a33b2b; --soft:#eef4ef; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font:16px/1.65 Georgia, "Noto Serif SC", serif; }
+    main { max-width:1180px; margin:0 auto; padding:44px 28px 72px; }
+    h1 { font-size:clamp(2rem,5vw,4rem); line-height:1.05; margin:0 0 12px; letter-spacing:0; }
+    h2 { margin:38px 0 12px; font-size:1.5rem; }
+    p { color:var(--muted); }
+    .lede { max-width:760px; font-size:1.08rem; }
+    .route { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:24px; }
+    .station { break-inside:avoid; border:1px solid var(--line); border-radius:8px; padding:16px; background:white; }
+    .station strong { display:block; color:var(--accent); font-size:1.05rem; }
+    .station code { font-size:.82rem; overflow-wrap:anywhere; }
+    .station p { margin:.35rem 0; }
+    .questions { border-left:4px solid var(--accent); background:var(--soft); padding:14px 18px; margin-top:24px; }
+    .red { color:var(--warn); font-weight:700; }
+    table { width:100%; border-collapse:collapse; margin-top:18px; background:white; }
+    th, td { border:1px solid var(--line); padding:9px 10px; vertical-align:top; text-align:left; }
+    th { background:var(--soft); }
+    a { color:var(--accent); }
+    .followup { margin-top:32px; padding-top:18px; border-top:1px solid var(--line); font-size:.95rem; }
+    @media (max-width:760px) { .route { grid-template-columns:1fr; } main { padding:28px 18px 56px; } }
+    @media print { body { background:white; } main { max-width:none; padding:0; } .station { box-shadow:none; } a { color:inherit; text-decoration:none; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>八站面试速查卡</h1>
+  <p class="lede">用途：面试前 15 分钟快速定位。每站先讲“为什么会这样”，再给源码和命令；红值必须和判据、归因、限制同时出现。</p>
+
+  <div class="route">
+    <section class="station">
+      <strong>1. 入口与身份</strong>
+      <p>决策：身份只认签名 JWT；客户端 tenant/customer 一律不采信。dev 默认值只在回环地址合法。</p>
+      <p>首读：<code>AuthFilter</code> / <code>JwtService</code> / <code>TenantContext</code> / <code>DevDefaultsPolicy</code></p>
+      <p>故障：按请求头换租户仍能读到别家数据；绑定 <code>0.0.0.0</code> 仍靠默认密钥启动。</p>
+    </section>
+    <section class="station">
+      <strong>2. 意图三级级联</strong>
+      <p>决策：T0 规则 → T1 质心 → T2 模型，不额外买一次分类请求；动作优先，UNKNOWN fail-closed。</p>
+      <p>首读：<code>TriageEngine</code> / <code>T0RuleLayer</code> / <code>T1CentroidLayer</code></p>
+      <p>故障：动作请求被当作政策缓存；UNKNOWN 进入 L1/L2；T1 与 L2 各算一次向量。</p>
+    </section>
+    <section class="station">
+      <strong>3. 两级缓存与穿透合并</strong>
+      <p>决策：缓存放在意图之后；L1 精确 key，L2 语义 + 0.95 + 极性守卫；只有合格答案可写回。</p>
+      <p>首读：<code>CacheService</code> / <code>L1Cache</code> / <code>L2SemanticCache</code> / <code>PolarityGuard</code> / <code>SingleFlight</code></p>
+      <p>故障：反义问句互命中；命中率虚高但答案在复读道歉；冷缓存把远程 embedding 放大。</p>
+    </section>
+    <section class="station">
+      <strong>4. 检索与入库</strong>
+      <p>决策：Qdrant dense + ES BM25，RRF 融合；Markdown 按二级标题切块，重跑幂等 upsert。</p>
+      <p>首读：<code>HybridRetriever</code> / <code>EmbeddingClient</code> / <code>MarkdownChunker</code></p>
+      <p>故障：一路挂了被当成“库里没有”，负缓存把抖动固化成 60 秒转人工。</p>
+    </section>
+    <section class="station">
+      <strong>5. Agent 编排与工具</strong>
+      <p>决策：10 状态有界状态机；工具循环最多 2 轮、缺槽最多追问 1 次；写操作受幂等守卫。</p>
+      <p>首读：<code>AgentStateMachine</code> / <code>ToolDispatcher</code> / <code>shoppilot-tool-api</code></p>
+      <p>故障：自由循环不终止；缺槽猜参数；重复退款；工具失败变成 500 而不是可解释回复。</p>
+    </section>
+    <section class="station">
+      <strong>6. 业务中台与隔离</strong>
+      <p>决策：biz-mock 独立进程；共享表做行级租户隔离；归属谓词 + DB 唯一约束 + 状态前置。</p>
+      <p>首读：<code>BizMockService</code> / <code>bizmock/repo</code> / <code>bizmock/domain</code></p>
+      <p>故障：跨店查到订单；50 并发同 token 生成多条退款；非法工单状态被接受。</p>
+    </section>
+    <section class="station">
+      <strong>7. 降级、限流、可观测</strong>
+      <p>决策：可降级依赖不进 readiness，另立 deps；限流做租户 + 买家/IP 双维；降级必须可枚举、可落单。</p>
+      <p>首读：<code>FallbackService</code> / <code>RateLimitService</code> / <code>RuntimeStateMetrics</code></p>
+      <p>故障：依赖一挂 readiness 摘流量；每个 429 都新建工单；只有事件没有可查工单。</p>
+    </section>
+    <section class="station">
+      <strong>8. 量化与门禁</strong>
+      <p>决策：报告由产物生成，strict 缺证据即红；CI 只承诺干净 runner 构建 + 221 JVM 测试。</p>
+      <p>首读：<code>run-acceptance.ps1</code> / <code>run_loadtest.py</code> / <code>build_loadtest_report.py</code> / <code>EVIDENCE.md</code></p>
+      <p>故障：文档手抄数字与 CSV 漂移；聚合值遮住分意图红值；把本机全量验收说成 CI 覆盖。</p>
+    </section>
+  </div>
+
+  <section class="questions">
+    <h2>三条必须先排好序的口径</h2>
+    <p><strong>最难取舍：</strong>缓存放在意图之后。它主动放弃一部分拦截率，换取跨意图和含实体请求不串号。</p>
+    <p><strong>正向数字：</strong>命中路径 P99 22 ms；Token 节约 62.4%；虚拟线程 400-800 并发收益 +64%。每个都带模式、并发和作用域。</p>
+    <p><strong>红值：</strong><span class="red">拦截率 74-78% &lt; 80%</span>；<span class="red">吞吐 1013 QPS &lt; 1200</span>；<span class="red">未命中 TTFT 690-1499 ms &gt; 500 ms</span>。不能只报红值，也不能换口径洗绿。</p>
+  </section>
+
+  <h2>固定基线</h2>
+  <table>
+    <tr><th>项目</th><th>当前口径</th><th>怎么用</th></tr>
+    <tr><td>JVM tests</td><td>221</td><td>本地 <code>mvnw verify</code> 与 CI 子集门禁的共同基线。</td></tr>
+    <tr><td>Acceptance audit</td><td>95 checks, 0 FAIL</td><td>收口审计，不等于 `run-acceptance.ps1` 的 17 个活体步骤。</td></tr>
+    <tr><td>CI</td><td>build + 221 JVM tests</td><td>不覆盖 Docker、Ollama、评测、压测和浏览器全量验收。</td></tr>
+    <tr><td>ADR</td><td>0001-0031</td><td>其中 0030 是原五条重开条件，0031 是面试反馈触发。</td></tr>
+    <tr><td>工具准确率</td><td>93.3% / 95.6%</td><td>旧 gold 实测 / 新判据离线重算；承诺项仍为未达成。</td></tr>
+  </table>
+
+  <p class="followup">有不理解的地方，直接把具体问题发给当前 agent；让 agent 用源码、ADR 或一手文档继续拆。作品集入口：<a href="../../portfolio-interview.md">docs/portfolio-interview.md</a>。完整路线：<a href="../../interview-guide.md">docs/interview-guide.md</a>。</p>
+</main>
+</body>
+</html>

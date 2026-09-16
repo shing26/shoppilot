@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>08 量化与门禁</title>
+  <style>
+    :root { --ink:#18211b; --muted:#5c685f; --paper:#fbfaf5; --panel:#fff; --line:#cbd5cd; --accent:#176b4d; --soft:#edf4ef; --warn:#9b3828; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.68 Georgia, "Noto Serif SC", serif; }
+    main { max-width:900px; margin:0 auto; padding:42px 24px 70px; } h1 { font-size:clamp(2.1rem,6vw,4.3rem); line-height:1.02; margin:.2rem 0 1rem; letter-spacing:0; }
+    h2 { margin:2.3rem 0 .7rem; font-size:1.45rem; } p, li { color:var(--muted); } .eyebrow { color:var(--accent); font:700 .8rem/1.2 ui-monospace, monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:18px 0; } .lead { font-size:1.07rem; color:var(--ink); }
+    pre { overflow:auto; background:#15221b; color:#edf7f0; border-radius:8px; padding:16px; font:13px/1.55 ui-monospace, Consolas, monospace; } code { font-family:ui-monospace, Consolas, monospace; font-size:.9em; }
+    details { background:var(--soft); border-left:4px solid var(--accent); margin:10px 0; padding:10px 14px; } summary { cursor:pointer; color:var(--ink); font-weight:700; }
+    table { width:100%; border-collapse:collapse; background:white; margin-top:12px; } th, td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:top; } th { background:var(--soft); }
+    a { color:var(--accent); } .warn { color:var(--warn); font-weight:700; } .followup { margin-top:34px; padding-top:18px; border-top:1px solid var(--line); }
+    @media print { body { background:white; } main { max-width:none; padding:0; } pre { white-space:pre-wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ShopPilot 八站路线 · 08 / 08</p>
+  <h1>量化与门禁</h1>
+  <p class="lead">60 秒版：这一站回答“凭什么相信上面的结论”。证据地图把每个对外数字映射到报告和原始产物；压测报告由 CSV 生成，strict 模式缺证据就红；验收门禁把构建、活体脚本和演示固定成一个矩阵；CI 只承诺干净 runner 上的构建和 221 条 JVM 测试，不冒充全量环境。</p>
+
+  <section class="box">
+    <h2>Decision</h2>
+    <p><strong>报告从产物生成：</strong><code>scripts/build_loadtest_report.py --strict</code> 从 <code>loadtest/results/</code> 读取 CSV/JSON 并写出报告，避免手抄数字和原始数据漂移。</p>
+    <p><strong>一条命令跑活体验收：</strong><code>scripts/run-acceptance.ps1</code> 固定构建、起栈、所有 verify 脚本、浏览器检查与三条演示的顺序和日志；失败不丢步骤。</p>
+    <p><strong>CI 边界写清：</strong><code>.github/workflows/ci-subset.yml</code> 在干净 runner 执行 <code>bash ./mvnw -B -ntp verify</code>，覆盖 build + 221 条 JVM 测试；不含 Docker、Ollama、评测、压测和 17 步活体验收。</p>
+    <p><strong>红值不洗绿：</strong>拦截率、吞吐、未命中 TTFT、分意图工具准确率都保留判据、实测、归因和限制。改分母、阈值或 gold 换绿不算修复。</p>
+  </section>
+
+  <section>
+    <h2>Reproduce</h2>
+    <pre># 当前基线：3 + 12 + 206 = 221 条 JVM 测试
+.\mvnw.cmd -B -ntp verify
+
+# 40 条评分器断言，全部在仓库外临时副本做
+python scripts\verify_eval_judge.py
+
+# 压测报告必须与入库产物一致，缺证据即失败
+python scripts\build_loadtest_report.py --strict
+
+# 95 项收口审计
+python .scratch\shoppilot-mvp\round3-closeout-audit.py
+
+# 完整活体验收矩阵，耗时远大于前三项
+pwsh -NoProfile -File scripts\run-acceptance.ps1</pre>
+    <p>当前基线固定为：JVM tests <strong>221</strong>；acceptance audit <strong>95 checks, 0 FAIL</strong>；CI <strong>build + 221 JVM tests</strong>；ADR 范围 <strong>0001-0031</strong>。如果任一数字与产物不符，先修报告或门禁，不在面试话术里手改。</p>
+  </section>
+
+  <section>
+    <h2>Three questions</h2>
+    <details>
+      <summary>Q1：221 条 JVM 测试为什么还不能代表全量验收？</summary>
+      <p>它们适合在干净 runner 上验证构建、单元、集成和架构约束，但不包含 Docker 中间件、Ollama、ES/Qdrant、真实评测、压测和浏览器演示。CI 的价值是可重复和零外部凭证；它能证明“代码能构建且 JVM 测试绿”，不能证明所有活体防线都成立。</p>
+    </details>
+    <details>
+      <summary>Q2：为什么说 22 ms 时必须带条件？</summary>
+      <p>22 ms 是 perf 模式、200 并发、命中路径、未饱和队列下的 P99，模型与远程 embedding 增量为 0；100 并发是 32 ms，400 并发进入排队后 P99 明显抬升。把 22 ms 单独当端到端指标会隐藏模式、路径和队列条件。</p>
+    </details>
+    <details>
+      <summary>Q3：为什么同时保留 93.3% 和 95.6%？</summary>
+      <p>93.3% 是旧 gold 下的历史实测，95.6% 是同一批明细换合格答案集后的离线重算，不是重跑。更有意义的是分意图门槛：新判据下仍有五行低于 95%，所以承诺项仍是未达成。并列两套读数既保留判据变更历史，也防止 95.6% 被单独引用成通过。</p>
+    </details>
+  </section>
+
+  <section class="box">
+    <h2>Failure symptom</h2>
+    <table>
+      <tr><th>症状</th><th>含义</th></tr>
+      <tr><td>README 数字与报告不一致</td><td>手工文档漂移，证据链断裂。</td></tr>
+      <tr><td><code>--strict</code> 报缺文件</td><td>结论没有原始产物支撑，不能作为对外证据。</td></tr>
+      <tr><td>CI 绿，但活体验收有步骤红</td><td>正常：CI 只覆盖子集；需要把边界说清，不能误报全量通过。</td></tr>
+      <tr><td>聚合准确率大于 95%，但逐意图多行低于 95%</td><td>聚合值遮住真正的承诺判据，结论仍应写未达成。</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Evidence link</h2>
+    <ul>
+      <li>入口：<a href="../../../README.md">README.md</a>、<a href="../../EVIDENCE.md">docs/EVIDENCE.md</a>、<a href="../../loadtest-report.md">docs/loadtest-report.md</a></li>
+      <li>规则：<code>ADR 0019</code>、<code>ADR 0020</code>、<code>ADR 0021</code>、<code>ADR 0030</code>、<code>ADR 0031</code></li>
+      <li>脚本：<a href="../../../scripts/run-acceptance.ps1">run-acceptance.ps1</a>、<a href="../../../scripts/run_loadtest.py">run_loadtest.py</a>、<a href="../../../scripts/build_loadtest_report.py">build_loadtest_report.py</a></li>
+    </ul>
+  </section>
+
+  <p class="followup">主资源：<a href="https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions">GitHub Actions workflow syntax</a>。有疑问直接问当前 agent：先报出你要引用的数字，再让它找出判据、产物和限制。</p>
+  <p><a href="0007-fallback-ratelimit-observability.html">上一站</a> · <a href="../reference/eight-station-map.html">八站速查卡</a> · 回到 <a href="../../interview-guide.md">路线入口</a></p>
+</main>
+</body>
+</html>

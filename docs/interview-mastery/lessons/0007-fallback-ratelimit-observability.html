@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>07 降级、限流、可观测</title>
+  <style>
+    :root { --ink:#18211b; --muted:#5c685f; --paper:#fbfaf5; --panel:#fff; --line:#cbd5cd; --accent:#176b4d; --soft:#edf4ef; --warn:#9b3828; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.68 Georgia, "Noto Serif SC", serif; }
+    main { max-width:900px; margin:0 auto; padding:42px 24px 70px; } h1 { font-size:clamp(2.1rem,6vw,4.3rem); line-height:1.02; margin:.2rem 0 1rem; letter-spacing:0; }
+    h2 { margin:2.3rem 0 .7rem; font-size:1.45rem; } p, li { color:var(--muted); } .eyebrow { color:var(--accent); font:700 .8rem/1.2 ui-monospace, monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:18px 0; } .lead { font-size:1.07rem; color:var(--ink); }
+    pre { overflow:auto; background:#15221b; color:#edf7f0; border-radius:8px; padding:16px; font:13px/1.55 ui-monospace, Consolas, monospace; } code { font-family:ui-monospace, Consolas, monospace; font-size:.9em; }
+    details { background:var(--soft); border-left:4px solid var(--accent); margin:10px 0; padding:10px 14px; } summary { cursor:pointer; color:var(--ink); font-weight:700; }
+    table { width:100%; border-collapse:collapse; background:white; margin-top:12px; } th, td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:top; } th { background:var(--soft); }
+    a { color:var(--accent); } .warn { color:var(--warn); font-weight:700; } .followup { margin-top:34px; padding-top:18px; border-top:1px solid var(--line); }
+    @media print { body { background:white; } main { max-width:none; padding:0; } pre { white-space:pre-wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ShopPilot 八站路线 · 07 / 08</p>
+  <h1>降级、限流、可观测</h1>
+  <p class="lead">60 秒版：可降级依赖不能和“能不能接流量”混成一格。readiness 只管服务是否可以接收请求，Qdrant、ES、知识库状态另立 <code>deps</code> 组；限流在检索和模型前做租户与买家/IP 双维判定；降级原因必须枚举，并且最终落到可查询工单，而不是只在日志里写一行。</p>
+
+  <section class="box">
+    <h2>Decision</h2>
+    <p><strong>readiness / deps 分家：</strong>可降级依赖按设计允许 fail-open，所以不放进 readiness。运行中的完整度由 <code>deps</code> 报告；把 ES/Qdrant 并入 readiness 会让为证明降级而刻意停掉依赖的实验根本起不来。</p>
+    <p><strong>双层令牌桶：</strong>租户维度保护平台算力分配，买家/IP 维度防单点刷流量；限流在模型和检索之前判定，Redis 不可用时选择放行，避免限流器把全站变成 503。</p>
+    <p><strong>降级是可枚举状态：</strong><code>FallbackReason</code> 定义模型超时、熔断、预算耗尽、工具不可用、意图未决、限流、槽位未决和用户主动转人工；失败路径计数按 reason 打点。</p>
+    <p><strong>事件必须落地：</strong><code>FallbackService</code> 在 biz-mock 创建工单，SSE 把 ticketId 返回；限流工单按租户/买家在 5 分钟窗口去重，防止 429 自我放大成工单风暴。</p>
+    <p><strong>运行状态指标是 pull-based：</strong>熔断状态、依赖 up、dev defaults、写回队列深度在抓取时从真实组件读取，不用容易漂移的请求侧副本。</p>
+  </section>
+
+  <section>
+    <h2>Reproduce</h2>
+    <pre>.\mvnw.cmd -B -ntp -pl shoppilot-gateway -am `
+  -Dtest=DependencyHealthTest,FallbackReasonTest,RuntimeStateMetricsTest `
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+# 需先起栈
+pwsh -NoProfile -File scripts/verify-ratelimit.ps1
+pwsh -NoProfile -File scripts/verify-fallback.ps1
+
+# 查看 up 与 deps 的分工
+curl.exe http://127.0.0.1:8082/actuator/health
+curl.exe http://127.0.0.1:8082/actuator/health/readiness
+curl.exe http://127.0.0.1:8082/actuator/health/deps</pre>
+    <p>预期：限流同时覆盖同步 429 与 SSE <code>rate_limited</code>；七种故障/降级路径均可脚本触发，每个 ticket 号都可在队列查回。用户主动转人工不是故障，不把它混入故障注入计数。</p>
+  </section>
+
+  <section>
+    <h2>Three questions</h2>
+    <details>
+      <summary>Q1：为什么可降级依赖不进入 readiness？</summary>
+      <p>readiness 的语义是“现在能否接收流量”；退化运行是本项目的设计能力，不是启动失败。实验 profile 会故意停掉向量或缓存，如果把依赖状态并进 readiness，实验档会被门禁摘掉流量，运维谓词会把产品取向改回 fail-closed。</p>
+    </details>
+    <details>
+      <summary>Q2：为什么限流要同时看租户和买家/IP？</summary>
+      <p>只按店铺限制，单店可以把平台算力吃干；只按买家/IP 限制，大量合规买家仍可能拖垮单店配额。两层分别解决资源归属和单点滥用，并且在检索与模型之前执行，避免限流前成本已经花掉。</p>
+    </details>
+    <details>
+      <summary>Q3：为什么“转人工”必须落成可查工单？</summary>
+      <p>只有事件或文案不能证明人工侧真的收到问题。可查工单让降级链路有可验证输出，ticketId 能回到队列，reason 能区分故障类型。这里的“可查”只保证 biz-mock 进程生命周期，跨重启和 RESOLVED 回流不在此承诺内。</p>
+    </details>
+  </section>
+
+  <section class="box">
+    <h2>Failure symptom</h2>
+    <table>
+      <tr><th>症状</th><th>含义</th></tr>
+      <tr><td>停掉 ES 后 readiness 直接 DOWN</td><td>可降级依赖被错误并进流量闸门，实验和退化运行都被破坏。</td></tr>
+      <tr><td>限流发生在模型调用之后</td><td>成本已经支付，限流只剩拒答，保护不了上游。</td></tr>
+      <tr><td>每发一个 429 就新建一张工单</td><td>限流工单去重失效，洪峰把人工队列击穿。</td></tr>
+      <tr><td>SSE 说转人工，但队列查不到 ticketId</td><td>fallback 只推了事件，没有完成真实落单。</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Evidence link</h2>
+    <ul>
+      <li>源码：<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/FallbackService.java">FallbackService.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/ratelimit/RateLimitService.java">RateLimitService.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/RuntimeStateMetrics.java">RuntimeStateMetrics.java</a></li>
+      <li>决策：<code>ADR 0009</code>、<code>ADR 0026</code>、<code>ADR 0030</code></li>
+      <li>证据：<a href="../../EVIDENCE.md">docs/EVIDENCE.md</a> 的 fallback 与健康组相关行；活体验收见 <a href="../../PROJECT_PLAN.md">docs/PROJECT_PLAN.md</a></li>
+    </ul>
+  </section>
+
+  <p class="followup">主资源：<a href="https://resilience4j.readme.io/docs/circuitbreaker">Resilience4j</a> 与 <a href="https://docs.micrometer.io/micrometer/reference/">Micrometer</a>。有疑问直接发当前 agent：给它一个依赖故障，让它区分 readiness、deps 和 fallback 三种状态。</p>
+  <p><a href="0006-biz-mock-and-isolation.html">上一站</a> · <a href="../reference/eight-station-map.html">八站速查卡</a> · 下一站：<a href="0008-quantification-and-gates.html">量化与门禁</a></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>05 Agent 编排与工具</title>
+  <style>
+    :root { --ink:#18211b; --muted:#5c685f; --paper:#fbfaf5; --panel:#fff; --line:#cbd5cd; --accent:#176b4d; --soft:#edf4ef; --warn:#9b3828; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.68 Georgia, "Noto Serif SC", serif; }
+    main { max-width:900px; margin:0 auto; padding:42px 24px 70px; } h1 { font-size:clamp(2.1rem,6vw,4.3rem); line-height:1.02; margin:.2rem 0 1rem; letter-spacing:0; }
+    h2 { margin:2.3rem 0 .7rem; font-size:1.45rem; } p, li { color:var(--muted); } .eyebrow { color:var(--accent); font:700 .8rem/1.2 ui-monospace, monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:18px 0; } .lead { font-size:1.07rem; color:var(--ink); }
+    pre { overflow:auto; background:#15221b; color:#edf7f0; border-radius:8px; padding:16px; font:13px/1.55 ui-monospace, Consolas, monospace; } code { font-family:ui-monospace, Consolas, monospace; font-size:.9em; }
+    details { background:var(--soft); border-left:4px solid var(--accent); margin:10px 0; padding:10px 14px; } summary { cursor:pointer; color:var(--ink); font-weight:700; }
+    table { width:100%; border-collapse:collapse; background:white; margin-top:12px; } th, td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:top; } th { background:var(--soft); }
+    a { color:var(--accent); } .warn { color:var(--warn); font-weight:700; } .followup { margin-top:34px; padding-top:18px; border-top:1px solid var(--line); }
+    @media print { body { background:white; } main { max-width:none; padding:0; } pre { white-space:pre-wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ShopPilot 八站路线 · 05 / 08</p>
+  <h1>Agent 编排与工具</h1>
+  <p class="lead">60 秒版：这里不是无上限自主 Agent，而是显式 10 状态有界状态机。单请求工具循环最多 2 轮、缺槽位最多追问 1 次；工具 schema 来自独立契约模块，写操作有幂等守卫。工具失败被结构化回填成可解释回复，超预算则按枚举原因转人工。</p>
+
+  <section class="box">
+    <h2>Decision</h2>
+    <p><strong>把循环变成可预算状态机：</strong><code>INTAKE → TRIAGE → CACHE_READ → RETRIEVE → PLAN → TOOL_EXEC → SLOT_ASK → REPLY → CACHE_WRITE → FALLBACK</code>，每次状态迁移产生 trace，SSE 事件直接由迁移驱动。</p>
+    <p><strong>两轮覆盖真实链式调用：</strong>第一轮查订单列表，拿到订单号后第二轮查物流；三轮链式操作拆成多轮对话，避免无限循环击穿时延目标。缺槽位只追问一次，仍缺则降级。</p>
+    <p><strong>工具契约独立：</strong><code>shoppilot-tool-api</code> 定义意图、工具名、DTO 和 JSON schema；dispatcher 统一做参数校验、缺槽识别、写操作幂等和状态映射。</p>
+    <p><strong>失败是状态，不是异常泄漏：</strong>模型超时、预算耗尽、工具不可用和槽位未决都有对应的 <code>FallbackReason</code>；工具失败事实会回填给模型组织用户可读回复。</p>
+  </section>
+
+  <section>
+    <h2>Reproduce</h2>
+    <pre>.\mvnw.cmd -B -ntp -pl shoppilot-tool-api -am `
+  -Dtest=ToolSchemaGeneratorTest `
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+.\mvnw.cmd -B -ntp -pl shoppilot-gateway -am `
+  -Dtest=IdempotencyServiceTest,FallbackReasonTest `
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+# 需先起栈；检查查得到、问得出、越不了权
+pwsh -NoProfile -File scripts/verify-action-loop.ps1</pre>
+    <p>活体脚本关注的不只是“工具被调用”，还包括缺槽时是否追问、跨店是否拒绝、写操作是否有幂等保护，以及事件序列是否证明 2 轮上限存在。</p>
+  </section>
+
+  <section>
+    <h2>Three questions</h2>
+    <details>
+      <summary>Q1：为什么不用真正的无限 Agent 循环？</summary>
+      <p>工具轮次直接决定模型调用、外部 IO 和尾延迟，最坏路径若不可预算，就无法承诺 TTFT 或吞吐。显式上限把“聪明”换成可验证的终止性；需要更多工具时，让产品把任务拆到下一轮对话。</p>
+    </details>
+    <details>
+      <summary>Q2：为什么两轮足够？什么会被截断？</summary>
+      <p>两轮覆盖常见的“先查订单列表、再查物流”链式读取。三层或更多动作链会被截断，这是有意选择：继续加轮次会把尾延迟和失败面同时放大。面试时要主动说出被截断的形态，不能只说好处。</p>
+    </details>
+    <details>
+      <summary>Q3：小模型场景为什么还要网关派生工具和抽槽位？</summary>
+      <p>本地 3B 和 mock 模式不能稳定完成工具选择与参数抽取，纯靠模型会让演示路径不可测。网关对高置信读取动作做确定性派生，模型仍负责计划与表达；写操作保留更严格的校验和幂等，避免“模型承诺办理但没调用工具”。</p>
+    </details>
+  </section>
+
+  <section class="box">
+    <h2>Failure symptom</h2>
+    <table>
+      <tr><th>症状</th><th>含义</th></tr>
+      <tr><td>模型连续要求调用工具，状态机没有终止点</td><td>工具轮次预算失效，尾延迟不可证明。</td></tr>
+      <tr><td>缺少订单号却猜一个参数执行</td><td>槽位校验或追问路径失效，可能操作错误对象。</td></tr>
+      <tr><td>同一幂等 token 产生两次写操作</td><td>写操作守卫或下游唯一约束失效。</td></tr>
+      <tr><td>工具失败直接冒泡成 500</td><td>结构化失败没有映射到 fallback，用户拿不到可解释结果。</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Evidence link</h2>
+    <ul>
+      <li>源码：<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/AgentStateMachine.java">AgentStateMachine.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/ToolDispatcher.java">ToolDispatcher.java</a>、<a href="../../../shoppilot-tool-api/src/main/java/com/shoppilot/tool/">shoppilot-tool-api</a></li>
+      <li>决策：<code>ADR 0008</code>、<code>ADR 0015</code>、<code>ADR 0021</code></li>
+      <li>证据：<a href="../../interview-qa.md">docs/interview-qa.md</a> 中的工具循环与参数归因问题；数字落点见 <a href="../../EVIDENCE.md">docs/EVIDENCE.md</a></li>
+    </ul>
+  </section>
+
+  <p class="followup">主资源：<a href="https://resilience4j.readme.io/docs/circuitbreaker">Resilience4j CircuitBreaker</a>。有疑问就直接发给当前 agent：给它一个工具失败场景，让它沿状态、dispatch、fallback 三处回答。</p>
+  <p><a href="0004-retrieval-and-ingest.html">上一站</a> · <a href="../reference/eight-station-map.html">八站速查卡</a> · 下一站：<a href="0006-biz-mock-and-isolation.html">业务中台与隔离</a></p>
+</main>
+</body>
+</html>

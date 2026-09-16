@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>03 两级缓存与穿透合并</title>
+  <style>
+    :root { --ink:#18211b; --muted:#5c685f; --paper:#fbfaf5; --panel:#fff; --line:#cbd5cd; --accent:#176b4d; --soft:#edf4ef; --warn:#9b3828; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.68 Georgia, "Noto Serif SC", serif; }
+    main { max-width:900px; margin:0 auto; padding:42px 24px 70px; } h1 { font-size:clamp(2.1rem,6vw,4.3rem); line-height:1.02; margin:.2rem 0 1rem; letter-spacing:0; }
+    h2 { margin:2.3rem 0 .7rem; font-size:1.45rem; } p, li { color:var(--muted); } .eyebrow { color:var(--accent); font:700 .8rem/1.2 ui-monospace, monospace; letter-spacing:.08em; text-transform:uppercase; }
+    .box { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:18px 0; } .lead { font-size:1.07rem; color:var(--ink); }
+    pre { overflow:auto; background:#15221b; color:#edf7f0; border-radius:8px; padding:16px; font:13px/1.55 ui-monospace, Consolas, monospace; } code { font-family:ui-monospace, Consolas, monospace; font-size:.9em; }
+    details { background:var(--soft); border-left:4px solid var(--accent); margin:10px 0; padding:10px 14px; } summary { cursor:pointer; color:var(--ink); font-weight:700; }
+    table { width:100%; border-collapse:collapse; background:white; margin-top:12px; } th, td { border:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:top; } th { background:var(--soft); }
+    a { color:var(--accent); } .warn { color:var(--warn); font-weight:700; } .followup { margin-top:34px; padding-top:18px; border-top:1px solid var(--line); }
+    @media print { body { background:white; } main { max-width:none; padding:0; } pre { white-space:pre-wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ShopPilot 八站路线 · 03 / 08</p>
+  <h1>两级缓存与穿透合并</h1>
+  <p class="lead">60 秒版：缓存不是链路最前面的万能加速器，而是意图判定之后的受控分支。可缓存的政策请求先查 L1 精确缓存，再查带租户/范围/意图/知识纪元过滤的 L2 语义缓存；命中还必须通过极性守卫。只有合格答案才异步写回，并用 singleflight 合并冷缓存并发穿透。</p>
+
+  <section class="box">
+    <h2>Decision</h2>
+    <p><strong>缓存后置且 fail-closed：</strong>业务办理、含实体请求和不确定意图不进入 L1/L2。这样做会牺牲一部分拦截率，但避免通用政策答案被错误复用到个性化订单问题。</p>
+    <p><strong>L1 精确、L2 语义，键和过滤一起承担隔离：</strong>L1 key 含 tenant、scope、intent、kbEpoch、归一化问法；L2 使用 Qdrant payload 过滤，读回后再校验意图、租户和知识纪元。cosine 阈值是 0.95。</p>
+    <p><strong>命中不等于可复用：</strong>同桶反义对可能越过阈值，因此命中后比较否定极性。历史条目没有归一化 query 时不能复用。</p>
+    <p><strong>写回有资格，穿透有合并：</strong>只有政策意图、检索有命中、答案合格、未降级、未走工具时才异步写回；singleflight 让同一 key 的等待者复用一次计算结果，等待超时后自行穿透。</p>
+  </section>
+
+  <section>
+    <h2>Reproduce</h2>
+    <pre>.\mvnw.cmd -B -ntp -pl shoppilot-gateway -am `
+  -Dtest=CacheServiceTest,L2SemanticCacheTest,PolarityGuardTest,WriteBackPolicyTest,WriteBackPoolTest `
+  -Dsurefire.failIfNoSpecifiedTests=false test
+
+# 本机 bge-m3 标定；退出码会把越界样本交给具名防线核对
+python scripts/calibrate_threshold.py
+
+# 需先起栈；检查反义对不互命中
+pwsh -NoProfile -File scripts/verify-polarity.ps1</pre>
+    <p>标定的关键事实不是“相似度够高就安全”：0.95 工作点的同意图改写召回实测为 0，而反义对最大余弦达到 0.9682。正确结论是阈值只做同桶内表述归一，串号由准入、分区、写回资格和极性守卫共同承担。</p>
+  </section>
+
+  <section>
+    <h2>Three questions</h2>
+    <details>
+      <summary>Q1：为什么把缓存放在意图判定之后？</summary>
+      <p>因为完全相同或高度相似的问题可能因租户、实体和意图不同而有不同正确答案。“我的订单发货了吗”不能复用别人的订单结论，“怎么退款”也不能复用“为什么不给退款”。缓存后置主动降低命中率，换取跨意图正确性。</p>
+    </details>
+    <details>
+      <summary>Q2：既然 0.95 召回为 0，为什么不降阈值换命中率？</summary>
+      <p>0.85 附近的 precision 只有 0.231，降阈值是拿误命中换召回；在这个 embedding 分布里，同意图改写最大值 0.9435 甚至低于反义对的 0.9682。项目保留 0.95，L1 与 singleflight 承担主要热点拦截，极性守卫封住同桶反义，不用“更绿”的数字掩盖串号风险。</p>
+    </details>
+    <details>
+      <summary>Q3：singleflight 为什么不让等待者边收边转发？</summary>
+      <p>流式 tee 给多个等待者需要引入多路流转发状态机，复杂度高。这里选择等待完整答案后一次性推送，等待上限 2 秒，超时自行穿透；节省的是重复模型与远程 embedding 工作，不承诺强一致，也不把等待无界放大。</p>
+    </details>
+  </section>
+
+  <section class="box">
+    <h2>Failure symptom</h2>
+    <table>
+      <tr><th>症状</th><th>含义</th></tr>
+      <tr><td>“能退吗”和“不能退吗”共用同一答案</td><td>L2 命中后没有极性守卫，或历史条目缺少归一化问法。</td></tr>
+      <tr><td>拦截率变高，但用户反复看到转人工道歉</td><td>失败答案被无资格写回，缓存固化了降级状态。</td></tr>
+      <tr><td>冷缓存时远程 embedding 数接近请求数</td><td>进程内向量缓存或 singleflight 失效，发生并发穿透。</td></tr>
+      <tr><td>跨店同文本问句互相命中</td><td>tenant/scope 过滤或读时二次校验缺失，阈值不能承担隔离。</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Evidence link</h2>
+    <ul>
+      <li>源码：<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/cache/CacheService.java">CacheService.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/cache/L1Cache.java">L1Cache.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/cache/L2SemanticCache.java">L2SemanticCache.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/cache/PolarityGuard.java">PolarityGuard.java</a>、<a href="../../../shoppilot-gateway/src/main/java/com/shoppilot/gateway/cache/SingleFlight.java">SingleFlight.java</a></li>
+      <li>决策：<code>ADR 0003</code>、<code>ADR 0006</code>、<code>ADR 0016</code>、<code>ADR 0018</code></li>
+      <li>证据：<a href="../../threshold-calibration.md">docs/threshold-calibration.md</a>；白皮书式入口见 <a href="../../portfolio-interview.md">docs/portfolio-interview.md</a> 的冷缓存踩坑</li>
+    </ul>
+  </section>
+
+  <p class="followup">主资源：<a href="https://redis.io/docs/latest/develop/use/keyspace/">Redis Keyspace</a> 与 <a href="https://qdrant.tech/documentation/concepts/filtering/">Qdrant Filtering</a>。有疑问就直接问当前 agent：先给出你判断的缓存层，再让它用源码挑战这个判断。</p>
+  <p><a href="0002-intent-cascade.html">上一站</a> · <a href="../reference/eight-station-map.html">八站速查卡</a> · 下一站：<a href="0004-retrieval-and-ingest.html">检索与入库</a></p>
+</main>
+</body>
+</html>
