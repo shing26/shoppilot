@@ -20,11 +20,16 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.InputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,19 +76,39 @@ class LogbackRotationTest {
     private static void deleteWithRetries(Path root) {
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
         while (System.nanoTime() < deadline) {
-            List<Path> remaining = new ArrayList<>();
-            try (Stream<Path> walk = Files.walk(root)) {
-                walk.sorted((a, b) -> b.getNameCount() - a.getNameCount()).forEach(p -> {
-                    try {
-                        Files.deleteIfExists(p);
-                    } catch (IOException stillHeld) {
-                        remaining.add(p);
+            AtomicBoolean remaining = new AtomicBoolean(false);
+            try {
+                Files.walkFileTree(root, new SimpleFileVisitor<>() {
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                        deleteIfPresent(file, remaining);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFileFailed(Path file, IOException failure) {
+                        if (!(failure instanceof NoSuchFileException)) {
+                            remaining.set(true);
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path directory, IOException failure) {
+                        if (failure != null && !(failure instanceof NoSuchFileException)) {
+                            remaining.set(true);
+                        } else {
+                            deleteIfPresent(directory, remaining);
+                        }
+                        return FileVisitResult.CONTINUE;
                     }
                 });
-            } catch (IOException gone) {
+            } catch (NoSuchFileException alreadyGone) {
                 return;
+            } catch (IOException stillHeld) {
+                remaining.set(true);
             }
-            if (remaining.isEmpty()) {
+            if (!remaining.get() && Files.notExists(root)) {
                 return;
             }
             try {
@@ -92,6 +117,16 @@ class LogbackRotationTest {
                 Thread.currentThread().interrupt();
                 return;
             }
+        }
+    }
+
+    private static void deleteIfPresent(Path path, AtomicBoolean remaining) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (NoSuchFileException alreadyGone) {
+            // 压缩线程可能刚把临时文件移走；不存在就是清理已经达成。
+        } catch (IOException stillHeld) {
+            remaining.set(true);
         }
     }
 
