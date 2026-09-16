@@ -17,3 +17,18 @@
 - [x] 审计项数保持 95；不改判据、阈值、gold、既有业务测试
 
 **Verify:** 本地 `mvnw.cmd -B -ntp verify` -> `gh workflow run` 或 push 触发 -> `gh run watch` 到 success -> 下载失败产物路径规则抽检（成功 run 无需产物）。
+
+## Handoff notes
+
+**关键决策**
+
+- CI 只跑 `ubuntu-latest` + Temurin 21 + `bash ./mvnw -B -ntp verify`：`mvnw` 入库 mode 是 `100644`，显式经 bash 执行不依赖 checkout 保留可执行位；不接 secret、service container、Ollama、ES 或 Qdrant。
+- 触发面固定为 `push(main)`、`pull_request`、`workflow_dispatch`，同 ref 的新 run 取消旧 run，job 上限 20 分钟；失败只上传 `**/target/surefire-reports/**`，成功不产包。这条门禁不冒充 17 步全量验收。
+- 首次 Ubuntu 复跑暴露 `LogbackRotationTest` 的 Linux 清理竞态：`Files.walk` 读属性时，logback 压缩线程会把 `.tmp` 移走并触发 `NoSuchFileException`。修复改用 `walkFileTree`，只把并发删除后的不存在视为幂等成功，真实句柄/权限失败仍退避重试。
+- 最终 commit `15ea402` 的真实 run 为 `https://github.com/shing26/shoppilot/actions/runs/35062472053`，1m4s，Surefire `3 + 12 + 206 = 221`；随后 `7f5b202` push 与人工 dispatch 也连续成功。
+
+**你需要能当场回答的三个追问**
+
+1. 为什么 CI 不直接跑 17 步全量？——全量依赖本机 `logs/`、活体中间件、模型额度、浏览器与一次性读数；当前最便宜且无隐式前置的门是干净 runner 上的构建和 221 条 JVM 测试。
+2. 为什么先用 Ubuntu 而不是作者同款 Windows？——Ubuntu 更快、更便宜，而且这次确实先抓出了一个只在 Linux 并发删除时序下露头的测试清理竞态；跨 OS 需求等真实失败或下一票再定。
+3. 为什么 `NoSuchFileException` 可以算清理成功，不算吞异常？——它只表示压缩线程已把临时文件删/移走，目标状态就是“文件不存在”；权限错误、句柄占用等仍标记 `retryNeeded`，在 5 秒预算内重试，清不干净仍由 JUnit 报红。

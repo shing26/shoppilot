@@ -76,29 +76,29 @@ class LogbackRotationTest {
     private static void deleteWithRetries(Path root) {
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
         while (System.nanoTime() < deadline) {
-            AtomicBoolean remaining = new AtomicBoolean(false);
+            AtomicBoolean retryNeeded = new AtomicBoolean(false);
             try {
                 Files.walkFileTree(root, new SimpleFileVisitor<>() {
                     @Override
                     public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                        deleteIfPresent(file, remaining);
+                        deleteIfPresent(file, retryNeeded);
                         return FileVisitResult.CONTINUE;
                     }
 
                     @Override
                     public FileVisitResult visitFileFailed(Path file, IOException failure) {
-                        if (!(failure instanceof NoSuchFileException)) {
-                            remaining.set(true);
+                        if (needsRetry(failure)) {
+                            retryNeeded.set(true);
                         }
                         return FileVisitResult.CONTINUE;
                     }
 
                     @Override
                     public FileVisitResult postVisitDirectory(Path directory, IOException failure) {
-                        if (failure != null && !(failure instanceof NoSuchFileException)) {
-                            remaining.set(true);
+                        if (needsRetry(failure)) {
+                            retryNeeded.set(true);
                         } else {
-                            deleteIfPresent(directory, remaining);
+                            deleteIfPresent(directory, retryNeeded);
                         }
                         return FileVisitResult.CONTINUE;
                     }
@@ -106,9 +106,9 @@ class LogbackRotationTest {
             } catch (NoSuchFileException alreadyGone) {
                 return;
             } catch (IOException stillHeld) {
-                remaining.set(true);
+                retryNeeded.set(true);
             }
-            if (!remaining.get() && Files.notExists(root)) {
+            if (!retryNeeded.get() && Files.notExists(root)) {
                 return;
             }
             try {
@@ -120,13 +120,17 @@ class LogbackRotationTest {
         }
     }
 
-    private static void deleteIfPresent(Path path, AtomicBoolean remaining) {
+    private static boolean needsRetry(IOException failure) {
+        return failure != null && !(failure instanceof NoSuchFileException);
+    }
+
+    private static void deleteIfPresent(Path path, AtomicBoolean retryNeeded) {
         try {
             Files.deleteIfExists(path);
         } catch (NoSuchFileException alreadyGone) {
             // 压缩线程可能刚把临时文件移走；不存在就是清理已经达成。
         } catch (IOException stillHeld) {
-            remaining.set(true);
+            retryNeeded.set(true);
         }
     }
 
