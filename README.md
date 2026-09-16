@@ -27,13 +27,15 @@
 
 ## 接手导航
 
-频繁换 Agent 时先读这四处，再进入 ticket 和源码：
+按目的先读下面入口，再进入 ticket 和源码：
 
+- 想 3 分钟看懂：[`docs/portfolio-interview.md`](docs/portfolio-interview.md)：架构、四个问题、三个数字和一个踩坑。
+- 想先看是否值得投递：[`docs/portfolio-hr.md`](docs/portfolio-hr.md)：五行项目摘要。
+- 想核对全部证据：[`docs/EVIDENCE.md`](docs/EVIDENCE.md)：数字对应的报告、原始产物与复现命令。
 - [`AGENTS.md`](AGENTS.md)：接手顺序、source of truth、修改禁令、验证与 Handoff 流程。
 - [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)：按项目定位制定的 v1.0 收口、作品集与冻结路线。
 - [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-32 的当前状态。
 - [`docs/CODE_MAP.md`](docs/CODE_MAP.md)：模块所有权、请求链路源码落点和已知代码债候选。
-- [`docs/EVIDENCE.md`](docs/EVIDENCE.md)：每个公开数字对应的报告、原始产物、复现命令与证据边界。
 
 ## 快速开始（一条命令）
 
