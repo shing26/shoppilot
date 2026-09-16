@@ -4,7 +4,7 @@
 
 **Blocked by:** 11 — 业务办理闭环
 
-**Status:** ready-for-agent
+**Status:** done（2026-09-16 补记状态位：本票已收口，早先误留 `ready-for-agent`；实现结果、补跑与重算见文末及 `eval/results/`）
 
 **Verify:** 以 `--limit 10` 冒烟后跑完整集 -> 输出分意图双子指标 CSV，对抗样本占比 30%，人工校对记录在案。
 

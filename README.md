@@ -23,6 +23,15 @@
 
 ![调试台](docs/console.png)
 
+## 接手导航
+
+频繁换 Agent 时先读这四处，再进入 ticket 和源码：
+
+- [`AGENTS.md`](AGENTS.md)：接手顺序、source of truth、修改禁令、验证与 Handoff 流程。
+- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-32 的当前状态。
+- [`docs/CODE_MAP.md`](docs/CODE_MAP.md)：模块所有权、请求链路源码落点和已知代码债候选。
+- [`docs/EVIDENCE.md`](docs/EVIDENCE.md)：每个公开数字对应的报告、原始产物、复现命令与证据边界。
+
 ## 快速开始（一条命令）
 
 前置：Docker Desktop、JDK 21、Ollama、PowerShell 7（`pwsh`）。中间件端口全部偏移并只绑 `127.0.0.1`，
@@ -791,9 +800,13 @@ shoppilot-gateway/     网关：状态机、三级意图判定、两级缓存、
 shoppilot-biz-mock/    业务中台：orders / logistics / coupons / refunds / tickets，@TenantId 行级隔离
 shoppilot-tool-api/    纯契约 jar：10 意图枚举 + Function Schema + 工具 DTO（网关与 biz-mock 共用）
 loadtest/              locustfile（四种流量模型）与 results/（保留 ladder-*.csv 与 env-*.json）
-docs/adr/              21 份架构决策记录，正文里每处 ADR 编号都能点进去
-docs/                  阈值标定、意图标定、检索对比、压测报告、面试问答清单
+eval/results/         工具调用评测 CSV/meta（入库的评测证据）
+docs/adr/              ADR 0001-0030（0022 未占用），正文里每处 ADR 编号都能点进去
+docs/                  阈值标定、意图标定、检索对比、压测报告、证据地图、代码地图、面试问答清单
 knowledge/             30 篇政策语料
 scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、TTFT 扫描与归因、报告生成
-CHARTER.md  PLAN.md  CONTEXT.md
+.scratch/shoppilot-mvp/ 正式 tracker、round spec、票 01-32、收口审计；不是临时草稿目录
+AGENTS.md  CHARTER.md  PLAN.md  CONTEXT.md
 ```
+
+`logs/`、根目录 `hs_err_pid*.log` 与 `replay_pid*.log` 是本机证据，`git clone` 后不存在；哪些产物入库、哪些只作现场记录见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。

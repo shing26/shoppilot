@@ -4,7 +4,7 @@
 
 **Blocked by:** 14 — 降级与工单与 local 验证；15 — 单文件调试台；16 — Tool Calling 标注评测集
 
-**Status:** ready-for-agent
+**Status:** done（2026-09-16 补记状态位：本票已收口，早先误留 `ready-for-agent`；双曲线、虚拟线程、节约率基线与环境记录均已在 `loadtest/results/` 落盘）
 
 **Verify:** 依次跑双曲线、虚拟线程开关对比、关缓存基线三组 -> 每组结果附带 CPU/堆/版本等环境记录，重跑一次数字在同一量级内可复现。
 

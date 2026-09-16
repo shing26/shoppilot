@@ -1,6 +1,6 @@
 # round13 spec：后端外壳加固（票 21-26）
 
-**Status:** ready-for-agent。本仓的 tracker 是 `.scratch/shoppilot-mvp/issues/NN-slug.md` 那批文件，没有 native label，就绪态就按票面的 Status 字段记在这一行。
+**Status:** done（2026-09-16 补记状态位：票 21-26 已全部收口，早先误留 `ready-for-agent`）。本仓的 tracker 是 `.scratch/shoppilot-mvp/issues/NN-slug.md` 那批文件，没有 native label，状态按票面的 Status 字段记。
 
 来源：2026-09-12 至 09-13 的 `/grill-with-docs` 会话，逐条经用户确认。落盘为 ADR 0023 到 0029 与 `CONTEXT.md` 六个新词条，本文件只综合，不新增决策。
 

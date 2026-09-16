@@ -4,7 +4,7 @@
 
 **Blocked by:** 16 — Tool Calling 标注评测集；17 — 语义缓存阈值标定实验；18 — 大促压测
 
-**Status:** ready-for-agent
+**Status:** done（2026-09-16 补记状态位：本票已收口，早先误留 `ready-for-agent`；README、三条演示、STAR 材料与 clean-clone 自闭环均已落地）
 
 **Verify:** 让一个没参与过的人只照 README 操作 -> 十分钟内起栈并跑通三条演示；抽查指标表任意一行，都能指到一个数据来源文件。
 

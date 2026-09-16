@@ -1,6 +1,6 @@
 # ShopPilot 实施计划（细化版）
 
-原始任务书见 `CHARTER.md`。本文件是 2026-09-08 grilling 会话后的可执行版本，决策理由见 `docs/adr/`，术语见 `CONTEXT.md`。
+原始任务书见 `CHARTER.md`。本文件是 2026-09-08 grilling 会话后的实施计划，保留当时排期与判据；当前工作状态不以本文件为准。决策理由见 `docs/adr/`，术语见 `CONTEXT.md`，接手入口见 `AGENTS.md`。
 
 ## 定位
 
@@ -118,7 +118,7 @@ TTFT          服务端收请求 -> 写出首个 token 帧，不含网络往返
 2. 每天 1 小时读当日产出，优先读状态机转移、缓存准入判定、归属校验三处。
 3. agent 不得自行修改 `CONTEXT.md` 术语与 ADR 结论；发现冲突停下来问，不得选一个"能跑通"的写法继续。
 
-工单位于 `.scratch/shoppilot-mvp/issues/`，按依赖序编号，执行入口见 `to-tickets` / `implement` 约定：一次只处理 frontier 上一个 ticket，ticket 之间清空 context。
+工单位于 `.scratch/shoppilot-mvp/issues/`，按依赖序编号；当前 round、状态与完整索引见 [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)。执行入口见 `to-tickets` / `implement` 约定：一次只处理 frontier 上一个 ticket，ticket 之间清空 context。
 
 ## 验收标准
 
