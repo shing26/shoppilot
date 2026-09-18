@@ -357,8 +357,10 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
   压测脚本每档仍做健康与计数器单调性检查，宁可中止阶梯也不留下负差值的废数据
   （`scripts/run_loadtest.py` 的 `gateway_healthy`）。
 - **perf 模式的 token 数由 Mock 按提示模板估算**，62.4% 的节约率要在 dev 模式重放同一流量模型复核真实计费 token。
-- **网关侧没有 JVM 内端到端用例**：端到端验证靠 `scripts/verify-*.ps1` 打活体服务（真跨进程），
-  代价是 `mvn test` 不覆盖它；`@SpringBootTest` 只在 biz-mock 侧。
+- **网关侧只有三条主链路 JVM 集成 smoke，不是 JVM 内的全量端到端**：缓存命中、工具循环与显式转人工
+  这三条组合行为已由 `GatewayMainPathJvmTest` 在 `mvn test` 里判红（round16 票 33）；SSE 长连接、
+  真实 ES/Qdrant/Ollama 与浏览器验收仍靠 `scripts/verify-*.ps1` 打活体服务（真跨进程），`mvn test` 不覆盖它们，
+  `@SpringBootTest` 仍只在 biz-mock 侧。
 
 ## 干净检出检查（可复现性的机器侧证据）
 
@@ -467,7 +469,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元与架构测试（3 + 12 + 206 = 221 项）
+# 单元、架构与主链路 JVM 集成测试（3 + 12 + 209 = 224 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -502,7 +504,8 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七�
 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
 Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
-这条门禁只覆盖干净 runner 上的构建与 221 条 JVM 测试；它不替代本机 17 步全量验收，后者仍然包含活体中间件、
+这条门禁覆盖干净 runner 上的构建与 224 条 JVM 测试，其中新增三条是网关主链路 JVM
+集成 smoke（缓存命中、工具循环、fallback），不依赖 Docker、Redis、ES、Qdrant 或 Ollama。它仍不替代本机 17 步全量验收，后者包含活体中间件、
 浏览器、评测与一键演示。CI 报红先修真实失败，不通过加跳过、改期望数或取消测试来换绿。
 
 ### 逐 ticket 验收动作 → 覆盖命令

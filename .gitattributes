@@ -1,0 +1,4 @@
+# docs/interview-qa.md 的换行基线是 CRLF（由 scripts/verify_eval_judge.py 的 EOL_BASELINE 钉住）。
+# 对这份文件来说 CR 是行终止符的一部分，不是行尾空白；不写这条，git diff --check 会把每次
+# 重新生成产生的合法新增行全部报成 trailing whitespace。
+docs/interview-qa.md whitespace=cr-at-eol

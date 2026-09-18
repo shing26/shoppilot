@@ -95,14 +95,14 @@
 - 能区分 readiness、deps 和总健康三个运维口径。
 - 能从 `EVIDENCE.md` 找到至少三条红值的原始产物与复现入口。
 - 能把 `93.3%` 与 `95.6%` 分开讲，并解释分意图承诺项仍未达成。
-- 能说出 CI 只覆盖 build + 221 JVM tests，不等于全量 17 步活体验收。
+- 能说出 CI 只覆盖 build + 224 JVM tests，不等于全量 17 步活体验收。
 
 ## 当前固定基线
 
 ```text
-JVM tests: 221
+JVM tests: 224
 Acceptance audit: 95 checks, 0 FAIL
-CI: build + 221 JVM tests
+CI: build + 224 JVM tests
 ADR range: 0001-0031
 ```
 

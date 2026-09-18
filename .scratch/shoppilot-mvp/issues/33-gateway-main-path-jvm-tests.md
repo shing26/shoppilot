@@ -1,0 +1,41 @@
+# 33 — 网关主链路 JVM 集成测试：缓存命中、工具循环、fallback
+
+**What to build:** 给 `shoppilot-gateway` 增加三条 JVM 主链路集成测试，覆盖缓存命中、工具循环和显式转人工 fallback；测试必须能在无 Docker、无 Ollama、无 ES、无 Qdrant 的 `mvnw verify` 中运行。
+
+**Blocked by:** None。用户在 2026-09-18 明确授权继续后，作为 round16 维护性质量轮执行；本票不新增业务功能，不改判据、阈值、gold 或既有测试。
+
+**Status:** implemented（2026-09-18；`GatewayMainPathJvmTest` 3/3，全量 JVM `3 + 12 + 209 = 224` 绿）
+
+- [x] 新增 `GatewayMainPathJvmTest`：真实 `ChatController` + `AgentStateMachine` + `ToolDispatcher`
+- [x] 缓存命中用例断言 L1 正文/引用返回且 `LlmGateway` 零交互
+- [x] 工具循环用例断言订单工具结果进入第二轮，最终 JSON 响应带 `toolUsed=true`
+- [x] 显式转人工用例断言 `USER_REQUESTED` 与工单号进入响应，模型零交互
+- [x] 不启动完整 Spring 容器，不引入 Testcontainers、Docker、Ollama、ES 或 Qdrant
+- [x] 聚焦复跑 3/3 绿：`GatewayMainPathJvmTest`
+- [x] 全量复跑绿：`mvnw.cmd -B -ntp verify`，三模块 `3 + 12 + 209 = 224`
+- [x] 更新 README、EVIDENCE、CODE_MAP 与面试材料的当前 JVM 基线；历史 221 读数保留
+- [x] 不重命名 `ci-subset.yml`，不把 JVM smoke 冒充全量 17 步活体验收
+
+**Verify:**
+
+```powershell
+.\mvnw.cmd -B -ntp -pl shoppilot-gateway -am -Dtest=GatewayMainPathJvmTest -Dsurefire.failIfNoSpecifiedTests=false test
+.\mvnw.cmd -B -ntp verify
+```
+
+预期：聚焦复跑 `Tests run: 3` 全绿；全量三模块 `3 + 12 + 209 = 224` 全绿；CI workflow 无需新增服务或 secret。
+
+## Handoff notes
+
+**关键决策**
+
+- 没有把完整 Spring 容器搬进测试。网关完整上下文需要 Redis/Redisson 配置、Qdrant、ES、Ollama 等外部边界；三条主链路 smoke 的目的是守住 Controller 到状态机、工具分发和 fallback 的组合行为，不是复制活体验收。
+- 保留了真实 `ChatController`、`AgentStateMachine` 和 `ToolDispatcher`，只替换跨进程 HTTP、向量检索和模型。这样“缓存命中不碰模型”“工具结果回填后再总结”“转人工带工单号”三件事都能在普通 JVM 测试里判红。
+- workflow 仍叫 `ci-subset`。新增覆盖后它仍是构建 + JVM 测试子集，不包含全量活体验收；名字没有变成错误承诺。
+- 当前 JVM 基线从历史 `3 + 12 + 206 = 221` 变为 `3 + 12 + 209 = 224`；round14/round15 的历史落点文字不改，只有当前对外入口和证据地图更新。
+
+**你需要能当场回答的三个追问**
+
+1. "为什么不是 `@SpringBootTest` 全量起网关？" —— 那会把 Redis、Qdrant、ES、Ollama 或对应的替身配置全搬进每次 JVM 门禁，成本和脆弱性都超过三条 smoke 的收益。这里测的是组合行为，真实跨进程边界仍由 `verify-*.ps1` 持有。
+2. "这三条测试到底防住了什么回归？" —— 缓存命中若又偷偷经过模型、工具结果没有回填给最后一轮、或 `USER_REQUESTED` 不再落出 ticketId，对应断言会直接红，不依赖本机服务。
+3. "为什么 CI 仍叫 subset？" —— 它只证明干净 runner 能构建并跑 224 条 JVM 测试；SSE 长连接、真实 ES/Qdrant、Ollama、浏览器和压测仍在 17 步活体验收里，名字保留正是为了不把两者混为一谈。

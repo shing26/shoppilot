@@ -25,7 +25,7 @@
 - [GitHub Actions: Workflow syntax](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions)
   GitHub Actions 官方语法。Use for: 解释 `.github/workflows/ci-subset.yml` 在干净 runner 上实际覆盖什么、不覆盖什么。
 - [JUnit User Guide](https://docs.junit.org/5.11.0/user-guide/)
-  JUnit 5 官方用户指南。Use for: 复习参数化测试、动态测试和测试生命周期，便于现场解释 221 条 JVM 测试的结构。
+  JUnit 5 官方用户指南。Use for: 复习参数化测试、动态测试和测试生命周期，便于现场解释 224 条 JVM 测试的结构。
 - [ShopPilot Evidence Map](D:/ShopPilot/docs/EVIDENCE.md)
   本仓证据到原始产物的唯一索引。Use for: 每次面试答案中的数字都必须先在这里找落点；没有落点就不说成已证明。
 - [ShopPilot Code Map](D:/ShopPilot/docs/CODE_MAP.md)

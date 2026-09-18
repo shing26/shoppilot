@@ -3,7 +3,7 @@
 生成方式：`python scripts/collect_interview_questions.py`。
 每题答案直接取自当时写下的收尾记录，不做事后润色——答不上来的就是当时没想清楚的。
 
-共 127 问，覆盖 32 个 ticket。
+共 130 问，覆盖 33 个 ticket。
 
 用法：每条先只看问题，自己答 30 秒，再对答案。答不出细节的题回去读对应 ticket。
 
@@ -610,4 +610,19 @@ A：Ubuntu 更快、更便宜，而且这次确实先抓出了一个只在 Linux
 **Q：为什么 `NoSuchFileException` 可以算清理成功，不算吞异常？**
 
 A：它只表示压缩线程已把临时文件删/移走，目标状态就是“文件不存在”；权限错误、句柄占用等仍标记 `retryNeeded`，在 5 秒预算内重试，清不干净仍由 JUnit 报红。
+
+
+## Ticket 33 — gateway main path jvm tests
+
+**Q：为什么不是 `@SpringBootTest` 全量起网关？**
+
+A：那会把 Redis、Qdrant、ES、Ollama 或对应的替身配置全搬进每次 JVM 门禁，成本和脆弱性都超过三条 smoke 的收益。这里测的是组合行为，真实跨进程边界仍由 `verify-*.ps1` 持有。
+
+**Q：这三条测试到底防住了什么回归？**
+
+A：缓存命中若又偷偷经过模型、工具结果没有回填给最后一轮、或 `USER_REQUESTED` 不再落出 ticketId，对应断言会直接红，不依赖本机服务。
+
+**Q：为什么 CI 仍叫 subset？**
+
+A：它只证明干净 runner 能构建并跑 224 条 JVM 测试；SSE 长连接、真实 ES/Qdrant、Ollama、浏览器和压测仍在 17 步活体验收里，名字保留正是为了不把两者混为一谈。
 

@@ -72,6 +72,7 @@
 | 业务租户隔离、幂等、工单工作流 | `shoppilot-biz-mock/src/test/java/...` |
 | 跨模块 schema | `shoppilot-tool-api/src/test/java/.../ToolSchemaGeneratorTest` |
 | 活体防线 | `scripts/verify-*.ps1`、`scripts/verify_l2_filters.py`、`scripts/verify_eval_judge.py` |
+| 网关主链路 JVM 集成 | `web/GatewayMainPathJvmTest`（缓存命中、工具循环、fallback） |
 | 干净 runner JVM 门禁 | `.github/workflows/ci-subset.yml` |
 
 ## 已知代码债候选
