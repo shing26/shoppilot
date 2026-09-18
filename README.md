@@ -137,7 +137,7 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
 | 层 | 选型 | 为什么是它 |
 | --- | --- | --- |
 | 网关与编排 | Java 21 + Spring Boot 3.3.5 | 虚拟线程让"每个请求一路阻塞式 HTTP"在 IO 密集下不再吃线程池（实测 +64%） |
-| 意图与工具 | 自研 10 状态机 + Function Calling | 三级级联判定（规则 / 质心 / 模型），工具循环硬上限 2 轮（ADR 0007、0008） |
+| 意图与工具 | 自研 10 状态机 + Function Calling | 三级级联判定（规则 / 质心 / 模型），工具循环硬上限 2 轮（ADR 0007、0008）；编排层不引入 Spring AI / LangChain4j，只留 `LlmClient` 一条 provider 缝（ADR 0032） |
 | 缓存 | Redis 7 + Qdrant | L1 零向量化才能守住 30 ms；L2 带 `tenant/scope/intent/kb_epoch` 强制过滤（ADR 0003） |
 | 检索 | Qdrant 稠密 + ES 倒排 + RRF | 双引擎各有短板，融合成本 60 行代码（ADR 0010） |
 | 业务侧 | H2 + Spring Data JPA | Mock 的是业务系统而不是业务逻辑：状态机、归属校验、幂等约束都是真的 |
