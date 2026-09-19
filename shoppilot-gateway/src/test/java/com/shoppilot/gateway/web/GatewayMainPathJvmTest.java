@@ -31,6 +31,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -41,12 +42,15 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -101,10 +105,10 @@ class GatewayMainPathJvmTest {
                         QUERY, false));
 
         LlmGateway llm = mock(LlmGateway.class);
-        Harness harness = harness(TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d),
+        MockMvc mvc = mockMvc(TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d),
                 cache, llm, mock(ToolDispatcher.class), mock(FallbackService.class));
 
-        harness.mvc().perform(post("/api/v1/support/chat")
+        mvc.perform(post("/api/v1/support/chat")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"query\":\"" + QUERY + "\"}"))
                 .andExpect(status().isOk())
@@ -120,6 +124,8 @@ class GatewayMainPathJvmTest {
     @Test
     @DisplayName("工具循环：订单工具结果进入第二轮，最终答复由模型总结")
     void toolLoopFeedsBusinessResultBackIntoTheFinalReply() throws Exception {
+        ArgumentCaptor<LlmTypes.Request> planRounds = ArgumentCaptor.forClass(LlmTypes.Request.class);
+        ArgumentCaptor<LlmTypes.Request> replyRound = ArgumentCaptor.forClass(LlmTypes.Request.class);
         LlmGateway llm = mock(LlmGateway.class);
         LlmTypes.ToolCall queryOrder = new LlmTypes.ToolCall("call-order-1", ToolName.QUERY_ORDER_DETAIL.apiName(),
                 Map.of("orderNo", "90001"));
@@ -134,10 +140,10 @@ class GatewayMainPathJvmTest {
                         "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
         ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
 
-        Harness harness = harness(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
                 mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
 
-        harness.mvc().perform(post("/api/v1/support/chat")
+        mvc.perform(post("/api/v1/support/chat")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"query\":\"我的订单90001到哪了\"}"))
                 .andExpect(status().isOk())
@@ -146,6 +152,27 @@ class GatewayMainPathJvmTest {
                 .andExpect(jsonPath("$.answer").value("您的订单正在配送中"));
 
         verify(bizMock).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
+
+        // 只断言 HTTP 响应会假绿：两次 complete 的桩按调用次序返回，就算状态机把 tool 消息丢掉，
+        // 第二轮照样拿得到总结文案。所以这里直接查请求体，钉死"工具结果回填"这件事本身。
+        verify(llm, times(2)).complete(planRounds.capture());
+        verify(llm).stream(replyRound.capture(), any());
+
+        List<LlmTypes.Message> secondRound = planRounds.getAllValues().get(1).messages();
+        LlmTypes.Message toolResult = secondRound.stream()
+                .filter(message -> "tool".equals(message.role()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("第二轮规划请求没有带上 tool 消息：" + secondRound));
+        assertEquals("call-order-1", toolResult.toolCallId(), "tool 消息必须指回模型发起的那次调用");
+        assertTrue(toolResult.content().contains("订单已发货"),
+                "tool 消息必须带业务结果原文，实际=" + toolResult.content());
+        assertTrue(secondRound.stream()
+                        .anyMatch(message -> "assistant".equals(message.role()) && !message.toolCalls().isEmpty()),
+                "第二轮规划请求必须同时带上发起工具调用的那条 assistant 消息");
+        assertTrue(replyRound.getValue().messages().stream()
+                        .anyMatch(message -> "tool".equals(message.role())
+                                && message.content().contains("订单已发货")),
+                "收尾那轮必须看得到工具结果");
     }
 
     @Test
@@ -156,10 +183,10 @@ class GatewayMainPathJvmTest {
                 .thenReturn(Optional.of("T-900"));
         LlmGateway llm = mock(LlmGateway.class);
 
-        Harness harness = harness(TriageResult.dynamic(Intent.ESCALATE, "T1", false),
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ESCALATE, "T1", false),
                 mock(CacheService.class), llm, mock(ToolDispatcher.class), fallback);
 
-        harness.mvc().perform(post("/api/v1/support/chat")
+        mvc.perform(post("/api/v1/support/chat")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"query\":\"我要找人工\"}"))
                 .andExpect(status().isOk())
@@ -171,7 +198,7 @@ class GatewayMainPathJvmTest {
         verifyNoInteractions(llm);
     }
 
-    private Harness harness(TriageResult triageResult, CacheService cache, LlmGateway llm,
+    private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
                             ToolDispatcher dispatcher, FallbackService fallback) {
         TriageEngine triage = mock(TriageEngine.class);
         when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(triageResult, null));
@@ -200,8 +227,7 @@ class GatewayMainPathJvmTest {
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
 
         ChatController controller = new ChatController(machine, cache, rateLimit, MAPPER, registry, fallback);
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller).build();
-        return new Harness(mvc);
+        return MockMvcBuilders.standaloneSetup(controller).build();
     }
 
     private static GatewayProperties properties() {
@@ -214,8 +240,5 @@ class GatewayMainPathJvmTest {
         when(properties.cache()).thenReturn(new GatewayProperties.Cache(true, Duration.ofHours(1),
                 0.95d, Duration.ofSeconds(60), Duration.ofSeconds(2), true));
         return properties;
-    }
-
-    private record Harness(MockMvc mvc) {
     }
 }
