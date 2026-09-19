@@ -46,7 +46,7 @@ FIXED_POINT = "11a12ac"  # 第三轮起点
 #   这些条目断言的是「订正前那份文档里确实存在这句问题话」，而 HEAD 会随本轮提交前移，
 #   一旦提交了就永远取不到那句话，对照组反而把自己判红（第四轮收尾实际踩到过，见 ticket 20 第 10 条）。
 PRE_FIX = "a6ccdcb"  # 第四轮收口那一笔（对照组要取它**之前**那份文档，见下面 ROUND_FP 的分工）
-ROUND_FP = "bb45004"  # 本轮（实现轮，ticket 21 起）的 fixed point：B7 与 A3b 量的窗口。逐轮重锚，见 ADR 0023。
+ROUND_FP = "578722e"  # round17 起点（round16 收口 + 0917 压测产物登记之后、round17 草稿入仓之前）。逐轮重锚，见 ADR 0023。
 
 FAILS = []
 PASSES = []
@@ -308,8 +308,14 @@ changed_now = sh(["git", "diff", "--name-only", f"{ROUND_FP}..HEAD"]).stdout.spl
 # 「既有 ADR」= 本轮起点那一刻就在库里的这些，新写的 ADR 不在禁面内（本窗口自己就在往里加）。
 prior_adrs = {"docs/adr/" + n
               for n in sh(["git", "ls-tree", "--name-only", f"{ROUND_FP}:docs/adr"]).stdout.splitlines()}
+# round17（ADR 0033）按设计往 eval/ 新增用例文件（part4-7）， blanket `eval/` 前缀会把本轮自己的
+# 产物判成禁面。按 ADR 0023 的内容级本义收窄：红的是 gold 标注集（part1-3，判据所在）、
+# 评测结果目录与三支量具脚本；新用例文件只增不改的原则由 C 组 gold 检查与读数看着。
+GOLD_CASE_FILES = {"eval/cases-part1-policy.jsonl", "eval/cases-part2-action.jsonl",
+                   "eval/cases-part3-edge.jsonl"}
 forbidden = [f for f in changed_now
-             if f.startswith(("eval/", "knowledge/", "scripts/run_tool_eval.py",
+             if f in GOLD_CASE_FILES
+             or f.startswith(("eval/results/", "knowledge/", "scripts/run_tool_eval.py",
                               "scripts/verify_eval_judge.py", "scripts/build_eval_set.py"))
              or f in prior_adrs]
 check("B7 本轮窗口未碰内容级禁面（gold 与判据阈值所在文件、既有 ADR 出现即红；改动清单为读数）",
