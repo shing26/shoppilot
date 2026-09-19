@@ -1,0 +1,11 @@
+intent,cases,tool_accuracy,args_accuracy,args_scored_cases,args_comparable,args_uncomparable,status_not_observed,leaked_cases,unverifiable_cases,slotask_accuracy,fabricated_cases,overall_accuracy
+ACTION_ADDRESS,18,94.4%,93.3%,15,15,0,0,0,0,94.4%,0,88.9%
+ACTION_LOGISTICS,18,94.4%,100.0%,16,15,1,0,0,1,100.0%,0,94.4%
+ACTION_ORDER,18,94.4%,100.0%,16,15,1,0,0,1,94.4%,0,94.4%
+ACTION_REFUND,18,94.4%,100.0%,16,16,0,0,0,0,94.4%,0,94.4%
+ESCALATE,18,88.9%,n/a,0,0,0,0,0,0,88.9%,0,55.6%
+POLICY_FRESH,18,100.0%,n/a,0,0,0,0,0,0,100.0%,0,100.0%
+POLICY_PROMO,18,100.0%,n/a,0,0,0,0,0,0,100.0%,0,100.0%
+POLICY_RETURN,18,100.0%,n/a,0,0,0,0,0,0,100.0%,0,100.0%
+POLICY_SHIPPING,18,100.0%,n/a,0,0,0,0,0,0,100.0%,0,100.0%
+UNKNOWN,18,83.3%,n/a,0,0,0,0,0,0,83.3%,0,83.3%

@@ -252,6 +252,9 @@ public class AgentStateMachine {
         boolean expectedWriteDone = false;
         boolean nudged = false;
         boolean answeredByBudgetCheck = false;
+        // 计划（ADR 0036）：按执行顺序留存每步结果 JSON，供后步参数表达式取值；中止标记让指标分账
+        List<String> stepResults = new ArrayList<>();
+        boolean planAborted = false;
         LlmTypes.Reply lastReply = null;
         while (rounds < properties.agent().maxToolRounds()) {
             step(trace, sink, AgentState.PLAN, "round=" + rounds);
@@ -287,7 +290,18 @@ public class AgentStateMachine {
             if (lastReply.toolCalls().size() > 1) {
                 multiToolCallCounter.increment();
             }
-            LlmTypes.ToolCall call = lastReply.toolCalls().get(0);
+            LlmTypes.ToolCall rawCall = lastReply.toolCalls().get(0);
+            // 计划步骤的参数表达式（ADR 0036）：只允许 {steps[i].result.<field>} 这一种形态。
+            // 不合语法 / 引用未执行的前步 / 字段不存在 → 整条计划拒收，fail-closed 不执行。
+            PlanExpression.Resolution resolution =
+                    PlanExpression.resolve(rawCall.arguments(), stepResults, TRACE_JSON);
+            if (resolution.rejected()) {
+                registry.counter("shoppilot_plan_steps_total", "steps", "rejected").increment();
+                step(trace, sink, AgentState.PLAN, "plan-rejected expression=" + resolution.rejectedExpression());
+                return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
+                        query, "参数表达式不合法，已拒绝执行：" + resolution.rejectedExpression(), styleTier));
+            }
+            LlmTypes.ToolCall call = new LlmTypes.ToolCall(rawCall.id(), rawCall.name(), resolution.arguments());
             messages.add(LlmTypes.Message.assistant(lastReply.content(), List.of(call)));
             ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken);
             if (dispatch.unknown()) {
@@ -323,7 +337,20 @@ public class AgentStateMachine {
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
                         query, dispatch.json(), styleTier));
             }
+            stepResults.add(dispatch.json());
             messages.add(LlmTypes.Message.tool(call.id(), dispatch.json()));
+            if (failedStep(dispatch.status()) && rounds < properties.agent().maxToolRounds()) {
+                // 前步失败即中止整条 Plan（ADR 0036）：后步的前提已不成立，不让模型继续往下调。
+                // 只有"还有剩余步数"时才算中止——最后一步失败本就无后步可中止，照常进收尾轮，
+                // 否则 aborted 桶会被"冗余跟进失败"灌满，失去"前提断裂"这层语义。
+                planAborted = true;
+                registry.counter("shoppilot_plan_steps_total", "steps", "aborted").increment();
+                step(trace, sink, AgentState.TOOL_EXEC, "plan-aborted status=" + dispatch.status());
+                break;
+            }
+        }
+        if (!planAborted && toolUsed) {
+            registry.counter("shoppilot_plan_steps_total", "steps", String.valueOf(rounds)).increment();
         }
         if (rounds >= properties.agent().maxToolRounds() && lastReply != null && lastReply.wantsTool()) {
             // 工具轮预算用尽（ADR 0008：硬上限 2 轮）。这里分三种走向，对齐 ADR 0008 全文：
@@ -643,6 +670,16 @@ public class AgentStateMachine {
             case ACTION_ADDRESS -> ToolName.MODIFY_DELIVERY_ADDRESS;
             default -> null;
         };
+    }
+
+    /**
+     * 步骤失败的判定（ADR 0036 的中止触发面）：业务性失败与不可用都算，幂等重放不算。
+     * 超时/不可用多数已由降级路径提前兜住，这里主要接住 NOT_FOUND 与 STATE_NOT_ALLOWED——
+     * 两者正是 part6 两条"前步失败即中止"用例的原因。
+     */
+    private static boolean failedStep(ToolStatus status) {
+        return status == ToolStatus.NOT_FOUND || status == ToolStatus.STATE_NOT_ALLOWED
+                || status == ToolStatus.TIMEOUT || status == ToolStatus.UNAVAILABLE;
     }
 
     /** 包级可见只为让降级映射进用例（ticket 14）；三类模型失败必须各自映射到不同 reason。 */

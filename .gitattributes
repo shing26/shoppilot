@@ -19,3 +19,8 @@ shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/AgentStateMachine.ja
 scripts/run_tool_eval.py whitespace=cr-at-eol
 scripts/build_eval_set.py whitespace=cr-at-eol
 scripts/verify_eval_judge.py whitespace=cr-at-eol
+
+# eval/results 产物由评测脚本在本机生成，行尾基线 CRLF（与已入仓的 0908/09-10 产物一致）；
+# 同 loadtest 的理由：CR 是行终止符的一部分，不改存储只豁免检查。
+eval/results/*.csv whitespace=cr-at-eol
+eval/results/*.json whitespace=cr-at-eol
