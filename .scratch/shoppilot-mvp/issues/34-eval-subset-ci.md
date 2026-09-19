@@ -4,7 +4,7 @@
 
 **Blocked by:** None（round17 前置票；本票不改判据、阈值、gold，只接线）。
 
-**Status:** implemented（2026-09-19；本地两命令 exit 0，CI run 见 Handoff）
+**Status:** implemented（2026-09-19；本机两命令 exit 0，CI run `35440613321` 两步评测门禁全绿）
 
 - [x] `ci-subset.yml` 新增两步：`Eval judge selfcheck (0-token)` 与 `Offline rescore gate (0-token)`，位于 `mvnw verify` 之后
 - [x] rescore 输入按入库矩阵的既定次序：5 份按意图补跑（`080[6-9]xx-dev-budgetfix`）在前、1 份全量（`075747-dev`）殿后，`先出现为准` 合并
@@ -50,7 +50,7 @@ python3 scripts/run_tool_eval.py \
 **验证落点**
 
 - 本机（Windows，py 3.11.9）：`verify_eval_judge.py` 40 PASS exit 0；rescore `RESCORE DONE cases=180 files=6 tool_diff=4` exit 0，与 `tool-eval-20260911-042142-rescore.csv` 记录的基线一致。
-- CI run：见 Handoff 末行（推送后回填）。
+- CI run `35440613321`（`a0047fe`）：`Eval judge selfcheck (0-token)` 与 `Offline rescore gate (0-token)` 两步 success；此前两跑（`35440181970`、`35440472177`）各抓到一个平台性问题，见追记。
 
 **现场追问**
 
