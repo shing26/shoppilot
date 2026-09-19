@@ -12,7 +12,7 @@
 | 41 | 工具循环语义钉死（超限→FALLBACK、parallel_tool_calls 防御、轮次上限 JVM 测试） | 0008 字面对齐 + 事实性错误修复 | 无 | 0.5-1 天 |
 | 34 | 评测子集进 CI（selfcheck + 离线 rescore 门禁比对） | 0033 前置 | 无 | 0.5 天 |
 | 35 | Prompt 版本化（外置 v1.0.0.md + meta.json + SSE 携带版本） | 0037 | 无 | 0.5 天 |
-| 36 | SentimentGate 情感门 + EMOTION_ESCALATION（第 10 降级因） | 0034 | 34 | 1-1.5 天 |
+| 36 | SentimentGate 情感门 + EMOTION_ESCALATION（第 10 降级因） | 0034 | 34 + 41 | 1-1.5 天 |
 | 37 | 反馈闭环（显式点踩 + 隐式信号 + 人工复核回流队列） | 0039 | 34 | 1-1.5 天 |
 | 38 | ChannelAdapter 三渠道契约接入 | 0035 | 34 | 1.5-2 天 |
 | 39 | Plan 有序步骤（≤2 步，仍处 ADR 0008 界内） | 0036 | 34 + 35 + 36/37/38 任二已合 | 2 天 |
@@ -24,19 +24,21 @@
 
 ## 评测资产（本轮新增，judge() 需扩 schema 并同步补 selfcheck 夹具）
 
-| 文件 | 条数 | 新增 expect 字段 |
+| 文件 | 条数 | 新增字段（含 expect 内外） |
 |---|---|---|
 | `eval/cases-part4-emotion.jsonl` | 20 | `emotion`、`expect.escalate`、`expect.reason` |
 | `eval/cases-part5-channel.jsonl` | 10 | `channel`、`sameAnswerAs`、`asyncReply`、`mustNotSee`、`streaming` |
-| `eval/cases-part6-plan.jsonl` | 14 | `expect.plan[]`、`abortAfterStep0`、`planRejected` |
-| `eval/cases-part7-style-feedback.jsonl` | 12 | `expect.style`、`explicitFeedback`、`implied`、`notDoubleCounted` |
+| `eval/cases-part6-plan.jsonl` | 14 | `expect.plan[]`、`abortAfterStep0`、`mayAbortAfterStep0`、`abortReason`、`planRejected`、`rejectReason`、`slotAsk`、`missingSlot`、`mustNotLeak`、`mustFailOwnershipCheck` |
+| `eval/cases-part7-style-feedback.jsonl` | 12 | `expect.style`、`tone`、`mustNotContain`、`mustNotCarryFacts`、`channel`、`explicitFeedback`、`implied`、`notDoubleCounted`、`condition` |
+
+judge() 扩 schema 以本表为登记依据；扩 judge 必须同步补 selfcheck 夹具（ADR 0021 纪律）。
 
 合计 56 条新用例；emotion 词典层 + style 档位 + plan 执行语义（MockLLM）三类必须 0 token 可复跑。
 
 ## 验收判据（每票一条，进 run-acceptance 矩阵）
 
 1. 票 41：轮次用尽 → FALLBACK 落工单（新 `FallbackReason.TOOL_ROUNDS_EXHAUSTED`，工单可按号反查）；请求 payload 含 `parallel_tool_calls:false`；模型返回多个 toolCalls 时只派发并只记录第一个（转录协议配对合法）且 multi-tool 计数可见；轮次上限 JVM 测试落地（关闭票 11 自陈缺口）。
-2. 票 36：`verify-emotion` —— 20 条情绪用例，词典层 8 条 0 token 定案断言；ANGRY 用例 9/9 落 EMOTION_ESCALATION 工单（队列反查），CALM 用例 0 误升级。
+2. 票 36：`verify-emotion` —— 20 条情绪用例，词典层 8 条 0 token 定案断言；ANGRY 用例 6/6 与 URGENT 用例 2/2 落 EMOTION_ESCALATION 工单（队列反查），CALM/DISSATISFIED/UNCERTAIN 用例 0 误升级。
 3. 票 37：`verify-feedback` —— 点踩落 feedback 表 + 关联工单/ruleId 可查 + 复核队列可见，三断言；重问/降级/幂等重放三个隐式信号计数各断言一次。
 4. 票 38：`verify-channel` —— 同一句从 web/app/miniapp 进入答案一致、会话不互串；email 全链路落工单；限流按渠道维度可查。
 5. 票 39：`verify-plan` —— 两步链 8 条（含前步失败中止 2 条）、注入表达式 2 条判红；全量 357+56 条评测不低于基线（硬闸门，不达标本票挂账、round17 收缩）。
@@ -65,6 +67,6 @@
 **登记不执行**：
 
 - 归档层（原始 LLM 报文 JSONL）：有意不做。现有 `logs/` + MDC trace + RuntimeStateMetrics + eval 产物已覆盖单机验证件的证据需求。触发条件：出现需复盘原始报文的真实争议或外部审计要求。
-- LLM 客户端层换 Spring AI：登记（报告口径："省约 240 行 SSE 样板，不是补能力"）。触发条件：ADR 0032 的 provider 缝触发线。
+- LLM 客户端层换 Spring AI：登记（报告口径："省约 240 行 SSE 样板，不是补能力"）。触发条件：ADR 0032 的 provider 缝触发线（该触发线本身以 ADR 0031 的冻结机制为闸）。
 - identity↔web 包环：已裁决不修（ADR 0028 + CODE_MAP"不为消环做大搬迁"），不重复立账。
 - `AgentStateMachine` 665 行拆分：已在 CODE_MAP 已知代码债候选，处理方式已定（先 ticket 固定现有测试与 SSE 契约）；票 41 的测试即"固定契约"步骤。

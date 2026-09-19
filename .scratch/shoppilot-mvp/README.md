@@ -7,7 +7,7 @@
 ## 当前状态
 
 - 当前交付路线见 [`docs/PROJECT_PLAN.md`](../../docs/PROJECT_PLAN.md)：v1.0 收口、3 分钟作品集、面试掌握与冻结；它不新增功能 frontier。
-- `v1.0.0` 已冻结，tag `v1.0.0` 指向 CI run `35104751284` 验证通过的 release commit `7f4334c`；默认不开功能票，重开条件见 ADR 0030 五条与 ADR 0031 的面试反馈触发；编排层选型与 provider 缝的触发线见 ADR 0032。
+- `v1.0.0` 已冻结，tag `v1.0.0` 指向 CI run `35104751284` 验证通过的 release commit `7f4334c`；默认不开功能票，重开条件见 ADR 0030 五条与 ADR 0031 的面试反馈触发；round17（票 34-41）按 ADR 0033 记录的所有者政策覆盖执行；编排层选型与 provider 缝的触发线见 ADR 0032。
 - 2026-09-16：v1.0 release candidate 的 ADR、release note、3 分钟作品集与票 21-32 问答补录均已落地；本地 JVM verify 221 绿、量具 40/40、收口审计 `PASS 93 / FAIL 0 / SKIP 2`。
 - 2026-09-18：round16 质量轮增加网关主链路 JVM 集成缝，当前 JVM verify 为 `3 + 12 + 209 = 224` 绿；历史 round14/round15 的 221 读数仍保留为当时落点。
 - 2026-09-19：票 33 做了一次双轴复核（Standards / Spec），两条轴都抓到工具循环用例假绿；已补请求体断言并做变异对照（删掉 `AgentStateMachine` 里的 tool 回填即变红）。同一天的登记型改动还有 ADR 0032 与 `.gitattributes`。

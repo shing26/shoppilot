@@ -36,6 +36,7 @@ git diff --check
 2. 严格 OpenAI 兼容端点视角：转录中任意 assistant 消息的 tool_call 与后续 tool 响应一一配对，无 400 面。
 3. 模型一次要多个工具时，业务事实只来自真实派发的那个工具，转录不出现未执行工具的响应。
 4. 已知限制照登：`parallel_tool_calls:false` 是请求方约束，个别忽略该字段的宽松端点仍可能返回多调用——防御分支兜底但 multi-tool 计数会暴露它；Ollama 对该字段的容忍度在下次全量活体验收时确认，不在本票 Verify 内。
+5. spec 判据 1 的其余三要素随本票一并验收：请求 payload 断言含 `parallel_tool_calls:false`；multi-tool 计数器可见（进 RuntimeStateMetrics）；轮次上限 JVM 测试落地（票 11 自陈缺口关闭）。
 
 ## Handoff notes
 

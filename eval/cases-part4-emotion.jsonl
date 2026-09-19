@@ -8,7 +8,7 @@
 {"id": "EMO-ESC-08", "kind": "emotion", "emotion": "ANGRY", "intent": "ACTION_REFUND", "query": "退款拖了这么久还有脸让我等？废物系统，给我人工处理现在", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
 {"id": "EMO-CAL-01", "kind": "emotion", "emotion": "CALM", "intent": "POLICY_RETURN", "query": "请问七天无理由退货需要我自己出运费吗", "expect": {"escalate": false}}
 {"id": "EMO-CAL-02", "kind": "emotion", "emotion": "CALM", "intent": "ACTION_ORDER", "query": "帮我查一下订单SO20260901003现在什么状态了", "expect": {"escalate": false}}
-{"id": "EMO-CAL-03", "kind": "emotion", "emotion": "CALM", "intent": "POLICY_LOGISTICS", "query": "物流一般多久更新一次轨迹呀", "expect": {"escalate": false}}
+{"id": "EMO-CAL-03", "kind": "emotion", "emotion": "CALM", "intent": "POLICY_SHIPPING", "query": "物流一般多久更新一次轨迹呀", "expect": {"escalate": false}}
 {"id": "EMO-CAL-04", "kind": "emotion", "emotion": "CALM", "intent": "ACTION_REFUND", "query": "之前申请的退款进度帮忙看一下，不着急，麻烦了", "expect": {"escalate": false}}
 {"id": "EMO-DIS-01", "kind": "emotion", "emotion": "DISSATISFIED", "intent": "ACTION_LOGISTICS", "query": "物流有点慢了啊，这都第五天了还没到，能帮我看看吗", "expect": {"escalate": false}}
 {"id": "EMO-DIS-02", "kind": "emotion", "emotion": "DISSATISFIED", "intent": "POLICY_RETURN", "query": "运费还要我承担，感觉不太合理吧，你们这政策是不是该改改", "expect": {"escalate": false}}
@@ -17,4 +17,4 @@
 {"id": "EMO-SAR-02", "kind": "emotion", "emotion": "DISSATISFIED", "intent": "ACTION_LOGISTICS", "query": "哦，又是在路上呢，行吧，反正也不差这两天了", "expect": {"escalate": false}}
 {"id": "EMO-NEG-01", "kind": "emotion", "emotion": "UNCERTAIN", "intent": "POLICY_RETURN", "query": "这个商品可以退吗", "expect": {"escalate": false}}
 {"id": "EMO-NEG-02", "kind": "emotion", "emotion": "UNCERTAIN", "intent": "ACTION_ADDRESS", "query": "帮我改一下收货地址，订单号SO20260901004，新的地址是上海市浦东新区世纪大道100号", "expect": {"escalate": false}}
-{"id": "EMO-NEG-03", "kind": "emotion", "emotion": "UNCERTAIN", "intent": "POLICY_LOGISTICS", "query": "快递说派送了但我没收到货，这是怎么回事", "expect": {"escalate": false}}
+{"id": "EMO-NEG-03", "kind": "emotion", "emotion": "UNCERTAIN", "intent": "POLICY_SHIPPING", "query": "快递说派送了但我没收到货，这是怎么回事", "expect": {"escalate": false}}

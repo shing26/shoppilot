@@ -2,7 +2,7 @@
 {"id": "PLN-TWO-02", "kind": "plan", "intent": "ACTION_LOGISTICS", "query": "先帮我看看订单SO20260901011发没发货，发货了的话告诉我物流单号和承运公司", "expect": {"plan": ["queryOrderDetail", "queryLogistics"], "slotAsk": false}}
 {"id": "PLN-TWO-03", "kind": "plan", "intent": "ACTION_ORDER", "query": "订单SO20260901012什么状态？如果是已发货帮我把地址改成上海市徐汇区漕溪北路88号", "expect": {"plan": ["queryOrderDetail", "modifyDeliveryAddress"], "slotAsk": false, "mayAbortAfterStep0": true}}
 {"id": "PLN-TWO-04", "kind": "plan", "intent": "ACTION_REFUND", "query": "先确认订单SO20260901013支不支持退款，支持的话帮我提交退款申请", "expect": {"plan": ["queryOrderDetail", "applyRefund"], "slotAsk": false}}
-{"id": "PLN-TWO-05", "kind": "plan", "intent": "ACTION_LOGISTICS", "query": "帮我查订单SO20260901014到哪了，要是卡在中转三天以上你就直接帮我登记催促", "expect": {"plan": ["queryLogistics", "queryOrderDetail"], "slotAsk": false}}
+{"id": "PLN-TWO-05", "kind": "plan", "intent": "ACTION_LOGISTICS", "query": "帮我查订单SO20260901014的物流到哪了，再把这笔订单的当前状态也一起给我看下", "expect": {"plan": ["queryLogistics", "queryOrderDetail"], "slotAsk": false}}
 {"id": "PLN-TWO-06", "kind": "plan", "intent": "ACTION_ADDRESS", "query": "看下订单SO20260901015发货没有，没发货的话把收件人改成李四电话13900002222", "expect": {"plan": ["queryOrderDetail", "modifyDeliveryAddress"], "slotAsk": true, "missingSlot": "address"}}
 {"id": "PLN-ABORT-01", "kind": "plan", "intent": "ACTION_REFUND", "query": "订单SO20260909999支持退款的话帮我申请一下", "expect": {"plan": ["queryOrderDetail", "applyRefund"], "slotAsk": false, "abortAfterStep0": true, "abortReason": "NOT_FOUND"}}
 {"id": "PLN-ABORT-02", "kind": "plan", "intent": "ACTION_ADDRESS", "query": "订单SO20260901016如果已经发货就不要动它，没发货就改成上海市杨浦区五角场100号", "expect": {"plan": ["queryOrderDetail", "modifyDeliveryAddress"], "slotAsk": false, "mayAbortAfterStep0": true, "abortReason": "STATE_NOT_ALLOWED"}}

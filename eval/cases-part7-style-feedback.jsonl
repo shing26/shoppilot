@@ -1,11 +1,11 @@
-{"id": "STY-WEB-ANG-01", "kind": "style", "channel": "web", "emotion": "ANGRY", "intent": "ACTION_REFUND", "query": "订单SO20260901021的退款到底什么时候到账", "expect": {"style": "FORMAL", "tone": "先安抚后给结论", "mustNotContain": ["亲~", "呢", " emojis"], "mustNotCarryFacts": true}}
+{"id": "STY-WEB-ANG-01", "kind": "style", "channel": "web", "emotion": "ANGRY", "intent": "ACTION_REFUND", "query": "订单SO20260901021的退款到底什么时候到账", "expect": {"style": "FORMAL", "tone": "先安抚后给结论", "mustNotContain": ["亲~", "呢", "emoji"], "mustNotCarryFacts": true}}
 {"id": "STY-APP-CAL-01", "kind": "style", "channel": "app", "emotion": "CALM", "intent": "POLICY_RETURN", "query": "退货流程是什么样的呀", "expect": {"style": "CONCISE", "tone": "步骤化短句", "mustNotCarryFacts": true}}
-{"id": "STY-EMAIL-CAL-01", "kind": "style", "channel": "email", "emotion": "CALM", "intent": "POLICY_LOGISTICS", "query": "想了解一下配送范围和时效说明", "expect": {"style": "FORMAL", "tone": "完整段落+落款", "mustNotCarryFacts": true}}
+{"id": "STY-EMAIL-CAL-01", "kind": "style", "channel": "email", "emotion": "CALM", "intent": "POLICY_SHIPPING", "query": "想了解一下配送范围和时效说明", "expect": {"style": "FORMAL", "tone": "完整段落+落款", "mustNotCarryFacts": true}}
 {"id": "STY-MINI-DIS-01", "kind": "style", "channel": "miniapp", "emotion": "DISSATISFIED", "intent": "ACTION_LOGISTICS", "query": "物流怎么这么慢，帮我看下订单SO20260901022", "expect": {"style": "FRIENDLY", "tone": "承认问题+给出行动", "mustNotCarryFacts": true}}
 {"id": "STY-APP-ANG-01", "kind": "style", "channel": "app", "emotion": "ANGRY", "intent": "ACTION_ORDER", "query": "查订单SO20260901023，立刻", "expect": {"style": "FORMAL", "tone": "克制正式", "mustNotCarryFacts": true}}
 {"id": "STY-EMAIL-ANG-01", "kind": "style", "channel": "email", "emotion": "ANGRY", "intent": "ACTION_REFUND", "query": "关于订单SO20260901024的退款延误，请书面回复处理方案", "expect": {"style": "FORMAL", "tone": "正式函件体", "mustNotCarryFacts": true}}
 {"id": "FBK-EXP-01", "kind": "feedback", "intent": "POLICY_RETURN", "query": "退货要自己出运费吗", "expect": {"explicitFeedback": "DOWN", "feedbackRow": true, "linkRuleIds": true, "reviewQueueVisible": true}}
-{"id": "FBK-EXP-02", "kind": "feedback", "intent": "POLICY_LOGISTICS", "query": "一般几天能到货", "expect": {"explicitFeedback": "UP", "feedbackRow": true, "reviewQueueVisible": false}}
+{"id": "FBK-EXP-02", "kind": "feedback", "intent": "POLICY_SHIPPING", "query": "一般几天能到货", "expect": {"explicitFeedback": "UP", "feedbackRow": true, "reviewQueueVisible": false}}
 {"id": "FBK-IMP-01", "kind": "feedback", "intent": "POLICY_RETURN", "query": "无理由退货的范围是什么", "expect": {"implied": "none"}}
 {"id": "FBK-IMP-02", "kind": "feedback", "intent": "POLICY_RETURN", "query": "哪些情况算影响二次销售", "expect": {"implied": "implied_dissatisfied", "condition": "同会话重问POLICY_RETURN意图"}}
 {"id": "FBK-IMP-03", "kind": "feedback", "intent": "ACTION_ORDER", "query": "帮我查下订单SO20260901025的状态", "expect": {"implied": "negative", "condition": "该请求走到FALLBACK(如TOOL_UNAVAILABLE)"}}

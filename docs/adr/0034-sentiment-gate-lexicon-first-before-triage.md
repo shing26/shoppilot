@@ -1,6 +1,6 @@
 # 情感识别走"词典规则优先、LLM 兜底"，高情绪在 TRIAGE 之前直接转人工
 
-Context: 对标架构要求情感识别前置（4 分类，高情绪优先转人工），ShopPilot 现有转人工全部发生在意图判定之后（T0 显式升级、9 因降级，含票 41 新增的轮次用尽因）。情绪激动的用户走完全链路再转人工，等待时间本身就是二次激怒；同时引入 BERT 分类器会引入 Python 侧依赖与模型部署形态，与单机 JVM 验证件冲突。
+Context: 对标架构要求情感识别前置（4 分类，高情绪优先转人工），ShopPilot 现有转人工全部发生在意图判定之后（T0 显式升级与一组可枚举降级因，票 41 已新增轮次用尽因）。情绪激动的用户走完全链路再转人工，等待时间本身就是二次激怒；同时引入 BERT 分类器会引入 Python 侧依赖与模型部署形态，与单机 JVM 验证件冲突。
 
 Decision: 新增 `sentiment` 包，`SentimentGate` 插在 `INTAKE → TRIAGE` 之间，两级判定：
 
@@ -9,7 +9,7 @@ Decision: 新增 `sentiment` 包，`SentimentGate` 插在 `INTAKE → TRIAGE` �
 
 升级判据：`ANGRY` 或 置信度 ≥ 0.8 且情绪 ∈ {ANGRY, URGENT} → `fallback(EMOTION_ESCALATION)`。`FallbackReason` 新增第 10 个枚举值 `EMOTION_ESCALATION`（第 9 位已被票 41 的 `TOOL_ROUNDS_EXHAUSTED` 占用），话术先安抚后转接，工单带 `priority=high` 标记，复用 ADR 0009 的落库与队列反查路径。
 
-被情绪门升级的请求不进 TRIAGE、不进缓存、不计入拦截率分母（分母口径不变，见 ADR 0003）。
+被情绪门升级的请求不进 TRIAGE、不进缓存；拦截率分母的定义仍按 ADR 0003，但情绪摘除属分母构成变化，随新指标一并登记，不靠改分母口径换数字。
 
 Considered Options:
 
