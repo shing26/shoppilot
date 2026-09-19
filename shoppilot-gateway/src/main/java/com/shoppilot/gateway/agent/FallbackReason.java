@@ -9,7 +9,8 @@ public enum FallbackReason {
     INTENT_UNRESOLVED,
     RATE_LIMITED,
     SLOT_UNRESOLVED,
-    USER_REQUESTED;
+    USER_REQUESTED,
+    TOOL_ROUNDS_EXHAUSTED;
 
     public String userMessage() {
         return switch (this) {
@@ -21,6 +22,8 @@ public enum FallbackReason {
             case RATE_LIMITED -> "当前咨询人数较多，请稍后再试。";
             case SLOT_UNRESOLVED -> "缺少必要信息无法为您办理，已转人工协助补充。";
             case USER_REQUESTED -> "已为您转接人工客服。";
+            // 不复述计划、不承诺任何没执行的动作（ADR 0008「不猜不骗」）；已查到的事实由人工接手后可用
+            case TOOL_ROUNDS_EXHAUSTED -> "这个问题需要人工为您整体跟进，已把已查到的信息交给人工客服。";
         };
     }
 }

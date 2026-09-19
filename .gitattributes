@@ -8,3 +8,8 @@ docs/interview-qa.md whitespace=cr-at-eol
 # git diff --check 会把整份产物报成 trailing whitespace。
 loadtest/results/*.csv whitespace=cr-at-eol
 loadtest/results/*.json whitespace=cr-at-eol
+
+# AgentStateMachine.java 的 index 是历史混合行尾（round16 的 apply_patch 遗留），Edit 工具
+# 又按 CRLF 写回，任何后续编辑都会把整文件翻成 diff 噪声。text 属性让入库与比对一律按 LF
+# 规范化：index 归一为 LF、worktree 的 CRLF 不再进 diff，文件从此 uniform。
+shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/AgentStateMachine.java text

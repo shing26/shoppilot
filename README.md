@@ -339,8 +339,10 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
   `verify-console.mjs` 那条断言因此钉的是"分块数 >1 且分块文本累计 >60 字"，与命中路径"一次性 1 块"仍然互斥；
   只按帧数判会把流式形态的断言变成负载的函数，那正是这一轮 `console` 先红后绿的原因。
 - **压测与发压同机**（见上一节），峰值 QPS 是网关与发压器的共同上限。
-- **2 轮工具上限只在活体链路上跑到**：压测与 `verify-action-loop.ps1` 的事件序列证明它生效，
-  但没有一条 JVM 内用例直接断言"第 3 轮会被拒"。
+- **2 轮工具上限的边界语义已由 JVM 用例钉住（票 41）**：轮次用尽后模型仍要工具 → 按字面
+  `TOOL_ROUNDS_EXHAUSTED` 落工单转人工；两轮链完成且模型不再要工具 → 照常出答案；
+  写动作轮次内没办成 → 直接转人工，不给口头承诺收尾留门。此前"超限强制 FALLBACK"（ADR 0008）
+  与实现的"基于已有事实收尾"分歧自 `f58e439` 起共存了 33 张票，2026-09-19 外部审查发现后裁决对齐字面。
 - **JVM 退出已由仓内日志归因到 native 内存 OOM**：14 份 `hs_err_pid*.log` 的开头都是
   `There is insufficient memory for the Java Runtime Environment to continue.`，随后分别是
   `Native memory allocation (malloc/mmap) failed ...` 与 `Out of Memory Error`；崩溃瞬间系统空闲物理内存
@@ -469,7 +471,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（3 + 12 + 209 = 224 项）
+# 单元、架构与主链路 JVM 集成测试（3 + 12 + 213 = 228 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -504,8 +506,9 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七�
 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
 Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
-这条门禁覆盖干净 runner 上的构建与 224 条 JVM 测试，其中新增三条是网关主链路 JVM
-集成 smoke（缓存命中、工具循环、fallback），不依赖 Docker、Redis、ES、Qdrant 或 Ollama。它仍不替代本机 17 步全量验收，后者包含活体中间件、
+这条门禁覆盖干净 runner 上的构建与 228 条 JVM 测试：round16 的三条网关主链路 JVM
+集成 smoke（缓存命中、工具循环、fallback），加上票 41 的四条工具循环语义用例（超限 FALLBACK、
+预算检查出答案、写动作守卫、多 toolCalls 防御），不依赖 Docker、Redis、ES、Qdrant 或 Ollama。它仍不替代本机 17 步全量验收，后者包含活体中间件、
 浏览器、评测与一键演示。CI 报红先修真实失败，不通过加跳过、改期望数或取消测试来换绿。
 
 ### 逐 ticket 验收动作 → 覆盖命令

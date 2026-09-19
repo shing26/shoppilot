@@ -81,6 +81,7 @@ public class AgentStateMachine {
     private final Counter toolRoundExhaustedCounter;
     private final Counter negativeSuppressedCounter;
     private final Counter writeNudgeCounter;
+    private final Counter multiToolCallCounter;
 
     public AgentStateMachine(TriageEngine triageEngine, CacheService cacheService, SingleFlight singleFlight,
                              WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, HybridRetriever retriever,
@@ -105,6 +106,9 @@ public class AgentStateMachine {
                 .tag("reason", "retrieval-degraded").register(registry);
         // "答应了但没动手"被纠偏了几次：这是工具闭环里被救回来的那一段，不数出来就没人知道它存在
         this.writeNudgeCounter = Counter.builder("shoppilot_write_nudge_total").register(registry);
+        // 模型一次要了多个工具的次数：请求层已带 parallel_tool_calls=false（票 41），
+        // 计数非零说明对面端点忽略了该字段，残余风险就靠它暴露
+        this.multiToolCallCounter = Counter.builder("shoppilot_llm_multi_tool_calls_total").register(registry);
     }
 
     public AgentResult run(String query, String idempotencyToken, EventSink sink) {
@@ -234,6 +238,7 @@ public class AgentStateMachine {
         ToolName expectedWrite = expectedWriteTool(intent);
         boolean expectedWriteDone = false;
         boolean nudged = false;
+        boolean answeredByBudgetCheck = false;
         LlmTypes.Reply lastReply = null;
         while (rounds < properties.agent().maxToolRounds()) {
             step(trace, sink, AgentState.PLAN, "round=" + rounds);
@@ -263,8 +268,14 @@ public class AgentStateMachine {
             }
             toolUsed = true;
             rounds++;
+            // 防御（票 41）：请求层已带 parallel_tool_calls=false，但宽松端点仍可能一次返回多个调用。
+            // 只派发并只记录第一个：转录里 assistant 的 tool_call 必须与 tool 响应一一配对，
+            // 不伪造未执行工具的结果；多出来的调用不执行也不假装执行，计数器让这件事可见。
+            if (lastReply.toolCalls().size() > 1) {
+                multiToolCallCounter.increment();
+            }
             LlmTypes.ToolCall call = lastReply.toolCalls().get(0);
-            messages.add(LlmTypes.Message.assistant(lastReply.content(), lastReply.toolCalls()));
+            messages.add(LlmTypes.Message.assistant(lastReply.content(), List.of(call)));
             ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken);
             if (dispatch.unknown()) {
                 // 模型编出了不存在的工具：不拿 null 工具往下走，直接兜底
@@ -302,9 +313,37 @@ public class AgentStateMachine {
             messages.add(LlmTypes.Message.tool(call.id(), dispatch.json()));
         }
         if (rounds >= properties.agent().maxToolRounds() && lastReply != null && lastReply.wantsTool()) {
-            // 还有工具想调但轮次用尽：不再进循环，直接基于已有事实收尾
-            toolRoundExhaustedCounter.increment();
-            step(trace, sink, AgentState.PLAN, "tool-rounds-exhausted");
+            // 工具轮预算用尽（ADR 0008：硬上限 2 轮）。这里分三种走向，对齐 ADR 0008 全文：
+            // ① 写动作答应过但还没真办成：轮次没了就不给"口头承诺收尾"留门，直接转人工（票 41 守卫）；
+            // ② 预算外再做一次规划调用问模型还要不要工具（这是模型调用，不是第三个工具轮，
+            //    与纠偏轮同例——ticket 11：rounds 只统计真正执行过的工具）：
+            //    仍要 → 按字面"超限强制 FALLBACK"落工单；不要 → 它的正文就是最终答案，
+            //    "先查订单再查物流"这类两轮链照常出答案（ADR 0008 Consequences）。
+            if (expectedWrite != null && !expectedWriteDone) {
+                toolRoundExhaustedCounter.increment();
+                step(trace, sink, AgentState.PLAN, "tool-rounds-exhausted write-pending=" + expectedWrite.apiName());
+                return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
+                        FallbackReason.TOOL_ROUNDS_EXHAUSTED, query,
+                        "轮次上限内未能完成 " + expectedWrite.apiName()));
+            }
+            step(trace, sink, AgentState.PLAN, "budget-check");
+            LlmTypes.Request budgetRequest = new LlmTypes.Request(messages, toolsFor(triage),
+                    properties.llm().temperature());
+            try {
+                lastReply = llm.complete(budgetRequest);
+            } catch (LlmException failure) {
+                return ModelRun.solo(fallback(AgentState.PLAN, trace, sink, mapLlmFailure(failure), query,
+                        failure.getMessage()));
+            }
+            roundReplies.add(lastReply);
+            if (lastReply.wantsTool()) {
+                toolRoundExhaustedCounter.increment();
+                step(trace, sink, AgentState.PLAN, "tool-rounds-exhausted");
+                return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
+                        FallbackReason.TOOL_ROUNDS_EXHAUSTED, query,
+                        "工具请求超出 " + properties.agent().maxToolRounds() + " 轮上限"));
+            }
+            answeredByBudgetCheck = true;
         }
 
         if (rounds == 0 && !toolUsed && intent != null && intent.isAction()) {
@@ -344,8 +383,9 @@ public class AgentStateMachine {
         String answer;
         int promptTokens = 0;
         int completionTokens = 0;
-        if (lastReply != null && !lastReply.wantsTool() && lastReply.content() != null && rounds == 0) {
-            // 首轮就给出内容：直接把它按打字机切块推出去，不再多打一次模型
+        if (lastReply != null && !lastReply.wantsTool() && lastReply.content() != null
+                && (rounds == 0 || answeredByBudgetCheck)) {
+            // 首轮就给出内容，或预算检查后模型明确不再要工具：直接把它按打字机切块推出去，不再多打一次模型
             answer = lastReply.content();
             promptTokens = lastReply.promptTokens();
             completionTokens = lastReply.completionTokens();

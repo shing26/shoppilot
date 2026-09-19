@@ -181,6 +181,9 @@ class OpenAiCompatibleLlmClientTest {
         assertThat(sent.body().path("tools").get(0).path("function").path("name").asText())
                 .isEqualTo("queryOrderDetail");
         assertThat(sent.body().path("tool_choice").asText()).isEqualTo("auto");
+        // 状态机每轮只派发一个工具：请求层必须显式关掉并行返回（票 41）
+        assertThat(sent.body().path("parallel_tool_calls").isBoolean()).isTrue();
+        assertThat(sent.body().path("parallel_tool_calls").asBoolean()).isFalse();
         assertThat(reply.wantsTool()).isTrue();
         assertThat(reply.toolCalls().get(0).name()).isEqualTo("queryOrderDetail");
         assertThat(reply.toolCalls().get(0).arguments()).containsEntry("orderNo", "10023");

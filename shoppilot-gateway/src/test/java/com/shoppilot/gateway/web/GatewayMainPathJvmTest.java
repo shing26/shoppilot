@@ -50,6 +50,7 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -196,6 +197,155 @@ class GatewayMainPathJvmTest {
 
         verify(fallback).escalate(FallbackReason.USER_REQUESTED, "我要找人工", null);
         verifyNoInteractions(llm);
+    }
+
+    @Test
+    @DisplayName("轮次上限：预算检查后模型仍要工具 → 超限 FALLBACK 落工单，只有两次真实派发（票 41）")
+    void toolRoundsExhaustedFallsBackWithTicket() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        LlmTypes.ToolCall queryOrder = new LlmTypes.ToolCall("call-round-1", ToolName.QUERY_ORDER_DETAIL.apiName(),
+                Map.of("orderNo", "90001"));
+        LlmTypes.Reply alwaysWantsTool = new LlmTypes.Reply("", List.of(queryOrder), 12, 3, null);
+        when(llm.complete(any())).thenReturn(alwaysWantsTool, alwaysWantsTool, alwaysWantsTool);
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
+
+        FallbackService fallback = mock(FallbackService.class);
+        when(fallback.escalate(eq(FallbackReason.TOOL_ROUNDS_EXHAUSTED), anyString(), anyString()))
+                .thenReturn(Optional.of("T-801"));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
+                mock(CacheService.class), llm, dispatcher, fallback);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"我的订单90001到哪了\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fallbackReason").value("TOOL_ROUNDS_EXHAUSTED"))
+                .andExpect(jsonPath("$.ticketId").value("T-801"))
+                .andExpect(jsonPath("$.answer").value(containsString("工单号 T-801")));
+
+        // 两次工具轮真实派发；第三次 complete 是预算检查，模型仍要工具即超限，不再派发、不再流式总结
+        verify(bizMock, times(2)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
+        verify(llm, times(3)).complete(any());
+        verify(llm, never()).stream(any(), any());
+        assertEquals(1.0d, registry.get("shoppilot_tool_round_exhausted_total").counter().count());
+    }
+
+    @Test
+    @DisplayName("预算检查后模型不再要工具：两轮链照常出答案，不落工单（ADR 0008「2 轮覆盖真实链式调用」）")
+    void budgetCheckWithoutFurtherToolNeedAnswersFromThePlan() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        LlmTypes.ToolCall queryOrder = new LlmTypes.ToolCall("call-chain-1", ToolName.QUERY_ORDER_DETAIL.apiName(),
+                Map.of("orderNo", "90001"));
+        LlmTypes.Reply toolPlan = new LlmTypes.Reply("", List.of(queryOrder), 12, 3, null);
+        when(llm.complete(any())).thenReturn(toolPlan, toolPlan,
+                LlmTypes.Reply.text("您的订单已发货，物流正在配送途中"));
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"我的订单90001到哪了\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value("您的订单已发货，物流正在配送途中"))
+                .andExpect(jsonPath("$.toolUsed").value(true))
+                .andExpect(jsonPath("$.fallbackReason").doesNotExist());
+
+        verify(bizMock, times(2)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
+        // 预算检查那轮的正文就是最终答案：不再额外打一次流式总结
+        verify(llm, times(3)).complete(any());
+        verify(llm, never()).stream(any(), any());
+        assertEquals(0.0d, registry.get("shoppilot_tool_round_exhausted_total").counter().count());
+    }
+
+    @Test
+    @DisplayName("写动作轮次内没办成：预算用尽直接 FALLBACK，不给口头承诺收尾留门（票 41 守卫）")
+    void writePendingAtBudgetExhaustionFallsBackWithoutAnotherPlanCall() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        LlmTypes.ToolCall queryOrder = new LlmTypes.ToolCall("call-refund-1", ToolName.QUERY_ORDER_DETAIL.apiName(),
+                Map.of("orderNo", "90001"));
+        LlmTypes.Reply readToolPlan = new LlmTypes.Reply("", List.of(queryOrder), 12, 3, null);
+        when(llm.complete(any())).thenReturn(readToolPlan, readToolPlan);
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
+
+        FallbackService fallback = mock(FallbackService.class);
+        when(fallback.escalate(eq(FallbackReason.TOOL_ROUNDS_EXHAUSTED), anyString(), anyString()))
+                .thenReturn(Optional.of("T-802"));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_REFUND, "T1", true),
+                mock(CacheService.class), llm, dispatcher, fallback);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"订单90001申请退款\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fallbackReason").value("TOOL_ROUNDS_EXHAUSTED"))
+                .andExpect(jsonPath("$.ticketId").value("T-802"));
+
+        // 两轮都花在读工具上、applyRefund 没执行：直接转人工，连预算检查那次规划调用都不该有
+        verify(bizMock, times(2)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
+        verify(llm, times(2)).complete(any());
+        verify(llm, never()).stream(any(), any());
+    }
+
+    @Test
+    @DisplayName("一次返回多个 toolCalls：只派发并只记录第一个，转录保持协议配对（票 41 防御）")
+    void multipleToolCallsInOneReplyDispatchOnlyTheFirst() throws Exception {
+        ArgumentCaptor<LlmTypes.Request> planRounds = ArgumentCaptor.forClass(LlmTypes.Request.class);
+        LlmGateway llm = mock(LlmGateway.class);
+        LlmTypes.ToolCall first = new LlmTypes.ToolCall("call-multi-1", ToolName.QUERY_ORDER_DETAIL.apiName(),
+                Map.of("orderNo", "90001"));
+        LlmTypes.ToolCall second = new LlmTypes.ToolCall("call-multi-2", ToolName.QUERY_ORDER_DETAIL.apiName(),
+                Map.of("orderNo", "90002"));
+        LlmTypes.Reply greedyPlan = new LlmTypes.Reply("", List.of(first, second), 12, 3, null);
+        when(llm.complete(any())).thenReturn(greedyPlan, LlmTypes.Reply.text("您的订单正在配送中"));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("您的订单正在配送中"));
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"我的订单到哪了\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value("您的订单正在配送中"));
+
+        // 只派发第一个：第二个调用不执行、也不出现在转录里冒充已执行
+        verify(bizMock, times(1)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
+        verify(llm, times(2)).complete(planRounds.capture());
+        List<LlmTypes.Message> secondRound = planRounds.getAllValues().get(1).messages();
+        LlmTypes.Message assistant = secondRound.stream()
+                .filter(message -> "assistant".equals(message.role()) && !message.toolCalls().isEmpty())
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("第二轮规划请求缺少发起调用的 assistant 消息"));
+        assertEquals(1, assistant.toolCalls().size(), "assistant 转录只允许带被派发的那一个 tool_call");
+        assertEquals("call-multi-1", assistant.toolCalls().get(0).id());
+        assertEquals(1, secondRound.stream().filter(message -> "tool".equals(message.role())).count(),
+                "tool 响应必须与 assistant 的 tool_call 一一配对");
+        assertEquals(1.0d, registry.get("shoppilot_llm_multi_tool_calls_total").counter().count());
     }
 
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,

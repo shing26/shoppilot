@@ -104,6 +104,9 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         if (request.tools() != null && !request.tools().isEmpty()) {
             payload.put("tools", request.tools());
             payload.put("tool_choice", "auto");
+            // 状态机每轮只派发一个工具（ADR 0008 串行预算）：从请求层关掉并行返回；
+            // 宽松端点忽略此字段时的残余风险由状态机的多调用防御分支兜底（票 41）
+            payload.put("parallel_tool_calls", false);
         }
         return payload;
     }
