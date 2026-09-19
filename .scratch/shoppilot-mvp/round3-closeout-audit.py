@@ -77,12 +77,18 @@ _DEF_LANDED = 0
 # 票 27 新增 WriteBackPoolTest 5 条；票 28 新增 ConfigValidationTest 22 条；
 # 票 29 新增 RuntimeStateMetricsTest 5 条；票 30/31 是文档与脚本票，不加 JVM 用例。
 # 本项判据形状仍是一字未动，动的只有这一格常数。
+# 换代指针（round17）：当前基线已是 3 + 15 + 249 = 267（票 34-39/41/风格票的用例都进了 surefire），
+# 但本机没有 pwsh 7、跑不了全量活体验收，logs/acceptance 里仍是 221 年代的日志——常数暂与本机日志
+# 自洽（G6 核的是"上次整跑"的读数），换代连同 logs 一起留到下次本机全量活体验收时做。
 G6_EXPECT = [3, 12, 206]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 
 LOCAL_ONLY = [
     "A3 tokensUsedToday == 0",  # 要活体网关；网关不在跑时判 SKIP（第七轮 Standards 轴抓到它漏声明）
+    # 换代指针（round17）：本轮的票 39 硬闸门按所有者授权跑了三次全量 dev 评测（约 117 万 token），
+    # A3 的零额度口径被有意打破；证据在 eval/results 的三套产物与 round17 spec 的收口记录里。
+    # 网关当前已停（跑 Maven 需腾内存），A3 因此判 SKIP 而不是"本轮真的零额度"——别把这次 SKIP 当绿灯。
     "D3 verify_eval_judge 退出码 0 且 40/40 条断言全过",  # 依赖检出后的换行符，见 eol_drift()
     "F1c 文档里的 logs 类产物名都指向本机 logs/（本机限定：logs 不入库）",
     "G2b 落点那轮极性守卫真被触发（blocked 计数器增量 = 1）",
