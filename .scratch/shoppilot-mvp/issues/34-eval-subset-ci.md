@@ -37,6 +37,8 @@ python3 scripts/run_tool_eval.py \
 
 ## Handoff notes
 
+**2026-09-19 CI 首跑追记**：run `35440181970` 的判据自检步在 Linux 上红了一条——"仓库那份与重新生成结果一致"。根因是 `build_eval_set.py` 用 `write_text` 默认文本模式写生成物：Windows 翻译成 CRLF、Linux 保持 LF，而入库的 `tool-cases.jsonl` 与 `EOL_BASELINE` 都钉着 CRLF，这条判据过去只在作者本机成立。修复：生成器显式 `newline="\r\n"` 钉死行尾（数据源纯 LF 拼装，无二次转换），仓库产物与换行基线一字未动；审计 B7 禁面相应摘出 `build_eval_set.py`（judge 本体 `run_tool_eval.py` 与校验器 `verify_eval_judge.py` 仍钉着）。修复后本机 40/40 + rescore exit 0，CI 复跑见 Handoff 末行。这条的经验正好是本票的价值陈述：**没接进 CI 之前，这个平台性假绿会一直藏着。**
+
 **关键决策**
 
 - **两步进同一个 job、排在 `mvnw verify` 之后**：评测门禁与 JVM 门禁共享"干净 runner 零外部依赖"的定位；分开 job 只会多一份启动成本，且 fail-fast 语义相同。workflow 仍叫 `ci-subset`——它依旧不覆盖 17 步活体验收，只是"子集"的边界从构建+JVM 扩到构建+JVM+评测量具自检（README 已同步）。

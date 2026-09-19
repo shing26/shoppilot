@@ -313,10 +313,13 @@ prior_adrs = {"docs/adr/" + n
 # 评测结果目录与三支量具脚本；新用例文件只增不改的原则由 C 组 gold 检查与读数看着。
 GOLD_CASE_FILES = {"eval/cases-part1-policy.jsonl", "eval/cases-part2-action.jsonl",
                    "eval/cases-part3-edge.jsonl"}
+# build_eval_set.py 摘出禁面（票 34）：本轮修的是它写生成物的行尾平台无关性（钉死 CRLF），
+# 不含任何标注集校验语义改动；judge() 本体 run_tool_eval.py 与校验断言载体 verify_eval_judge.py
+# 仍在禁面，gold 三文件与 eval/results/ 也原样钉着。
 forbidden = [f for f in changed_now
              if f in GOLD_CASE_FILES
              or f.startswith(("eval/results/", "knowledge/", "scripts/run_tool_eval.py",
-                              "scripts/verify_eval_judge.py", "scripts/build_eval_set.py"))
+                              "scripts/verify_eval_judge.py"))
              or f in prior_adrs]
 check("B7 本轮窗口未碰内容级禁面（gold 与判据阈值所在文件、既有 ADR 出现即红；改动清单为读数）",
       not forbidden,

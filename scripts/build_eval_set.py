@@ -140,9 +140,12 @@ def main() -> int:
         if len(owners) > 1:
             warnings.append(f"同一身份下 query 重复：{query} {who} -> {owners}")
 
+    # 生成物行尾钉死 CRLF：与已入库的 tool-cases.jsonl 及 verify_eval_judge 的 EOL_BASELINE 一致。
+    # 不钉死的话 Windows 生成 CRLF、Linux 生成 LF，"仓库那份与重新生成结果一致"这条判据只在
+    # 作者本机成立，CI 上永远红（票 34 把它接进 CI 时当场抓到）。
     OUT.write_text("".join(
         json.dumps({k: v for k, v in case.items() if k != "_source"}, ensure_ascii=False) + "\n"
-        for case in cases), encoding="utf-8")
+        for case in cases), encoding="utf-8", newline="\r\n")
 
     print(f"合并 {len(cases)} 条 -> {OUT.relative_to(REPO)}")
     for intent, items in sorted(by_intent.items()):
