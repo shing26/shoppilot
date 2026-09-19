@@ -15,7 +15,7 @@
 - 2026-09-19（下午）：外部审查（5 份跨项目报告）交叉核实后并入 round17——两个发现升级为前置票 41（工具循环语义钉死），登记项落 round17 spec 附录；round17 草稿（spec、ADR 0033-0040、评测集 part4-7、票 41）首次入仓。
 - 当前没有其他 `ready-for-agent` 的开放 ticket。票 01-33 与 41 均已收口；round17 的票 34-40 待按序领取（34 → 35 → 36 → 37 → 38 → 39，0040 成文票可并行）。
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
-- Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建与 JVM 测试；全量 17 步活体验收仍是作者本机证据。
+- Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建、JVM 测试与 0 token 评测门禁（票 34：判据自检 + 离线 rescore 比对）；全量 17 步活体验收仍是作者本机证据。
 - 下一轮不能从旧 `ready-for-agent` 字样推断。重开条件与仍然挂红的裁决见 [`docs/adr/0030-round14-closure-scope-and-reopen-triggers.md`](../../docs/adr/0030-round14-closure-scope-and-reopen-triggers.md)。
 
 2026-09-16 的整理修正了四处历史状态位：

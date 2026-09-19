@@ -34,6 +34,23 @@ jobs:
       - name: Verify build and JVM tests
         run: bash ./mvnw -B -ntp verify
 
+      # 票 34（ADR 0033 前置闸门）：两步都是 0 token、纯 stdlib——judge 自检 40 项断言，
+      # 离线 rescore 按当前判据重算 2026-09-10 六份入库明细并钉住期望差异集合（对偶矛盾四条）。
+      # judge() 或 gold 的任何静默漂移都会让这两步变红，这是票 36-39 扩判据前的比对背书。
+      - name: Eval judge selfcheck (0-token)
+        run: python3 scripts/verify_eval_judge.py
+
+      - name: Offline rescore gate (0-token)
+        run: >
+          python3 scripts/run_tool_eval.py
+          --rescore eval/results/tool-eval-20260910-080638-dev-budgetfix.csv
+                    eval/results/tool-eval-20260910-080732-dev-budgetfix.csv
+                    eval/results/tool-eval-20260910-080830-dev-budgetfix.csv
+                    eval/results/tool-eval-20260910-080926-dev-budgetfix.csv
+                    eval/results/tool-eval-20260910-080942-dev-budgetfix.csv
+                    eval/results/tool-eval-20260910-075747-dev.csv
+          --rescore-expected-diff ACT-ORD-09,ACT-ORD-11,ACT-ORD-16,ACT-ORD-17
+
       - name: Upload Surefire reports on failure
         if: failure()
         uses: actions/upload-artifact@v7

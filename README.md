@@ -508,7 +508,10 @@ Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
 这条门禁覆盖干净 runner 上的构建与 228 条 JVM 测试：round16 的三条网关主链路 JVM
 集成 smoke（缓存命中、工具循环、fallback），加上票 41 的四条工具循环语义用例（超限 FALLBACK、
-预算检查出答案、写动作守卫、多 toolCalls 防御），不依赖 Docker、Redis、ES、Qdrant 或 Ollama。它仍不替代本机 17 步全量验收，后者包含活体中间件、
+预算检查出答案、写动作守卫、多 toolCalls 防御），不依赖 Docker、Redis、ES、Qdrant 或 Ollama。
+票 34 起它还包含两步 0 token 评测门禁：判据自检（`verify_eval_judge.py` 40 项断言）与离线
+rescore 比对（按当前判据重算 2026-09-10 六份入库明细，钉住对偶矛盾四条的期望差异集合）——
+judge() 或 gold 的静默漂移会让 CI 变红。它仍不替代本机 17 步全量验收，后者包含活体中间件、
 浏览器、评测与一键演示。CI 报红先修真实失败，不通过加跳过、改期望数或取消测试来换绿。
 
 ### 逐 ticket 验收动作 → 覆盖命令
