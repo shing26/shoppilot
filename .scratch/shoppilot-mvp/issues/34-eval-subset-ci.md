@@ -37,6 +37,8 @@ python3 scripts/run_tool_eval.py \
 
 ## Handoff notes
 
+**2026-09-19 CI 二跑追记**：rescore 步在 Linux 上 exit 126——YAML 折叠标量（`run: >`）里比首行缩进更深的续行不参与折叠，bash 把第二个文件路径当命令执行（Permission denied），rescore 只吃到 1 个文件。修复：续行与首行同缩进，PyYAML 解析确认折叠后是单行命令。经验入账：**workflow 里的多参数命令要么单行、要么同缩进折叠，深缩进续行是字面量**。本机 `git diff --check` 对 CRLF 钉死的三支 eval 脚本报假红，`.gitattributes` 补 `whitespace=cr-at-eol`（同 interview-qa 先例）。
+
 **2026-09-19 CI 首跑追记**：run `35440181970` 的判据自检步在 Linux 上红了一条——"仓库那份与重新生成结果一致"。根因是 `build_eval_set.py` 用 `write_text` 默认文本模式写生成物：Windows 翻译成 CRLF、Linux 保持 LF，而入库的 `tool-cases.jsonl` 与 `EOL_BASELINE` 都钉着 CRLF，这条判据过去只在作者本机成立。修复：生成器显式 `newline="\r\n"` 钉死行尾（数据源纯 LF 拼装，无二次转换），仓库产物与换行基线一字未动；审计 B7 禁面相应摘出 `build_eval_set.py`（judge 本体 `run_tool_eval.py` 与校验器 `verify_eval_judge.py` 仍钉着）。修复后本机 40/40 + rescore exit 0，CI 复跑见 Handoff 末行。这条的经验正好是本票的价值陈述：**没接进 CI 之前，这个平台性假绿会一直藏着。**
 
 **关键决策**

@@ -13,3 +13,9 @@ loadtest/results/*.json whitespace=cr-at-eol
 # 又按 CRLF 写回，任何后续编辑都会把整文件翻成 diff 噪声。text 属性让入库与比对一律按 LF
 # 规范化：index 归一为 LF、worktree 的 CRLF 不再进 diff，文件从此 uniform。
 shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/AgentStateMachine.java text
+
+# 三支 eval 脚本的行尾基线钉死 CRLF（verify_eval_judge 的 EOL_BASELINE），但 git diff --check
+# 会把新增 CRLF 行报成 trailing whitespace——豁免检查不改变存储，避免每次编辑都出假红。
+scripts/run_tool_eval.py whitespace=cr-at-eol
+scripts/build_eval_set.py whitespace=cr-at-eol
+scripts/verify_eval_judge.py whitespace=cr-at-eol
