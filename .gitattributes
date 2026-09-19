@@ -2,3 +2,9 @@
 # 对这份文件来说 CR 是行终止符的一部分，不是行尾空白；不写这条，git diff --check 会把每次
 # 重新生成产生的合法新增行全部报成 trailing whitespace。
 docs/interview-qa.md whitespace=cr-at-eol
+
+# loadtest 产物由压测脚本在本机生成，行尾基线是 CRLF（与已入仓的 0908 产物一致，
+# core.autocrlf=false 下按原样入库）；CR 是行终止符的一部分，不写这两条，
+# git diff --check 会把整份产物报成 trailing whitespace。
+loadtest/results/*.csv whitespace=cr-at-eol
+loadtest/results/*.json whitespace=cr-at-eol
