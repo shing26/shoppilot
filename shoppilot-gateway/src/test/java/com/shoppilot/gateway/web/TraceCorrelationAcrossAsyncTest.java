@@ -8,6 +8,7 @@ import com.shoppilot.gateway.agent.AgentResult;
 import com.shoppilot.gateway.agent.AgentStateMachine;
 import com.shoppilot.gateway.agent.EventSink;
 import com.shoppilot.gateway.agent.FallbackService;
+import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.agent.SessionStore;
 import com.shoppilot.gateway.agent.ToolDispatcher;
 import com.shoppilot.gateway.cache.CacheEntry;
@@ -184,7 +185,7 @@ class TraceCorrelationAcrossAsyncTest {
         RateLimitService rateLimit = mock(RateLimitService.class);
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
         return new ChatController(machine, mock(CacheService.class), rateLimit, new ObjectMapper(),
-                new SimpleMeterRegistry(), mock(FallbackService.class));
+                new SimpleMeterRegistry(), mock(FallbackService.class), new PromptCatalog());
     }
 
     private AgentStateMachine machine(CacheService cache, WriteBackPool writeBack) {
@@ -202,7 +203,7 @@ class TraceCorrelationAcrossAsyncTest {
         when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("支持七天无理由退货"));
         return new AgentStateMachine(triage, cache, mock(SingleFlight.class), policy, epoch, retriever, llm,
                 mock(ToolDispatcher.class), store, mock(FallbackService.class), properties(), writeBack,
-                new SimpleMeterRegistry());
+                new PromptCatalog(), new SimpleMeterRegistry());
     }
 
     private static CacheEntry entry() {
@@ -212,7 +213,7 @@ class TraceCorrelationAcrossAsyncTest {
 
     private static AgentResult result() {
         return new AgentResult("支持七天无理由退货", Intent.POLICY_RETURN, "T3", CacheService.Layer.NONE,
-                List.of(), new ArrayList<>(), null, null, false, 3, 5, false, false);
+                List.of(), new ArrayList<>(), null, null, false, 3, 5, false, false, "v1.0.0");
     }
 
     private static GatewayProperties properties() {

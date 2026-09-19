@@ -5,6 +5,7 @@ import com.shoppilot.gateway.agent.AgentStateMachine;
 import com.shoppilot.gateway.agent.BizMockClient;
 import com.shoppilot.gateway.agent.FallbackReason;
 import com.shoppilot.gateway.agent.FallbackService;
+import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.agent.IdempotencyService;
 import com.shoppilot.gateway.agent.SessionStore;
 import com.shoppilot.gateway.agent.ToolDispatcher;
@@ -371,12 +372,13 @@ class GatewayMainPathJvmTest {
 
         AgentStateMachine machine = new AgentStateMachine(triage, cache, mock(SingleFlight.class),
                 writeBackPolicy, epoch, retriever, llm, dispatcher, sessionStore, fallback,
-                properties(), mock(WriteBackPool.class), registry);
+                properties(), mock(WriteBackPool.class), new PromptCatalog(), registry);
 
         RateLimitService rateLimit = mock(RateLimitService.class);
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
 
-        ChatController controller = new ChatController(machine, cache, rateLimit, MAPPER, registry, fallback);
+        ChatController controller = new ChatController(machine, cache, rateLimit, MAPPER, registry, fallback,
+                new PromptCatalog());
         return MockMvcBuilders.standaloneSetup(controller).build();
     }
 

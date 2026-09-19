@@ -646,7 +646,8 @@ def main() -> int:
                              "prompt_tokens": 0, "completion_tokens": 0,
                              "latency_ms": round(elapsed * 1000), "rate_limit_retries": retries,
                              "fallback": "", "intent_actual": "", "triage_layer": "",
-                             "cache_layer": "", "slot_actual": False, "asked_in_prose": False})
+                             "cache_layer": "", "slot_actual": False, "asked_in_prose": False,
+                             "prompt_version": ""})
             else:
                 scored = score_case(case, result)
                 rows.append({**base_row, "error": "",
@@ -656,7 +657,8 @@ def main() -> int:
                              "fallback": result.get("fallbackReason") or "",
                              "intent_actual": result.get("intent") or "",
                              "triage_layer": result.get("triageLayer") or "",
-                             "cache_layer": result.get("cacheLayer") or "", **scored})
+                             "cache_layer": result.get("cacheLayer") or "",
+                             "prompt_version": result.get("promptVersion") or "", **scored})
             if done % 20 == 0 or done == len(cases):
                 print(f"  {done}/{len(cases)}")
 
@@ -691,6 +693,7 @@ def main() -> int:
     print(f"明细 {detail_path.relative_to(REPO)}；汇总 {summary_path.relative_to(REPO)}")
     RESULTS.joinpath(f"tool-eval-{stamp}-{slug}-meta.json").write_text(json.dumps({
         "mode": mode, "model": model, "llmBaseUrl": llm_base,
+        "promptVersion": next((r["prompt_version"] for r in rows if r.get("prompt_version")), ""),
         "cases": len(rows), "limit": args.limit,
         "promptTokens": total_prompt, "completionTokens": total_completion,
         "estimatedPerCaseTokens": per_case_tokens, "dailyTokenBudget": budget,

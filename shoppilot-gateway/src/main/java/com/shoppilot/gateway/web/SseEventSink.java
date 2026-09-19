@@ -33,16 +33,18 @@ public class SseEventSink implements EventSink {
     private final SseEmitter emitter;
     private final ObjectMapper mapper;
     private final String traceId;
+    private final String promptVersion;
     private final Timer ttftTimer;
     private final long startedAtNanos;
     private final AtomicBoolean firstTokenSent = new AtomicBoolean();
     private volatile boolean clientGone;
 
-    public SseEventSink(SseEmitter emitter, ObjectMapper mapper, String traceId, Timer ttftTimer,
-                        long startedAtNanos) {
+    public SseEventSink(SseEmitter emitter, ObjectMapper mapper, String traceId, String promptVersion,
+                        Timer ttftTimer, long startedAtNanos) {
         this.emitter = emitter;
         this.mapper = mapper;
         this.traceId = traceId;
+        this.promptVersion = promptVersion;
         this.ttftTimer = ttftTimer;
         this.startedAtNanos = startedAtNanos;
     }
@@ -65,6 +67,8 @@ public class SseEventSink implements EventSink {
         data.put("intent", intent == null ? "" : intent.name());
         data.put("cacheHit", cacheLayer == CacheService.Layer.L1 || cacheLayer == CacheService.Layer.L2);
         data.put("cacheLayer", cacheLayer.name());
+        // prompt 版本随 meta 走（ADR 0037 第 4 条）：旧客户端不读这个字段不受影响
+        data.put("promptVersion", promptVersion == null ? "" : promptVersion);
         send("meta", data);
     }
 

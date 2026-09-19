@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.agent.AgentStateMachine;
 import com.shoppilot.gateway.agent.BizMockClient;
 import com.shoppilot.gateway.agent.FallbackService;
+import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.config.DevDefaultsPolicy;
 import com.shoppilot.gateway.config.GatewayProperties;
@@ -80,7 +81,7 @@ class RestErrorEnvelopeTest {
                 faultInjector, cacheService, mock(KbEpoch.class), mock(TokenBudget.class),
                 mock(HybridRetriever.class), mock(DevDefaultsPolicy.class), writer);
         ChatController chat = new ChatController(mock(AgentStateMachine.class), cacheService,
-                mock(RateLimitService.class), JSON, registry, mock(FallbackService.class));
+                mock(RateLimitService.class), JSON, registry, mock(FallbackService.class), new PromptCatalog());
         return MockMvcBuilders.standaloneSetup(ops, chat)
                 .setControllerAdvice(new GatewayErrorHandler(writer))
                 .build();

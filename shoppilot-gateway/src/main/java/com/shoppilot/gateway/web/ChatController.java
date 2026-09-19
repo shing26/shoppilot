@@ -6,6 +6,7 @@ import com.shoppilot.gateway.agent.AgentStateMachine;
 import com.shoppilot.gateway.agent.FallbackReason;
 import com.shoppilot.gateway.agent.EventSink;
 import com.shoppilot.gateway.agent.FallbackService;
+import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.identity.RequestTrace;
 import com.shoppilot.gateway.identity.TenantContext;
@@ -50,17 +51,19 @@ public class ChatController {
     private final CacheService cacheService;
     private final RateLimitService rateLimit;
     private final FallbackService fallbackService;
+    private final PromptCatalog promptCatalog;
     private final ObjectMapper mapper;
     private final Timer ttftTimer;
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     public ChatController(AgentStateMachine agent, CacheService cacheService, RateLimitService rateLimit,
                           ObjectMapper mapper, MeterRegistry registry,
-                          FallbackService fallbackService) {
+                          FallbackService fallbackService, PromptCatalog promptCatalog) {
         this.agent = agent;
         this.cacheService = cacheService;
         this.rateLimit = rateLimit;
         this.fallbackService = fallbackService;
+        this.promptCatalog = promptCatalog;
         this.mapper = mapper;
         // TTFT 口径：服务端收到请求 -> 写出首个 token 帧，不含网络往返
         this.ttftTimer = Timer.builder("shoppilot_ttft_seconds")
@@ -100,7 +103,8 @@ public class ChatController {
         TenantContext.Identity identity = TenantContext.current();
         String traceId = RequestTrace.traceId();
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
-        SseEventSink sink = new SseEventSink(emitter, mapper, traceId, ttftTimer, System.nanoTime());
+        SseEventSink sink = new SseEventSink(emitter, mapper, traceId, promptCatalog.version(), ttftTimer,
+                System.nanoTime());
         emitter.onTimeout(emitter::complete);
 
         RateLimitService.Decision decision = admit(servletRequest);
@@ -158,7 +162,7 @@ public class ChatController {
     public record ChatResponse(String answerId, String answer, String intent, String triageLayer,
                                String cacheLayer, List<String> citations, String fallbackReason, String ticketId,
                                boolean slotAsked, int promptTokens, int completionTokens, boolean toolUsed,
-                               List<AgentResult.TraceStep> trace) {
+                               List<AgentResult.TraceStep> trace, String promptVersion) {
 
         static ChatResponse of(String answerId, AgentResult result) {
             Intent intent = result.intent();
@@ -166,7 +170,7 @@ public class ChatController {
                     result.triageLayer(), result.cacheLayer().name(), result.citations(),
                     result.fallbackReason() == null ? null : result.fallbackReason().name(),
                     result.ticketId(), result.slotAsked(), result.promptTokens(), result.completionTokens(),
-                    result.toolUsed(), result.trace());
+                    result.toolUsed(), result.trace(), result.promptVersion());
         }
     }
 }

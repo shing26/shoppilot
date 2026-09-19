@@ -274,7 +274,7 @@ class ConversationOwnershipTest {
         when(epoch.current()).thenReturn(7L);
         return new AgentStateMachine(triage, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
                 mock(HybridRetriever.class), llm, dispatcher, store, mock(FallbackService.class), properties(),
-                mock(WriteBackPool.class), new SimpleMeterRegistry());
+                mock(WriteBackPool.class), new PromptCatalog(), new SimpleMeterRegistry());
     }
 
     private static GatewayProperties properties() {

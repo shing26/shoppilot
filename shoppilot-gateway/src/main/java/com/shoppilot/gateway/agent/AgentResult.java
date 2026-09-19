@@ -13,7 +13,7 @@ import java.util.List;
 public record AgentResult(String answer, Intent intent, String triageLayer, CacheService.Layer cacheLayer,
                           List<String> citations, List<TraceStep> trace, FallbackReason fallbackReason,
                           String ticketId, boolean slotAsked, int promptTokens, int completionTokens,
-                          boolean toolUsed, boolean degraded) {
+                          boolean toolUsed, boolean degraded, String promptVersion) {
 
     public record TraceStep(String state, long atMillis, String detail) {
     }

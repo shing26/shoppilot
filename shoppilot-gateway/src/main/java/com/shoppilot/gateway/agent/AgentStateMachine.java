@@ -47,25 +47,6 @@ public class AgentStateMachine {
     /** 单条条款注入上限：防止一次检索把 Prompt 撑爆，也保证 5 条条款可控。 */
     private static final int MAX_CLAUSE_CHARS = 600;
 
-    private static final String SYSTEM_PROMPT = """
-            你是电商店铺的在线客服助手。请遵守：
-            1. 静态政策问题只依据【政策条款】回答；条款未覆盖时明确说明并建议转人工，不要编造。
-            2. 禁止断言式个性化结论。涉及"我这种情况适不适用"时，说明需要查询具体订单才能确定，并主动提出帮用户查询。
-            3. 需要查询或办理业务时调用工具；缺少必填参数一律向用户询问，绝不猜测订单号。
-               标为可选的参数（例如退款金额、退款原因）用户没有提，就按参数描述里的默认值直接调用工具，不要为可选参数反问用户。
-               反过来，用户提到过的项绝不允许留空：改地址时用户说了 杭州市 就必须把 杭州市 填进 city，留空会被系统理解成“这一项不改”而沿用旧值（local 模式 3B 模型实测三连漏 city）。
-            4. 工具返回失败时，用自然中文向用户解释现状与下一步，不要复述错误码，也不要对用户说 applyRefund、receiverName 这类工具名或字段名（dev 评测实测漏过两次）。
-            5. 用户原话里已经给过的信息一律算已给：已经报出订单号就绝不再索要订单号。
-               办理动作的必填项齐了就直接调用工具，不要以"核验"为由再要姓名、手机号这类该动作并不需要的字段。
-            6. 与本店订单、物流、售后无关的请求（讲笑话、写诗、砍价、闲聊）不要调用任何业务工具，礼貌说明只处理本店业务；
-               用户要真人、要上级答复时按转人工处理，不要反过来索要订单号。
-            7. 没有真的调用成功工具，就不要说"已提交""已修改""已成功"。
-            8. 一句话里有多个诉求（先查物流再退款）时，在工具轮次内逐个办完再回复，不要只办第一个就用文字打发。
-            9. 用户已经明说要做某个业务动作（退款、改地址）就直接调用该工具，不要征求二次确认，也不要先查订单来预判——能不能办由工具返回再说。轮次有限，把每一轮都用在还没办完的诉求上。
-            10. 改地址、退款这类办理动作成功后，回复里必须按工具返回的**合并后完整结果**复述一遍（改地址复述省市区详址与收件人，退款复述金额）；系统对可选参数是“留空即不改”，只有复述才能让用户看出哪一段没被改掉。
-            11. 用简体中文，口语、简洁，不超过 200 字。
-            """;
-
     private final TriageEngine triageEngine;
     private final CacheService cacheService;
     private final SingleFlight singleFlight;
@@ -78,6 +59,7 @@ public class AgentStateMachine {
     private final FallbackService fallbackService;
     private final GatewayProperties properties;
     private final WriteBackPool writeBackPool;
+    private final PromptCatalog promptCatalog;
     private final Counter toolRoundExhaustedCounter;
     private final Counter negativeSuppressedCounter;
     private final Counter writeNudgeCounter;
@@ -87,7 +69,7 @@ public class AgentStateMachine {
                              WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, HybridRetriever retriever,
                              LlmGateway llm, ToolDispatcher dispatcher, SessionStore sessionStore,
                              FallbackService fallbackService, GatewayProperties properties,
-                             WriteBackPool writeBackPool, MeterRegistry registry) {
+                             WriteBackPool writeBackPool, PromptCatalog promptCatalog, MeterRegistry registry) {
         this.triageEngine = triageEngine;
         this.cacheService = cacheService;
         this.singleFlight = singleFlight;
@@ -100,6 +82,7 @@ public class AgentStateMachine {
         this.fallbackService = fallbackService;
         this.properties = properties;
         this.writeBackPool = writeBackPool;
+        this.promptCatalog = promptCatalog;
         this.toolRoundExhaustedCounter = Counter.builder("shoppilot_tool_round_exhausted_total").register(registry);
         // 被拦下来的"不该写的负缓存"要看得见：它是这条防线在中间件抖动时确实生效的唯一证据
         this.negativeSuppressedCounter = Counter.builder("shoppilot_cache_negative_suppressed_total")
@@ -149,7 +132,8 @@ public class AgentStateMachine {
                 CacheEntry entry = lookup.entry().get();
                 sink.token(entry.answer());
                 return new AgentResult(entry.answer(), triage.intent(), triage.layer(), lookup.layer(),
-                        entry.sourceRuleIds(), trace, null, null, false, 0, 0, false, false);
+                        entry.sourceRuleIds(), trace, null, null, false, 0, 0, false, false,
+                        promptCatalog.version());
             }
             if (lookup.negative()) {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
@@ -168,7 +152,7 @@ public class AgentStateMachine {
                 return gate.shared()
                         .map(entry -> new AgentResult(entry.answer(), triage.intent(), triage.layer(),
                                 CacheService.Layer.FLIGHT, entry.sourceRuleIds(), trace, null, null, false,
-                                0, 0, false, false))
+                                0, 0, false, false, promptCatalog.version()))
                         .orElseGet(() -> fallback(AgentState.CACHE_READ, trace, sink,
                                 FallbackReason.INTENT_UNRESOLVED, query, null));
             }
@@ -214,7 +198,7 @@ public class AgentStateMachine {
                                   List<AgentResult.TraceStep> trace, EventSink sink) {
         Intent intent = triage.intent();
         List<LlmTypes.Message> messages = new ArrayList<>();
-        messages.add(LlmTypes.Message.system(SYSTEM_PROMPT));
+        messages.add(LlmTypes.Message.system(promptCatalog.systemPrompt()));
         appendHistory(messages, session);
 
         HybridRetriever.Result retrieved = null;
@@ -448,7 +432,7 @@ public class AgentStateMachine {
         }
 
         return new ModelRun(new AgentResult(answer, intent, triage.layer(), CacheService.Layer.NONE, citations, trace,
-                null, null, false, promptTokens, completionTokens, toolUsed, false), written);
+                null, null, false, promptTokens, completionTokens, toolUsed, false, promptCatalog.version()), written);
     }
 
     /** 缺槽位：追问一次，仍缺则转人工。绝不猜（ADR 0008、ticket 11）。 */
@@ -467,7 +451,7 @@ public class AgentStateMachine {
         sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
                 dispatch.tool().apiName(), new LinkedHashMap<>(Map.of("askedSlot", slot)), asks));
         return new AgentResult(question, dispatch.tool().intent(), "SLOT", CacheService.Layer.NONE, List.of(), trace,
-                null, null, true, 0, 0, false, false);
+                null, null, true, 0, 0, false, false, promptCatalog.version());
     }
 
     /** 网关自己派生出的工具调用：missing 非空即追问，missing 为空且是读工具即可代为执行。 */
@@ -552,7 +536,7 @@ public class AgentStateMachine {
             sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
                     tool.apiName(), arguments, asks));
             return new AgentResult(question, tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(), trace,
-                    null, null, true, 0, 0, false, false);
+                    null, null, true, 0, 0, false, false, promptCatalog.version());
         }
         LlmTypes.ToolCall call = new LlmTypes.ToolCall("resumed", tool.apiName(), arguments);
         ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken);
@@ -568,7 +552,7 @@ public class AgentStateMachine {
             return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json());
         }
         List<LlmTypes.Message> messages = new ArrayList<>();
-        messages.add(LlmTypes.Message.system(SYSTEM_PROMPT));
+        messages.add(LlmTypes.Message.system(promptCatalog.systemPrompt()));
         messages.add(LlmTypes.Message.user(query + "\n\n【业务系统返回】\n" + dispatch.json()));
         try {
             LlmTypes.Reply reply = llm.stream(new LlmTypes.Request(messages, List.of(),
@@ -576,7 +560,8 @@ public class AgentStateMachine {
             sessionStore.save(tenantId, customerId,
                     sessionStore.appendTurn(clearPending(session), query, reply.content()));
             return new AgentResult(reply.content(), tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(),
-                    trace, null, null, false, reply.promptTokens(), reply.completionTokens(), true, false);
+                    trace, null, null, false, reply.promptTokens(), reply.completionTokens(), true, false,
+                    promptCatalog.version());
         } catch (LlmException failure) {
             return fallback(AgentState.REPLY, trace, sink, mapLlmFailure(failure), query, failure.getMessage());
         }
@@ -590,7 +575,7 @@ public class AgentStateMachine {
         String answer = reason.userMessage() + ticket.map(id -> "（工单号 " + id + "）").orElse("");
         sink.token(answer);
         return new AgentResult(answer, Intent.ESCALATE, "FALLBACK", CacheService.Layer.NONE, List.of(), trace,
-                reason, ticket.orElse(null), false, 0, 0, false, true);
+                reason, ticket.orElse(null), false, 0, 0, false, true, promptCatalog.version());
     }
 
     /**
