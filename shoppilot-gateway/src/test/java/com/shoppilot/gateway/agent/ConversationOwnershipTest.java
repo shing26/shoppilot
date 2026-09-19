@@ -10,6 +10,7 @@ import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.sentiment.SentimentGate;
+import com.shoppilot.gateway.style.StyleService;
 import com.shoppilot.gateway.llm.LlmTypes;
 import com.shoppilot.gateway.triage.TriageEngine;
 import com.shoppilot.gateway.triage.TriageResult;
@@ -275,7 +276,7 @@ class ConversationOwnershipTest {
         when(epoch.current()).thenReturn(7L);
         return new AgentStateMachine(triage, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
                 mock(HybridRetriever.class), llm, dispatcher, store, mock(FallbackService.class), properties(),
-                mock(WriteBackPool.class), new PromptCatalog(), perfModeGate(), new SimpleMeterRegistry());
+                mock(WriteBackPool.class), new PromptCatalog(), perfModeGate(), new StyleService(), new SimpleMeterRegistry());
     }
 
     /** 情绪门只走词典层（perf-mode 跳过 LLM 分类）：会话归属测试不关心情绪第二层。 */

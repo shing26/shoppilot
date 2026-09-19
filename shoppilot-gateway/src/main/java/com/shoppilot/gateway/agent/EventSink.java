@@ -44,6 +44,13 @@ public interface EventSink {
 
     void status(AgentState state, String detail);
 
+    /**
+     * 本轮应用的风格档位（ADR 0038）：状态机在 INTAKE 内算出档位后、任何 meta 之前调用。
+     * 默认空实现——只有需要把档位带进 meta 的出口（SSE）覆盖它。
+     */
+    default void style(String tier) {
+    }
+
     /** 意图与缓存落点确定后、正文开始之前推送，字段集合与 PLAN.md 的 meta 事件一致。 */
     void meta(String conversationId, Intent intent, CacheService.Layer cacheLayer);
 

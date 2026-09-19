@@ -39,6 +39,8 @@ public class SseEventSink implements EventSink {
     private final long startedAtNanos;
     private final AtomicBoolean firstTokenSent = new AtomicBoolean();
     private volatile boolean clientGone;
+    /** 风格档位由状态机在 INTAKE 内算出后回填（ADR 0038）；meta 之前必已被设置。 */
+    private volatile String style;
 
     public SseEventSink(SseEmitter emitter, ObjectMapper mapper, String traceId, String promptVersion, String channel,
                         Timer ttftTimer, long startedAtNanos) {
@@ -62,6 +64,11 @@ public class SseEventSink implements EventSink {
     }
 
     @Override
+    public void style(String tier) {
+        this.style = tier;
+    }
+
+    @Override
     public void meta(String conversationId, Intent intent, CacheService.Layer cacheLayer) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("conversationId", conversationId);
@@ -73,6 +80,8 @@ public class SseEventSink implements EventSink {
         data.put("promptVersion", promptVersion == null ? "" : promptVersion);
         // 渠道随 meta 回显（ADR 0035）：渠道只是入站标签，回显供客户端与验收脚本归因
         data.put("channel", channel == null ? "" : channel);
+        // 风格档位与 promptVersion 共同构成提示词形态归因（ADR 0038）
+        data.put("style", style == null ? "" : style);
         send("meta", data);
     }
 

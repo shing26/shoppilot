@@ -1,0 +1,22 @@
+# 风格档位映射（ADR 0038 / 风格票）：改档位映射不改代码。
+# rules 按序匹配、首条命中生效；一条规则里列出的每个维度都必须命中才算匹配
+# （只写 channel 的规则对任何情绪生效）。tier 只允许 FORMAL / FRIENDLY / CONCISE。
+# 注入段进评测断言：只允许约束形态，不允许携带业务事实——出现数字或政策结论即判红。
+rules:
+  - channel: [email]                 # 邮件是书面交付：任何情绪都走正式函件体
+    tier: FORMAL
+  - emotion: [ANGRY, URGENT, UNCERTAIN]   # 愤怒/急迫克制安抚；UNCERTAIN 一律回落 FORMAL（不猜）
+    tier: FORMAL
+  - emotion: [DISSATISFIED]          # 不满但平静：承认问题 + 给出行动
+    tier: FRIENDLY
+  - channel: [app, miniapp]          # 移动端其余场景：短句分点
+    tier: CONCISE
+default: FORMAL
+
+injections:
+  FORMAL: "风格约束：语气正式克制、结构完整，不使用网络流行语、颜文字或 emoji；先说结论或安抚，再列步骤；只能陈述上文已出现的政策条款与业务结果，不得新增任何事实。"
+  FRIENDLY: "风格约束：语气亲切自然，先承认用户的不便，再给出下一步行动；称呼统一用「您」；不堆砌客套；只能陈述上文已出现的政策条款与业务结果，不得新增任何事实。"
+  CONCISE: "风格约束：用短句分点直接给步骤与结论，总长控制在百字以内；不寒暄、不复述问题；只能陈述上文已出现的政策条款与业务结果，不得新增任何事实。"
+
+fallback_prefixes:
+  FRIENDLY: "非常抱歉给您带来不便。"

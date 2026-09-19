@@ -22,7 +22,10 @@ import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
 import com.shoppilot.gateway.ratelimit.RateLimitService;
+import com.shoppilot.gateway.channel.ChannelContext;
+import com.shoppilot.gateway.sentiment.Emotion;
 import com.shoppilot.gateway.sentiment.SentimentGate;
+import com.shoppilot.gateway.style.StyleService;
 import com.shoppilot.gateway.feedback.FeedbackService;
 import com.shoppilot.gateway.triage.TriageEngine;
 import com.shoppilot.gateway.triage.TriageResult;
@@ -408,6 +411,60 @@ class GatewayMainPathJvmTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    @DisplayName("风格注入：app + CALM → CONCISE 档，注入段拼在版本化基座之后同一次模型调用发出（风格票）")
+    void styleInjectionRidesTheSameModelCall() throws Exception {
+        ArgumentCaptor<LlmTypes.Request> planRound = ArgumentCaptor.forClass(LlmTypes.Request.class);
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("订单已发货，请留意短信通知"));
+
+        SentimentGate calmGate = mock(SentimentGate.class);
+        when(calmGate.evaluate(any())).thenReturn(
+                new SentimentGate.Verdict(com.shoppilot.gateway.sentiment.Emotion.CALM, 0.9d, false, "llm"));
+        TriageEngine triage = mock(TriageEngine.class);
+        when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(
+                TriageResult.dynamic(Intent.POLICY_RETURN, "T1", false), null));
+        WriteBackPolicy policy = mock(WriteBackPolicy.class);
+        when(policy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(false, "style-test"));
+        KbEpoch epoch = mock(KbEpoch.class);
+        when(epoch.current()).thenReturn(7L);
+        HybridRetriever retriever = mock(HybridRetriever.class);
+        when(retriever.retrieve(anyString(), anyString(), any()))
+                .thenReturn(HybridRetriever.Result.unavailable(7L));
+        SessionStore store = mock(SessionStore.class);
+        when(store.load(anyString(), anyString(), anyString())).thenReturn(SessionStore.Session.empty(CONVERSATION));
+        when(store.appendTurn(any(), anyString(), anyString())).thenAnswer(call -> call.getArgument(0));
+
+        AgentStateMachine machine = new AgentStateMachine(triage, mock(CacheService.class),
+                mock(SingleFlight.class), policy, epoch, retriever, llm, mock(ToolDispatcher.class), store,
+                mock(FallbackService.class), properties(), mock(WriteBackPool.class), new PromptCatalog(),
+                calmGate, new StyleService(), registry);
+        RateLimitService rateLimit = mock(RateLimitService.class);
+        when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
+        ChatAdmission admission = new ChatAdmission(mock(CacheService.class), rateLimit,
+                mock(FallbackService.class), registry);
+        // app 渠道只能从 webhook 端点进入（/chat 按设计恒为 web 渠道），走它验证三元组里的渠道维度
+        ChannelController controller = new ChannelController(machine, admission, mock(FeedbackService.class),
+                mock(com.shoppilot.gateway.channel.EmailReceiptWriter.class),
+                new com.shoppilot.gateway.channel.WebhookAdapter(),
+                new com.shoppilot.gateway.channel.EmailAdapter());
+
+        MockMvcBuilders.standaloneSetup(controller).build()
+                .perform(post("/api/v1/support/webhook/app")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"七天无理由怎么退\"}"))
+                .andExpect(status().isOk());
+
+        verify(llm).complete(planRound.capture());
+        String system = planRound.getValue().messages().get(0).content();
+        assertTrue(system.startsWith(new PromptCatalog().systemPrompt()), "基座在前");
+        assertTrue(system.endsWith(new StyleService().injection(StyleService.Tier.CONCISE)),
+                "CONCISE 注入段拼在基座之后，实际尾部="
+                        + system.substring(Math.max(0, system.length() - 60)));
+        assertEquals(1.0d, registry.get("shoppilot_style_applied_total")
+                .tag("style", "CONCISE").counter().count());
+    }
+
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
                             ToolDispatcher dispatcher, FallbackService fallback) {
         TriageEngine triage = mock(TriageEngine.class);
@@ -431,7 +488,7 @@ class GatewayMainPathJvmTest {
 
         AgentStateMachine machine = new AgentStateMachine(triage, cache, mock(SingleFlight.class),
                 writeBackPolicy, epoch, retriever, llm, dispatcher, sessionStore, fallback,
-                properties(), mock(WriteBackPool.class), new PromptCatalog(), perfModeGate(), registry);
+                properties(), mock(WriteBackPool.class), new PromptCatalog(), perfModeGate(), new StyleService(), registry);
 
         RateLimitService rateLimit = mock(RateLimitService.class);
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
