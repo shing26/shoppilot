@@ -23,6 +23,7 @@ import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
 import com.shoppilot.gateway.ratelimit.RateLimitService;
 import com.shoppilot.gateway.sentiment.SentimentGate;
+import com.shoppilot.gateway.feedback.FeedbackService;
 import com.shoppilot.gateway.triage.TriageEngine;
 import com.shoppilot.gateway.triage.TriageResult;
 import com.shoppilot.tool.Intent;
@@ -141,7 +142,7 @@ class GatewayMainPathJvmTest {
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
                 .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
                         "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
-        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
 
         MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
                 mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
@@ -214,7 +215,7 @@ class GatewayMainPathJvmTest {
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
                 .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
                         "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
-        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
 
         FallbackService fallback = mock(FallbackService.class);
         when(fallback.escalate(eq(FallbackReason.TOOL_ROUNDS_EXHAUSTED), anyString(), anyString()))
@@ -252,7 +253,7 @@ class GatewayMainPathJvmTest {
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
                 .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
                         "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
-        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
 
         MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
                 mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
@@ -285,7 +286,7 @@ class GatewayMainPathJvmTest {
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
                 .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
                         "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
-        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
 
         FallbackService fallback = mock(FallbackService.class);
         when(fallback.escalate(eq(FallbackReason.TOOL_ROUNDS_EXHAUSTED), anyString(), anyString()))
@@ -324,7 +325,7 @@ class GatewayMainPathJvmTest {
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
                 .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
                         "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
-        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
 
         MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
                 mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
@@ -375,6 +376,34 @@ class GatewayMainPathJvmTest {
         verify(llm, never()).stream(any(), any());
     }
 
+    @Test
+    @DisplayName("反馈端点：DOWN 回传带会话线索的 ack，非法 verdict 400（票 37）")
+    void feedbackEndpointValidatesAndDelegates() throws Exception {
+        FeedbackService feedbackService = mock(FeedbackService.class);
+        when(feedbackService.recordExplicit(eq("conv-integration-1"), eq("DOWN"), any()))
+                .thenReturn(new FeedbackService.Ack("FB-9", true, "T-901", List.of("POLICY-RETURN-01")));
+        TriageEngine triage = mock(TriageEngine.class);
+        when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(
+                TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d), null));
+        ChatController controller = new ChatController(mock(AgentStateMachine.class), mock(CacheService.class),
+                mock(RateLimitService.class), MAPPER, registry, mock(FallbackService.class), new PromptCatalog(),
+                feedbackService);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller).build();
+
+        mvc.perform(post("/api/v1/support/chat/feedback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"conversationId\":\"conv-integration-1\",\"verdict\":\"DOWN\",\"reason\":\"答案不对\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feedbackId").value("FB-9"))
+                .andExpect(jsonPath("$.reviewQueued").value(true))
+                .andExpect(jsonPath("$.ticketId").value("T-901"));
+
+        mvc.perform(post("/api/v1/support/chat/feedback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"conversationId\":\"conv-integration-1\",\"verdict\":\"MAYBE\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
                             ToolDispatcher dispatcher, FallbackService fallback) {
         TriageEngine triage = mock(TriageEngine.class);
@@ -404,7 +433,7 @@ class GatewayMainPathJvmTest {
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
 
         ChatController controller = new ChatController(machine, cache, rateLimit, MAPPER, registry, fallback,
-                new PromptCatalog());
+                new PromptCatalog(), mock(FeedbackService.class));
         return MockMvcBuilders.standaloneSetup(controller).build();
     }
 

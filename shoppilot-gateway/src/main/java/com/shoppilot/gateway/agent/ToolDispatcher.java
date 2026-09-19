@@ -6,6 +6,7 @@ import com.shoppilot.tool.ToolContracts;
 import com.shoppilot.tool.ToolName;
 import com.shoppilot.tool.schema.ToolSchemaGenerator;
 import com.shoppilot.tool.view.ToolStatus;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -23,10 +24,12 @@ public class ToolDispatcher {
 
     private final BizMockClient bizMockClient;
     private final IdempotencyService idempotency;
+    private final MeterRegistry registry;
 
-    public ToolDispatcher(BizMockClient bizMockClient, IdempotencyService idempotency) {
+    public ToolDispatcher(BizMockClient bizMockClient, IdempotencyService idempotency, MeterRegistry registry) {
         this.bizMockClient = bizMockClient;
         this.idempotency = idempotency;
+        this.registry = registry;
     }
 
     /** 订单号格式与 biz-mock 的造数一致；模型凭空编一个长串时按编造处理，不发起查询。 */
@@ -82,6 +85,8 @@ public class ToolDispatcher {
         String customerId = TenantContext.customerId();
         IdempotencyService.Guard guard = idempotency.begin(tenantId, customerId, tool, arguments, clientToken);
         if (guard.duplicate()) {
+            // 幂等重放 = 买家把同一个动作又发了一遍，是满意度的隐式负信号（ADR 0039 / 票 37）
+            registry.counter("shoppilot_feedback_implied_total", "kind", "implied_retry").increment();
             return new Dispatch(tool, ToolStatus.IDEMPOTENT_REPLAY, guard.cachedJson(), List.of(),
                     label(tool, arguments), false, true);
         }

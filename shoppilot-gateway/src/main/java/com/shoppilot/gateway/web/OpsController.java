@@ -86,6 +86,12 @@ public class OpsController {
         return forward("GET", "/api/tickets", null, true);
     }
 
+    /** ingest 待复核队列（ADR 0039）：DOWN 且未复核的反馈，人工从这里认领。 */
+    @GetMapping("/feedback/review-queue")
+    public ResponseEntity<String> feedbackReviewQueue() {
+        return forward("GET", "/api/feedback/review-queue", null, true);
+    }
+
     /**
      * 店铺清单：调试台的租户下拉从这里取，不在页面里写死一份名单。
      * 写死的那份会和 biz-mock 的 tenants 表悄悄分家，届时"选不到店"会被当成前端 bug 查。

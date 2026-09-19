@@ -10,10 +10,10 @@
 - `v1.0.0` 已冻结，tag `v1.0.0` 指向 CI run `35104751284` 验证通过的 release commit `7f4334c`；默认不开功能票，重开条件见 ADR 0030 五条与 ADR 0031 的面试反馈触发；round17（票 34-41）按 ADR 0033 记录的所有者政策覆盖执行；编排层选型与 provider 缝的触发线见 ADR 0032。
 - 2026-09-16：v1.0 release candidate 的 ADR、release note、3 分钟作品集与票 21-32 问答补录均已落地；本地 JVM verify 221 绿、量具 40/40、收口审计 `PASS 93 / FAIL 0 / SKIP 2`。
 - 2026-09-18：round16 质量轮增加网关主链路 JVM 集成缝，当前 JVM verify 为 `3 + 12 + 209 = 224` 绿；历史 round14/round15 的 221 读数仍保留为当时落点。
-- 2026-09-19（晚）：票 41 工具循环语义钉死——超限对齐 ADR 0008 字面（预算检查后模型仍要工具 → `TOOL_ROUNDS_EXHAUSTED` 落工单）、`parallel_tool_calls:false` 请求约束 + 多调用防御分支、写动作守卫；票 34 评测量具进 CI（selfcheck + rescore 门禁）；票 35 Prompt 版本化（外置 v1.0.0.md + meta.json fail-fast + SSE/评测报告携带版本）；票 36 情绪门（词典层 0 token 定案 + dev 口径 LLM 分类兜底 + EMOTION_ESCALATION 第 10 降级因 + 工单 priority=high）。当前 JVM verify 为 `3 + 12 + 225 = 240` 绿。
+- 2026-09-19（晚）：票 41 工具循环语义钉死——超限对齐 ADR 0008 字面（预算检查后模型仍要工具 → `TOOL_ROUNDS_EXHAUSTED` 落工单）、`parallel_tool_calls:false` 请求约束 + 多调用防御分支、写动作守卫；票 34 评测量具进 CI（selfcheck + rescore 门禁）；票 35 Prompt 版本化（外置 v1.0.0.md + meta.json fail-fast + SSE/评测报告携带版本）；票 36 情绪门（词典层 0 token 定案 + dev 口径 LLM 分类兜底 + EMOTION_ESCALATION 第 10 降级因 + 工单 priority=high）；票 37 满意度反馈闭环（显式点踩落 biz-mock feedback 表 + 三个隐式信号计数 + ingest 待复核队列与复核流转）。当前 JVM verify 为 `3 + 15 + 231 = 249` 绿。
 - 2026-09-19：票 33 做了一次双轴复核（Standards / Spec），两条轴都抓到工具循环用例假绿；已补请求体断言并做变异对照（删掉 `AgentStateMachine` 里的 tool 回填即变红）。同一天的登记型改动还有 ADR 0032 与 `.gitattributes`。
 - 2026-09-19（下午）：外部审查（5 份跨项目报告）交叉核实后并入 round17——两个发现升级为前置票 41（工具循环语义钉死），登记项落 round17 spec 附录；round17 草稿（spec、ADR 0033-0040、评测集 part4-7、票 41）首次入仓。
-- 当前没有其他 `ready-for-agent` 的开放 ticket。票 01-36 与 41 均已收口；round17 的票 37-40 待按序领取（37 → 38 → 39，0040 成文票可并行）。
+- 当前没有其他 `ready-for-agent` 的开放 ticket。票 01-37 与 41 均已收口；round17 的票 38-40 待按序领取（38 → 39，0040 成文票可并行）。
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
 - Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建、JVM 测试与 0 token 评测门禁（票 34：判据自检 + 离线 rescore 比对）；全量 17 步活体验收仍是作者本机证据。
 - 下一轮不能从旧 `ready-for-agent` 字样推断。重开条件与仍然挂红的裁决见 [`docs/adr/0030-round14-closure-scope-and-reopen-triggers.md`](../../docs/adr/0030-round14-closure-scope-and-reopen-triggers.md)。
@@ -78,6 +78,7 @@
 | 34 | [`34-eval-subset-ci.md`](issues/34-eval-subset-ci.md) | implemented | 评测子集进 CI（round17 前置票） |
 | 35 | [`35-prompt-versioning.md`](issues/35-prompt-versioning.md) | implemented | Prompt 版本化（ADR 0037） |
 | 36 | [`36-sentiment-gate.md`](issues/36-sentiment-gate.md) | implemented | SentimentGate 情绪门（ADR 0034） |
+| 37 | [`37-feedback-loop.md`](issues/37-feedback-loop.md) | implemented | 满意度反馈闭环（ADR 0039） |
 
 ## 如何新增或领取工作
 

@@ -10,6 +10,7 @@ import com.shoppilot.gateway.agent.EventSink;
 import com.shoppilot.gateway.agent.FallbackService;
 import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.sentiment.SentimentGate;
+import com.shoppilot.gateway.feedback.FeedbackService;
 import com.shoppilot.gateway.agent.SessionStore;
 import com.shoppilot.gateway.agent.ToolDispatcher;
 import com.shoppilot.gateway.cache.CacheEntry;
@@ -186,7 +187,8 @@ class TraceCorrelationAcrossAsyncTest {
         RateLimitService rateLimit = mock(RateLimitService.class);
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
         return new ChatController(machine, mock(CacheService.class), rateLimit, new ObjectMapper(),
-                new SimpleMeterRegistry(), mock(FallbackService.class), new PromptCatalog());
+                new SimpleMeterRegistry(), mock(FallbackService.class), new PromptCatalog(),
+                mock(FeedbackService.class));
     }
 
     private AgentStateMachine machine(CacheService cache, WriteBackPool writeBack) {

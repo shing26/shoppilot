@@ -7,6 +7,7 @@ import com.shoppilot.gateway.agent.FallbackReason;
 import com.shoppilot.gateway.agent.EventSink;
 import com.shoppilot.gateway.agent.FallbackService;
 import com.shoppilot.gateway.agent.PromptCatalog;
+import com.shoppilot.gateway.feedback.FeedbackService;
 import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.identity.RequestTrace;
 import com.shoppilot.gateway.identity.TenantContext;
@@ -52,18 +53,21 @@ public class ChatController {
     private final RateLimitService rateLimit;
     private final FallbackService fallbackService;
     private final PromptCatalog promptCatalog;
+    private final FeedbackService feedbackService;
     private final ObjectMapper mapper;
     private final Timer ttftTimer;
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     public ChatController(AgentStateMachine agent, CacheService cacheService, RateLimitService rateLimit,
                           ObjectMapper mapper, MeterRegistry registry,
-                          FallbackService fallbackService, PromptCatalog promptCatalog) {
+                          FallbackService fallbackService, PromptCatalog promptCatalog,
+                          FeedbackService feedbackService) {
         this.agent = agent;
         this.cacheService = cacheService;
         this.rateLimit = rateLimit;
         this.fallbackService = fallbackService;
         this.promptCatalog = promptCatalog;
+        this.feedbackService = feedbackService;
         this.mapper = mapper;
         // TTFT 口径：服务端收到请求 -> 写出首个 token 帧，不含网络往返
         this.ttftTimer = Timer.builder("shoppilot_ttft_seconds")
@@ -88,6 +92,11 @@ public class ChatController {
             return builder.build();
         }
         AgentResult result = agent.run(request.query(), request.idempotencyToken(), EventSink.NOOP);
+        // 反馈账本（ADR 0039）：重问检测、negative 计数、点踩关联线索都在这一处更新，同步与流式同形
+        TenantContext.Identity chatIdentity = TenantContext.current();
+        feedbackService.noteAnswer(chatIdentity.conversationId(), result.intent() == null ? null : result.intent().name(),
+                result.fallbackReason() == null ? null : result.fallbackReason().name(),
+                result.citations(), result.ticketId());
         // 链路号取自鉴权入口，不在这儿另起一个：REST 与流式共用一个来源，日志与响应体才认得回同一条链
         String traceId = RequestTrace.traceId();
         // 一行"这一单办完了"：四个坐标由日志模板带出来，按 traceId grep 才捞得到东西
@@ -126,6 +135,11 @@ public class ChatController {
             try {
                 AgentResult result = agent.run(request.query(), request.idempotencyToken(), sink);
                 sink.done(traceId, result.citations(), result.promptTokens(), result.completionTokens());
+                // 与同步路径同形：流式答案也要进反馈账本，点踩关联与重问检测不分通道
+                feedbackService.noteAnswer(identity.conversationId(),
+                        result.intent() == null ? null : result.intent().name(),
+                        result.fallbackReason() == null ? null : result.fallbackReason().name(),
+                        result.citations(), result.ticketId());
                 emitter.complete();
                 log.info("流式问答完成 intent={} cache={} degraded={}", result.intent(), result.cacheLayer(),
                         result.degraded());
@@ -146,6 +160,27 @@ public class ChatController {
     private RateLimitService.Decision admit(HttpServletRequest servletRequest) {
         return rateLimit.tryAcquire(TenantContext.tenantId(), TenantContext.customerId(),
                 servletRequest.getRemoteAddr());
+    }
+
+    /**
+     * 显式满意度回传（ADR 0039）：赞/踩 + 可选原因。同步与 SSE 客户端同形使用这一个端点；
+     * 会话结束未评 = 无信号，端点不做任何猜测或补评。DOWN 自动关联工单与引用块进复核队列，
+     * biz-mock 不可达时以 accepted=false 如实返回，不静默假装成功。
+     */
+    @PostMapping("/chat/feedback")
+    public ResponseEntity<FeedbackAck> feedback(@Valid @RequestBody FeedbackRequest request) {
+        if (!"UP".equals(request.verdict()) && !"DOWN".equals(request.verdict())) {
+            return ResponseEntity.badRequest().body(new FeedbackAck(null, false, null, List.of()));
+        }
+        FeedbackService.Ack ack = feedbackService.recordExplicit(request.conversationId(), request.verdict(),
+                request.reason());
+        return ResponseEntity.ok(new FeedbackAck(ack.feedbackId(), ack.reviewQueued(), ack.ticketId(), ack.ruleIds()));
+    }
+
+    public record FeedbackRequest(String conversationId, String verdict, String reason) {
+    }
+
+    public record FeedbackAck(String feedbackId, boolean reviewQueued, String ticketId, List<String> ruleIds) {
     }
 
     /** 限流工单按 (租户, 买家) 合并，避免洪峰把人工队列刷爆。 */
