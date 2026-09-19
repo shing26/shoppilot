@@ -95,16 +95,16 @@
 - 能区分 readiness、deps 和总健康三个运维口径。
 - 能从 `EVIDENCE.md` 找到至少三条红值的原始产物与复现入口。
 - 能把 `93.3%` 与 `95.6%` 分开讲，并解释分意图承诺项仍未达成。
-- 能说出 CI 只覆盖 build + 224 JVM tests，不等于全量 17 步活体验收。
+- 能说出 CI 只覆盖 build + 267 JVM tests 与两步 0 token 评测门禁，不等于全量 17 步活体验收。
 - 能解释编排层为什么自研：唯一 provider 缝在 `LlmClient`，换框架是 1–2 天适配而不是重写（ADR 0032）。
 
 ## 当前固定基线
 
 ```text
-JVM tests: 224
+JVM tests: 267
 Acceptance audit: 95 checks, 0 FAIL
-CI: build + 224 JVM tests
-ADR range: 0001-0032
+CI: build + 267 JVM tests + 评测自检与 rescore 门禁
+ADR range: 0001-0040
 ```
 
 常用核对命令：

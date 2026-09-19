@@ -14,7 +14,8 @@
 - 2026-09-20（凌晨，活体栈恢复时抓到并修复的两个真缺陷）：`FeedbackService` 双构造器致网关无法启动（`9a0052d`）；情绪分类器把平静业务查询误判 URGENT 导致全量评测动作类掉到 22-72%（`daa40cf` 从严校准 + 分类提示词外置为版本资产）。当前 JVM verify 为 `3 + 15 + 249 = 267` 绿。
 - 2026-09-19：票 33 做了一次双轴复核（Standards / Spec），两条轴都抓到工具循环用例假绿；已补请求体断言并做变异对照（删掉 `AgentStateMachine` 里的 tool 回填即变红）。同一天的登记型改动还有 ADR 0032 与 `.gitattributes`。
 - 2026-09-19（下午）：外部审查（5 份跨项目报告）交叉核实后并入 round17——两个发现升级为前置票 41（工具循环语义钉死），登记项落 round17 spec 附录；round17 草稿（spec、ADR 0033-0040、评测集 part4-7、票 41）首次入仓。
-- 当前没有其他 `ready-for-agent` 的开放 ticket。票 01-39 与 41、风格票、有意不做成文票均已收口；round17 全票完成，剩 round17 收口（README 功能面描述补新增模块、interview-qa 重生成等连带项）。
+- 2026-09-20（凌晨）：round17 收口——全票（34-39、41、风格票、有意不做成文票）已完成并各自留 Handoff；票 39 硬闸门同一 180 条 gold 改前/改后均 95.0%（分意图逐项一致），产物入库登记；`interview-qa.md` 重生成至 157 问/覆盖 42 个 ticket；README 主链路与架构章节补齐 round17 模块；审计 E5/E5b 常数与 B7 禁面按换代指针更新。当前 JVM verify 为 `3 + 15 + 249 = 267` 绿。
+- 当前没有其他 `ready-for-agent` 的开放 ticket。票 01-39 与 41、风格票、有意不做成文票均已收口；round17 已收口。
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
 - Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建、JVM 测试与 0 token 评测门禁（票 34：判据自检 + 离线 rescore 比对）；全量 17 步活体验收仍是作者本机证据。
 - 下一轮不能从旧 `ready-for-agent` 字样推断。重开条件与仍然挂红的裁决见 [`docs/adr/0030-round14-closure-scope-and-reopen-triggers.md`](../../docs/adr/0030-round14-closure-scope-and-reopen-triggers.md)。
@@ -36,7 +37,7 @@
 | round14 | 票 27-31，停机/配置/指标/记账/崩溃归因 | [`round14-spec-shutdown-metrics-and-evidence-closure.md`](round14-spec-shutdown-metrics-and-evidence-closure.md) | done |
 | round15 | 票 32，CI 子集门禁 | [`round15-spec-ci-subset-gate.md`](round15-spec-ci-subset-gate.md) | done |
 | round16 | 票 33，网关主链路 JVM 集成缝 | [`round16-spec-gateway-main-path-jvm-tests.md`](round16-spec-gateway-main-path-jvm-tests.md) | done |
-| round17 | 票 34-41，对齐完整落地级电商客服链路（外部审查补强并入） | [`round17-spec-architecture-completeness.md`](round17-spec-architecture-completeness.md) | 进行中 |
+| round17 | 票 34-41，对齐完整落地级电商客服链路（外部审查补强并入） | [`round17-spec-architecture-completeness.md`](round17-spec-architecture-completeness.md) | done |
 
 ## Ticket 索引
 

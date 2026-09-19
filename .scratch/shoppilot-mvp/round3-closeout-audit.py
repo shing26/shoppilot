@@ -497,12 +497,14 @@ body_a = len(re.findall(r"(?m)^A：", qa))
 # 换代指针（v1.0 交接补录）：票 21-32 的 Handoff notes 全部进入生成源，问答库从 93 涨到 127，
 # 覆盖从 20 个 ticket 扩到全部 32 个。与 G6 同一族：涨问答是文档产出，不跟着改会把新内容报成防线失效。
 # 换代指针（round16 票 33）：票 33 的三个追问进入生成源，问答库从 127 涨到 130，覆盖从 32 扩到全部 33 个。
+# 换代指针（round17）：票 34-41 与两张无编号票（style、readme 非目标成文）的追问进入生成源，
+# 问答库从 130 涨到 157，覆盖从 33 扩到 42 个（含票 40 号位未开票、由 ADR 0040 承载的那一格）。
 # 判据本身没放宽：头部计数、正文 Q 条目、A 条目三者仍必须逐字相等。
-check("E5 问答库 130 问、头部计数 = 正文 Q 条目 = 答案条数",
-      head_line is not None and int(head_line.group(1)) == 130 == body_q == body_a and body_a == 130,
+check("E5 问答库 157 问、头部计数 = 正文 Q 条目 = 答案条数",
+      head_line is not None and int(head_line.group(1)) == 157 == body_q == body_a and body_a == 157,
       f"头部 {head_line.group(1) if head_line else '-'}，正文 Q {body_q}，A {body_a}")
-check("E5b 问答库覆盖 33 个 ticket 且无缺收尾记录",
-      head_line is not None and head_line.group(2) == "33" and "缺收尾记录" not in qa,
+check("E5b 问答库覆盖 42 个 ticket 且无缺收尾记录",
+      head_line is not None and head_line.group(2) == "42" and "缺收尾记录" not in qa,
       f"头部行 {head_line.group(0) if head_line else '-'}；正文无缺收尾记录={'缺收尾记录' not in qa}")
 
 ticket20 = read(REPO / ".scratch" / "shoppilot-mvp" / "issues" / "20-action-order-attribution.md")

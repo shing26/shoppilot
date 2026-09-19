@@ -137,17 +137,24 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
 | 层 | 选型 | 为什么是它 |
 | --- | --- | --- |
 | 网关与编排 | Java 21 + Spring Boot 3.3.5 | 虚拟线程让"每个请求一路阻塞式 HTTP"在 IO 密集下不再吃线程池（实测 +64%） |
-| 意图与工具 | 自研 10 状态机 + Function Calling | 三级级联判定（规则 / 质心 / 模型），工具循环硬上限 2 轮（ADR 0007、0008）；编排层不引入 Spring AI / LangChain4j，只留 `LlmClient` 一条 provider 缝（ADR 0032） |
+| 意图与工具 | 自研 10 状态机 + Function Calling | 三级级联判定（规则 / 质心 / 模型），工具循环硬上限 2 轮（ADR 0007、0008），计划为 ≤2 步有序步骤且前序依赖走白名单表达式（ADR 0036）；编排层不引入 Spring AI / LangChain4j，只留 `LlmClient` 一条 provider 缝（ADR 0032） |
+| 情绪与风格 | 词典优先 + LLM 兜底；档位映射表 | 词典层 0 token 定案高情绪并在意图判定前转人工（ADR 0034）；风格是"基座 + 注入段"的提示词拼装，不做回答二次改写（ADR 0038）；两份提示词都外置为版本文件、启动期 fail-fast（ADR 0037） |
+| 入站渠道 | ChannelAdapter 契约（web / app / miniapp / webhook / email） | 渠道只是入站标签：不进缓存键、不参与身份推导、会话归属仍是「店铺 + 买家」；email 无实时回包通道，结果以回执工单交付（ADR 0035） |
 | 缓存 | Redis 7 + Qdrant | L1 零向量化才能守住 30 ms；L2 带 `tenant/scope/intent/kb_epoch` 强制过滤（ADR 0003） |
 | 检索 | Qdrant 稠密 + ES 倒排 + RRF | 双引擎各有短板，融合成本 60 行代码（ADR 0010） |
-| 业务侧 | H2 + Spring Data JPA | Mock 的是业务系统而不是业务逻辑：状态机、归属校验、幂等约束都是真的 |
-| 通道 | Spring MVC `SseEmitter` | 单向推流 + 断线重连够用；POST SSE 需要自带读流（浏览器 `EventSource` 不支持 POST） |
-| 模型依赖 | dev / local / perf 三模式 | 数字归属清晰：吞吐类指标只算编排层，推理成本另开一条曲线（ADR 0001） |
+| 业务侧 | H2 + Spring Data JPA | Mock 的是业务系统而不是业务逻辑：状态机、归属校验、幂等约束都是真的；工单带 `priority`（情绪升级单为 high）、反馈行与工单同库同生命周期（ADR 0039） |
+| 通道 | Spring MVC `SseEmitter` | 单向推流 + 断线重连够用；POST SSE 需要自带读流（浏览器 `EventSource` 不支持 POST）；webhook/email 走整段 JSON |
+| 模型依赖 | dev / local / perf 三模式 | 数字归属清晰：吞吐类指标只算编排层，推理成本另开一条曲线（ADR 0001）；dev 口径下每请求多一跳情绪分类调用，token 成本随口径登记 |
 
 ## 请求主链路
 
 ```
 INTAKE      验签 -> TenantContext；归一化；实体正则扫描
+            渠道标签（web / app / miniapp / webhook / email，ADR 0035）：只是入站标签，
+            不进缓存键、不参与身份；webhook 族整段 JSON 回包，email 结果落回执工单
+            情绪门（ADR 0034）：词典层 0 token 优先，命中强愤怒/威胁/急迫即定案；
+            不确定才走一次 LLM 分类（dev 口径），分类器不可用一律 fail-open
+            高情绪在 TRIAGE 之前就落 EMOTION_ESCALATION 高优工单，不让激动的买家走完整链路
 TRIAGE      T0 规则 -> T1 向量质心 -> T2 模型（仅不确定时），10 意图，动作优先
             显式「转人工」在 T0 定案：不碰 embedding，向量服务超时也转得出去（ADR 0017）
             不确定即不准入缓存（fail-closed）
@@ -155,15 +162,26 @@ CACHE_READ  仅政策意图：L1 精确哈希（零向量化）-> miss 才向量
             key = MD5(tenantId + scope + intent + kbEpoch + normalizedQuery)
             L2 filter = {tenant_id, scope, intent, kb_epoch}，cosine >= 0.95 + 极性守卫
 RETRIEVE    Qdrant dense top20 + ES BM25 top20 -> RRF(k=60) -> top5
-PLAN        tools 全量下发，模型返回 tool_call 即意图证据，全程一次模型请求
-TOOL_EXEC   HTTP -> biz-mock，超时/熔断，硬上限 2 轮
+PLAN        tools 全量下发，模型返回 tool_call 即意图证据；计划是有序步骤列表（ADR 0036）：
+            每步 = 工具名 + 参数，参数可用 `{steps[i].result.<field>}` 引用前步结果；
+            表达式只认这一种形态，其余（steps[*]、嵌套路径、越界）整条拒收
+TOOL_EXEC   HTTP -> biz-mock，超时/熔断，硬上限 2 轮；前步失败（NOT_FOUND/STATE_NOT_ALLOWED）
+            即中止整条计划，不拿失败前提硬办后步
 SLOT_ASK    必填槽位缺失就追问，绝不猜订单号；两轮拿不到 -> 转人工
-REPLY       流式输出 -> done 带 citations
+REPLY       风格注入（ADR 0038）：channel × emotion × intent -> FORMAL/FRIENDLY/CONCISE，
+            注入段拼在版本化提示词基座之后（同一次模型调用，不做二次改写）；
+            流式输出 -> done 带 citations
 CACHE_WRITE 异步写回，先过七道资格判定（降级话术、空答案、用过工具的都不写）
-FALLBACK    7 种 reason -> 落可查工单
+FALLBACK    9 种降级 reason（含轮次用尽与情绪升级）-> 落可查工单；显式转人工另走一条
 ```
 
 命名约定：`L1`/`L2` 只指缓存两级，`T0`/`T1`/`T2` 只指意图判定三级，两套序号不混用。
+提示词形态归因：SSE `meta` 事件携带 `promptVersion`（基座版本）与 `style`（风格档位），
+回答与评测读数都能回指到当时的提示词形态（ADR 0037/0038）。
+
+满意度反馈（ADR 0039）：回复后可点踩/点赞（`POST /api/v1/support/chat/feedback`）；
+三个隐式信号只计不落（重问 / 降级 / 幂等重放）；点踩行自动关联当次会话的工单与引用块，
+进 ingest 待复核队列（`/api/v1/support/ops/feedback/review-queue`），人工复核前不做任何改写。
 
 SSE 事件契约（10 个事件，客户端判定失败的唯一依据是"没收到 `done`"）：
 
@@ -504,6 +522,14 @@ pwsh -NoProfile -File scripts/verify-idempotency.ps1    # 并发同 token 与状
 pwsh -NoProfile -File scripts/verify-ratelimit.ps1      # 同步 429 与 SSE rate_limited
 pwsh -NoProfile -File scripts/verify-polarity.ps1       # 反义对不互命中（要求 local/dev 模式）
 node scripts/verify-console.mjs                         # 调试台 35 项（Playwright）
+# round17 新增的五条：情绪门 / 渠道契约 / 风格档位 / 反馈闭环 / 计划步骤
+# （各脚本的语义断言另有 0 token 的 JVM 用例兜底；这五条尚未并入 run-acceptance 矩阵——
+#   重接线会改 17 步计数并连带审计与本文多处换代，留待下次本机全量活体验收时一并做，届时整跑验证）
+pwsh -NoProfile -File scripts/verify-emotion.ps1        # 词典层 8 条定案 + 12 条不误升级 + 高优工单
+pwsh -NoProfile -File scripts/verify-channel.ps1        # 三渠道同答 / 跨渠道会话不互串 / email 回执单 / 渠道计数
+pwsh -NoProfile -File scripts/verify-style.ps1          # SSE meta 档位矩阵（完整矩阵见 StyleServiceTest 6 项）
+pwsh -NoProfile -File scripts/verify-feedback.ps1       # 点踩落行 + 关联工单/引用块 + 复核队列 + 三隐式计数
+pwsh -NoProfile -File scripts/verify-plan.ps1           # 两步链顺序 / 前步失败中止 / 注入拒收 / 步骤数指标
 # dev 评测（唯一要云端 key 的一格）：默认只自查与摆位置，不发任何计费请求
 pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12        # 干跑：查配置、报缺什么
 pwsh -NoProfile -File scripts/run-dev-eval.ps1 -Limit 12 -Run   # 真跑 12 条；去掉 -Limit 是 180 条全量

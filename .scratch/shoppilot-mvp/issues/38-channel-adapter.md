@@ -54,6 +54,6 @@ pwsh -NoProfile -File scripts\verify-channel.ps1
 
 **现场追问**
 
-1. *为什么 webhook 三个标签（app/miniapp/webhook）共用一个适配器？* 它们的回包能力与归一规则完全一致（整段 JSON、无追问），差异只是标签本身——为每个标签写一个只有常量不同的类，是抄本不是设计。email 单独成形因为它有独有的交付语义（回执工单）。
-2. *为什么 email 的主题要拼进 query 而不是单独字段？* 诉求原文是下游全链路（意图判定、检索、评测）的唯一输入契约；主题单独成字段意味着状态机、评测集、缓存键全都要认识第二个字段。拼接（`【主题】x\n正文`）让 email 在链路里与任何渠道完全同形，代价只是回答里可能复述主题——可接受。
-3. *限流计数加了 channel 后，"被限流总量"怎么读？* /actuator/metrics/shoppilot_rate_limited_total 依旧给出跨渠道总和；要按渠道拆分用 /actuator/prometheus 的标签选择，`{dimension="buyer",channel="web"}`。压测口径不受影响（0917 产物里的 rate_limited 读数按名读取，语义相同）。
+1. "为什么 webhook 三个标签（app/miniapp/webhook）共用一个适配器？" —— 它们的回包能力与归一规则完全一致（整段 JSON、无追问），差异只是标签本身——为每个标签写一个只有常量不同的类，是抄本不是设计。email 单独成形因为它有独有的交付语义（回执工单）。
+2. "为什么 email 的主题要拼进 query 而不是单独字段？" —— 诉求原文是下游全链路（意图判定、检索、评测）的唯一输入契约；主题单独成字段意味着状态机、评测集、缓存键全都要认识第二个字段。拼接（`【主题】x\n正文`）让 email 在链路里与任何渠道完全同形，代价只是回答里可能复述主题——可接受。
+3. "限流计数加了 channel 后，"被限流总量"怎么读？" —— /actuator/metrics/shoppilot_rate_limited_total 依旧给出跨渠道总和；要按渠道拆分用 /actuator/prometheus 的标签选择，`{dimension="buyer",channel="web"}`。压测口径不受影响（0917 产物里的 rate_limited 读数按名读取，语义相同）。

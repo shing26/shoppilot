@@ -70,3 +70,27 @@ judge() 扩 schema 以本表为登记依据；扩 judge 必须同步补 selfchec
 - LLM 客户端层换 Spring AI：登记（报告口径："省约 240 行 SSE 样板，不是补能力"）。触发条件：ADR 0032 的 provider 缝触发线（该触发线本身以 ADR 0031 的冻结机制为闸）。
 - identity↔web 包环：已裁决不修（ADR 0028 + CODE_MAP"不为消环做大搬迁"），不重复立账。
 - `AgentStateMachine` 665 行拆分：已在 CODE_MAP 已知代码债候选，处理方式已定（先 ticket 固定现有测试与 SSE 契约）；票 41 的测试即"固定契约"步骤。
+
+## 收口状态（2026-09-20）
+
+全部票据已实现并各自收口，收口顺序 41 → 34 → 35 → 36 → 37 → 38 → 风格票 → 39，有意不做成文票（ADR 0040）并行完成。
+
+| 票 | 状态 | 关键落点 |
+| --- | --- | --- |
+| 41 工具循环语义钉死 | implemented | 超限按 ADR 0008 字面 FALLBACK、`parallel_tool_calls:false` + 多调用防御、写动作守卫 |
+| 34 评测子集进 CI | implemented | CI 两步 0 token 门禁（判据自检 40 项 + rescore 比对钉 4 条差异集） |
+| 35 Prompt 版本化 | implemented | 外置 `prompts/agent-system/v1.0.0.md` + meta fail-fast + SSE/评测报告携带版本 |
+| 36 情绪门 | implemented | 词典层 0 token 定案 + dev 口径 LLM 分类兜底 + `EMOTION_ESCALATION` 第 10 降级因 + 工单 priority=high；分类器提示词亦外置为版本资产 |
+| 37 反馈闭环 | implemented | biz-mock feedback 表 + 复核队列 + 三隐式信号计数 + 点踩自动关联工单与引用块 |
+| 38 三渠道契约 | implemented | `channel` 包 + webhook/email 入站 + ChatAdmission 提取 + 限流/meta/计数按渠道 |
+| 风格引擎（无编号） | implemented | `style/profiles.yml` 档位表 + 基座+注入段拼装 + SSE meta 带 style |
+| 39 Plan 有序步骤 | implemented | 前序依赖表达式白名单 + 前步失败即中止 + `shoppilot_plan_steps_total` 分账；**硬闸门 95.0% → 95.0% 通过** |
+| 有意不做成文（无编号） | implemented | README 增"有意不做（带触发条件，ADR 0040）"小节 |
+
+**硬闸门执行记录（票 39）**：同一晚、同一 180 条 gold、同一栈跑三次——回归现形（含情绪分类器误升级缺陷）87.8%、改前基线 95.0%、改后 95.0%，分意图逐项一致；三套产物入库并登记 `docs/EVIDENCE.md`。
+
+**已知边界与后续（登记不执行）**：
+
+1. part4-7 的 56 条新用例尚未并入离线判分器（judge schema 扩展），语义断言由五条 `verify-*.ps1` 活体脚本与 JVM 用例承载——触发条件：把新用例纳入 CI 的 rescore 门禁时一并做。
+2. round17 新增的五条活体脚本尚未并入 `run-acceptance.ps1` 矩阵（重接线会改 17 步计数并连带审计与 README 换代）——触发条件：下次本机全量活体验收时一并做并整跑验证。
+3. 本轮首次跑通全量 dev 评测所需的抬日预算（`run-dev-eval.ps1` 既有能力）从可选项变为必需项：dev 口径下每请求多一跳情绪分类调用，180 条约 40-60 万 token。
