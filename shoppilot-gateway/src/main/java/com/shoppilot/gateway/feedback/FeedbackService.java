@@ -49,7 +49,14 @@ public class FeedbackService {
     private final Duration repeatWindow;
     private final Map<String, Trail> trails = new ConcurrentHashMap<>();
 
-    /** 生产入口：从 classpath 配置拼 HTTP 落点。 */
+    /**
+     * 生产入口：从配置拼 HTTP 落点。
+     *
+     * <p>{@code @Autowired} 是必需的：本类有两个构造器（生产 + 测试缝），
+     * 不加注解 Spring 会因"没有唯一构造器"拒绝启动（2026-09-19 活体起栈当场抓到，
+     * JVM 测试都手工 new 因而没覆盖启动路径）。
+     */
+    @org.springframework.beans.factory.annotation.Autowired
     public FeedbackService(ObjectMapper mapper, MeterRegistry registry, GatewayProperties properties,
                            HttpClient http) {
         this(mapper, registry, defaultPoster(mapper, properties, http), REPEAT_WINDOW);
