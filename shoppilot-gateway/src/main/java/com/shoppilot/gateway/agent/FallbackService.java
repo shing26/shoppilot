@@ -80,6 +80,14 @@ public class FallbackService {
     }
 
     public Optional<String> escalate(FallbackReason reason, String userQuery, String transcript) {
+        return escalate(reason, userQuery, transcript, null);
+    }
+
+    /**
+     * 带优先级的落单：情绪升级（ADR 0034）传 "high"，人工队列按此排序；
+     * 其余降级不传（null），工单表按原口径排队。
+     */
+    public Optional<String> escalate(FallbackReason reason, String userQuery, String transcript, String priority) {
         Counter.builder("shoppilot_fallback_total").tag("reason", reason.name()).register(registry).increment();
         TenantContext.Identity identity = TenantContext.current();
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -87,6 +95,9 @@ public class FallbackService {
         payload.put("reason", reason.name());
         payload.put("userQuery", userQuery);
         payload.put("transcript", transcript);
+        if (priority != null) {
+            payload.put("priority", priority);
+        }
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(config.baseUrl() + "/api/tickets"))
                     .timeout(config.readTimeout())

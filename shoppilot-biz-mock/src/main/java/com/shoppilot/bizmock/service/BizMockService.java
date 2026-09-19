@@ -218,11 +218,12 @@ public class BizMockService {
     }
 
     @Transactional
-    public TicketView createTicket(String customerId, String reason, String userQuery, String transcript) {
+    public TicketView createTicket(String customerId, String reason, String userQuery, String transcript,
+                                   String priority) {
         Instant now = Instant.now();
         String id = nextTicketId(now);
         Ticket ticket = new Ticket(id, TenantContextHolder.tenantId(), customerId, reason, truncate(userQuery),
-                transcript == null ? "" : transcript, "OPEN", now);
+                transcript == null ? "" : transcript, "OPEN", now, priority);
         return toTicketView(ticketRepository.save(ticket));
     }
 
@@ -287,7 +288,7 @@ public class BizMockService {
 
     private TicketView toTicketView(Ticket ticket) {
         return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
-                ticket.getUserQuery(), ticket.getStatus(), ticket.getCreatedAt());
+                ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt());
     }
 
     private ToolResponse<RefundView> replay(ToolName tool, Refund refund) {

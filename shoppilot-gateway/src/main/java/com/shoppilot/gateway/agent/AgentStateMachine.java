@@ -13,6 +13,7 @@ import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.llm.LlmException;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
+import com.shoppilot.gateway.sentiment.SentimentGate;
 import com.shoppilot.gateway.triage.TriageEngine;
 import com.shoppilot.gateway.triage.TriageResult;
 import com.shoppilot.tool.Intent;
@@ -60,6 +61,7 @@ public class AgentStateMachine {
     private final GatewayProperties properties;
     private final WriteBackPool writeBackPool;
     private final PromptCatalog promptCatalog;
+    private final SentimentGate sentimentGate;
     private final Counter toolRoundExhaustedCounter;
     private final Counter negativeSuppressedCounter;
     private final Counter writeNudgeCounter;
@@ -69,7 +71,8 @@ public class AgentStateMachine {
                              WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, HybridRetriever retriever,
                              LlmGateway llm, ToolDispatcher dispatcher, SessionStore sessionStore,
                              FallbackService fallbackService, GatewayProperties properties,
-                             WriteBackPool writeBackPool, PromptCatalog promptCatalog, MeterRegistry registry) {
+                             WriteBackPool writeBackPool, PromptCatalog promptCatalog, SentimentGate sentimentGate,
+                             MeterRegistry registry) {
         this.triageEngine = triageEngine;
         this.cacheService = cacheService;
         this.singleFlight = singleFlight;
@@ -83,6 +86,7 @@ public class AgentStateMachine {
         this.properties = properties;
         this.writeBackPool = writeBackPool;
         this.promptCatalog = promptCatalog;
+        this.sentimentGate = sentimentGate;
         this.toolRoundExhaustedCounter = Counter.builder("shoppilot_tool_round_exhausted_total").register(registry);
         // 被拦下来的"不该写的负缓存"要看得见：它是这条防线在中间件抖动时确实生效的唯一证据
         this.negativeSuppressedCounter = Counter.builder("shoppilot_cache_negative_suppressed_total")
@@ -105,6 +109,17 @@ public class AgentStateMachine {
         // 载出来的就是别人的对话轮次与别人没办完的待办动作。
         SessionStore.Session session = sessionStore.load(tenantId, customerId, conversationId);
         long epoch = kbEpoch.current();
+
+        // 情绪门（ADR 0034）：INTAKE → TRIAGE 之间，词典层 0 token。高情绪在这里直接落工单转人工，
+        // 不让激动的买家走完检索/模型/工具全链路才被转接——等待本身就是二次激怒。
+        // 状态机 10 状态不扩：情绪判定发生在 INTAKE 状态内部；perf 口径下第二层 LLM 分类不启用。
+        SentimentGate.Verdict sentiment = sentimentGate.evaluate(query);
+        step(trace, sink, AgentState.INTAKE, "sentiment=" + sentiment.emotion() + " via " + sentiment.source());
+        if (sentiment.escalated()) {
+            sink.meta(conversationId, null, CacheService.Layer.NONE);
+            return fallback(AgentState.INTAKE, trace, sink, FallbackReason.EMOTION_ESCALATION, query,
+                    "emotion=" + sentiment.emotion() + " via " + sentiment.source());
+        }
 
         if (session.hasPending()) {
             sink.meta(conversationId, null, CacheService.Layer.NONE);
@@ -570,7 +585,10 @@ public class AgentStateMachine {
     private AgentResult fallback(AgentState from, List<AgentResult.TraceStep> trace, EventSink sink,
                                  FallbackReason reason, String query, String detail) {
         step(trace, sink, AgentState.FALLBACK, reason.name() + (detail == null ? "" : " " + detail));
-        Optional<String> ticket = fallbackService.escalate(reason, query, detail);
+        // 情绪升级单进人工队列时带 high 优先级（ADR 0034）；其余降级按原口径排队
+        Optional<String> ticket = reason == FallbackReason.EMOTION_ESCALATION
+                ? fallbackService.escalate(reason, query, detail, "high")
+                : fallbackService.escalate(reason, query, detail);
         sink.fallback(reason, ticket.orElse(null));
         String answer = reason.userMessage() + ticket.map(id -> "（工单号 " + id + "）").orElse("");
         sink.token(answer);

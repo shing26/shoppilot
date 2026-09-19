@@ -38,6 +38,10 @@ public class Ticket {
     @Column(name = "status", nullable = false, length = 20)
     private String status;
 
+    /** 队列排序标记：情绪升级单为 high（ADR 0034），其余降级为 null（原口径排队）。 */
+    @Column(name = "priority", length = 10)
+    private String priority;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -45,7 +49,7 @@ public class Ticket {
     }
 
     public Ticket(String id, String tenantId, String customerId, String reason, String userQuery,
-                  String transcript, String status, Instant createdAt) {
+                  String transcript, String status, Instant createdAt, String priority) {
         this.id = id;
         this.tenantId = tenantId;
         this.customerId = customerId;
@@ -54,6 +58,11 @@ public class Ticket {
         this.transcript = transcript;
         this.status = status;
         this.createdAt = createdAt;
+        this.priority = priority;
+    }
+
+    public String getPriority() {
+        return priority;
     }
 
     public String getId() {

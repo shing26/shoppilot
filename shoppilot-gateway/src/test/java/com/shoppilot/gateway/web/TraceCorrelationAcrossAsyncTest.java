@@ -9,6 +9,7 @@ import com.shoppilot.gateway.agent.AgentStateMachine;
 import com.shoppilot.gateway.agent.EventSink;
 import com.shoppilot.gateway.agent.FallbackService;
 import com.shoppilot.gateway.agent.PromptCatalog;
+import com.shoppilot.gateway.sentiment.SentimentGate;
 import com.shoppilot.gateway.agent.SessionStore;
 import com.shoppilot.gateway.agent.ToolDispatcher;
 import com.shoppilot.gateway.cache.CacheEntry;
@@ -203,7 +204,13 @@ class TraceCorrelationAcrossAsyncTest {
         when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("支持七天无理由退货"));
         return new AgentStateMachine(triage, cache, mock(SingleFlight.class), policy, epoch, retriever, llm,
                 mock(ToolDispatcher.class), store, mock(FallbackService.class), properties(), writeBack,
-                new PromptCatalog(), new SimpleMeterRegistry());
+                new PromptCatalog(), perfModeGate(), new SimpleMeterRegistry());
+    }
+
+    private SentimentGate perfModeGate() {
+        LlmGateway gateLlm = mock(LlmGateway.class);
+        when(gateLlm.mode()).thenReturn("perf");
+        return new SentimentGate(gateLlm, new ObjectMapper(), new SimpleMeterRegistry());
     }
 
     private static CacheEntry entry() {

@@ -29,7 +29,8 @@ public class TicketController {
 
     @PostMapping
     public TicketView create(@RequestBody CreateTicketRequest request) {
-        return service.createTicket(request.customerId(), request.reason(), request.userQuery(), request.transcript());
+        return service.createTicket(request.customerId(), request.reason(), request.userQuery(),
+                request.transcript(), request.priority());
     }
 
     @GetMapping
@@ -59,6 +60,7 @@ public class TicketController {
         }
     }
 
-    public record CreateTicketRequest(String customerId, String reason, String userQuery, String transcript) {
+    public record CreateTicketRequest(String customerId, String reason, String userQuery, String transcript,
+                                      String priority) {
     }
 }

@@ -1,0 +1,29 @@
+# 情绪词典（ADR 0034 / 票 36）：SentimentGate 第一层的纯 JVM 定案词表。
+# 改词条不改代码；改完跑 SentimentGateTest（0 token）与 verify-emotion.ps1（活体）。
+# 已知上限照登：词典对反讽、阴阳怪气语料召回有限（EMO-SAR 组），属规则法固有短板，
+# 只登词典层定案实测，不做精度声称；这类语料由第二层 LLM 分类兜底（dev 口径）。
+strong_anger:
+  - 骗子
+  - 黑心
+  - 黑店
+  - 破店
+  - 破玩意儿
+  - 废物
+  - 踢皮球
+  - 无良
+  - 无耻
+  - 耍赖
+threat_markers:   # 明说要走投诉/曝光/举报渠道即定案 ANGRY（数字词条必须加引号，否则 YAML 解析成 Integer）
+  - 投诉
+  - "315"
+  - "12315"
+  - "12305"
+  - 曝光
+  - 举报
+urgent_markers:   # 急迫场景词命中即定案 URGENT（ANGRY 命中优先于 URGENT）
+  - 急急急
+  - 立刻马上
+  - 住院
+  - 救命
+  - 今天必须
+  - 今晚必须

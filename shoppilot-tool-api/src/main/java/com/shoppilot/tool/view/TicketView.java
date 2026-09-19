@@ -13,5 +13,6 @@ public record TicketView(
         String reason,
         String userQuery,
         String status,
+        String priority,
         Instant createdAt) {
 }

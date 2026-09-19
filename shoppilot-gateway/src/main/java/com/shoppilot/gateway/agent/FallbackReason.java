@@ -10,7 +10,8 @@ public enum FallbackReason {
     RATE_LIMITED,
     SLOT_UNRESOLVED,
     USER_REQUESTED,
-    TOOL_ROUNDS_EXHAUSTED;
+    TOOL_ROUNDS_EXHAUSTED,
+    EMOTION_ESCALATION;
 
     public String userMessage() {
         return switch (this) {
@@ -24,6 +25,8 @@ public enum FallbackReason {
             case USER_REQUESTED -> "已为您转接人工客服。";
             // 不复述计划、不承诺任何没执行的动作（ADR 0008「不猜不骗」）；已查到的事实由人工接手后可用
             case TOOL_ROUNDS_EXHAUSTED -> "这个问题需要人工为您整体跟进，已把已查到的信息交给人工客服。";
+            // 先安抚再转接（ADR 0034）：买家正在气头上，认错话术优于效率话术
+            case EMOTION_ESCALATION -> "实在抱歉让您有不好的体验，马上为您安排人工客服优先跟进。";
         };
     }
 }

@@ -22,6 +22,7 @@ import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
 import com.shoppilot.gateway.ratelimit.RateLimitService;
+import com.shoppilot.gateway.sentiment.SentimentGate;
 import com.shoppilot.gateway.triage.TriageEngine;
 import com.shoppilot.gateway.triage.TriageResult;
 import com.shoppilot.tool.Intent;
@@ -349,6 +350,31 @@ class GatewayMainPathJvmTest {
         assertEquals(1.0d, registry.get("shoppilot_llm_multi_tool_calls_total").counter().count());
     }
 
+    @Test
+    @DisplayName("情绪门：词典命中的愤怒买家在 TRIAGE 之前落 EMOTION_ESCALATION 高优工单（票 36）")
+    void angryQueryEscalatesBeforeTriage() throws Exception {
+        FallbackService fallback = mock(FallbackService.class);
+        when(fallback.escalate(eq(FallbackReason.EMOTION_ESCALATION), anyString(), anyString(), eq("high")))
+                .thenReturn(Optional.of("T-901"));
+        LlmGateway llm = mock(LlmGateway.class);
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_REFUND, "T1", true),
+                mock(CacheService.class), llm, mock(ToolDispatcher.class), fallback);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"你们就是骗子！退款拖了半个月，我要投诉到底\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fallbackReason").value("EMOTION_ESCALATION"))
+                .andExpect(jsonPath("$.ticketId").value("T-901"))
+                .andExpect(jsonPath("$.promptVersion").value("v1.0.0"));
+
+        // 情绪升级发生在 TRIAGE 之前：判定不出意图、不进缓存、答案话术先安抚
+        verify(fallback).escalate(eq(FallbackReason.EMOTION_ESCALATION), anyString(), anyString(), eq("high"));
+        verify(llm, never()).complete(any());
+        verify(llm, never()).stream(any(), any());
+    }
+
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
                             ToolDispatcher dispatcher, FallbackService fallback) {
         TriageEngine triage = mock(TriageEngine.class);
@@ -372,7 +398,7 @@ class GatewayMainPathJvmTest {
 
         AgentStateMachine machine = new AgentStateMachine(triage, cache, mock(SingleFlight.class),
                 writeBackPolicy, epoch, retriever, llm, dispatcher, sessionStore, fallback,
-                properties(), mock(WriteBackPool.class), new PromptCatalog(), registry);
+                properties(), mock(WriteBackPool.class), new PromptCatalog(), perfModeGate(), registry);
 
         RateLimitService rateLimit = mock(RateLimitService.class);
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
@@ -380,6 +406,13 @@ class GatewayMainPathJvmTest {
         ChatController controller = new ChatController(machine, cache, rateLimit, MAPPER, registry, fallback,
                 new PromptCatalog());
         return MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
+    /** 情绪门用词典层就够（perf-mode 跳过第二层 LLM 分类）：集成测试里的升级全部来自词典定案。 */
+    private SentimentGate perfModeGate() {
+        LlmGateway gateLlm = mock(LlmGateway.class);
+        when(gateLlm.mode()).thenReturn("perf");
+        return new SentimentGate(gateLlm, new ObjectMapper(), registry);
     }
 
     private static GatewayProperties properties() {
