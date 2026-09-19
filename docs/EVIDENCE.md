@@ -37,7 +37,7 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 | 干净克隆可复现性 | `README.md` 干净检出检查、ADR 0020 | `scripts/clean_clone_check.ps1`；历史落点 `logs/clean-clone-check-*.log` 仅本机 | `pwsh -NoProfile -File scripts/clean_clone_check.ps1` | 脚本默认从 `origin` 克隆；异机和外部作者仍未验证 |
 | JVM native OOM 与显式堆上限 | `README.md` 崩溃归因表、ticket 31 | 根目录 14 份 `hs_err_pid*.log` 与侧车 `replay_pid*.log`，均不入库 | 读文件；脚本侧看 `scripts/start-gateway.ps1`、`scripts/start-bizmock.ps1` | 因果链只写到 native OOM 与当时空闲内存，不替读者外推 |
 | 全量收口审计 95 项 | ticket 27-31、相关 round spec | `.scratch/shoppilot-mvp/round3-closeout-audit.py`、`round3-closeout-audit.txt` | `python .scratch/shoppilot-mvp/round3-closeout-audit.py` | 审计总数在 round14 保持 95；活体读数与入库产物分开 |
-| 224 条 JVM 测试与 Linux 干净 runner | ticket 32、ticket 33、README badge | `.github/workflows/ci-subset.yml`、GitHub Actions run、`GatewayMainPathJvmTest` | 本地 `.\mvnw.cmd -B -ntp verify`；CI `bash ./mvnw -B -ntp verify` | 2026-09-18 新增 3 条网关主链路 JVM smoke；CI 不覆盖 17 步活体验收、Docker、Ollama、评测或压测 |
+| 224 条 JVM 测试与 Linux 干净 runner | ticket 32、ticket 33、README badge | `.github/workflows/ci-subset.yml`、GitHub Actions `ci-subset` run `35328032251`（`8e6437e`，50 s）与 run `35350399414`（`8b16a98`）、`GatewayMainPathJvmTest` | 本地 `.\mvnw.cmd -B -ntp verify`；CI `bash ./mvnw -B -ntp verify` | 2026-09-18 新增 3 条网关主链路 JVM smoke，两次 run 日志都是 `3 + 12 + 209 = 224`；CI 不覆盖 17 步活体验收、Docker、Ollama、评测或压测 |
 
 ## 入账规则
 
