@@ -2,6 +2,7 @@ package com.shoppilot.gateway.sentiment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.llm.LlmException;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
@@ -36,16 +37,13 @@ public class SentimentGate {
 
     private static final Logger log = LoggerFactory.getLogger(SentimentGate.class);
     private static final String LEXICON = "sentiment/lexicon.yml";
-    /** 第二层分类器提示词。版本化触发条件：首次修改本词时按 ADR 0037 模式外置（票 36 登记）。 */
-    private static final String CLASSIFIER_PROMPT = """
-            你是客服情绪分类器。根据买家这句话输出 JSON：{"emotion":"CALM|DISSATISFIED|ANGRY|URGENT","confidence":0到1的小数}。\
-            ANGRY=强烈愤怒或威胁投诉；URGENT=紧急急迫；DISSATISFIED=不满但平静；CALM=平静。只输出 JSON，不要解释。\
-            """;
     private static final Pattern JSON_OBJECT = Pattern.compile("\\{.*}", Pattern.DOTALL);
 
     private final LlmGateway llm;
     private final ObjectMapper mapper;
     private final MeterRegistry registry;
+    private final String classifierPrompt;
+    private final String classifierVersion;
     private final List<String> strongAnger;
     private final List<String> threatMarkers;
     private final List<String> urgentMarkers;
@@ -53,10 +51,15 @@ public class SentimentGate {
     private final Counter llmClassifiedCounter;
     private final Timer llmClassifyTimer;
 
-    public SentimentGate(LlmGateway llm, ObjectMapper mapper, MeterRegistry registry) {
+    /** @param sentimentClassifierCatalog 分类器提示词的版本化资产（ADR 0037 纪律：外置、可归因、fail-fast） */
+    public SentimentGate(LlmGateway llm, ObjectMapper mapper, MeterRegistry registry,
+                         PromptCatalog sentimentClassifierCatalog) {
         this.llm = llm;
         this.mapper = mapper;
         this.registry = registry;
+        this.classifierPrompt = sentimentClassifierCatalog.systemPrompt();
+        this.classifierVersion = sentimentClassifierCatalog.version();
+        log.info("情绪分类器提示词版本 {} 已加载", classifierVersion);
         Map<String, List<String>> lexicon = loadLexicon();
         this.strongAnger = lexicon.get("strong_anger");
         this.threatMarkers = lexicon.get("threat_markers");
@@ -85,7 +88,7 @@ public class SentimentGate {
         long started = System.nanoTime();
         try {
             LlmTypes.Reply reply = llm.complete(new LlmTypes.Request(List.of(
-                    LlmTypes.Message.system(CLASSIFIER_PROMPT),
+                    LlmTypes.Message.system(classifierPrompt),
                     LlmTypes.Message.user(query)), List.of(), 0.0d));
             Verdict verdict = fromClassification(reply);
             llmClassifyTimer.record(System.nanoTime() - started, java.util.concurrent.TimeUnit.NANOSECONDS);

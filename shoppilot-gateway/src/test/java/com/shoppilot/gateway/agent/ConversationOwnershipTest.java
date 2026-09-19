@@ -8,6 +8,7 @@ import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
+import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.sentiment.SentimentGate;
 import com.shoppilot.gateway.style.StyleService;
@@ -283,7 +284,7 @@ class ConversationOwnershipTest {
     private SentimentGate perfModeGate() {
         LlmGateway gateLlm = mock(LlmGateway.class);
         when(gateLlm.mode()).thenReturn("perf");
-        return new SentimentGate(gateLlm, new ObjectMapper(), new SimpleMeterRegistry());
+        return new SentimentGate(gateLlm, new ObjectMapper(), new SimpleMeterRegistry(), new PromptCatalog("prompts/sentiment-classifier/"));
     }
 
     private static GatewayProperties properties() {

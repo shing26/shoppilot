@@ -28,10 +28,18 @@ public class PromptCatalog {
     private final String version;
     private final String systemPrompt;
 
-    /** 生产入口：从 classpath 读 meta.json 与版本正文。 */
+    /** 生产入口：从 classpath 读 meta.json 与版本正文（默认 agent-system 基座）。 */
     public PromptCatalog() {
-        this(readClasspath(BASE + "meta.json"),
-                v -> readClasspathOrNull(BASE + v + ".md"));
+        this(BASE);
+    }
+
+    /**
+     * 任意提示词基座（ADR 0037 的同一套纪律）：情绪分类器等第二份提示词资产各有自己的
+     * {@code prompts/<name>/meta.json + <version>.md}，由配置类以具名 Bean 提供。
+     */
+    public PromptCatalog(String base) {
+        this(readClasspath(base + "meta.json"),
+                v -> readClasspathOrNull(base + v + ".md"));
     }
 
     /**

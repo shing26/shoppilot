@@ -214,7 +214,7 @@ class TraceCorrelationAcrossAsyncTest {
     private SentimentGate perfModeGate() {
         LlmGateway gateLlm = mock(LlmGateway.class);
         when(gateLlm.mode()).thenReturn("perf");
-        return new SentimentGate(gateLlm, new ObjectMapper(), new SimpleMeterRegistry());
+        return new SentimentGate(gateLlm, new ObjectMapper(), new SimpleMeterRegistry(), new PromptCatalog("prompts/sentiment-classifier/"));
     }
 
     private static CacheEntry entry() {

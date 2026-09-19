@@ -2,6 +2,7 @@ package com.shoppilot.gateway.sentiment;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.llm.LlmException;
+import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -62,7 +63,7 @@ class SentimentGateTest {
         llm = mock(LlmGateway.class);
         when(llm.mode()).thenReturn("dev");
         registry = new SimpleMeterRegistry();
-        gate = new SentimentGate(llm, new ObjectMapper(), registry);
+        gate = new SentimentGate(llm, new ObjectMapper(), registry, new PromptCatalog("prompts/sentiment-classifier/"));
     }
 
     @Test
