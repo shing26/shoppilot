@@ -186,9 +186,10 @@ class TraceCorrelationAcrossAsyncTest {
     private ChatController controller(AgentStateMachine machine) {
         RateLimitService rateLimit = mock(RateLimitService.class);
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
-        return new ChatController(machine, mock(CacheService.class), rateLimit, new ObjectMapper(),
-                new SimpleMeterRegistry(), mock(FallbackService.class), new PromptCatalog(),
-                mock(FeedbackService.class));
+        return new ChatController(machine, new ObjectMapper(), new SimpleMeterRegistry(), new PromptCatalog(),
+                mock(FeedbackService.class),
+                new ChatAdmission(mock(CacheService.class), rateLimit, mock(FallbackService.class),
+                        new SimpleMeterRegistry()));
     }
 
     private AgentStateMachine machine(CacheService cache, WriteBackPool writeBack) {

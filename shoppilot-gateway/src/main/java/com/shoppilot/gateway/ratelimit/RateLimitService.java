@@ -61,9 +61,13 @@ public class RateLimitService {
     }
 
     private Counter rejected(String dimension) {
-        return rejections.computeIfAbsent(dimension, name -> Counter.builder("shoppilot_rate_limited_total")
-                .description("按维度统计的被限流请求数，压测报告用它区分被限流与失败")
-                .tag("dimension", name).register(registry));
+        // 渠道加入维度键与标签（ADR 0035 / 票 38）："限流按渠道维度可查"；
+        // /actuator/metrics 按名字聚合，既有只按 dimension 读数的脚本与压测计数不受影响
+        String channel = com.shoppilot.gateway.channel.ChannelContext.current().label();
+        return rejections.computeIfAbsent(dimension + "|" + channel,
+                name -> Counter.builder("shoppilot_rate_limited_total")
+                        .description("按维度统计的被限流请求数，压测报告用它区分被限流与失败")
+                        .tag("dimension", dimension).tag("channel", channel).register(registry));
     }
 
     /**

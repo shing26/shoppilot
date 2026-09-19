@@ -385,9 +385,13 @@ class GatewayMainPathJvmTest {
         TriageEngine triage = mock(TriageEngine.class);
         when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d), null));
-        ChatController controller = new ChatController(mock(AgentStateMachine.class), mock(CacheService.class),
-                mock(RateLimitService.class), MAPPER, registry, mock(FallbackService.class), new PromptCatalog(),
-                feedbackService);
+        CacheService cache = mock(CacheService.class);
+        RateLimitService rateLimit = mock(RateLimitService.class);
+        when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
+        FallbackService fallback = mock(FallbackService.class);
+        ChatController controller = new ChatController(mock(AgentStateMachine.class), MAPPER, registry,
+                new PromptCatalog(), feedbackService,
+                new ChatAdmission(cache, rateLimit, fallback, registry));
         MockMvc mvc = MockMvcBuilders.standaloneSetup(controller).build();
 
         mvc.perform(post("/api/v1/support/chat/feedback")
@@ -432,8 +436,8 @@ class GatewayMainPathJvmTest {
         RateLimitService rateLimit = mock(RateLimitService.class);
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
 
-        ChatController controller = new ChatController(machine, cache, rateLimit, MAPPER, registry, fallback,
-                new PromptCatalog(), mock(FeedbackService.class));
+        ChatController controller = new ChatController(machine, MAPPER, registry, new PromptCatalog(),
+                mock(FeedbackService.class), new ChatAdmission(cache, rateLimit, fallback, registry));
         return MockMvcBuilders.standaloneSetup(controller).build();
     }
 

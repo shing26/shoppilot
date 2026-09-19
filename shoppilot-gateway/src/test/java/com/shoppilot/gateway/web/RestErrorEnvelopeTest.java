@@ -81,9 +81,9 @@ class RestErrorEnvelopeTest {
         OpsController ops = new OpsController(http, properties, mock(BizMockClient.class), JSON,
                 faultInjector, cacheService, mock(KbEpoch.class), mock(TokenBudget.class),
                 mock(HybridRetriever.class), mock(DevDefaultsPolicy.class), writer);
-        ChatController chat = new ChatController(mock(AgentStateMachine.class), cacheService,
-                mock(RateLimitService.class), JSON, registry, mock(FallbackService.class), new PromptCatalog(),
-                mock(FeedbackService.class));
+        ChatController chat = new ChatController(mock(AgentStateMachine.class), JSON, registry, new PromptCatalog(),
+                mock(FeedbackService.class), new ChatAdmission(cacheService, mock(RateLimitService.class),
+                        mock(FallbackService.class), registry));
         return MockMvcBuilders.standaloneSetup(ops, chat)
                 .setControllerAdvice(new GatewayErrorHandler(writer))
                 .build();
