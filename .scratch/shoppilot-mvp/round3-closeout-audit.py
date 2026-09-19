@@ -315,10 +315,17 @@ GOLD_CASE_FILES = {"eval/cases-part1-policy.jsonl", "eval/cases-part2-action.jso
                    "eval/cases-part3-edge.jsonl"}
 # run_tool_eval.py 摘出禁面（票 34/35）：round17 的 judge() 扩 schema 与评测报告头字段是
 # ADR 0033/0037 的设计内工作；judge 语义的机器防线由 CI 的 rescore 门禁承载（差异集合偏离即红）。
-# verify_eval_judge.py（判据的断言载体）仍在禁面；gold 三文件与 eval/results/ 原样钉着。
+# verify_eval_judge.py（判据的断言载体）仍在禁面；gold 三文件原样钉着。
+# eval/results/ 再收窄一次（票 39）：本义是"既有产物不许改/删"——新增一次评测的读数入仓
+# 恰恰是 EVIDENCE 纪律要求的动作（指标与声明的原始产物层）。改用 --name-status 区分：
+# 新增（A）放行，改动/删除（M/D/R）仍红。
+changed_status = sh(["git", "diff", "--name-status", f"{ROUND_FP}..HEAD"]).stdout.splitlines()
+changed_now = [line.split("\t", 1)[1] for line in changed_status if "\t" in line]
+added_paths = {line.split("\t", 1)[1] for line in changed_status if line.startswith("A")}
 forbidden = [f for f in changed_now
              if f in GOLD_CASE_FILES
-             or f.startswith(("eval/results/", "knowledge/", "scripts/verify_eval_judge.py"))
+             or (f.startswith("eval/results/") and f not in added_paths)
+             or f.startswith(("knowledge/", "scripts/verify_eval_judge.py"))
              or f in prior_adrs]
 check("B7 本轮窗口未碰内容级禁面（gold 与判据阈值所在文件、既有 ADR 出现即红；改动清单为读数）",
       not forbidden,
