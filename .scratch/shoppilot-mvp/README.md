@@ -11,7 +11,8 @@
 - 2026-09-16：v1.0 release candidate 的 ADR、release note、3 分钟作品集与票 21-32 问答补录均已落地；本地 JVM verify 221 绿、量具 40/40、收口审计 `PASS 93 / FAIL 0 / SKIP 2`。
 - 2026-09-18：round16 质量轮增加网关主链路 JVM 集成缝，当前 JVM verify 为 `3 + 12 + 209 = 224` 绿；历史 round14/round15 的 221 读数仍保留为当时落点。
 - 2026-09-19：票 33 做了一次双轴复核（Standards / Spec），两条轴都抓到工具循环用例假绿；已补请求体断言并做变异对照（删掉 `AgentStateMachine` 里的 tool 回填即变红）。同一天的登记型改动还有 ADR 0032 与 `.gitattributes`。
-- 当前没有 `ready-for-agent` 的开放 ticket。票 01-33 均已收口。
+- 2026-09-19（下午）：外部审查（5 份跨项目报告）交叉核实后并入 round17——两个发现升级为前置票 41（工具循环语义钉死），登记项落 round17 spec 附录；round17 草稿（spec、ADR 0033-0040、评测集 part4-7、票 41）首次入仓。
+- 当前没有其他 `ready-for-agent` 的开放 ticket。票 01-33 均已收口；round17 拆出票 34-41，票 41 为当前唯一 `ready-for-agent`（前置：round17 草稿 code-review 通过）。
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
 - Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建与 JVM 测试；全量 17 步活体验收仍是作者本机证据。
 - 下一轮不能从旧 `ready-for-agent` 字样推断。重开条件与仍然挂红的裁决见 [`docs/adr/0030-round14-closure-scope-and-reopen-triggers.md`](../../docs/adr/0030-round14-closure-scope-and-reopen-triggers.md)。
@@ -33,6 +34,7 @@
 | round14 | 票 27-31，停机/配置/指标/记账/崩溃归因 | [`round14-spec-shutdown-metrics-and-evidence-closure.md`](round14-spec-shutdown-metrics-and-evidence-closure.md) | done |
 | round15 | 票 32，CI 子集门禁 | [`round15-spec-ci-subset-gate.md`](round15-spec-ci-subset-gate.md) | done |
 | round16 | 票 33，网关主链路 JVM 集成缝 | [`round16-spec-gateway-main-path-jvm-tests.md`](round16-spec-gateway-main-path-jvm-tests.md) | done |
+| round17 | 票 34-41，对齐完整落地级电商客服链路（外部审查补强并入） | [`round17-spec-architecture-completeness.md`](round17-spec-architecture-completeness.md) | 进行中 |
 
 ## Ticket 索引
 
@@ -71,6 +73,7 @@
 | 31 | [`31-crash-attribution-and-heap-caps.md`](issues/31-crash-attribution-and-heap-caps.md) | implemented | JVM 崩溃归因与堆上限 |
 | 32 | [`32-ci-subset-gate.md`](issues/32-ci-subset-gate.md) | implemented | 干净 runner 的 CI 子集门禁 |
 | 33 | [`33-gateway-main-path-jvm-tests.md`](issues/33-gateway-main-path-jvm-tests.md) | implemented | 网关主链路 JVM 集成缝 |
+| 41 | [`41-tool-loop-semantics-pinned.md`](issues/41-tool-loop-semantics-pinned.md) | ready-for-agent | 工具循环语义钉死（round17 前置票） |
 
 ## 如何新增或领取工作
 

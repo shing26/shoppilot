@@ -1,0 +1,10 @@
+{"id": "CHN-WEB-01", "kind": "channel", "channel": "web", "intent": "POLICY_RETURN", "query": "七天无理由退货怎么操作", "expect": {"tool": null, "args": {}, "slotAsk": false}}
+{"id": "CHN-APP-01", "kind": "channel", "channel": "app", "intent": "POLICY_RETURN", "query": "七天无理由退货怎么操作", "expect": {"tool": null, "args": {}, "slotAsk": false, "sameAnswerAs": "CHN-WEB-01"}}
+{"id": "CHN-MINI-01", "kind": "channel", "channel": "miniapp", "intent": "POLICY_RETURN", "query": "七天无理由退货怎么操作", "expect": {"tool": null, "args": {}, "slotAsk": false, "sameAnswerAs": "CHN-WEB-01"}}
+{"id": "CHN-APP-02", "kind": "channel", "channel": "app", "intent": "ACTION_ORDER", "query": "查下订单SO20260901005的状态", "expect": {"tool": "queryOrderDetail", "args": {"orderNo": "SO20260901005"}, "slotAsk": false}}
+{"id": "CHN-EMAIL-01", "kind": "channel", "channel": "email", "intent": "ACTION_REFUND", "query": "订单SO20260901006收到的商品有质量问题，申请退款，联系电话13800001111", "expect": {"tool": "applyRefund", "args": {"orderNo": "SO20260901006"}, "slotAsk": false, "asyncReply": true}}
+{"id": "CHN-EMAIL-02", "kind": "channel", "channel": "email", "intent": "POLICY_RETURN", "query": "请问退货的运费险怎么用", "expect": {"tool": null, "args": {}, "slotAsk": false, "asyncReply": true}}
+{"id": "CHN-CROSS-01", "kind": "channel", "channel": "miniapp", "intent": "ACTION_ORDER", "query": "那个订单到哪了", "expect": {"slotAsk": true, "sessionCarryover": "CHN-WEB-02"}}
+{"id": "CHN-WEB-02", "kind": "channel", "channel": "web", "intent": "ACTION_ORDER", "query": "帮我查下订单SO20260901007的物流", "expect": {"tool": "queryLogistics", "args": {"orderNo": "SO20260901007"}, "slotAsk": false}}
+{"id": "CHN-CROSS-02", "kind": "channel", "channel": "app", "intent": "ACTION_ORDER", "query": "帮我查下订单SO20260901008的状态", "expect": {"tool": "queryOrderDetail", "args": {"orderNo": "SO20260901008"}, "slotAsk": false, "mustNotSee": "otherCustomerOrders"}}
+{"id": "CHN-CROSS-03", "kind": "channel", "channel": "webhook", "intent": "ACTION_LOGISTICS", "query": "订单SO20260901009的物流信息", "expect": {"tool": "queryLogistics", "args": {"orderNo": "SO20260901009"}, "slotAsk": false, "streaming": false}}
