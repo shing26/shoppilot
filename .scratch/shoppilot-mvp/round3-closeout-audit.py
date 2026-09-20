@@ -77,10 +77,13 @@ _DEF_LANDED = 0
 # 票 27 新增 WriteBackPoolTest 5 条；票 28 新增 ConfigValidationTest 22 条；
 # 票 29 新增 RuntimeStateMetricsTest 5 条；票 30/31 是文档与脚本票，不加 JVM 用例。
 # 本项判据形状仍是一字未动，动的只有这一格常数。
-# 换代指针（round17）：当前基线已是 3 + 15 + 249 = 267（票 34-39/41/风格票的用例都进了 surefire），
-# 但本机没有 pwsh 7、跑不了全量活体验收，logs/acceptance 里仍是 221 年代的日志——常数暂与本机日志
-# 自洽（G6 核的是"上次整跑"的读数），换代连同 logs 一起留到下次本机全量活体验收时做。
-G6_EXPECT = [3, 12, 206]
+# 换代指针（round17 落点，2026-09-20）：三份 surefire 模块小计 221 → 267，即 `3 + 15 + 249`。
+# 票 34-39/41 与风格票的用例都进了 surefire，而本机此前没有 pwsh 7、跑不了全量活体验收，这一格
+# 一直与 221 年代的日志自洽。本次用便携版 PowerShell 7.4.20 跑通 22 步矩阵
+# （`logs/acceptance-run-20260920-183028.log`，503s，16 步绿 6 步红，红的六步见 round17 spec 的登记），
+# `logs/acceptance/{build,unit}.log` 两份都刷新成 `3 + 15 + 249`，常数随之与它们对齐。
+# 本项判据形状（读哪两份日志、比什么）一字未动，动的只有这一格常数。
+G6_EXPECT = [3, 15, 249]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 

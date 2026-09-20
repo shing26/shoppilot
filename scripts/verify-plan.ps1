@@ -33,13 +33,17 @@ function Get-Counter([string]$Metrics, [string]$Name, [string]$Tags) {
     return [double]($line -split '\s+')[-1]
 }
 
-$token = Get-Token "T001" "C155"
+# 计划用例的订单必须归属本买家且状态确定：演示固定单 90001-90004 属于 T001/C001
+# （SeedRunner.DEMO_CUSTOMER），状态由种子钉死（90001=PAID、90002=SHIPPED、90004=CREATED）。
+# 2026-09-20 首跑用的是一组自编的 `SO2026...` 单号，而真实单号是纯数字：网关的 fabricated 守卫
+# 按格式判非法，六条计划用例一条都没进到工具层（实测原文 "fabricated-orderNo 已拦截"）。
+$token = Get-Token "T001" "C001"
 
 # ---- 两步链：先查订单再办理（后步参数可由前步结果取值）----
 $twoStep = @(
-    @{ id = "PLN-TWO-01"; query = "帮我查下订单SO20260901010的状态，如果是未发货就直接申请退款"; expectFirst = "QUERY_ORDER_DETAIL"; expectSecond = "APPLY_REFUND" },
-    @{ id = "PLN-TWO-02"; query = "先帮我看看订单SO20260901011发没发货，发货了的话告诉我物流单号和承运公司"; expectFirst = "QUERY_ORDER_DETAIL"; expectSecond = "QUERY_LOGISTICS" },
-    @{ id = "PLN-TWO-04"; query = "先确认订单SO20260901013支不支持退款，支持的话帮我提交退款申请"; expectFirst = "QUERY_ORDER_DETAIL"; expectSecond = "APPLY_REFUND" }
+    @{ id = "PLN-TWO-01"; query = "帮我查下订单90001的状态，如果是未发货就直接申请退款"; expectFirst = "QUERY_ORDER_DETAIL"; expectSecond = "APPLY_REFUND" },
+    @{ id = "PLN-TWO-02"; query = "先帮我看看订单90002发没发货，发货了的话告诉我物流单号和承运公司"; expectFirst = "QUERY_ORDER_DETAIL"; expectSecond = "QUERY_LOGISTICS" },
+    @{ id = "PLN-TWO-04"; query = "先确认订单90004支不支持退款，支持的话帮我提交退款申请"; expectFirst = "QUERY_ORDER_DETAIL"; expectSecond = "APPLY_REFUND" }
 )
 foreach ($c in $twoStep) {
     $result = Invoke-Chat $token $c.query "verify-plan-$PID-$($c.id)"
@@ -55,9 +59,11 @@ foreach ($c in $twoStep) {
 }
 
 # ---- 前步失败即中止：查不到的订单不许再发起退款/改地址 ----
+# 这里要的是"第一步就失败"，所以用一个**格式合法、但库里不存在**的单号（10098/10099）：
+# 格式非法会被 fabricated 守卫在派发前拦下，那条路径不产生 NOT_FOUND，也就走不到"前步失败"这一支。
 $aborts = @(
-    @{ id = "PLN-ABORT-01"; query = "订单SO20260909999支持退款的话帮我申请一下"; forbidden = "APPLY_REFUND" },
-    @{ id = "PLN-ABORT-02"; query = "订单SO20260901016如果已经发货就不要动它，没发货就改成上海市杨浦区五角场100号"; forbidden = "MODIFY_DELIVERY_ADDRESS" }
+    @{ id = "PLN-ABORT-01"; query = "订单10099支持退款的话帮我申请一下"; forbidden = "APPLY_REFUND" },
+    @{ id = "PLN-ABORT-02"; query = "订单10098如果已经发货就不要动它，没发货就改成上海市杨浦区五角场100号"; forbidden = "MODIFY_DELIVERY_ADDRESS" }
 )
 foreach ($c in $aborts) {
     $result = Invoke-Chat $token $c.query "verify-plan-$PID-$($c.id)"

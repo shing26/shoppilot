@@ -17,8 +17,19 @@ function Get-Token([string]$Tenant, [string]$Customer) {
 function Get-ChatResult([string]$Token, [string]$Query) {
     $headers = @{ Authorization = "Bearer $Token"; "X-Conversation-Id" = "verify-emotion-$PID-$(Get-Random)" }
     $body = '{"query":' + ($Query | ConvertTo-Json) + '}'
-    return Invoke-RestMethod -Uri "$Base/api/v1/support/chat" -Method Post -Headers $headers `
-        -ContentType "application/json; charset=utf-8" -Body $body
+    # 429 不许把整条验收崩掉：本机多个 verify 脚本共用同一批客户，前序步骤的 burst（verify-plan 的
+    # ticket-13 连打）可能刚好把这桶打干——2026-09-20 首跑就是在这里以 429 中断，只跑了 5 条用例。
+    # 按 Retry-After 退避重试；退完仍 429 才让这一条走 FAIL，而不是中断整份报告。
+    for ($attempt = 1; $attempt -le 4; $attempt++) {
+        try {
+            return Invoke-RestMethod -Uri "$Base/api/v1/support/chat" -Method Post -Headers $headers `
+                -ContentType "application/json; charset=utf-8" -Body $body
+        } catch {
+            $status = $_.Exception.Response.StatusCode.value__
+            if ($status -ne 429 -or $attempt -eq 4) { throw }
+            Start-Sleep -Seconds (5 * $attempt)
+        }
+    }
 }
 
 # 8 条词典层升级样本（id, 期望 emotion）；情绪门在 TRIAGE 前定案，落到 priority=high 工单
@@ -56,7 +67,9 @@ $queries = @{
     "EMO-NEG-03" = "快递说派送了但我没收到货，这是怎么回事"
 }
 
-$token = Get-Token -Tenant "T001" -Customer "C155"
+# 独立客户 C198：不与 verify-plan（C155 的 burst）、verify-channel、verify-style 共用限流桶——
+# 共用会把这个脚本的成败绑到前序步骤的连打上，2026-09-20 首跑就是这么吃到 429 的。
+$token = Get-Token -Tenant "T001" -Customer "C198"
 $ticketIds = @()
 
 foreach ($e in $escalations) {
@@ -72,10 +85,16 @@ foreach ($e in $escalations) {
     }
 }
 
-# 队列反查：升级工单必须可按号查回，且 priority=high（ADR 0034）
+# 队列反查：升级工单必须可按号查回，且 priority=high（ADR 0034）。
+# 走网关的运维代理（与 verify-fallback 同一条路）：`/api/tickets/{id}` 这条路由不存在，
+# 2026-09-20 首跑就崩在这里（"接口不存在"），整份报告只跑到第 8 条。
+$queue = Invoke-RestMethod -Uri "$Base/api/v1/support/ops/tickets" -Headers @{ "X-Ops-Token" = "dev-ops-token" }
 foreach ($id in $ticketIds) {
-    $ticket = Invoke-RestMethod -Uri "$Base/api/tickets/$id" -Headers @{ Authorization = "Bearer $token" }
-    if ($ticket.priority -eq "high") {
+    $ticket = $queue | Where-Object { $_.id -eq $id } | Select-Object -First 1
+    if (-not $ticket) {
+        $Fail++
+        Write-Host ("FAIL  工单 {0} 在队列里查不到" -f $id)
+    } elseif ($ticket.priority -eq "high") {
         $Pass++
         Write-Host ("PASS  工单 {0} priority=high 可反查" -f $id)
     } else {

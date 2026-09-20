@@ -92,5 +92,18 @@ judge() 扩 schema 以本表为登记依据；扩 judge 必须同步补 selfchec
 **已知边界与后续（登记不执行）**：
 
 1. ~~part4-7 的 56 条新用例尚未并入离线判分器（judge schema 扩展）~~ → **2026-09-20 已落地**：`scripts/eval_suites.py` 按 kind 分发判分（emotion/channel/plan/style），入口 `python scripts/run_tool_eval.py --suite emotion,channel,plan,style-feedback`；判据自带 24 条夹具（0 token、无网关可跑），`--suite` 每次先跑夹具预检（坏了不发请求，与 gold 侧 `scorer_selfcheck` 同例），CI 另加第三步 `python3 scripts/eval_suites.py` 独立钉住。语义断言仍按原设计记"未观测"，不静默计入分子。**有意没做**：不把新夹具并进 `verify_eval_judge.py` ——收口审计 B7 有意把那份跑器（判据的断言载体）留在内容级禁面，本轮不改它，也不为放行自己而收窄 B7；夹具的强制点因此放在未被禁面的两条路径（`--suite` 预检 + CI 第三步）上。**仍未做**：套件本体（要活体网关的那些用例）进不了 CI，只在活体验收里跑。
-2. ~~round17 新增的五条活体脚本尚未并入 `run-acceptance.ps1` 矩阵~~ → **2026-09-20 已接线**：步骤名 `emotion/channel/style/feedback/plansteps`，矩阵从 17 步扩到 22 步（键表实数为 22）。**仍未做**：本机没有 pwsh 7，22 步整跑没跑过——按登记口径"重接线要连同整跑验证"，这一步留待有 pwsh 7 的机器，届时矩阵会自己打印步数与逐步读数。
+2. ~~round17 新增的五条活体脚本尚未并入 `run-acceptance.ps1` 矩阵~~ → **2026-09-20 已接线并跑过**：步骤名 `emotion/channel/style/feedback/plansteps`，矩阵 22 步。落点 `logs/acceptance-run-20260920-183028.log`（503s，**16 步绿 / 6 步红**：plan、hitzero、fallback、emotion、feedback、plansteps）。第一次跑（18:12，2005s，10 步红）是环境：Ollama 冷启动 + `OLLAMA_MAX_LOADED_MODELS=1` 使向量化必超时（3s read-timeout < 模型换入换出约 6s）→ 检索降级 → 写回被 ADR 0006 资格拒掉，缓存相关六步全红；修 Ollama（两模型同时驻留）后那六步转绿。
 3. 本轮首次跑通全量 dev 评测所需的抬日预算（`run-dev-eval.ps1` 既有能力）从可选项变为必需项：dev 口径下每请求多一跳情绪分类调用，180 条约 40-60 万 token。
+
+## 活体验收登记（2026-09-20，落点 503s / 16 绿 6 红）
+
+六步红按根因分四类，**一条判据都没改**，全部作为后续票的输入：
+
+| # | 现象（步骤） | 实测证据 | 归因 |
+|---|---|---|---|
+| F1 | 命中路径多一次模型调用（`hitzero`），连打打不出 429（`plan` ticket 13） | `shoppilot_sentiment_llm_classified_total=47` / `requests_total=50`（94%）；分类耗时均值 0.47s、最大 0.90s | 情绪门第二层在 INTAKE 里对**每条词典未命中的请求**各打一次 LLM 分类，位于缓存查询之前。`perf` 档跳过该层，所以对外的 perf 口径读数（命中路径零模型调用）不受影响，但 local/dev 下这条不变量已不成立 |
+| F2 | 纯转人工请求落 `EMOTION_ESCALATION`（`fallback` 步 USER_REQUESTED 红） | 查询原文 `转人工` → `sentiment=URGENT via llm`；词典三层词表均未命中，是第二层判的 | 与票 36 自己的判据"CALM 用例 0 误升级"冲突：显式转人工请求被小模型判成紧急。ADR 0034 未把第二层限定为 dev 口径，故这是行为问题而不是配置问题 |
+| F3 | Plan 两步链在 local 不可复现（`plansteps` 7 条红） | 模型只发第一步（`QUERY_ORDER_DETAIL=OK` 之后无第二步）或干脆不发工具；`plan-rejected` 从未出现 | local 档的 qwen2.5:3b 能力上限。0 token 语义（前序依赖、注入拒收、前步失败中止）由 `PlanExecutionTest` 5 项与 `PlanExpressionTest` 覆盖；dev 口径（DashScope）才是能展示两步链的地方 |
+| F4 | 三条隐式信号未增长（`feedback`） | `implied_dissatisfied` / `negative` / `implied_retry` 三格在前后读数里都没动 | 待归因（脚本读的 kind 与代码一致，需逐案复看：重问窗口、降级路径、幂等重放各自的前置是否成立） |
+
+脚本侧同期修掉两个我自己的缺陷（不是判据改动）：`verify-emotion.ps1` 在 429 上崩掉整份报告（改为独立客户 C198 + 按 Retry-After 退避重试）且票查询用了不存在的 `/api/tickets/{id}`（改走 `/api/v1/support/ops/tickets`）；`verify-plan.ps1` 用了一组自编的 `SO2026...` 订单号，而真实单号是纯数字、被网关的 fabricated 守卫按格式拦下（改用演示固定单 90001/90002/90004 与格式合法但不存在的 10098/10099）。
