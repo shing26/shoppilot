@@ -102,6 +102,20 @@
 - 票 43：`V2__index_feedback_review.sql` 存在；`SlowQueryPlanTest` 3/3 绿且断言索引存在 + 计划命中；**变异对照**移走 `V2` → `v2IndexesExist` 与 `reviewQueueBeforeAfter` 两条红；四档选择性 × 四轮读数在产物文档里；EVIDENCE 已登记。
 - 票 44：根 pom 声明 jacoco `0.8.12`；三模块各产出 `jacoco.xml`；`python scripts/check_coverage.py` exit 0 并打印 `gateway 55.37% / biz-mock 77.49% / tool-api 41.73%` 对门槛 `54.0 / 76.0 / 40.0`；**变异对照**把 gateway 门槛临时改成 56.0 → `COVERAGE FAIL` 且 exit 1；CI 第 4 步已加；round15 spec 的 Out of Scope 行已加换代指针。
 
+**CI 四步门禁的本地验证（2026-09-21）**
+
+`.github/workflows/ci-subset.yml` 的四步在本机各跑过一次，读数如下：
+
+| 步 | 命令 | 实测 |
+|---|---|---|
+| 1 构建与 JVM 测试 | `.\mvnw.cmd -B -ntp verify` | `3 + 21 + 249 = 273` 绿 |
+| 2 判据自检 | `python scripts/verify_eval_judge.py` | `合计 40/40 通过` |
+| 3 离线重算 | `python scripts/run_tool_eval.py --rescore … --rescore-expected-diff …` | `RESCORE DONE cases=180 files=6 tool_diff=4`（与钉住的差异集合一致） |
+| 4 套件夹具 | `python scripts/eval_suites.py` | `SUITE SELFCHECK ok=24` |
+| 5 覆盖率棘轮（本轮新增） | `python scripts/check_coverage.py` | `COVERAGE OK modules=3` |
+
+**未验证的一条**：这五步只在 Windows 本机跑过，**干净 Linux runner 上的那一跑尚未发生**——本轮没有 push，所以没有新的 `ci-subset` run 可引用。第 3 步落下的 `eval/results/tool-eval-20260921-051558-rescore.csv` 是本机验证副产物（差异集合与基线一致，不携带新信息），已删除、未入库。CI 侧的首次验证留给 push 之后。
+
 **收口时的口径换代**
 
 - `docs/EVIDENCE.md`：新增两行（慢查询负结果、覆盖率棘轮），并在 267 那一行加 round18 换代指针指向 273。
