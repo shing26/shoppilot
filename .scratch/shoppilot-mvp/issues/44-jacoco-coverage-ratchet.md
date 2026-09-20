@@ -42,6 +42,7 @@ python scripts/check_coverage.py
 
 - 全量：`.\mvnw.cmd -B -ntp verify` → `3 + 21 + 249 = 273` 绿，三模块各自产出 `target/site/jacoco/jacoco.xml`。
 - 棘轮：`python scripts/check_coverage.py` → exit 0。
+- **干净 runner**：push 后 `ci-subset` run `35538377810`（`edbd3b1`，92 s）**五步一次全过**，其中 `Coverage ratchet (0-token)` 步是该脚本在 Linux 上的首次运行。这是本票第 5 条验收项的落点。
 - 变异对照：把 gateway 门槛从 54.0 临时改成 56.0（实测 55.37%）→ `COVERAGE FAIL` 且 exit 1，输出 `shoppilot-gateway: LINE 55.37% < 门槛 56.00%`；恢复后 exit 0。
 - 缺产物路径不是「跳过」而是「没验证」：找不到 `jacoco.xml` 时脚本判红并提示先跑 `mvnw verify`——静默放过等于把门禁变成摆设。
 
