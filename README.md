@@ -29,13 +29,14 @@
 
 按目的先读下面入口，再进入 ticket 和源码：
 
+- 想先知道这个项目有什么、在哪、到哪一步了：[`DELIVERY.md`](DELIVERY.md)：交付契约入口页，一屏。
 - 想 3 分钟看懂：[`docs/portfolio-interview.md`](docs/portfolio-interview.md)：架构、四个问题、三个数字和一个踩坑。
 - 想先看是否值得投递：[`docs/portfolio-hr.md`](docs/portfolio-hr.md)：五行项目摘要。
 - 想系统准备面试：[`docs/interview-guide.md`](docs/interview-guide.md)：八站掌握路线、练习顺序与追问答法。
 - 想核对全部证据：[`docs/EVIDENCE.md`](docs/EVIDENCE.md)：数字对应的报告、原始产物与复现命令。
 - [`AGENTS.md`](AGENTS.md)：接手顺序、source of truth、修改禁令、验证与 Handoff 流程。
 - [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)：按项目定位制定的 v1.0 收口、作品集与冻结路线。
-- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-32 的当前状态。
+- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-41 的当前状态。
 - [`docs/CODE_MAP.md`](docs/CODE_MAP.md)：模块所有权、请求链路源码落点和已知代码债候选。
 
 ## 快速开始（一条命令）
@@ -311,6 +312,12 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 ## 已知限制（不藏）
 
 - **H2 内嵌库在写密集路径上是瓶颈**；50 并发同 token 的退款实测 1 行 + 49 个重放，但换 MySQL 才是生产形态。
+- **表结构由 Flyway 版本化迁移产生，不是 Hibernate 自动建表**：`ddl-auto` 已是 `validate`，模式的唯一产生源是
+  `shoppilot-biz-mock/src/main/resources/db/migration/`（V1 基线由 Hibernate 导出后固化）。**迁移只管表结构怎么产生，
+  不改变数据的持久性作用域**——库仍是内存库、每次起栈 reseed，上面那条工单口径不因引入迁移而变。
+  Flyway 社区版没有 `undo`，回滚的两条路径（整库 `clean` 重放 / 手工单版回退）写在
+  `db/rollback/U1__baseline_down.sql` 的文件头。索引的真相源同样是迁移文件，实体上的 `@Index` 注解在 `validate`
+  下不再被校验、只作文档。
 - **工单只在业务 Mock 进程生命周期内可查**：看门狗失联重启会全量 reseed 并抹掉已落库工单；跨重启持久化、RESOLVED 后买家回流都不在现状内。它们不是本轮遗漏，而是等真工单系统替换业务 Mock 时一起做的两条投产前置（ADR 0030 第 2 条）。
 - **跨实例 singleflight 只在单实例环境验证过**。Redis `SETNX` 那层写了、测了，但没有两个网关实例跑真实流量。
 - **身份提供方是 mock 的**：验签逻辑真（HS256、过期、错签名都拒），发 token 的接口是演示入口（ADR 0014）。
@@ -501,7 +508,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（3 + 15 + 249 = 267 项）
+# 单元、架构与主链路 JVM 集成测试（3 + 21 + 249 = 273 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -545,18 +552,21 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七�
 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
 Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
-这条门禁覆盖干净 runner 上的构建与 267 条 JVM 测试：round16 的三条网关主链路 JVM
+这条门禁覆盖干净 runner 上的构建与 273 条 JVM 测试：round16 的三条网关主链路 JVM
 集成 smoke（缓存命中、工具循环、fallback），票 41 的四条工具循环语义用例（超限 FALLBACK、
 预算检查出答案、写动作守卫、多 toolCalls 防御），票 35 的五条 Prompt 版本化用例
 （生产资源加载与三种 fail-fast 形态），票 36 的六条情绪门用例（词典层 0 token 定案、
 升级判据、fail-open、perf 口径）与一条情绪升级集成用例，票 37 的反馈账本与复核队列用例，
 票 38 的渠道入站契约用例（webhook 整段回包、email 回执单、限流按渠道、SSE meta 双字段），
 风格票的档位矩阵与注入拼装用例（基座 + 注入段同一次调用发出），票 39 的五条计划执行语义用例
-（前序依赖表达式、注入拒收、前步失败中止、单步回归），不依赖 Docker、Redis、ES、Qdrant 或 Ollama。
+（前序依赖表达式、注入拒收、前步失败中止、单步回归），以及 round18 的三条模式迁移用例
+（Flyway 基线已应用、9 张表齐备、`ddl-auto` 仍是 validate）与三条慢查询计划用例，
+不依赖 Docker、Redis、ES、Qdrant 或 Ollama。
 票 34 起它还包含 0 token 的评测门禁：判据自检（`verify_eval_judge.py` 40 项断言）、离线
-rescore 比对（按当前判据重算 2026-09-10 六份入库明细，钉住对偶矛盾四条的期望差异集合），
-以及 round17 新增套件判分器的 24 条夹具（`python scripts/eval_suites.py`）——
-judge()、gold 或新增套件判据的静默漂移都会让 CI 变红。它仍不替代本机 22 步全量验收，后者包含活体中间件、
+rescore 比对（按当前判据重算 2026-09-10 六份入库明细，钉住对偶矛盾四条的期望差异集合）、
+round17 新增套件判分器的 24 条夹具（`python scripts/eval_suites.py`），以及 round18 的
+覆盖率棘轮（`python scripts/check_coverage.py`，读各模块 JaCoCo 产物按模块比 LINE 门槛）——
+judge()、gold、新增套件判据或覆盖率的静默漂移都会让 CI 变红。它仍不替代本机 22 步全量验收，后者包含活体中间件、
 浏览器、评测与一键演示。CI 报红先修真实失败，不通过加跳过、改期望数或取消测试来换绿。
 
 ### 逐 ticket 验收动作 → 覆盖命令
@@ -861,11 +871,11 @@ shoppilot-biz-mock/    业务中台：orders / logistics / coupons / refunds / t
 shoppilot-tool-api/    纯契约 jar：10 意图枚举 + Function Schema + 工具 DTO（网关与 biz-mock 共用）
 loadtest/              locustfile（四种流量模型）与 results/（保留 ladder-*.csv 与 env-*.json）
 eval/results/         工具调用评测 CSV/meta（入库的评测证据）
-docs/adr/              ADR 0001-0030（0022 未占用），正文里每处 ADR 编号都能点进去
+docs/adr/              ADR 0001-0040（0022 未占用），正文里每处 ADR 编号都能点进去
 docs/                  阈值标定、意图标定、检索对比、压测报告、证据地图、代码地图、面试问答清单
 knowledge/             30 篇政策语料
 scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、TTFT 扫描与归因、报告生成
-.scratch/shoppilot-mvp/ 正式 tracker、round spec、票 01-32、收口审计；不是临时草稿目录
+.scratch/shoppilot-mvp/ 正式 tracker、round spec、票 01-41、收口审计；不是临时草稿目录
 AGENTS.md  CHARTER.md  PLAN.md  CONTEXT.md
 ```
 
