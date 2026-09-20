@@ -9,7 +9,16 @@ import org.hibernate.annotations.TenantId;
 
 import java.time.Instant;
 
-/** 人工工单（ADR 0009）。转人工必须有可查证落点，否则是假功能。 */
+/**
+ * 人工工单（ADR 0009）。转人工必须有可查证落点，否则是假功能。
+ *
+ * <p><b>为什么这张表没有索引</b>（round18 票 43 实测后否决）：工单列表按时间倒序取件
+ * （{@code BizMockService} 的 {@code findAllByOrderByCreatedAtDesc}），本票试过
+ * {@code tickets(tenant_id, created_at)}，计划确实从扫表变成走索引，但那条查询取全列且无上界
+ * （一次取走某租户全部工单），走索引要逐行回表、没有覆盖能力，三次连跑 p50 一致比扫表差
+ * 10~45%。读数与归因见 {@code docs/slow-query-optimization-2026-09-21.md}。
+ * 真正的修法是给那条查询加上界（功能改动，不在本轮范围）；加上界之后这张索引才值得重新量。
+ */
 @Entity
 @Table(name = "tickets")
 public class Ticket {
