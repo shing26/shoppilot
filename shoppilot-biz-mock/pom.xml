@@ -43,6 +43,12 @@
       <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
     <dependency>
+      <!-- round18 票 42 / ADR 0041：模式的唯一产生源是 db/migration，ddl-auto 已是 validate。
+           H2 支持在 flyway-core 内，不存在 flyway-database-h2 模块（已核实 Maven Central）。 -->
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
       <groupId>com.h2database</groupId>
       <artifactId>h2</artifactId>
       <scope>runtime</scope>

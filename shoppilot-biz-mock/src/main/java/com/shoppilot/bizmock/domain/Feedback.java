@@ -3,6 +3,7 @@ package com.shoppilot.bizmock.domain;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.TenantId;
@@ -13,9 +14,13 @@ import java.time.Instant;
  * 满意度反馈（ADR 0039）。显式点踩/点赞落行；隐式信号只走计数器不落行（口径分开记）。
  * DOWN 行自动关联当次会话的工单与检索引用块，PENDING 即 ingest 待复核队列——
  * 人工复核后才进知识库修订，本表不做任何自动改写。
+ *
+ * <p>索引依据：复核队列按「状态 + 时间倒序」取件（{@code FeedbackService} 的
+ * {@code findByReviewStatusOrderByCreatedAtDesc}），谓词与排序都落在 idx_feedback_review 上。
+ * ddl-auto 已是 validate，**索引的真相源是 db/migration**，本注解只作文档、不被校验。
  */
 @Entity
-@Table(name = "feedback")
+@Table(name = "feedback", indexes = @Index(name = "idx_feedback_review", columnList = "review_status,created_at"))
 public class Feedback {
 
     @Id
