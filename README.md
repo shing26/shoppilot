@@ -306,7 +306,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 | 虚拟线程收益 | 开关两组数据 | **达成**：400/800 并发 +64%/+65%，100/200 并发 -3%/-3%，低并发档负收益照登 |
 | Token 节约率 | 关缓存基线对比 | **达成**：62.4%（1096.8 → 412.3 token/请求），三档只差防线开关，perf 模式估算口径注明 |
 | 实测数字诚实 | 表旁标口径与来源文件 | **达成**：上表每行都有口径列与 `loadtest/results/`、`eval/results/`、`docs/` 下的具体产物 |
-| 可复现性 | 新机器一条命令起栈跑通演示 | **从 GitHub 克隆那份达成（10 分钟预算内）、异机未验**：`scripts/clean_clone_check.ps1` 默认从 `origin` 克隆到空目录、在空数据卷上照 README 起栈、逐条断言三条演示的预期输出，端到端 205 s（预算 600 s），落点 `logs/clean-clone-check-20260910-192007.log`；这一判据按 ADR 0020 由脚本自闭环收口，不再等外部人肉测，剩余缺口（同机、同作者）写在该 ADR 的 Consequences 里。`scripts/run-acceptance.ps1` 一条命令跑完语法门到评测全部 17 步 |
+| 可复现性 | 新机器一条命令起栈跑通演示 | **从 GitHub 克隆那份达成（10 分钟预算内）、异机未验**：`scripts/clean_clone_check.ps1` 默认从 `origin` 克隆到空目录、在空数据卷上照 README 起栈、逐条断言三条演示的预期输出，端到端 205 s（预算 600 s），落点 `logs/clean-clone-check-20260910-192007.log`；这一判据按 ADR 0020 由脚本自闭环收口，不再等外部人肉测，剩余缺口（同机、同作者）写在该 ADR 的 Consequences 里。`scripts/run-acceptance.ps1` 一条命令跑完语法门到评测全部 22 步 |
 
 ## 已知限制（不藏）
 
@@ -523,8 +523,9 @@ pwsh -NoProfile -File scripts/verify-ratelimit.ps1      # 同步 429 与 SSE rat
 pwsh -NoProfile -File scripts/verify-polarity.ps1       # 反义对不互命中（要求 local/dev 模式）
 node scripts/verify-console.mjs                         # 调试台 35 项（Playwright）
 # round17 新增的五条：情绪门 / 渠道契约 / 风格档位 / 反馈闭环 / 计划步骤
-# （各脚本的语义断言另有 0 token 的 JVM 用例兜底；这五条尚未并入 run-acceptance 矩阵——
-#   重接线会改 17 步计数并连带审计与本文多处换代，留待下次本机全量活体验收时一并做，届时整跑验证）
+# （各脚本的语义断言另有 0 token 的 JVM 用例兜底；五条已并入 run-acceptance 矩阵——步骤名
+#   emotion/channel/style/feedback/plansteps，门禁从 17 步扩到 22 步；本机无 pwsh 7 跑不了整跑，
+#   整跑验证留待有 pwsh 7 的机器，届时矩阵会自己打印步数与逐步读数）
 pwsh -NoProfile -File scripts/verify-emotion.ps1        # 词典层 8 条定案 + 12 条不误升级 + 高优工单
 pwsh -NoProfile -File scripts/verify-channel.ps1        # 三渠道同答 / 跨渠道会话不互串 / email 回执单 / 渠道计数
 pwsh -NoProfile -File scripts/verify-style.ps1          # SSE meta 档位矩阵（完整矩阵见 StyleServiceTest 6 项）
@@ -552,9 +553,10 @@ Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 票 38 的渠道入站契约用例（webhook 整段回包、email 回执单、限流按渠道、SSE meta 双字段），
 风格票的档位矩阵与注入拼装用例（基座 + 注入段同一次调用发出），票 39 的五条计划执行语义用例
 （前序依赖表达式、注入拒收、前步失败中止、单步回归），不依赖 Docker、Redis、ES、Qdrant 或 Ollama。
-票 34 起它还包含两步 0 token 评测门禁：判据自检（`verify_eval_judge.py` 40 项断言）与离线
-rescore 比对（按当前判据重算 2026-09-10 六份入库明细，钉住对偶矛盾四条的期望差异集合）——
-judge() 或 gold 的静默漂移会让 CI 变红。它仍不替代本机 17 步全量验收，后者包含活体中间件、
+票 34 起它还包含 0 token 的评测门禁：判据自检（`verify_eval_judge.py` 40 项断言）、离线
+rescore 比对（按当前判据重算 2026-09-10 六份入库明细，钉住对偶矛盾四条的期望差异集合），
+以及 round17 新增套件判分器的 24 条夹具（`python scripts/eval_suites.py`）——
+judge()、gold 或新增套件判据的静默漂移都会让 CI 变红。它仍不替代本机 22 步全量验收，后者包含活体中间件、
 浏览器、评测与一键演示。CI 报红先修真实失败，不通过加跳过、改期望数或取消测试来换绿。
 
 ### 逐 ticket 验收动作 → 覆盖命令
@@ -836,7 +838,7 @@ native OOM 归因分五票落地，指标名按三模块 `src/main` 去重后为
 | 13 | `verify-plan-actions.ps1` 第 13 段（逐发归因：被 429 的请求零模型调用）、`verify-ratelimit.ps1` |
 | 14 | `verify-fallback.ps1`（七种 reason 各有可查工单）、`verify-plan-actions.ps1 -WithRestarts` 第 14 段（死端点） |
 | 15 | `node scripts/verify-console.mjs`（Playwright 35 项，含"页面拿不到内部 token"、健康灯三态、首字进行态、抽屉遮罩/Esc/不拦 pointer events、小字对比度量 AA 比值） |
-| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260911-211809-local-smoke*`，10/10 意图各有 2-3 条，日志首行是 `SCORER SELFCHECK ok=16`）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（40 条断言：四处评分缺陷各一次变异反证、10 条标注校验器防呆、6 条对偶矛盾边界、5 条 gold 形态与串号标记值对拍、4 条共享词表与两份 `accepted_tools` 跨实现对拍、生成物字节稳定、判据只有一份、17 个文件的换行符基线、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（16 条夹具，真跑前执行）；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
+| 16 | `python scripts/run_tool_eval.py` → `eval/results/tool-eval-<时间>-<模式>[-<tag>]{.csv,-summary.csv,-meta.json}`；`local` 与 dev 路径（`-dev-localcompat`）两轮都在库里。门禁另有 `eval` 步：24 条按意图**分层**抽样（`--limit` 原先取前 N 条，只会落在 POLICY_RETURN/POLICY_SHIPPING 上），十个意图都有份，量的是评测链路通不通（证据 `eval/results/tool-eval-20260911-211809-local-smoke*`，10/10 意图各有 2-3 条，日志首行是 `SCORER SELFCHECK ok=16`）；阈值判定只在 dev 模式生效，所以这一格绿不代表准确率达标。<br>量具本身另有两份自证：`python scripts/verify_eval_judge.py`（40 条断言：四处评分缺陷各一次变异反证、10 条标注校验器防呆、6 条对偶矛盾边界、5 条 gold 形态与串号标记值对拍、4 条共享词表与两份 `accepted_tools` 跨实现对拍、生成物字节稳定、判据只有一份、17 个文件的换行符基线、工作树未被污染，全程在仓库外临时副本上做）与 `python scripts/run_tool_eval.py --selfcheck`（16 条夹具，真跑前执行）；round17 新增套件判分器（`scripts/eval_suites.py`）自带 24 条夹具，由 `python scripts/eval_suites.py` 单独跑、也在 CI 里作为第三步；`--rescore <明细.csv>…` 用同一个 `judge()` 离线重算既有明细，零额度 |
 | 17 | `python scripts/calibrate_threshold.py` → `docs/threshold-sweep.{csv,png}` 与 `docs/threshold-calibration.md` |
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
 | 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 80s / 12s（索引行原来写的 `69s / 13s` 与第三轮任何一次落点跑法都不符，随换轮一并改；**但第三轮订正时我把那句话说过头了**——写成「与本机任何一份落盘矩阵都不符」，而 09-09 的 `logs/acceptance-run5.log` 里 `stack 0 ok / 69s` + `demo 0 ok / 13s` 是成对在的：它是更早一天的真读数，只是不属于这一轮任何一次跑法。收口审计 H2 钉住那一对确实存在，H2b 钉住 README 里不许再出现那种全称否定） |

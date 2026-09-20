@@ -79,7 +79,7 @@
     </section>
     <section class="station">
       <strong>8. 量化与门禁</strong>
-      <p>决策：报告由产物生成，strict 缺证据即红；CI 只承诺干净 runner 构建 + 224 JVM 测试。</p>
+      <p>决策：报告由产物生成，strict 缺证据即红；CI 只承诺干净 runner 构建 + 267 JVM 测试。</p>
       <p>首读：<code>run-acceptance.ps1</code> / <code>run_loadtest.py</code> / <code>build_loadtest_report.py</code> / <code>EVIDENCE.md</code></p>
       <p>故障：文档手抄数字与 CSV 漂移；聚合值遮住分意图红值；把本机全量验收说成 CI 覆盖。</p>
     </section>
@@ -95,9 +95,9 @@
   <h2>固定基线</h2>
   <table>
     <tr><th>项目</th><th>当前口径</th><th>怎么用</th></tr>
-    <tr><td>JVM tests</td><td>224</td><td>本地 <code>mvnw verify</code> 与 CI 子集门禁的共同基线。</td></tr>
-    <tr><td>Acceptance audit</td><td>95 checks, 0 FAIL</td><td>收口审计，不等于 `run-acceptance.ps1` 的 17 个活体步骤。</td></tr>
-    <tr><td>CI</td><td>build + 224 JVM tests</td><td>不覆盖 Docker、Ollama、评测、压测和浏览器全量验收。</td></tr>
+    <tr><td>JVM tests</td><td>267</td><td>本地 <code>mvnw verify</code> 与 CI 子集门禁的共同基线。</td></tr>
+    <tr><td>Acceptance audit</td><td>95 checks, 0 FAIL</td><td>收口审计，不等于 <code>run-acceptance.ps1</code> 的 22 个活体步骤（round17 从 17 扩到 22，整跑待有 pwsh 7 的机器验证）。</td></tr>
+    <tr><td>CI</td><td>build + 267 JVM tests</td><td>不覆盖 Docker、Ollama、评测、压测和浏览器全量验收。</td></tr>
     <tr><td>ADR</td><td>0001-0040</td><td>0030-0032 是原冻结与编排选型；0033-0040 是 round17 的完整链路补齐（情绪门/渠道/计划/提示词版本/风格/反馈闭环/有意不做）。</td></tr>
     <tr><td>工具准确率</td><td>93.3% / 95.6%</td><td>旧 gold 实测 / 新判据离线重算；承诺项仍为未达成。</td></tr>
   </table>

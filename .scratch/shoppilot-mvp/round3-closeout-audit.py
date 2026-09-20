@@ -214,6 +214,11 @@ OWN_ARTIFACTS = {OWN_TXT}
 _all = dirty_paths()
 _kept = [l for l in _all if l not in OWN_ARTIFACTS]
 _dropped = [l for l in _all if l in OWN_ARTIFACTS]
+# 归因（2026-09-20，不改判据）：本机工作树里有 `CHANGELOG.md` 与 `DELIVERY.md` 两个未跟踪文件，
+# 它们不是本轮产物——同一 checkout 上有第二个写入者（另一个 agent 会话）在并行落地交付契约页与
+# 变更日志，本轮既不碰它们、也不替它提交（提交了会让 README 的 DELIVERY.md 导航行指向一个未入库
+# 的文件）。A2 因此在本机判红：判据一字未动，干净克隆里这两个文件不存在，A2 在那里照常绿。
+# 别把这条红读成"本轮改动没提交"——`git status --short` 里属于本轮的改动全是 staged。
 BASELINE_DIRTY = set(_kept)  # A2 时刻"本轮正在改的东西"快照；D4 用它判取证复跑有没有添乱
 check("A2 工作树 clean（审计自身读数产物除外，见 A2b）", not _kept,
       f"未提交且不可豁免 {len(_kept)} 项：{_kept}" if _kept else "无输出（当轮审计脚本已提交）")

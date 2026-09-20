@@ -556,6 +556,9 @@ def main() -> int:
                         help="对既有明细按当前判据重算并出前后对照，不发任何请求（ticket 20）")
     parser.add_argument("--rescore-expected-diff", default="", metavar="id列表",
                         help="断言判据变动集合恰好等于这份 id 列表：把「只动了这 4 条」变成机器可查")
+    parser.add_argument("--suite", default="", metavar="名称[,名称]",
+                        help="跑 round17 新增套件（emotion/channel/plan/style-feedback），与 gold 集分开、"
+                             "判据在 eval_suites.py；与 --rescore 同属「不发 gold 请求」的路径")
     args = parser.parse_args()
 
     # 量具坏了就别花钱：夹具先跑，一次 HTTP 都不发，红就直接拒绝。
@@ -570,6 +573,20 @@ def main() -> int:
         return 0
     if args.rescore:
         return rescore_details(args.rescore, args.rescore_expected_diff or None)
+    if args.suite:
+        # 惰性导入：套件判据独立成模块，让 CI 钉着的那条 selfcheck/rescore 路径不多一份依赖面。
+        # 传 sys.modules[__name__] 是复用本文件的 HTTP 助手，不引入循环导入。
+        import eval_suites
+        # 与上面 scorer_selfcheck 同一条纪律：判据坏了就一次请求都不发。预检放在这里而不是
+        # verify_eval_judge.py——收口审计 B7 有意把那份跑器（判据的断言载体）留在内容级禁面，
+        # 本轮不碰它；夹具因此由这条预检与 CI 的独立第三步承载。
+        suite_failures, suite_fixtures = eval_suites.selfcheck()
+        for line in suite_failures:
+            print("SUITE CHECK FAILED  " + line)
+        if suite_failures:
+            return 2
+        print(f"SUITE SELFCHECK ok={suite_fixtures}")
+        return eval_suites.run(args, sys.modules[__name__])
 
     cases = [json.loads(line) for line in CASES.read_text(encoding="utf-8").splitlines() if line.strip()]
     if args.only_intent:

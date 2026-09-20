@@ -34,9 +34,10 @@ jobs:
       - name: Verify build and JVM tests
         run: bash ./mvnw -B -ntp verify
 
-      # 票 34（ADR 0033 前置闸门）：两步都是 0 token、纯 stdlib——judge 自检 40 项断言，
-      # 离线 rescore 按当前判据重算 2026-09-10 六份入库明细并钉住期望差异集合（对偶矛盾四条）。
-      # judge() 或 gold 的任何静默漂移都会让这两步变红，这是票 36-39 扩判据前的比对背书。
+      # 票 34（ADR 0033 前置闸门）：这几步都是 0 token、纯 stdlib——judge 自检 40 项断言，
+      # 离线 rescore 按当前判据重算 2026-09-10 六份入库明细并钉住期望差异集合（对偶矛盾四条），
+      # round17 再加新增套件判分器的 24 条夹具。
+      # judge()、gold 或套件判据的任何静默漂移都会让这几步变红，这是票 36-39 扩判据前的比对背书。
       - name: Eval judge selfcheck (0-token)
         run: python3 scripts/verify_eval_judge.py
 
@@ -50,6 +51,13 @@ jobs:
           eval/results/tool-eval-20260910-080942-dev-budgetfix.csv
           eval/results/tool-eval-20260910-075747-dev.csv
           --rescore-expected-diff ACT-ORD-09,ACT-ORD-11,ACT-ORD-16,ACT-ORD-17
+
+      # round17：part4-7 套件的判分器（scripts/eval_suites.py）自带 24 条夹具，同样是 0 token、
+      # 纯 stdlib。套件本体要活体网关进不了 CI，夹具是它能进 CI 的那一半——没有这一步，
+      # 新判据的漂移只能靠人记得手动跑。它不并进 verify_eval_judge.py：收口审计 B7 有意把那份
+      # 跑器（判据的断言载体）留在内容级禁面，本轮不改它。
+      - name: Suite scorer selfcheck (0-token)
+        run: python3 scripts/eval_suites.py
 
       - name: Upload Surefire reports on failure
         if: failure()

@@ -106,7 +106,7 @@ public class ChannelController {
                     RequestTrace.traceId(), result.answer(),
                     result.intent() == null ? null : result.intent().name(), result.citations(),
                     result.fallbackReason() == null ? null : result.fallbackReason().name(),
-                    result.ticketId(), receiptTicketId, result.promptVersion()));
+                    result.ticketId(), receiptTicketId, result.promptVersion(), result.trace()));
         } finally {
             ChannelContext.clear();
         }
@@ -117,15 +117,17 @@ public class ChannelController {
      */
     public record ChannelResponse(String channel, boolean streaming, boolean canFollowUp, String answerId,
                                   String answer, String intent, List<String> citations, String fallbackReason,
-                                  String ticketId, String receiptTicketId, String promptVersion) {
+                                  String ticketId, String receiptTicketId, String promptVersion,
+                                  List<AgentResult.TraceStep> trace) {
 
         static ChannelResponse rejected(String channel, String message) {
-            return new ChannelResponse(channel, false, false, null, message, null, List.of(), null, null, null, null);
+            return new ChannelResponse(channel, false, false, null, message, null, List.of(), null, null, null, null,
+                    List.of());
         }
 
         static ChannelResponse rateLimited(String channel, String ticketId) {
             return new ChannelResponse(channel, false, false, null, "当前咨询人数较多，请稍后再试。", null, List.of(),
-                    "RATE_LIMITED", ticketId, null, null);
+                    "RATE_LIMITED", ticketId, null, null, List.of());
         }
     }
 }

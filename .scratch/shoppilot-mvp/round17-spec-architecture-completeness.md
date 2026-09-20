@@ -78,7 +78,7 @@ judge() 扩 schema 以本表为登记依据；扩 judge 必须同步补 selfchec
 | 票 | 状态 | 关键落点 |
 | --- | --- | --- |
 | 41 工具循环语义钉死 | implemented | 超限按 ADR 0008 字面 FALLBACK、`parallel_tool_calls:false` + 多调用防御、写动作守卫 |
-| 34 评测子集进 CI | implemented | CI 两步 0 token 门禁（判据自检 40 项 + rescore 比对钉 4 条差异集） |
+| 34 评测子集进 CI | implemented | CI 0 token 评测门禁（判据自检 40 项 + rescore 比对钉 4 条差异集；round17 加第三步：套件判分器 24 条夹具） |
 | 35 Prompt 版本化 | implemented | 外置 `prompts/agent-system/v1.0.0.md` + meta fail-fast + SSE/评测报告携带版本 |
 | 36 情绪门 | implemented | 词典层 0 token 定案 + dev 口径 LLM 分类兜底 + `EMOTION_ESCALATION` 第 10 降级因 + 工单 priority=high；分类器提示词亦外置为版本资产 |
 | 37 反馈闭环 | implemented | biz-mock feedback 表 + 复核队列 + 三隐式信号计数 + 点踩自动关联工单与引用块 |
@@ -91,6 +91,6 @@ judge() 扩 schema 以本表为登记依据；扩 judge 必须同步补 selfchec
 
 **已知边界与后续（登记不执行）**：
 
-1. part4-7 的 56 条新用例尚未并入离线判分器（judge schema 扩展），语义断言由五条 `verify-*.ps1` 活体脚本与 JVM 用例承载——触发条件：把新用例纳入 CI 的 rescore 门禁时一并做。
-2. round17 新增的五条活体脚本尚未并入 `run-acceptance.ps1` 矩阵（重接线会改 17 步计数并连带审计与 README 换代）——触发条件：下次本机全量活体验收时一并做并整跑验证。
+1. ~~part4-7 的 56 条新用例尚未并入离线判分器（judge schema 扩展）~~ → **2026-09-20 已落地**：`scripts/eval_suites.py` 按 kind 分发判分（emotion/channel/plan/style），入口 `python scripts/run_tool_eval.py --suite emotion,channel,plan,style-feedback`；判据自带 24 条夹具（0 token、无网关可跑），`--suite` 每次先跑夹具预检（坏了不发请求，与 gold 侧 `scorer_selfcheck` 同例），CI 另加第三步 `python3 scripts/eval_suites.py` 独立钉住。语义断言仍按原设计记"未观测"，不静默计入分子。**有意没做**：不把新夹具并进 `verify_eval_judge.py` ——收口审计 B7 有意把那份跑器（判据的断言载体）留在内容级禁面，本轮不改它，也不为放行自己而收窄 B7；夹具的强制点因此放在未被禁面的两条路径（`--suite` 预检 + CI 第三步）上。**仍未做**：套件本体（要活体网关的那些用例）进不了 CI，只在活体验收里跑。
+2. ~~round17 新增的五条活体脚本尚未并入 `run-acceptance.ps1` 矩阵~~ → **2026-09-20 已接线**：步骤名 `emotion/channel/style/feedback/plansteps`，矩阵从 17 步扩到 22 步（键表实数为 22）。**仍未做**：本机没有 pwsh 7，22 步整跑没跑过——按登记口径"重接线要连同整跑验证"，这一步留待有 pwsh 7 的机器，届时矩阵会自己打印步数与逐步读数。
 3. 本轮首次跑通全量 dev 评测所需的抬日预算（`run-dev-eval.ps1` 既有能力）从可选项变为必需项：dev 口径下每请求多一跳情绪分类调用，180 条约 40-60 万 token。

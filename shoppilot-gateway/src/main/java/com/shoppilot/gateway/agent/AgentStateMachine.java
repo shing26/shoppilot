@@ -125,6 +125,9 @@ public class AgentStateMachine {
         // 回答正文仍由同一次 LLM 调用产出。档位随参数穿透到各降级出口，话术选择随档位联动。
         StyleService.Tier styleTier = styleService.tierFor(ChannelContext.current(), sentiment.emotion(), null);
         registry.counter("shoppilot_style_applied_total", "style", styleTier.name()).increment();
+        // 档位同时进 trace（与 sentiment= 同构）：离线评测与验收脚本按同步响应就能归因提示词形态，
+        // 不必为它新增响应字段（票 35 登记的"离线归因"触发条件由此关闭）
+        step(trace, sink, AgentState.INTAKE, "style=" + styleTier.name());
         sink.style(styleTier.name());
         String systemPrompt = styleService.assemble(promptCatalog.systemPrompt(), styleTier);
         if (sentiment.escalated()) {

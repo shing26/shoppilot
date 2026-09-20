@@ -31,7 +31,7 @@ pwsh -NoProfile -File scripts/up.ps1
 pwsh -NoProfile -File scripts/demo.ps1
 ```
 
-完整入口见 [README.md](README.md) 的快速开始、三条演示和复现段。CI 子集在干净 Ubuntu runner 上只执行构建与全部 JVM 测试，不替代本机 17 步活体验收。
+完整入口见 [README.md](README.md) 的快速开始、三条演示和复现段。CI 子集在干净 Ubuntu runner 上只执行构建与全部 JVM 测试，不替代本机 22 步活体验收。
 
 ## Known limits
 

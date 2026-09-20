@@ -67,6 +67,15 @@ $steps = [ordered]@{
     polarity  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-polarity.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('验收通过') }
     l2        = @{ Kind = 'py'; Cmd = 'scripts\verify_l2_filters.py'; Arg = @(); Need = $true; Skip = $false; Expect = @('全部通过：L2') }
     console   = @{ Kind = 'node'; Cmd = 'scripts\verify-console.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('console checks passed') }
+    # round17 新增的五条（ADR 0034 / 0035 / 0038 / 0039 / 0036）：都排在 console 之后——
+    # 情绪门与计划两步都要打模型，重负载压在浏览器形状断言之前会给门禁制造假红（同 eval 那条的理由）。
+    # 五条各自的语义断言另有 0 token 的 JVM 用例兜底（SentimentGateTest / ChannelFlowJvmTest /
+    # StyleServiceTest / FeedbackServiceTest / PlanExecutionTest），这里量的是活体链路上的端到端表现。
+    emotion   = @{ Kind = 'ps1'; Cmd = 'scripts\verify-emotion.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('情绪门验收') }
+    channel   = @{ Kind = 'ps1'; Cmd = 'scripts\verify-channel.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('渠道契约验收') }
+    style     = @{ Kind = 'ps1'; Cmd = 'scripts\verify-style.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('风格验收') }
+    feedback  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-feedback.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('反馈闭环验收') }
+    plansteps = @{ Kind = 'ps1'; Cmd = 'scripts\verify-plan.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('计划验收') }
     demo      = @{ Kind = 'ps1'; Cmd = 'scripts\demo.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('演示结束') }
     # PLAN 第 16 行的验收动作写的是"冒烟后跑完整集"，完整集要 dev 模式与真实 key，
     # 冒烟这一半却是机器现在就能覆盖的：24 条按意图轮流取（--limit 已改成分层抽样，

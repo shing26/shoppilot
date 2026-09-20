@@ -21,19 +21,19 @@
 <main>
   <p class="eyebrow">ShopPilot 八站路线 · 08 / 08</p>
   <h1>量化与门禁</h1>
-  <p class="lead">60 秒版：这一站回答“凭什么相信上面的结论”。证据地图把每个对外数字映射到报告和原始产物；压测报告由 CSV 生成，strict 模式缺证据就红；验收门禁把构建、活体脚本和演示固定成一个矩阵；CI 只承诺干净 runner 上的构建和 224 条 JVM 测试，不冒充全量环境。</p>
+  <p class="lead">60 秒版：这一站回答“凭什么相信上面的结论”。证据地图把每个对外数字映射到报告和原始产物；压测报告由 CSV 生成，strict 模式缺证据就红；验收门禁把构建、活体脚本和演示固定成一个矩阵；CI 只承诺干净 runner 上的构建和 267 条 JVM 测试，不冒充全量环境。</p>
 
   <section class="box">
     <h2>Decision</h2>
     <p><strong>报告从产物生成：</strong><code>scripts/build_loadtest_report.py --strict</code> 从 <code>loadtest/results/</code> 读取 CSV/JSON 并写出报告，避免手抄数字和原始数据漂移。</p>
     <p><strong>一条命令跑活体验收：</strong><code>scripts/run-acceptance.ps1</code> 固定构建、起栈、所有 verify 脚本、浏览器检查与三条演示的顺序和日志；失败不丢步骤。</p>
-    <p><strong>CI 边界写清：</strong><code>.github/workflows/ci-subset.yml</code> 在干净 runner 执行 <code>bash ./mvnw -B -ntp verify</code>，覆盖 build + 224 条 JVM 测试；不含 Docker、Ollama、评测、压测和 17 步活体验收。</p>
+    <p><strong>CI 边界写清：</strong><code>.github/workflows/ci-subset.yml</code> 在干净 runner 执行 <code>bash ./mvnw -B -ntp verify</code>，覆盖 build + 267 条 JVM 测试；不含 Docker、Ollama、评测、压测和 22 步活体验收。</p>
     <p><strong>红值不洗绿：</strong>拦截率、吞吐、未命中 TTFT、分意图工具准确率都保留判据、实测、归因和限制。改分母、阈值或 gold 换绿不算修复。</p>
   </section>
 
   <section>
     <h2>Reproduce</h2>
-    <pre># 当前基线：3 + 12 + 209 = 224 条 JVM 测试
+    <pre># 当前基线：3 + 15 + 249 = 267 条 JVM 测试
 .\mvnw.cmd -B -ntp verify
 
 # 40 条评分器断言，全部在仓库外临时副本做
@@ -53,7 +53,7 @@ pwsh -NoProfile -File scripts\run-acceptance.ps1</pre>
   <section>
     <h2>Three questions</h2>
     <details>
-      <summary>Q1：224 条 JVM 测试为什么还不能代表全量验收？</summary>
+      <summary>Q1：267 条 JVM 测试为什么还不能代表全量验收？</summary>
       <p>它们适合在干净 runner 上验证构建、单元、集成和架构约束，但不包含 Docker 中间件、Ollama、ES/Qdrant、真实评测、压测和浏览器演示。CI 的价值是可重复和零外部凭证；它能证明“代码能构建且 JVM 测试绿”，不能证明所有活体防线都成立。</p>
     </details>
     <details>
