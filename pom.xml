@@ -27,6 +27,9 @@
     <jjwt.version>0.12.6</jjwt.version>
     <victools.version>4.35.0</victools.version>
     <archunit.version>1.3.0</archunit.version>
+    <!-- round18 票 44 / ADR 0041：覆盖率工具。版本显式声明，与上面 surefire/compiler 同例，
+         不依赖 BOM 是否替我们管这一支。 -->
+    <jacoco.version>0.8.12</jacoco.version>
   </properties>
 
   <dependencyManagement>
@@ -70,5 +73,31 @@
         </plugin>
       </plugins>
     </pluginManagement>
+    <!-- round18 票 44 / ADR 0041：声明在 plugins 而不是 pluginManagement，三个模块一律继承。
+         prepare-agent 默认绑 initialize、report 默认绑 verify，所以 mvnw verify 就会产出
+         target/site/jacoco/jacoco.xml。棘轮不在这里判定——那件事归 scripts/check_coverage.py，
+         它读产物按模块分别比门槛，见 ADR 0041 里「报告进构建 + 0 token 脚本判定」的口径。
+         本仓 surefire 没有自定义 argLine，所以 prepare-agent 设的 argLine 属性不会被覆盖。 -->
+    <plugins>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <executions>
+          <execution>
+            <id>jacoco-prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>jacoco-report</id>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
   </build>
 </project>

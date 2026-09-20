@@ -59,6 +59,13 @@ jobs:
       - name: Suite scorer selfcheck (0-token)
         run: python3 scripts/eval_suites.py
 
+      # round18 票 44 / ADR 0041：覆盖率棘轮。产物由上面那一步 verify 的 jacoco:report 产出，
+      # 这一步只读产物按模块分别比门槛（LINE 设闸 / BRANCH 只报），同样是 0 token、纯 stdlib。
+      # 它落在 CI 里是**范围边界的更正而不是判据改动**：round15 spec 把「覆盖率」列进 Out of Scope
+      # 的原始理由是子集门禁不依赖外部服务，而 JaCoCo 在进程内跑，那条理由对覆盖率本来就不成立。
+      - name: Coverage ratchet (0-token)
+        run: python3 scripts/check_coverage.py
+
       - name: Upload Surefire reports on failure
         if: failure()
         uses: actions/upload-artifact@v7

@@ -55,6 +55,10 @@ CI 的判定不是「17 步换一种跑法」，而是独立的小门：干净�
 - 全量 17 步 `run-acceptance.ps1`、浏览器验收、评测、压测、模型调用。
 - Ollama、ES、Qdrant、Redis、Docker Compose 或任何 service container。
 - 部署、发布、制品仓库、CodeQL、覆盖率、最小告警集。
+  **换代指针（round18 票 44 / ADR 0041）**：本行的「覆盖率」已被覆盖——JaCoCo 报告进 `verify`，
+  棘轮由 CI 第 4 步 `python3 scripts/check_coverage.py` 判定。覆盖理由：本行排除覆盖率的原始理由
+  是子集门禁不依赖外部服务，而 JaCoCo 在进程内运行，那条理由对覆盖率本来就不成立。这是**范围边界的
+  更正而不是判据改动**——本 spec 的其余 Out of Scope 项与全部门禁判据一字未动。
 - Windows runner 矩阵。首轮先证明 Linux 干净环境可跑；跨 OS 需求等真实失败或下一票再定。
 
 ## Further Notes
