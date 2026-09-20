@@ -46,7 +46,7 @@ FIXED_POINT = "11a12ac"  # 第三轮起点
 #   这些条目断言的是「订正前那份文档里确实存在这句问题话」，而 HEAD 会随本轮提交前移，
 #   一旦提交了就永远取不到那句话，对照组反而把自己判红（第四轮收尾实际踩到过，见 ticket 20 第 10 条）。
 PRE_FIX = "a6ccdcb"  # 第四轮收口那一笔（对照组要取它**之前**那份文档，见下面 ROUND_FP 的分工）
-ROUND_FP = "578722e"  # round17 起点（round16 收口 + 0917 压测产物登记之后、round17 草稿入仓之前）。逐轮重锚，见 ADR 0023。
+ROUND_FP = "fb8eacf"  # round18 起点（round17 收口那一笔，含 22 步活体矩阵落点）。逐轮重锚，见 ADR 0023。
 
 FAILS = []
 PASSES = []
@@ -81,9 +81,12 @@ _DEF_LANDED = 0
 # 票 34-39/41 与风格票的用例都进了 surefire，而本机此前没有 pwsh 7、跑不了全量活体验收，这一格
 # 一直与 221 年代的日志自洽。本次用便携版 PowerShell 7.4.20 跑通 22 步矩阵
 # （`logs/acceptance-run-20260920-183028.log`，503s，16 步绿 6 步红，红的六步见 round17 spec 的登记），
-# `logs/acceptance/{build,unit}.log` 两份都刷新成 `3 + 15 + 249`，常数随之与它们对齐。
+# `logs/acceptance/{build,unit}.log` 两份都刷新成 `3 + 21 + 249`，常数随之与它们对齐。
 # 本项判据形状（读哪两份日志、比什么）一字未动，动的只有这一格常数。
-G6_EXPECT = [3, 15, 249]
+# round18 换代：`3 + 15 + 249`（267）→ `3 + 21 + 249`（273）——票 42 新增 3 条 SchemaMigrationTest、
+# 票 43 新增 3 条 SlowQueryPlanTest；gateway 与 tool-api 用例数未动。G6 读的是本机
+# `logs/acceptance/` 日志，属 LOCAL_ONLY，干净克隆里判 SKIP。
+G6_EXPECT = [3, 21, 249]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 

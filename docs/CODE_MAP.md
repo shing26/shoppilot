@@ -31,6 +31,7 @@
 | --- | --- | --- |
 | `bizmock/domain` | Hibernate 实体和业务状态枚举 | `Order`、`Refund`、`Ticket`、`TicketStatus` |
 | `bizmock/repo` | tenant-aware repository 与唯一约束 | `OrderRepository`、`RefundRepository`、`TicketRepository` |
+| `bizmock/db/migration`（资源） | **模式的唯一产生源**：Flyway 版本化迁移（`ddl-auto` 已是 `validate`）。索引的真相源在这里，实体上的 `@Index` 注解在 `validate` 下不再被校验、只作文档 | `V1__baseline.sql`、`V2__index_feedback_review.sql`；回滚约定在 `db/rollback/U1__baseline_down.sql` |
 | `bizmock/service` | 查询、改地址、退款、工单、归属和状态前置校验 | `BizMockService` |
 | `bizmock/web` | 内部工具接口、工单接口、内部 token 校验、故障注入 | `ToolController`、`TicketController`、`InternalAuthFilter` |
 | `tool/request` / `tool/view` | 跨模块请求和响应 DTO | `QueryOrderDetailRequest`、`ToolResponse`、`TicketView` |
@@ -70,8 +71,11 @@
 | 会话归属 | `agent/ConversationOwnershipTest` |
 | fallback 与幂等 | `agent/FallbackReasonTest`、`agent/IdempotencyServiceTest` |
 | 业务租户隔离、幂等、工单工作流 | `shoppilot-biz-mock/src/test/java/...` |
+| 模式迁移与 schema 一致性 | `bizmock/SchemaMigrationTest`（迁移已应用、9 表齐备、`ddl-auto` 仍是 validate） |
+| 慢查询计划与索引守卫 | `bizmock/SlowQueryPlanTest`（含被否决的那笔优化，见 `docs/slow-query-optimization-2026-09-21.md`） |
 | 跨模块 schema | `shoppilot-tool-api/src/test/java/.../ToolSchemaGeneratorTest` |
 | 活体防线 | `scripts/verify-*.ps1`、`scripts/verify_l2_filters.py`、`scripts/verify_eval_judge.py` |
+| 覆盖率棘轮 | `scripts/check_coverage.py`（读各模块 `jacoco.xml`，按模块比 LINE 门槛） |
 | 网关主链路 JVM 集成 | `web/GatewayMainPathJvmTest`（缓存命中、工具循环、fallback） |
 | 干净 runner JVM 门禁 | `.github/workflows/ci-subset.yml` |
 
