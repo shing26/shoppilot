@@ -174,7 +174,7 @@ $results | Format-Table -AutoSize | Out-String | Write-Host
 Write-Host "日志：$logFile"
 
 # 前提不成立就判作废，不给红也不给绿：口径与 verify-polarity 的 exit 3 一致。
-# 判据看**账**，不看日志关键词：verify-fallback 会故意注入 LLM_BUDGET_EXCEEDED 来验第七种降级形态，
+# 判据看**账**，不看日志关键词：verify-fallback 会故意注入 LLM_BUDGET_EXCEEDED 来验这一种降级形态，
 # 那是在测防线；上一版按关键词判，把一次七步全绿的复核判成了作废（2026-09-10 10:43 那次，
 # 账上实花 45,585 tokens）。真饿掉只有一个特征：整轮一个模型 token 都没花——模型根本没被调用，
 # 那测的就不是"云端模型在场时防线是否还成立"，而 ADR 0012 的熔断本身早就被评测那一轮证过一遍了。

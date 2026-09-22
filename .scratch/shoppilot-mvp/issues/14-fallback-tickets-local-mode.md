@@ -32,7 +32,7 @@
 
 **你需要能当场回答的追问**
 
-- *Q：七种降级你怎么证明不是写在纸上的？* A：`scripts/verify-fallback.ps1` 一条命令跑完七种，每种打印 `reason` 与 `ticketId`，末尾再经网关代理拉一次工单队列做交叉核对。LLM 三种靠 `LlmFaultInjector`，工具一种靠 biz-mock `failRate=1.0`，限流一种靠连打超配额，槽位一种靠两轮对话拒答，转人工一种靠用户直接说。另有 `FallbackReasonTest` 6 项守住"枚举齐全 + 每种都落单 + 每种都有话术"。
+- *Q：降级原因你怎么证明不是写在纸上的？* A：`FallbackReason` 枚举 10 种，去掉主动转人工还剩 9 种降级；`scripts/verify-fallback.ps1` 一条命令逐条断言其中 8 种（7 种降级 + 主动转人工），每种打印 `reason` 与 `ticketId`，末尾再经网关代理拉一次工单队列做交叉核对。LLM 三种靠 `LlmFaultInjector`，工具一种靠 biz-mock `failRate=1.0`，意图未决一种靠负缓存标记，槽位一种靠两轮对话拒答，转人工一种靠用户直接说，限流一种靠连打超配额。另 2 种降级（轮次用尽、情绪升级）由 `FallbackReasonTest` 与 `verify-emotion.ps1` 覆盖；`FallbackReasonTest` 6 项守住"枚举齐全 + 每种都落单 + 每种都有话术"。**（2026-09-23 更正：原文写「跑完七种」，枚举漏了 `INTENT_UNRESOLVED` 又把「转人工」计进七种，两处都改；口径见 README 验收对照的「降级原因 N 种」段。）**
 - *Q：为什么 `LLM_CIRCUIT_OPEN` 和 `TOOL_UNAVAILABLE` 是两个原因而不是一个？* A：熔断器分别套在模型调用链和业务调用链上，恢复时间差一个数量级——模型超时可以先降级到本地小模型，业务系统超时只能转人工。合并成一个，值班的人就分不出该找算法还是该找交易。
 - *Q：限流合并工单，会不会漏掉真实的大面积限流事故？* A：不会漏，只是不重复开单。工单里带 `(tenant, customer)`，另有 `shoppilot_rate_limited_total` 计数器按维度打点，Grafana 看的是计数而不是工单条数。工单是"有人需要被跟进"的凭证，不是监控指标。
 - *Q：用户喊转人工，依赖的 embedding 服务挂了怎么办？* A：字面显式表达在 T0 定案，不碰 embedding 也不碰模型，这是事故后补的最低可用线（ADR 0017）；换说法的求助（"叫你们经理过来"）仍走 T1/T2，embedding 超时就 fail-closed 进模型定案，模型也没了才落到 LLM_* 那几种 reason。三层各自兜一段，不承诺任何说法都不依赖服务，这句话写进 README 已知限制。

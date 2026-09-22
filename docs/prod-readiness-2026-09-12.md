@@ -40,6 +40,7 @@
   HttpTimeoutException 单独翻译成 ToolStatus.TIMEOUT + 用户话术「业务系统响应超时」，而不是笼统 catch。
 - 降级：FallbackReason.java 8 个枚举值（README 第 18 行写「7 种」是减去 USER_REQUESTED，因为那是主动转人工不是被动降级），
   每个都有 userMessage() 面向用户话术；ToolDispatcher.java 第 46 行把 TIMEOUT/UNAVAILABLE 统一判为 degraded。
+  **（2026-09-23 换代指针：枚举现为 10 种，故「降级」= 10 − 主动转人工 = 9 种；本行的 8 是 2026-09-12 当时值，按原样保留。口径见 `README.md` 验收对照的「降级原因 N 种」段。）**
 - fail-open 与 fail-closed 逐点写明取向（这是最像生产代码的地方）：
   - RateLimitService.java 第 107-110 行：Redis 挂则放行，注释「宁可放行也不能把全站变成 503」。
   - IdempotencyService.java 第 51-52 行：Redis 不可用走 bypass 计数器，交给 DB 约束兜底。

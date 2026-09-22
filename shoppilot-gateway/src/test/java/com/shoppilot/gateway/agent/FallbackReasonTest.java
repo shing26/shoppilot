@@ -33,14 +33,15 @@ import static org.mockito.Mockito.when;
 /**
  * 降级原因必须可枚举、可落单（ticket 14、ADR 0009）。
  *
- * <p>这里守住两件事：七种 reason 一个都不能少、每一种都真的往业务侧落一张可查工单。
+ * <p>这里守住两件事：降级 reason 一个都不能少（枚举 10 种 − 主动转人工 = 9 种）、每一种都真的往业务侧落一张可查工单。
  * "只推事件不落单"是最容易蒙混过关的假功能，所以用工单端点的真实 HTTP 契约来验。
  */
 class FallbackReasonTest {
 
     private static final List<String> REQUIRED_REASONS = List.of(
             "LLM_TIMEOUT", "LLM_CIRCUIT_OPEN", "LLM_BUDGET_EXCEEDED", "TOOL_UNAVAILABLE",
-            "INTENT_UNRESOLVED", "RATE_LIMITED", "SLOT_UNRESOLVED");
+            "INTENT_UNRESOLVED", "RATE_LIMITED", "SLOT_UNRESOLVED",
+            "TOOL_ROUNDS_EXHAUSTED", "EMOTION_ESCALATION");
 
     private static HttpServer bizMock;
     private static final List<String> received = new ArrayList<>();
@@ -88,7 +89,7 @@ class FallbackReasonTest {
     }
 
     @Test
-    void 七种降级原因一个都不能少() {
+    void 降级原因一个都不能少() {
         List<String> declared = new ArrayList<>();
         for (FallbackReason reason : FallbackReason.values()) {
             declared.add(reason.name());
