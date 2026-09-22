@@ -263,7 +263,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | --- | --- | --- | --- |
 | 串号防线 | 跨租户同意图 0 次互命中；跨店查询不泄露 B 店字段；同店铺内换一个买家拿同一个会话 id 载出空会话、写不进对方会话、也续办不了别人的待办动作（票 22、ADR 0025）。**这一格管的是上下文可见性**：订单行与含买家的幂等键那道守卫本来就按「店铺 + 买家」拦（ADR 0005），本票修的是同一店铺里两个人共用一段会话，不把「跨买家隔离已达成」说满 | **通过**（local 与 dev 都实测） | `verify_l2_filters.py`（租户/scope/意图/纪元四类过滤）、`verify-action-loop.ps1` 第 3 段、`verify-polarity.ps1` 8/8、`ConversationOwnershipTest`（键含买家段 + 跨买家载不出/写不进/续办不了 + 同店 A 自己仍可续办的正对照）、dev 复核 `logs/dev-guardcheck-20260910-105633.log` |
 | 写操作幂等 | 并发 50 同 token 仅 1 条；Redis 停机由 DB 唯一约束兜 | **通过**（local 与 dev 都实测） | `verify-idempotency.ps1`、`IdempotencyServiceTest`、`TenantIsolationAndIdempotencyTest`、dev 复核同上 |
-| 降级可复现 | 七种 reason 稳定触发且各有可查工单 | **通过**（local 与 dev 都实测） | `verify-fallback.ps1` 7/7、`FallbackReasonTest`、dev 复核同上 |
+| 降级可复现 | 七种 reason 稳定触发且各有可查工单 | **通过**（local 与 dev 都实测）；**2026-09-20 换代指针：22 步全量矩阵的 `fallback` 步红**——`run-acceptance.ps1` 的该步就是 `verify-fallback.ps1`，纯转人工请求 `转人工` 落 `EMOTION_ESCALATION` 而不是 `USER_REQUESTED`。机制不是词表缺词：情绪门按 ADR 0034 位于 INTAKE、先于意图判定，它自己的三层词表没命中这条平静问句 → 交给第二层小模型 → 判成 `sentiment=URGENT via llm`，于是 T0 的 `ESCALATE_WORDS`（**含「转人工」**，`T0RuleLayer.java:50`）根本没轮到执行。根因 F2 登记在 `.scratch/shoppilot-mvp/round17-spec-architecture-completeness.md` 的「活体验收登记」表，**判据一字未改**；本行的 2026-09-10 读数按原样保留，两条并列不取其高 | `verify-fallback.ps1` 7/7、`FallbackReasonTest`、dev 复核同上；2026-09-20 落点 `logs/acceptance-run-20260920-183028.log`（503s，16 步绿 / 6 步红；`logs/` 不入库，干净克隆里没有） |
 | 身份不可伪造 | 无 token/伪造/过期 401；body 或参数带 tenantId 被忽略并告警。**这一格钉的是「伪造」，不是「领取」**：`/auth/mock-token` 不要任何凭证就能签出任意店铺 + 任意买家的合法身份，它只在回环绑定上注册（ADR 0029）；而绑定回环只是必要条件、不是防线——反向代理打进来的同样是 `127.0.0.1` | **通过**（local 与 dev 都实测） | `AuthFilterTest`、`MockIdentityConditionTest`、`DevDefaultsPolicyTest`、`demo.ps1 -Which isolation`、`IdentityArchitectureTest`、dev 复核同上 |
 
 「可查工单」的作用域按 `CONTEXT.md` 的定义写整：**只保证业务 Mock 进程生命周期内按工单号从队列反查**。看门狗自愈时的全量 reseed 会把已落库工单一并抹掉，而这与压测、三条演示的「每次起干净世界」是同一条复位语义；跨重启可查、RESOLVED 之后买家回流均不承诺，重开条件见 ADR 0030 第 2 条。
@@ -531,8 +531,9 @@ pwsh -NoProfile -File scripts/verify-polarity.ps1       # 反义对不互命中�
 node scripts/verify-console.mjs                         # 调试台 35 项（Playwright）
 # round17 新增的五条：情绪门 / 渠道契约 / 风格档位 / 反馈闭环 / 计划步骤
 # （各脚本的语义断言另有 0 token 的 JVM 用例兜底；五条已并入 run-acceptance 矩阵——步骤名
-#   emotion/channel/style/feedback/plansteps，门禁从 17 步扩到 22 步；本机无 pwsh 7 跑不了整跑，
-#   整跑验证留待有 pwsh 7 的机器，届时矩阵会自己打印步数与逐步读数）
+#   emotion/channel/style/feedback/plansteps，门禁从 17 步扩到 22 步。2026-09-20 已用便携 pwsh
+#   7.4.20 整跑过一次：503s、16 步绿 / 6 步红（plan、hitzero、fallback、emotion、feedback、
+#   plansteps），六步红的四条根因登记在 round17 spec 的「活体验收登记」表，判据一字未改）
 pwsh -NoProfile -File scripts/verify-emotion.ps1        # 词典层 8 条定案 + 12 条不误升级 + 高优工单
 pwsh -NoProfile -File scripts/verify-channel.ps1        # 三渠道同答 / 跨渠道会话不互串 / email 回执单 / 渠道计数
 pwsh -NoProfile -File scripts/verify-style.ps1          # SSE meta 档位矩阵（完整矩阵见 StyleServiceTest 6 项）
