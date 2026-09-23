@@ -130,7 +130,11 @@ public class AgentStateMachine {
         step(trace, sink, AgentState.INTAKE, "style=" + styleTier.name());
         sink.style(styleTier.name());
         String systemPrompt = styleService.assemble(promptCatalog.systemPrompt(), styleTier);
-        if (sentiment.escalated()) {
+        // 显式转人工优先于情绪判定（ADR 0042）：ADR 0017 把「转人工」下沉到 T0 就是为了不依赖任何
+        // 服务，而情绪门位于 INTAKE、先于意图判定，会把这条平静问句判成 URGENT 后抢先转接，于是 T0
+        // 那张含「转人工」的词表根本没机会执行（2026-09-20 矩阵 F2；2026-09-23 活体验收 step 7 复现）。
+        // 命中显式升级词表时不走情绪短路，放行到 triage，由既有 USER_REQUESTED 出口收口。
+        if (sentiment.escalated() && !triageEngine.isExplicitEscalation(query)) {
             sink.meta(conversationId, null, CacheService.Layer.NONE);
             return fallback(AgentState.INTAKE, trace, sink, FallbackReason.EMOTION_ESCALATION, query,
                     "emotion=" + sentiment.emotion() + " via " + sentiment.source(), styleTier);

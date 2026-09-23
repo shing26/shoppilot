@@ -263,7 +263,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | --- | --- | --- | --- |
 | 串号防线 | 跨租户同意图 0 次互命中；跨店查询不泄露 B 店字段；同店铺内换一个买家拿同一个会话 id 载出空会话、写不进对方会话、也续办不了别人的待办动作（票 22、ADR 0025）。**这一格管的是上下文可见性**：订单行与含买家的幂等键那道守卫本来就按「店铺 + 买家」拦（ADR 0005），本票修的是同一店铺里两个人共用一段会话，不把「跨买家隔离已达成」说满 | **通过**（local 与 dev 都实测） | `verify_l2_filters.py`（租户/scope/意图/纪元四类过滤）、`verify-action-loop.ps1` 第 3 段、`verify-polarity.ps1` 8/8、`ConversationOwnershipTest`（键含买家段 + 跨买家载不出/写不进/续办不了 + 同店 A 自己仍可续办的正对照）、dev 复核 `logs/dev-guardcheck-20260910-105633.log` |
 | 写操作幂等 | 并发 50 同 token 仅 1 条；Redis 停机由 DB 唯一约束兜 | **通过**（local 与 dev 都实测） | `verify-idempotency.ps1`、`IdempotencyServiceTest`、`TenantIsolationAndIdempotencyTest`、dev 复核同上 |
-| 降级可复现 | 降级原因 6 种 + 主动转人工 1 条（`verify-fallback.ps1` 的确定性表共 7 行；限流是第 8 步，只在真打出 429 时才落行）稳定触发且各有可查工单 | **通过**（local 与 dev 都实测）；**2026-09-20 换代指针：22 步全量矩阵的 `fallback` 步红**——`run-acceptance.ps1` 的该步就是 `verify-fallback.ps1`，纯转人工请求 `转人工` 落 `EMOTION_ESCALATION` 而不是 `USER_REQUESTED`。机制不是词表缺词：情绪门按 ADR 0034 位于 INTAKE、先于意图判定，它自己的三层词表没命中这条平静问句 → 交给第二层小模型 → 判成 `sentiment=URGENT via llm`，于是 T0 的 `ESCALATE_WORDS`（**含「转人工」**，`triage/T0RuleLayer.java` 词表第一条）根本没轮到执行。根因 F2 登记在 `.scratch/shoppilot-mvp/round17-spec-architecture-completeness.md` 的「活体验收登记」表，**判据一字未改**；本行的 2026-09-10 读数按原样保留，两条并列不取其高 | `verify-fallback.ps1` 7/7、`FallbackReasonTest`、dev 复核同上；2026-09-20 落点 `logs/acceptance-run-20260920-183028.log`（503s，16 步绿 / 6 步红；`logs/` 不入库，干净克隆里没有） |
+| 降级可复现 | 降级原因 6 种 + 主动转人工 1 条（`verify-fallback.ps1` 的确定性表共 7 行；限流是第 8 步，只在真打出 429 时才落行）稳定触发且各有可查工单 | **通过**（local 与 dev 都实测）；**2026-09-20 换代指针：22 步全量矩阵的 `fallback` 步红**——`run-acceptance.ps1` 的该步就是 `verify-fallback.ps1`，纯转人工请求 `转人工` 落 `EMOTION_ESCALATION` 而不是 `USER_REQUESTED`。机制不是词表缺词：情绪门按 ADR 0034 位于 INTAKE、先于意图判定，它自己的三层词表没命中这条平静问句 → 交给第二层小模型 → 判成 `sentiment=URGENT via llm`，于是 T0 的 `ESCALATE_WORDS`（**含「转人工」**，`triage/T0RuleLayer.java` 词表第一条）根本没轮到执行。根因 F2 登记在 `.scratch/shoppilot-mvp/round17-spec-architecture-completeness.md` 的「活体验收登记」表，**判据一字未改**；本行的 2026-09-10 读数按原样保留，两条并列不取其高。**2026-09-23 已修（票 45 / ADR 0042）**：把优先级定成「显式转人工优先」——命中 T0 升级词表时不走情绪短路，放行到 triage 由既有 `USER_REQUESTED` 出口收口；活体 `verify-fallback.ps1` step 7 转 `USER_REQUESTED`，整脚本 7/7 PASS、exit 0，上面那条红随之关闭（情绪门本身不变，`shoppilot_sentiment_escalated_total{emotion=URGENT}` 仍计 1，只有优先级改了） | `verify-fallback.ps1` 7/7、`FallbackReasonTest`、dev 复核同上；2026-09-20 落点 `logs/acceptance-run-20260920-183028.log`（503s，16 步绿 / 6 步红；`logs/` 不入库，干净克隆里没有） |
 | 身份不可伪造 | 无 token/伪造/过期 401；body 或参数带 tenantId 被忽略并告警。**这一格钉的是「伪造」，不是「领取」**：`/auth/mock-token` 不要任何凭证就能签出任意店铺 + 任意买家的合法身份，它只在回环绑定上注册（ADR 0029）；而绑定回环只是必要条件、不是防线——反向代理打进来的同样是 `127.0.0.1` | **通过**（local 与 dev 都实测） | `AuthFilterTest`、`MockIdentityConditionTest`、`DevDefaultsPolicyTest`、`demo.ps1 -Which isolation`、`IdentityArchitectureTest`、dev 复核同上 |
 
 「可查工单」的作用域按 `CONTEXT.md` 的定义写整：**只保证业务 Mock 进程生命周期内按工单号从队列反查**。看门狗自愈时的全量 reseed 会把已落库工单一并抹掉，而这与压测、三条演示的「每次起干净世界」是同一条复位语义；跨重启可查、RESOLVED 之后买家回流均不承诺，重开条件见 ADR 0030 第 2 条。
@@ -510,7 +510,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（3 + 21 + 249 = 273 项）
+# 单元、架构与主链路 JVM 集成测试（3 + 21 + 250 = 274 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -555,7 +555,7 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七�
 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
 Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
-这条门禁覆盖干净 runner 上的构建与 273 条 JVM 测试：round16 的三条网关主链路 JVM
+这条门禁覆盖干净 runner 上的构建与 274 条 JVM 测试：round16 的三条网关主链路 JVM
 集成 smoke（缓存命中、工具循环、fallback），票 41 的四条工具循环语义用例（超限 FALLBACK、
 预算检查出答案、写动作守卫、多 toolCalls 防御），票 35 的五条 Prompt 版本化用例
 （生产资源加载与三种 fail-fast 形态），票 36 的六条情绪门用例（词典层 0 token 定案、

@@ -102,7 +102,7 @@ judge() 扩 schema 以本表为登记依据；扩 judge 必须同步补 selfchec
 | # | 现象（步骤） | 实测证据 | 归因 |
 |---|---|---|---|
 | F1 | 命中路径多一次模型调用（`hitzero`），连打打不出 429（`plan` ticket 13） | `shoppilot_sentiment_llm_classified_total=47` / `requests_total=50`（94%）；分类耗时均值 0.47s、最大 0.90s | 情绪门第二层在 INTAKE 里对**每条词典未命中的请求**各打一次 LLM 分类，位于缓存查询之前。`perf` 档跳过该层，所以对外的 perf 口径读数（命中路径零模型调用）不受影响，但 local/dev 下这条不变量已不成立 |
-| F2 | 纯转人工请求落 `EMOTION_ESCALATION`（`fallback` 步 USER_REQUESTED 红） | 查询原文 `转人工` → `sentiment=URGENT via llm`；词典三层词表均未命中，是第二层判的 | 与票 36 自己的判据"CALM 用例 0 误升级"冲突：显式转人工请求被小模型判成紧急。ADR 0034 未把第二层限定为 dev 口径，故这是行为问题而不是配置问题 |
+| F2 | 纯转人工请求落 `EMOTION_ESCALATION`（`fallback` 步 USER_REQUESTED 红） | 查询原文 `转人工` → `sentiment=URGENT via llm`；词典三层词表均未命中，是第二层判的 | 与票 36 自己的判据"CALM 用例 0 误升级"冲突：显式转人工请求被小模型判成紧急。ADR 0034 未把第二层限定为 dev 口径，故这是行为问题而不是配置问题。**（2026-09-23 已修：票 45 / ADR 0042 —— 显式转人工优先于情绪判定；活体 `verify-fallback.ps1` step 7 转绿，7/7 PASS、exit 0。本行的原始归因按原样保留。）** |
 | F3 | Plan 两步链在 local 不可复现（`plansteps` 7 条红） | 模型只发第一步（`QUERY_ORDER_DETAIL=OK` 之后无第二步）或干脆不发工具；`plan-rejected` 从未出现 | local 档的 qwen2.5:3b 能力上限。0 token 语义（前序依赖、注入拒收、前步失败中止）由 `PlanExecutionTest` 5 项与 `PlanExpressionTest` 覆盖；dev 口径（DashScope）才是能展示两步链的地方 |
 | F4 | 三条隐式信号未增长（`feedback`） | `implied_dissatisfied` / `negative` / `implied_retry` 三格在前后读数里都没动 | 待归因（脚本读的 kind 与代码一致，需逐案复看：重问窗口、降级路径、幂等重放各自的前置是否成立） |
 

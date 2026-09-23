@@ -27,6 +27,7 @@ import com.shoppilot.gateway.sentiment.Emotion;
 import com.shoppilot.gateway.sentiment.SentimentGate;
 import com.shoppilot.gateway.style.StyleService;
 import com.shoppilot.gateway.feedback.FeedbackService;
+import com.shoppilot.gateway.triage.T0RuleLayer;
 import com.shoppilot.gateway.triage.TriageEngine;
 import com.shoppilot.gateway.triage.TriageResult;
 import com.shoppilot.tool.Intent;
@@ -203,6 +204,24 @@ class GatewayMainPathJvmTest {
 
         verify(fallback).escalate(FallbackReason.USER_REQUESTED, "我要找人工", null);
         verifyNoInteractions(llm);
+    }
+
+    @Test
+    @DisplayName("回归：情绪门第二层判 URGENT 时，显式转人工仍必须落 USER_REQUESTED（ADR 0017 不被 ADR 0034 覆盖）")
+    void explicitEscalationSurvivesAnUrgentSentimentVerdict() throws Exception {
+        FallbackService fallback = mock(FallbackService.class);
+        when(fallback.escalate(eq(FallbackReason.USER_REQUESTED), eq("转人工"), eq(null)))
+                .thenReturn(Optional.of("T-901"));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ESCALATE, "T1", false),
+                mock(CacheService.class), mock(LlmGateway.class), mock(ToolDispatcher.class), fallback,
+                urgentGate());
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"转人工\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fallbackReason").value("USER_REQUESTED"));
     }
 
     @Test
@@ -467,8 +486,17 @@ class GatewayMainPathJvmTest {
 
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
                             ToolDispatcher dispatcher, FallbackService fallback) {
+        return mockMvc(triageResult, cache, llm, dispatcher, fallback, perfModeGate());
+    }
+
+    private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
+                            ToolDispatcher dispatcher, FallbackService fallback, SentimentGate gate) {
         TriageEngine triage = mock(TriageEngine.class);
         when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(triageResult, null));
+        // 显式转人工谓词走真实现（纯词表、0 token）：mock 若默认返回 false，ADR 0042 的优先级
+        // 在这条缝上就永远不生效，回归用例会变成一条恒绿假防线。
+        when(triage.isExplicitEscalation(anyString()))
+                .thenAnswer(call -> T0RuleLayer.explicitEscalation(call.getArgument(0)));
 
         KbEpoch epoch = mock(KbEpoch.class);
         when(epoch.current()).thenReturn(7L);
@@ -488,7 +516,7 @@ class GatewayMainPathJvmTest {
 
         AgentStateMachine machine = new AgentStateMachine(triage, cache, mock(SingleFlight.class),
                 writeBackPolicy, epoch, retriever, llm, dispatcher, sessionStore, fallback,
-                properties(), mock(WriteBackPool.class), new PromptCatalog(), perfModeGate(), new StyleService(), registry);
+                properties(), mock(WriteBackPool.class), new PromptCatalog(), gate, new StyleService(), registry);
 
         RateLimitService rateLimit = mock(RateLimitService.class);
         when(rateLimit.tryAcquire(any(), any(), any())).thenReturn(RateLimitService.Decision.pass());
@@ -496,6 +524,15 @@ class GatewayMainPathJvmTest {
         ChatController controller = new ChatController(machine, MAPPER, registry, new PromptCatalog(),
                 mock(FeedbackService.class), new ChatAdmission(cache, rateLimit, fallback, registry));
         return MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
+    /** 情绪门第二层可用（dev 口径）且判 URGENT：复现 2026-09-20 矩阵 F2 的触发条件。 */
+    private SentimentGate urgentGate() {
+        LlmGateway gateLlm = mock(LlmGateway.class);
+        when(gateLlm.mode()).thenReturn("dev");
+        when(gateLlm.complete(any()))
+                .thenReturn(LlmTypes.Reply.text("{\"emotion\":\"URGENT\",\"confidence\":0.9}"));
+        return new SentimentGate(gateLlm, new ObjectMapper(), registry, new PromptCatalog("prompts/sentiment-classifier/"));
     }
 
     /** 情绪门用词典层就够（perf-mode 跳过第二层 LLM 分类）：集成测试里的升级全部来自词典定案。 */

@@ -38,6 +38,16 @@ public class TriageEngine {
     public record Outcome(TriageResult result, float[] queryVector) {
     }
 
+    /**
+     * 是否显式要求人工（T0 升级词表 + 紧邻否定窗口）。
+     *
+     * <p>供 {@code AgentStateMachine} 在情绪门短路之前判优先级（ADR 0042）：显式转人工不按情绪
+     * 处理，放行给 {@link #triage} 由既有 USER_REQUESTED 出口收口。纯词表匹配，0 token。
+     */
+    public boolean isExplicitEscalation(String query) {
+        return T0RuleLayer.explicitEscalation(query);
+    }
+
     public Outcome triage(String query) {
         Optional<TriageResult> byRules = t0.classify(query);
         if (byRules.isPresent()) {

@@ -134,8 +134,12 @@ public class T0RuleLayer {
      *
      * <p>整句判否定会漏掉"这个不合规，转人工"，而漏判的代价是用户喊了人工却没人来；
      * 只看紧邻窗口则两头都保住。
+     *
+     * <p>第二个调用方是 {@code AgentStateMachine}（经 {@link TriageEngine#isExplicitEscalation}）：
+     * 情绪门的短路要用它判优先级（ADR 0042）——显式转人工不按情绪处理，否则 ADR 0034 会回归掉
+     * ADR 0017 的承诺。纯谓词、无状态，故公开。
      */
-    static boolean explicitEscalation(String query) {
+    public static boolean explicitEscalation(String query) {
         for (String needle : ESCALATE_WORDS) {
             int from = 0;
             int idx;
