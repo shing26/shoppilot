@@ -89,7 +89,10 @@ _DEF_LANDED = 0
 # 票 45 换代：`3 + 21 + 249`（273）→ `3 + 21 + 250`（274）——只动 gateway：ADR 0042 的回归用例
 # `GatewayMainPathJvmTest.explicitEscalationSurvivesAnUrgentSentimentVerdict` 是新增的第 250 条
 # （它在修法落地前是红的，不是既有用例改名）。其余两模块与其余用例数未动。
-G6_EXPECT = [3, 21, 250]
+# 票 46 换代：`3 + 21 + 250`（274）→ `3 + 21 + 253`（277）——仍只动 gateway：ADR 0043 新增 3 条
+# （`GatewayMainPathJvmTest.cacheHitPathStaysZeroModelCallsInLocalMode` 回归、
+# `SentimentGateTest.localModeIsLexiconOnly` 机制、`SentimentGateTest.devModeStillUsesTheLlmLayer` 正对照）。
+G6_EXPECT = [3, 21, 253]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 

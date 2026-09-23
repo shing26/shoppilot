@@ -510,7 +510,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（3 + 21 + 250 = 274 项）
+# 单元、架构与主链路 JVM 集成测试（3 + 21 + 253 = 277 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -555,7 +555,7 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七�
 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
 Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
-这条门禁覆盖干净 runner 上的构建与 274 条 JVM 测试：round16 的三条网关主链路 JVM
+这条门禁覆盖干净 runner 上的构建与 277 条 JVM 测试：round16 的三条网关主链路 JVM
 集成 smoke（缓存命中、工具循环、fallback），票 41 的四条工具循环语义用例（超限 FALLBACK、
 预算检查出答案、写动作守卫、多 toolCalls 防御），票 35 的五条 Prompt 版本化用例
 （生产资源加载与三种 fail-fast 形态），票 36 的六条情绪门用例（词典层 0 token 定案、

@@ -29,8 +29,12 @@ import java.util.regex.Pattern;
  * 第二层词典不确定时走一次 LLM 分类（复用 LlmGateway），LLM 不可用或解析失败一律
  * {@link Emotion#UNCERTAIN}——情绪门 fail-open，链路可靠性兜底仍由后续降级因子承担。
  *
- * <p>perf 口径只有词典层：MockLlmClient 刻意"不聪明"，对它做情绪分类必然 UNCERTAIN，
- * 还会给含缓存命中在内的每个请求平添一跳固定延迟，压测读数全部失真（票 36 登记口径）。
+ * <p>第二层只在 {@code dev} 口径启用（ADR 0043）。perf 的理由是票 36 登记的：MockLlmClient 刻意
+ * "不聪明"，对它做情绪分类必然 UNCERTAIN，还会给含缓存命中在内的每个请求平添一跳固定延迟，
+ * 压测读数全部失真。local 的理由是这条门**位于 INTAKE、先于缓存查询**——它一旦调模型，
+ * "命中路径零模型调用"这条承诺项在 local 下就不成立（round17 活体验收登记 F1 实测
+ * {@code sentiment_llm_classified_total=47 / requests_total=50}，即 94% 的请求各多一跳）。
+ * local 是演示与 22 步活体验收的口径，dev 是唯一保留语义情绪判断的口径。
  */
 @Component
 public class SentimentGate {
@@ -82,8 +86,8 @@ public class SentimentGate {
             countEscalation(Emotion.URGENT);
             return Verdict.lexicon(Emotion.URGENT);
         }
-        if ("perf".equals(llm.mode())) {
-            return Verdict.uncertain("perf-lexicon-only");
+        if (!"dev".equals(llm.mode())) {
+            return Verdict.uncertain(llm.mode() + "-lexicon-only");
         }
         long started = System.nanoTime();
         try {

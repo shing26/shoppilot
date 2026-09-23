@@ -141,6 +141,28 @@ class SentimentGateTest {
         verify(llm, never()).stream(any(), any());
     }
 
+    @Test
+    @DisplayName("local 口径也只有词典层（ADR 0043）：第二层在 INTAKE、先于缓存查询，它一调模型「命中路径零模型调用」就不成立")
+    void localModeIsLexiconOnly() {
+        when(llm.mode()).thenReturn("local");
+        SentimentGate.Verdict verdict = gate.evaluate("帮我查一下订单什么状态了");
+        assertEquals(Emotion.UNCERTAIN, verdict.emotion());
+        assertFalse(verdict.escalated());
+        assertEquals("local-lexicon-only", verdict.source());
+        verify(llm, never()).complete(any());
+        verify(llm, never()).stream(any(), any());
+    }
+
+    /** 正对照：ADR 0043 只把第二层关在 local/perf，dev 仍保留语义情绪判断——否则「关掉第二层」会变成恒绿。 */
+    @Test
+    @DisplayName("dev 口径仍走第二层：同一句在 dev 下必须真的调用一次 LLM 分类")
+    void devModeStillUsesTheLlmLayer() {
+        when(llm.mode()).thenReturn("dev");
+        when(llm.complete(any())).thenReturn(reply("{\"emotion\":\"CALM\",\"confidence\":0.9}"));
+        assertEquals(Emotion.CALM, gate.evaluate("帮我查一下订单什么状态了").emotion());
+        verify(llm).complete(any());
+    }
+
     private static LlmTypes.Reply reply(String content) {
         return LlmTypes.Reply.text(content);
     }

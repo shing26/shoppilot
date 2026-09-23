@@ -130,6 +130,41 @@ class GatewayMainPathJvmTest {
     }
 
     @Test
+    @DisplayName("回归：local 档命中路径必须零模型调用——情绪门第二层在 INTAKE 会给每条未命中词表的请求各打一次分类")
+    void cacheHitPathStaysZeroModelCallsInLocalMode() throws Exception {
+        CacheService cache = mock(CacheService.class);
+        CacheEntry cached = CacheEntry.of("签收后七天内可以申请退货", Intent.POLICY_RETURN, TENANT,
+                CacheService.SCOPE_SHOP, 7L, List.of("POLICY-RETURN-01"), "perf-mock", QUERY);
+        when(cache.lookup(eq(TENANT), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
+                .thenReturn(new CacheService.Lookup(CacheService.Layer.L1, Optional.of(cached), null,
+                        QUERY, false));
+
+        // local 档（演示与 22 步活体验收的口径，ADR 0043）：这条平静问句不命中情绪门词表，若第二层
+        // 在 local 也开着就会在 INTAKE 交给小模型分类。而 INTAKE 在 CACHE_READ 之前——命中路径的
+        // 「零模型调用」就是这一步丢掉的（round17 活体验收登记 F1：47/50，94%）。dev 档保留第二层。
+        LlmGateway gateLlm = mock(LlmGateway.class);
+        when(gateLlm.mode()).thenReturn("local");
+        when(gateLlm.complete(any()))
+                .thenReturn(LlmTypes.Reply.text("{\"emotion\":\"CALM\",\"confidence\":0.9}"));
+
+        MockMvc mvc = mockMvc(TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d),
+                cache, mock(LlmGateway.class), mock(ToolDispatcher.class), mock(FallbackService.class),
+                new SentimentGate(gateLlm, new ObjectMapper(), registry,
+                        new PromptCatalog("prompts/sentiment-classifier/")));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"" + QUERY + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cacheLayer").value("L1"));
+
+        // 断的是「有没有打模型调用」，不是 verifyNoInteractions——后者会把门读一次 mode() 也算成交互，
+        // 那样这条断言在修好后仍然红，等于把判据钉在无关的读上。
+        verify(gateLlm, never()).complete(any());
+        verify(gateLlm, never()).stream(any(), any());
+    }
+
+    @Test
     @DisplayName("工具循环：订单工具结果进入第二轮，最终答复由模型总结")
     void toolLoopFeedsBusinessResultBackIntoTheFinalReply() throws Exception {
         ArgumentCaptor<LlmTypes.Request> planRounds = ArgumentCaptor.forClass(LlmTypes.Request.class);
