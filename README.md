@@ -19,7 +19,7 @@
 | 吞吐峰值 | **1013 QPS** @800 并发，错误率 0% — 判据 ≥1200，**未达成**，归因见下 |
 | Token 节约率 | **62.4%**（实测，不是任务书里的 75%） |
 | 虚拟线程收益 | 400-800 并发 **+64%**；100-200 并发无收益 |
-| 降级路径 | 降级 9 种（= `FallbackReason` 枚举 10 − 主动转人工 1），其中 7 种有脚本逐条复现，且每种都落成工单；「可查」仅限业务 Mock 进程生命周期（跨重启与 RESOLVED 回流不承诺，定义见 `CONTEXT.md`、ADR 0030 第 2 条） |
+| 降级路径 | 降级 9 种（= `FallbackReason` 枚举 10 − 主动转人工 1），其中 6 种有脚本逐条复现（脚本另断言一条主动转人工；限流那条只在真打出 429 时才落行），且每种都落成工单；「可查」仅限业务 Mock 进程生命周期（跨重启与 RESOLVED 回流不承诺，定义见 `CONTEXT.md`、ADR 0030 第 2 条） |
 
 完整口径与逐条对照：[docs/loadtest-report.md](docs/loadtest-report.md)、[docs/threshold-calibration.md](docs/threshold-calibration.md)。
 
@@ -263,12 +263,12 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | --- | --- | --- | --- |
 | 串号防线 | 跨租户同意图 0 次互命中；跨店查询不泄露 B 店字段；同店铺内换一个买家拿同一个会话 id 载出空会话、写不进对方会话、也续办不了别人的待办动作（票 22、ADR 0025）。**这一格管的是上下文可见性**：订单行与含买家的幂等键那道守卫本来就按「店铺 + 买家」拦（ADR 0005），本票修的是同一店铺里两个人共用一段会话，不把「跨买家隔离已达成」说满 | **通过**（local 与 dev 都实测） | `verify_l2_filters.py`（租户/scope/意图/纪元四类过滤）、`verify-action-loop.ps1` 第 3 段、`verify-polarity.ps1` 8/8、`ConversationOwnershipTest`（键含买家段 + 跨买家载不出/写不进/续办不了 + 同店 A 自己仍可续办的正对照）、dev 复核 `logs/dev-guardcheck-20260910-105633.log` |
 | 写操作幂等 | 并发 50 同 token 仅 1 条；Redis 停机由 DB 唯一约束兜 | **通过**（local 与 dev 都实测） | `verify-idempotency.ps1`、`IdempotencyServiceTest`、`TenantIsolationAndIdempotencyTest`、dev 复核同上 |
-| 降级可复现 | 降级原因 7 种（枚举 10 种里 `verify-fallback.ps1` 逐条断言的那 7 种）稳定触发且各有可查工单 | **通过**（local 与 dev 都实测）；**2026-09-20 换代指针：22 步全量矩阵的 `fallback` 步红**——`run-acceptance.ps1` 的该步就是 `verify-fallback.ps1`，纯转人工请求 `转人工` 落 `EMOTION_ESCALATION` 而不是 `USER_REQUESTED`。机制不是词表缺词：情绪门按 ADR 0034 位于 INTAKE、先于意图判定，它自己的三层词表没命中这条平静问句 → 交给第二层小模型 → 判成 `sentiment=URGENT via llm`，于是 T0 的 `ESCALATE_WORDS`（**含「转人工」**，`triage/T0RuleLayer.java` 词表第一条）根本没轮到执行。根因 F2 登记在 `.scratch/shoppilot-mvp/round17-spec-architecture-completeness.md` 的「活体验收登记」表，**判据一字未改**；本行的 2026-09-10 读数按原样保留，两条并列不取其高 | `verify-fallback.ps1` 7/7、`FallbackReasonTest`、dev 复核同上；2026-09-20 落点 `logs/acceptance-run-20260920-183028.log`（503s，16 步绿 / 6 步红；`logs/` 不入库，干净克隆里没有） |
+| 降级可复现 | 降级原因 6 种 + 主动转人工 1 条（`verify-fallback.ps1` 的确定性表共 7 行；限流是第 8 步，只在真打出 429 时才落行）稳定触发且各有可查工单 | **通过**（local 与 dev 都实测）；**2026-09-20 换代指针：22 步全量矩阵的 `fallback` 步红**——`run-acceptance.ps1` 的该步就是 `verify-fallback.ps1`，纯转人工请求 `转人工` 落 `EMOTION_ESCALATION` 而不是 `USER_REQUESTED`。机制不是词表缺词：情绪门按 ADR 0034 位于 INTAKE、先于意图判定，它自己的三层词表没命中这条平静问句 → 交给第二层小模型 → 判成 `sentiment=URGENT via llm`，于是 T0 的 `ESCALATE_WORDS`（**含「转人工」**，`triage/T0RuleLayer.java` 词表第一条）根本没轮到执行。根因 F2 登记在 `.scratch/shoppilot-mvp/round17-spec-architecture-completeness.md` 的「活体验收登记」表，**判据一字未改**；本行的 2026-09-10 读数按原样保留，两条并列不取其高 | `verify-fallback.ps1` 7/7、`FallbackReasonTest`、dev 复核同上；2026-09-20 落点 `logs/acceptance-run-20260920-183028.log`（503s，16 步绿 / 6 步红；`logs/` 不入库，干净克隆里没有） |
 | 身份不可伪造 | 无 token/伪造/过期 401；body 或参数带 tenantId 被忽略并告警。**这一格钉的是「伪造」，不是「领取」**：`/auth/mock-token` 不要任何凭证就能签出任意店铺 + 任意买家的合法身份，它只在回环绑定上注册（ADR 0029）；而绑定回环只是必要条件、不是防线——反向代理打进来的同样是 `127.0.0.1` | **通过**（local 与 dev 都实测） | `AuthFilterTest`、`MockIdentityConditionTest`、`DevDefaultsPolicyTest`、`demo.ps1 -Which isolation`、`IdentityArchitectureTest`、dev 复核同上 |
 
 「可查工单」的作用域按 `CONTEXT.md` 的定义写整：**只保证业务 Mock 进程生命周期内按工单号从队列反查**。看门狗自愈时的全量 reseed 会把已落库工单一并抹掉，而这与压测、三条演示的「每次起干净世界」是同一条复位语义；跨重启可查、RESOLVED 之后买家回流均不承诺，重开条件见 ADR 0030 第 2 条。
 
-**「降级原因 N 种」的口径（本仓三套数字的换算规则）**：`FallbackReason` 枚举是全集（当前 **10**）；**主动转人工（`USER_REQUESTED`）不计入「降级」**，故「降级」= 枚举 − 1 = **9**；`verify-fallback.ps1` 逐条断言的是其中 **7** 种（ticket 14 那一批），余下 2 种（`TOOL_ROUNDS_EXHAUSTED`、`EMOTION_ESCALATION`）由 `FallbackReasonTest` 与 `verify-emotion.ps1` 覆盖。三处数字不是互相矛盾，是三个不同的集合——引用时写明是哪一套。
+**「降级原因 N 种」的口径（本仓三套数字的换算规则）**：`FallbackReason` 枚举是全集（当前 **10**）；**主动转人工（`USER_REQUESTED`）不计入「降级」**，故「降级」= 枚举 − 1 = **9**；`verify-fallback.ps1` 的确定性表是 **7 行** = 6 种降级 + 主动转人工，限流（`RATE_LIMITED`）是第 8 步、只在真打出 429 时才落行（2026-09-23 实跑 `429 responses: 0`，该行为 0）；余下 2 种降级（`TOOL_ROUNDS_EXHAUSTED`、`EMOTION_ESCALATION`）不在脚本里，由 `FallbackReasonTest` 与 `verify-emotion.ps1` 覆盖。于是 9 = 6 + 1（限流）+ 2。三处数字不是互相矛盾，是三个不同的集合——引用时写明是哪一套。
 
 四条否决项的判据模式写的是 `dev`，而 2026-09-10 之前证据只取自 `local`/`perf` 与 JVM 用例，当时给的理由是
 这四条防线的正确性与用哪家模型无关（越权与幂等发生在业务系统与仓储层）。这句话今天仍然成立，但它不再被拿来
@@ -504,7 +504,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
    否则一次抖动会被写成 60 秒负标记，自己把服务关成不可用。
    数字：远程向量化 35264 → 18 次，拦截率 0 → 77.6%，投毒计数改为显式计数器 `negative_suppressed_total`。
 3. **业务闭环的时延预算比"聪明的 Agent"重要。** 10 状态显式枚举 + 工具循环硬上限 2 轮 + 缺槽位最多追问一次，
-   超预算一律转人工并落**可查工单**（不是日志里一行字）。降级原因 9 种（枚举 10 − 主动转人工），其中 7 种有脚本逐条复现，另 2 种（轮次用尽、情绪升级）由 JVM 用例与 `verify-emotion.ps1` 覆盖。
+   超预算一律转人工并落**可查工单**（不是日志里一行字）。降级原因 9 种（枚举 10 − 主动转人工），其中 6 种有脚本逐条复现，另 2 种（轮次用尽、情绪升级）由 JVM 用例与 `verify-emotion.ps1` 覆盖。
    数字：业务办理链路 12/12 断言通过；50 并发同幂等 token 只产生 1 条退款；虚拟线程在 400-800 并发省 64-65% 时延。
 
 ## 复现
