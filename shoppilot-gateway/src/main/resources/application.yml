@@ -79,6 +79,10 @@ shoppilot:
     local-model: ${SHOPPILOT_LOCAL_LLM_MODEL:qwen2.5:3b}
     perf-first-token-latency: 300ms
     perf-total-latency: 500ms
+    # ADR 0044 票 50：显式输出上限。这是**稳定性护栏**不是成本优化（成本护栏是上面的日预算熔断）。
+    # 默认给足余量：PromptCatalog 规则 11 要求回答「不超过 200 字」，而输出里还要含工具调用 JSON，
+    # 按 200 字设小会截断评测答案、反过来污染 dev 读数。0 = 不限制（本字段引入前的行为）。
+    max-output-tokens: ${SHOPPILOT_LLM_MAX_OUTPUT_TOKENS:1024}
   embedding:
     # ADR 0001：embedding 恒为本地 bge-m3，1024 维
     base-url: ${SHOPPILOT_OLLAMA_URL:http://127.0.0.1:11434}

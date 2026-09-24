@@ -135,7 +135,8 @@ public class ChatController {
             ChannelContext.set(channel);
             try {
                 AgentResult result = agent.run(request.query(), request.idempotencyToken(), sink);
-                sink.done(traceId, result.citations(), result.promptTokens(), result.completionTokens());
+                sink.done(traceId, result.citations(), result.promptTokens(), result.completionTokens(),
+                        result.plan(), result.context());
                 // 与同步路径同形：流式答案也要进反馈账本，点踩关联与重问检测不分通道
                 feedbackService.noteAnswer(identity.conversationId(),
                         result.intent() == null ? null : result.intent().name(),
@@ -188,7 +189,8 @@ public class ChatController {
     public record ChatResponse(String answerId, String answer, String intent, String triageLayer,
                                String cacheLayer, List<String> citations, String fallbackReason, String ticketId,
                                boolean slotAsked, int promptTokens, int completionTokens, boolean toolUsed,
-                               List<AgentResult.TraceStep> trace, String promptVersion, String channel) {
+                               List<AgentResult.TraceStep> trace, String promptVersion, String channel,
+                               List<AgentResult.PlanStep> plan, AgentResult.ContextComposition context) {
 
         static ChatResponse of(String answerId, AgentResult result, String channel) {
             Intent intent = result.intent();
@@ -196,7 +198,10 @@ public class ChatController {
                     result.triageLayer(), result.cacheLayer().name(), result.citations(),
                     result.fallbackReason() == null ? null : result.fallbackReason().name(),
                     result.ticketId(), result.slotAsked(), result.promptTokens(), result.completionTokens(),
-                    result.toolUsed(), result.trace(), result.promptVersion(), channel);
+                    result.toolUsed(), result.trace(), result.promptVersion(), channel,
+                    // 与 SSE 的 done 帧同形（票 48/49）：两个协议面都不做判空分支，空计划是空数组
+                    result.plan() == null ? List.of() : result.plan(),
+                    result.context() == null ? AgentResult.ContextComposition.NONE : result.context());
         }
     }
 }

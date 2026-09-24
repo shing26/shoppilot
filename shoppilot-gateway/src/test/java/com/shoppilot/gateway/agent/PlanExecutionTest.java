@@ -91,7 +91,7 @@ class PlanExecutionTest {
         GatewayProperties properties = mock(GatewayProperties.class);
         when(properties.agent()).thenReturn(new GatewayProperties.Agent(2, 2, Duration.ofMinutes(30), 4));
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("dev", "http://127.0.0.1:1", "k", "qwen-plus",
-                0.0d, Duration.ofSeconds(5), Duration.ofSeconds(5), 0L, null, null, null, null));
+                0.0d, Duration.ofSeconds(5), Duration.ofSeconds(5), 0L, null, null, null, null, 1024));
         return new AgentStateMachine(triage, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
                 retriever, llm, new ToolDispatcher(bizMock, idempotencyStub(), registry), store,
                 mock(FallbackService.class), properties, mock(WriteBackPool.class), new PromptCatalog(), gate,

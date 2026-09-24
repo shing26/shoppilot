@@ -145,9 +145,13 @@ class OpenAiCompatibleLlmClientTest {
     }
 
     private static OpenAiCompatibleLlmClient client(Duration readTimeout) {
+        return client(readTimeout, 1024);
+    }
+
+    private static OpenAiCompatibleLlmClient client(Duration readTimeout, int maxOutputTokens) {
         GatewayProperties.Llm llm = new GatewayProperties.Llm("dev", baseUrl, "test-key", "qwen-max",
                 0.2d, Duration.ofSeconds(2), readTimeout, 200_000L, "http://127.0.0.1:11434", "qwen2.5:3b",
-                Duration.ofMillis(1), Duration.ofMillis(1));
+                Duration.ofMillis(1), Duration.ofMillis(1), maxOutputTokens);
         return new OpenAiCompatibleLlmClient(HttpClient.newHttpClient(), MAPPER, llm);
     }
 
@@ -177,6 +181,8 @@ class OpenAiCompatibleLlmClientTest {
         assertThat(sent.body().path("stream").asBoolean()).isFalse();
         // 没给温度（<=0）才回落到配置值
         assertThat(sent.body().path("temperature").asDouble()).isEqualTo(0.2d);
+        // 输出上限显式下发（ADR 0044 票 50）：这是稳定性护栏，不是成本优化
+        assertThat(sent.body().path("max_tokens").asInt()).isEqualTo(1024);
         assertThat(sent.body().path("messages").get(0).path("role").asText()).isEqualTo("system");
         assertThat(sent.body().path("tools").get(0).path("function").path("name").asText())
                 .isEqualTo("queryOrderDetail");
@@ -214,10 +220,25 @@ class OpenAiCompatibleLlmClientTest {
         assertThat(tool.path("role").asText()).isEqualTo("tool");
         assertThat(tool.path("tool_call_id").asText()).isEqualTo("call_9");
         assertThat(body.path("temperature").asDouble()).isEqualTo(0.7d);
+        assertThat(body.path("max_tokens").asInt()).isEqualTo(1024);
         // 没有 tools 就不该把 tools/tool_choice 发出去
         assertThat(body.has("tools")).isFalse();
         assertThat(reply.content()).isEqualTo("已发货");
         assertThat(reply.wantsTool()).isFalse();
+    }
+
+    @Test
+    @DisplayName("输出上限 0 = 不限制：请求体里不出现 max_tokens（ADR 0044 票 50 的向后兼容口）")
+    void zeroMaxOutputTokensOmitsTheField() {
+        RECEIVED.clear();
+        stubJson("{\"choices\":[{\"message\":{\"content\":\"好的\"}}]}");
+
+        client(Duration.ofSeconds(10), 0).complete(new LlmTypes.Request(
+                List.of(LlmTypes.Message.user("在吗")), List.of(), 0.2d));
+
+        JsonNode body = RECEIVED.get(RECEIVED.size() - 1).body();
+        // 0 必须走"不发这个字段"，而不是发 max_tokens:0 —— 后者在多数端点上等于"最多生成 0 个 token"
+        assertThat(body.has("max_tokens")).isFalse();
     }
 
     @Test

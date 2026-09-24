@@ -47,6 +47,7 @@ class ConfigValidationTest {
             "SHOPPILOT_LLM_API_KEY",
             "SHOPPILOT_LLM_BASE_URL",
             "SHOPPILOT_LLM_DAILY_TOKEN_BUDGET",
+            "SHOPPILOT_LLM_MAX_OUTPUT_TOKENS",
             "SHOPPILOT_LLM_MODEL",
             "SHOPPILOT_LLM_READ_TIMEOUT",
             "SHOPPILOT_LOCAL_LLM_MODEL",
@@ -112,6 +113,12 @@ class ConfigValidationTest {
     @DisplayName("工具轮次至少 1 轮")
     void maxToolRoundsMustBeAtLeastOne() {
         assertValidationFailure("shoppilot.agent.max-tool-rounds=0", "shoppilot.agent.max-tool-rounds");
+    }
+
+    @Test
+    @DisplayName("输出上限不得为负（0 合法 = 不限制，ADR 0044 票 50）")
+    void maxOutputTokensMustNotBeNegative() {
+        assertValidationFailure("shoppilot.llm.max-output-tokens=-1", "shoppilot.llm.max-output-tokens");
     }
 
     @Test

@@ -124,6 +124,13 @@ check('miss path renders as typewriter (chunked stream covering the answer)',
 const citations = await page.$$eval('#chat .cite', (els) => els.length);
 check('citations rendered under the answer', citations >= 1, String(citations));
 
+// 票 48/49（ADR 0044）：done 帧的两个新字段必须出现在**真实 SSE 流**里，不只是 JVM 层的 mock 断言。
+// 页面把 done 渲染成一行摘要（引用数 + token），读不到原始载荷，所以这里另起一条流自己读原始帧。
+// 判据只钉"确定的东西"：plan 是数组（空或非空都合法，取决于模型这一轮要不要工具）、
+// context.ruleIds 非空且与 citations 同源同序（政策问句必然检索到条款，与模型行为无关）。
+// 「plan 非空」那一半由 JVM 用例在确定性桩下钉住（GatewayMainPathJvmTest），不在这里赌模型行为。
+await checkDoneFrameCarriesPlanAndContext();
+
 // 走查第 2 项：首字到达之前那几秒界面是空的。这里清一次缓存保证是真冷启动，
 // 然后在第一个 token 落地之前抓那行进行态，答完之后要求它已经撤掉。
 await page.click('#btnFlush');
@@ -383,4 +390,30 @@ async function finish() {
   console.log(`\n${results.length - failed.length}/${results.length} console checks passed`);
   if (failed.length) console.log('failed: ' + failed.map((f) => f.name).join(', '));
   process.exit(failed.length ? 1 : 0);
+}
+
+/** 票 48/49：直接读原始 SSE 流，断言 done 帧带 plan 数组与 context 组成。 */
+async function checkDoneFrameCarriesPlanAndContext() {
+  const tokenResponse = await fetch(BASE + '/auth/mock-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    // 另起一个买家：限流按（租户, 买家）分窗，不跟演示路径抢配额
+    body: JSON.stringify({ tenantId: 'T001', customerId: 'C900' }),
+  });
+  const { token } = await tokenResponse.json();
+  const stream = await fetch(BASE + '/api/v1/support/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ query: '生鲜签收后多久之内可以申请理赔' }),
+  });
+  const lines = (await stream.text()).split('\n');
+  const at = lines.findIndex((line) => /^event:\s*done\s*$/.test(line));
+  const dataLine = at >= 0 ? lines.slice(at + 1).find((line) => /^data:/.test(line)) : null;
+  const done = dataLine ? JSON.parse(dataLine.replace(/^data:\s*/, '')) : null;
+  const ruleIds = done && done.context && done.context.ruleIds;
+  check('done frame carries plan array and context composition (tickets 48/49)',
+    !!done && Array.isArray(done.plan) && !!done.context && Array.isArray(ruleIds) && ruleIds.length > 0
+      && ruleIds.join() === (done.citations || []).join(),
+    done ? `plan=${done.plan.length} ruleIds=${ruleIds.length} citations=${(done.citations || []).length}`
+      : 'no done frame in the raw stream');
 }

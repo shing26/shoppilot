@@ -224,14 +224,15 @@ class TraceCorrelationAcrossAsyncTest {
 
     private static AgentResult result() {
         return new AgentResult("支持七天无理由退货", Intent.POLICY_RETURN, "T3", CacheService.Layer.NONE,
-                List.of(), new ArrayList<>(), null, null, false, 3, 5, false, false, "v1.0.0");
+                List.of(), new ArrayList<>(), null, null, false, 3, 5, false, false, "v1.0.0", List.of(),
+                AgentResult.ContextComposition.NONE);
     }
 
     private static GatewayProperties properties() {
         GatewayProperties properties = mock(GatewayProperties.class);
         when(properties.agent()).thenReturn(new GatewayProperties.Agent(2, 2, Duration.ofMinutes(30), 4));
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("local", "http://127.0.0.1:1", "unused",
-                "qwen2.5:3b", 0.0d, Duration.ofSeconds(2), Duration.ofSeconds(30), 0L, null, null, null, null));
+                "qwen2.5:3b", 0.0d, Duration.ofSeconds(2), Duration.ofSeconds(30), 0L, null, null, null, null, 1024));
         return properties;
     }
 

@@ -95,6 +95,11 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("model", config.model());
         payload.put("temperature", request.temperature() <= 0 ? config.temperature() : request.temperature());
+        // 输出上限（ADR 0044 票 50）：这是**稳定性护栏**不是成本优化——成本护栏是 ADR 0012 的日预算熔断。
+        // 0 = 不限制（向后兼容：本字段引入前所有请求都是无上限的）
+        if (config.maxOutputTokens() > 0) {
+            payload.put("max_tokens", config.maxOutputTokens());
+        }
         payload.put("messages", messages(request.messages()));
         payload.put("stream", stream);
         if (stream) {

@@ -44,6 +44,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -519,6 +520,120 @@ class GatewayMainPathJvmTest {
                 .tag("style", "CONCISE").counter().count());
     }
 
+    @Test
+    @DisplayName("计划记录：两步链在响应里带两条 PlanStep（工具名/状态/参数/耗时），ADR 0036 执行语义不变（票 48）")
+    void planStepsAreReportedInExecutionOrder() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        LlmTypes.ToolCall queryOrder = new LlmTypes.ToolCall("call-plan-1", ToolName.QUERY_ORDER_DETAIL.apiName(),
+                Map.of("orderNo", "90001"));
+        LlmTypes.Reply toolPlan = new LlmTypes.Reply("", List.of(queryOrder), 12, 3, null);
+        when(llm.complete(any())).thenReturn(toolPlan, toolPlan, LlmTypes.Reply.text("您的订单已发货"));
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"我的订单90001到哪了\"}"))
+                .andExpect(status().isOk())
+                // 两步链＝两次真实派发，与 ADR 0036「有序步骤 ≤ 2」是同一条边界
+                .andExpect(jsonPath("$.plan.length()").value(2))
+                .andExpect(jsonPath("$.plan[0].tool").value("queryOrderDetail"))
+                .andExpect(jsonPath("$.plan[0].status").value("OK"))
+                .andExpect(jsonPath("$.plan[0].arguments.orderNo").value("90001"))
+                .andExpect(jsonPath("$.plan[0].latencyMillis").isNumber())
+                .andExpect(jsonPath("$.plan[1].tool").value("queryOrderDetail"));
+    }
+
+    @Test
+    @DisplayName("纯政策回答不带计划：plan 是空数组而不是 null（票 48）")
+    void policyAnswerReportsEmptyPlanArray() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("七天无理由，自签收次日起算"));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.POLICY_RETURN, "T1", true),
+                mock(CacheService.class), llm, mock(ToolDispatcher.class), mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"七天无理由怎么算\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan").isArray())
+                .andExpect(jsonPath("$.plan.length()").value(0))
+                .andExpect(jsonPath("$.context").exists());
+    }
+
+    @Test
+    @DisplayName("上下文组成：context.ruleIds 与 citations 同源同序，历史轮数按实际注入的用户轮计（票 49）")
+    void contextCompositionMirrorsCitationsAndHistory() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("七天无理由，自签收次日起算"));
+
+        List<SessionStore.Turn> turns = List.of(
+                new SessionStore.Turn("user", "上次那个单子"),
+                new SessionStore.Turn("assistant", "好的"),
+                new SessionStore.Turn("user", "还是想问退货"));
+        SessionStore store = mock(SessionStore.class);
+        when(store.load(anyString(), anyString(), anyString()))
+                .thenReturn(new SessionStore.Session(CONVERSATION, turns, null, new LinkedHashMap<>(), 0));
+        when(store.appendTurn(any(), anyString(), anyString())).thenAnswer(call -> call.getArgument(0));
+
+        HybridRetriever.Result retrieved = new HybridRetriever.Result(List.of(
+                new HybridRetriever.Retrieved("return-01-7day-basic", 0.91d, 1, 1, "platform", "7天无理由", "自签收次日起算"),
+                new HybridRetriever.Retrieved("return-02-7day-exclusions", 0.84d, 2, 3, "platform", "例外", "定制商品除外")),
+                2, 2, 7L);
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.POLICY_RETURN, "T1", true),
+                mock(CacheService.class), llm, mock(ToolDispatcher.class), mock(FallbackService.class),
+                perfModeGate(), retrieved, store);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"七天无理由怎么算\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.citations.length()").value(2))
+                .andExpect(jsonPath("$.context.ruleIds.length()").value(2))
+                .andExpect(jsonPath("$.context.ruleIds[0]").value("return-01-7day-basic"))
+                .andExpect(jsonPath("$.context.ruleIds[1]").value("return-02-7day-exclusions"))
+                // 注入的是 3 条消息（2 user + 1 assistant）→ 历史用户轮数 = 2
+                .andExpect(jsonPath("$.context.historyTurns").value(2))
+                .andExpect(jsonPath("$.context.estimatedPromptTokens").isNumber());
+    }
+
+    @Test
+    @DisplayName("零召回：context.ruleIds 是空数组，且 Prompt 仍输出「未检索到相关条款」占位（票 49）")
+    void zeroRecallKeepsEmptyRuleIdsAndThePlaceholder() throws Exception {
+        ArgumentCaptor<LlmTypes.Request> planRound = ArgumentCaptor.forClass(LlmTypes.Request.class);
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("抱歉，没有找到对应条款"));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.POLICY_RETURN, "T1", true),
+                mock(CacheService.class), llm, mock(ToolDispatcher.class), mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"一个语料里不存在的问题\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.context.ruleIds").isArray())
+                .andExpect(jsonPath("$.context.ruleIds.length()").value(0));
+
+        // 票 49 的核心不变量：加了观测字段，Prompt 文本一个字节都不能变
+        verify(llm).complete(planRound.capture());
+        String userMessage = planRound.getValue().messages().stream()
+                .filter(message -> "user".equals(message.role()))
+                .map(LlmTypes.Message::content)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("规划请求里没有买家问题那条 user 消息"));
+        assertTrue(userMessage.startsWith("【政策条款】\n（本轮未检索到相关条款）\n\n【买家问题】\n"),
+                "零召回占位文本必须原样保留，实际=" + userMessage);
+    }
+
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
                             ToolDispatcher dispatcher, FallbackService fallback) {
         return mockMvc(triageResult, cache, llm, dispatcher, fallback, perfModeGate());
@@ -526,6 +641,27 @@ class GatewayMainPathJvmTest {
 
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
                             ToolDispatcher dispatcher, FallbackService fallback, SentimentGate gate) {
+        HybridRetriever retriever = mock(HybridRetriever.class);
+        when(retriever.retrieve(anyString(), anyString(), any()))
+                .thenReturn(HybridRetriever.Result.unavailable(7L));
+        SessionStore sessionStore = mock(SessionStore.class);
+        when(sessionStore.load(anyString(), anyString(), anyString()))
+                .thenReturn(SessionStore.Session.empty(CONVERSATION));
+        when(sessionStore.appendTurn(any(), anyString(), anyString()))
+                .thenAnswer(call -> call.getArgument(0));
+        return mockMvc(triageResult, cache, llm, dispatcher, fallback, gate,
+                HybridRetriever.Result.unavailable(7L), sessionStore);
+    }
+
+    /**
+     * 最全的那条装配缝：允许注入检索结果与会话状态。
+     *
+     * <p>票 49 的观测字段（规则块编号、历史轮数）只在"真的检索到东西"与"真的有历史"时才非空，
+     * 所以那两条用例必须能注入这两样，否则断言只能落在空值上、等于没测。
+     */
+    private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
+                            ToolDispatcher dispatcher, FallbackService fallback, SentimentGate gate,
+                            HybridRetriever.Result retrieved, SessionStore sessionStore) {
         TriageEngine triage = mock(TriageEngine.class);
         when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(triageResult, null));
         // 显式转人工谓词走真实现（纯词表、0 token）：mock 若默认返回 false，ADR 0042 的优先级
@@ -538,16 +674,10 @@ class GatewayMainPathJvmTest {
 
         HybridRetriever retriever = mock(HybridRetriever.class);
         when(retriever.retrieve(anyString(), anyString(), any()))
-                .thenReturn(HybridRetriever.Result.unavailable(7L));
+                .thenReturn(retrieved);
 
         WriteBackPolicy writeBackPolicy = mock(WriteBackPolicy.class);
         when(writeBackPolicy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(false, "integration-test"));
-
-        SessionStore sessionStore = mock(SessionStore.class);
-        when(sessionStore.load(anyString(), anyString(), anyString()))
-                .thenReturn(SessionStore.Session.empty(CONVERSATION));
-        when(sessionStore.appendTurn(any(), anyString(), anyString()))
-                .thenAnswer(call -> call.getArgument(0));
 
         AgentStateMachine machine = new AgentStateMachine(triage, cache, mock(SingleFlight.class),
                 writeBackPolicy, epoch, retriever, llm, dispatcher, sessionStore, fallback,
@@ -583,7 +713,7 @@ class GatewayMainPathJvmTest {
                 Duration.ofMinutes(30), 4));
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("perf", "http://127.0.0.1:1",
                 "unused", "perf-mock", 0.0d, Duration.ofSeconds(1), Duration.ofSeconds(1),
-                0L, null, null, null, null));
+                0L, null, null, null, null, 1024));
         when(properties.cache()).thenReturn(new GatewayProperties.Cache(true, Duration.ofHours(1),
                 0.95d, Duration.ofSeconds(60), Duration.ofSeconds(2), true));
         return properties;

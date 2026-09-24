@@ -291,7 +291,7 @@ class ConversationOwnershipTest {
         GatewayProperties properties = mock(GatewayProperties.class);
         when(properties.agent()).thenReturn(new GatewayProperties.Agent(2, 2, Duration.ofMinutes(30), 4));
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("local", "http://127.0.0.1:1", "unused",
-                "qwen2.5:3b", 0.0d, Duration.ofSeconds(2), Duration.ofSeconds(30), 0L, null, null, null, null));
+                "qwen2.5:3b", 0.0d, Duration.ofSeconds(2), Duration.ofSeconds(30), 0L, null, null, null, null, 1024));
         return properties;
     }
 

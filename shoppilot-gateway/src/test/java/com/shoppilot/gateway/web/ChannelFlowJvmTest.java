@@ -80,7 +80,8 @@ class ChannelFlowJvmTest {
 
     private static AgentResult answer(String reply) {
         return new AgentResult(reply, Intent.POLICY_RETURN, "T1", CacheService.Layer.NONE, List.of("R-1"), List.of(),
-                null, null, false, 3, 5, false, false, "v1.0.0");
+                null, null, false, 3, 5, false, false, "v1.0.0", List.of(),
+                AgentResult.ContextComposition.NONE);
     }
 
     @Test
@@ -136,7 +137,8 @@ class ChannelFlowJvmTest {
     @DisplayName("email 走降级时已有可查工单：不再叠回执单，回执号就是降级工单号")
     void emailFallbackReusesExistingTicket() throws Exception {
         AgentResult fallback = new AgentResult("稍后人工跟进", Intent.ESCALATE, "FALLBACK", CacheService.Layer.NONE,
-                List.of(), List.of(), FallbackReason.TOOL_UNAVAILABLE, "T-FB-9", false, 0, 0, false, true, "v1.0.0");
+                List.of(), List.of(), FallbackReason.TOOL_UNAVAILABLE, "T-FB-9", false, 0, 0, false, true, "v1.0.0",
+                List.of(), AgentResult.ContextComposition.NONE);
         when(agent.run(any(), any(), any())).thenReturn(fallback);
 
         mvc().perform(post("/api/v1/support/email")

@@ -38,7 +38,9 @@ public record GatewayProperties(
                       Duration perfFirstTokenLatency,
                       @DurationMin(nanos = 1,
                               message = "shoppilot.llm.perf-total-latency must be greater than 0")
-                      Duration perfTotalLatency) {
+                      Duration perfTotalLatency,
+                      @Min(value = 0, message = "shoppilot.llm.max-output-tokens must not be negative（0 = 不限制）")
+                      int maxOutputTokens) {
 
         public boolean dev() {
             return "dev".equalsIgnoreCase(mode);

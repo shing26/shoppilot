@@ -168,7 +168,7 @@ public class AgentStateMachine {
                 sink.token(entry.answer());
                 return new AgentResult(entry.answer(), triage.intent(), triage.layer(), lookup.layer(),
                         entry.sourceRuleIds(), trace, null, null, false, 0, 0, false, false,
-                        promptCatalog.version());
+                        promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE);
             }
             if (lookup.negative()) {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
@@ -187,7 +187,8 @@ public class AgentStateMachine {
                 return gate.shared()
                         .map(entry -> new AgentResult(entry.answer(), triage.intent(), triage.layer(),
                                 CacheService.Layer.FLIGHT, entry.sourceRuleIds(), trace, null, null, false,
-                                0, 0, false, false, promptCatalog.version()))
+                                0, 0, false, false, promptCatalog.version(), List.of(),
+                                AgentResult.ContextComposition.NONE))
                         .orElseGet(() -> fallback(AgentState.CACHE_READ, trace, sink,
                                 FallbackReason.INTENT_UNRESOLVED, query, null, styleTier));
             }
@@ -261,6 +262,8 @@ public class AgentStateMachine {
         boolean answeredByBudgetCheck = false;
         // 计划（ADR 0036）：按执行顺序留存每步结果 JSON，供后步参数表达式取值；中止标记让指标分账
         List<String> stepResults = new ArrayList<>();
+        // 同一批执行事实的可输出副本（票 48）：ADR 0036 的判定逻辑一行没动，这里只是把"执行过什么"记下来
+        List<AgentResult.PlanStep> planSteps = new ArrayList<>();
         boolean planAborted = false;
         LlmTypes.Reply lastReply = null;
         while (rounds < properties.agent().maxToolRounds()) {
@@ -310,7 +313,9 @@ public class AgentStateMachine {
             }
             LlmTypes.ToolCall call = new LlmTypes.ToolCall(rawCall.id(), rawCall.name(), resolution.arguments());
             messages.add(LlmTypes.Message.assistant(lastReply.content(), List.of(call)));
+            long dispatchStarted = System.nanoTime();
             ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken);
+            long dispatchMillis = (System.nanoTime() - dispatchStarted) / 1_000_000L;
             if (dispatch.unknown()) {
                 // 模型编出了不存在的工具：不拿 null 工具往下走，直接兜底
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
@@ -345,6 +350,10 @@ public class AgentStateMachine {
                         query, dispatch.json(), styleTier));
             }
             stepResults.add(dispatch.json());
+            planSteps.add(new AgentResult.PlanStep(
+                    dispatch.tool() == null ? call.name() : dispatch.tool().apiName(),
+                    dispatch.status() == null ? "UNKNOWN" : dispatch.status().name(),
+                    dispatchMillis, resolution.arguments()));
             messages.add(LlmTypes.Message.tool(call.id(), dispatch.json()));
             if (failedStep(dispatch.status()) && rounds < properties.agent().maxToolRounds()) {
                 // 前步失败即中止整条 Plan（ADR 0036）：后步的前提已不成立，不让模型继续往下调。
@@ -495,7 +504,8 @@ public class AgentStateMachine {
         }
 
         return new ModelRun(new AgentResult(answer, intent, triage.layer(), CacheService.Layer.NONE, citations, trace,
-                null, null, false, promptTokens, completionTokens, toolUsed, false, promptCatalog.version()), written);
+                null, null, false, promptTokens, completionTokens, toolUsed, false, promptCatalog.version(),
+                List.copyOf(planSteps), contextComposition(retrieved, session, messages)), written);
     }
 
     /** 缺槽位：追问一次，仍缺则转人工。绝不猜（ADR 0008、ticket 11）。 */
@@ -514,7 +524,8 @@ public class AgentStateMachine {
         sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
                 dispatch.tool().apiName(), new LinkedHashMap<>(Map.of("askedSlot", slot)), asks));
         return new AgentResult(question, dispatch.tool().intent(), "SLOT", CacheService.Layer.NONE, List.of(), trace,
-                null, null, true, 0, 0, false, false, promptCatalog.version());
+                null, null, true, 0, 0, false, false, promptCatalog.version(), List.of(),
+                AgentResult.ContextComposition.NONE);
     }
 
     /** 网关自己派生出的工具调用：missing 非空即追问，missing 为空且是读工具即可代为执行。 */
@@ -602,7 +613,8 @@ public class AgentStateMachine {
             sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
                     tool.apiName(), arguments, asks));
             return new AgentResult(question, tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(), trace,
-                    null, null, true, 0, 0, false, false, promptCatalog.version());
+                    null, null, true, 0, 0, false, false, promptCatalog.version(), List.of(),
+                    AgentResult.ContextComposition.NONE);
         }
         LlmTypes.ToolCall call = new LlmTypes.ToolCall("resumed", tool.apiName(), arguments);
         ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken);
@@ -628,7 +640,7 @@ public class AgentStateMachine {
                     sessionStore.appendTurn(clearPending(session), query, reply.content()));
             return new AgentResult(reply.content(), tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(),
                     trace, null, null, false, reply.promptTokens(), reply.completionTokens(), true, false,
-                    promptCatalog.version());
+                    promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE);
         } catch (LlmException failure) {
             return fallback(AgentState.REPLY, trace, sink, mapLlmFailure(failure), query, failure.getMessage(),
                     styleTier);
@@ -648,7 +660,8 @@ public class AgentStateMachine {
                 + ticket.map(id -> "（工单号 " + id + "）").orElse("");
         sink.token(answer);
         return new AgentResult(answer, Intent.ESCALATE, "FALLBACK", CacheService.Layer.NONE, List.of(), trace,
-                reason, ticket.orElse(null), false, 0, 0, false, true, promptCatalog.version());
+                reason, ticket.orElse(null), false, 0, 0, false, true, promptCatalog.version(), List.of(),
+                AgentResult.ContextComposition.NONE);
     }
 
     /**
@@ -696,6 +709,55 @@ public class AgentStateMachine {
             case UNAVAILABLE -> FallbackReason.LLM_CIRCUIT_OPEN;
             case BUDGET_EXCEEDED -> FallbackReason.LLM_BUDGET_EXCEEDED;
         };
+    }
+
+    /**
+     * 这次回答用了什么上下文（票 49）。**纯观测**——本方法只读，不改动 {@code messages} 的任何一条，
+     * Prompt 文本不因它变一个字节（用例钉着这条）。
+     *
+     * @param ruleIds 与 {@code citations} 同源、同序；零召回时是空列表
+     * @param historyTurns 注入的历史**用户轮数**，与 {@code agent.history-turns} 配置同源（不另算一份）
+     * @param estimatedPromptTokens 粗估 token，见 {@link #estimateTokens(String)}；**不是**计费口径，
+     *                              计费口径是模型回报的 {@code promptTokens}
+     */
+    private static AgentResult.ContextComposition contextComposition(
+            HybridRetriever.Result retrieved, SessionStore.Session session, List<LlmTypes.Message> messages) {
+        List<String> ruleIds = retrieved == null || retrieved.empty()
+                ? List.of()
+                : retrieved.rules().stream().map(HybridRetriever.Retrieved::ruleId).toList();
+        int historyTurns = 0;
+        if (session.turns() != null) {
+            for (SessionStore.Turn turn : session.turns()) {
+                if ("user".equals(turn.role())) {
+                    historyTurns++;
+                }
+            }
+        }
+        int tokens = 0;
+        for (LlmTypes.Message message : messages) {
+            tokens += estimateTokens(message.content());
+        }
+        return new AgentResult.ContextComposition(ruleIds, historyTurns, tokens);
+    }
+
+    /**
+     * 粗估 token：中日韩字符按 1 token/字、其余按 4 字符/token。
+     *
+     * <p>这是业界常用启发式，**不是真分词**。它只回答"这次注入了多大一坨"，够用；要精确值就得引
+     * 分词器，那与本轮「旁挂观测」的定义不符，也不该为一个观测字段增加依赖面。
+     */
+    private static int estimateTokens(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        int wide = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if ((c >= 0x2E80 && c <= 0x9FFF) || (c >= 0xF900 && c <= 0xFAFF) || (c >= 0xFF00 && c <= 0xFFEF)) {
+                wide++;
+            }
+        }
+        return wide + (text.length() - wide) / 4;
     }
 
     private String composeUserMessage(String query, HybridRetriever.Result retrieved) {

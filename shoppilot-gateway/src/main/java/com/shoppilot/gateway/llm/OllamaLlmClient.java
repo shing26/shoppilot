@@ -128,7 +128,13 @@ public class OllamaLlmClient implements LlmClient {
         payload.put("model", config.localModel());
         payload.put("messages", messages);
         payload.put("stream", stream);
-        payload.put("options", Map.of("temperature", config.temperature()));
+        // 输出上限（ADR 0044 票 50）：Ollama 侧的等价字段是 options.num_predict；0 = 不限制
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("temperature", config.temperature());
+        if (config.maxOutputTokens() > 0) {
+            options.put("num_predict", config.maxOutputTokens());
+        }
+        payload.put("options", options);
         if (request.tools() != null && !request.tools().isEmpty()) {
             payload.put("tools", request.tools());
         }
