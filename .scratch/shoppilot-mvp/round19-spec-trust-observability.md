@@ -23,7 +23,7 @@
 
 | 清单口径 | 实测 | 依据 |
 |---|---|---|
-| ShopPilot 有 30 份 ADR | **42 份**（`0001`–`0043`，无 `0022`） | `ls docs/adr/*.md \| wc -l` |
+| ShopPilot 有 30 份 ADR | **42 份**（`0001`–`0043`，无 `0022`）——核对时点的读数；round19 自己加了 ADR 0044，收口后为 **43 份** | `ls docs/adr/*.md \| wc -l` |
 | 170 个 `@Test` + 10 参数化 | **226 个 `@Test` + 10 个 `@ParameterizedTest`**（声明数）；本地执行 `3 + 21 + 253 = 277` | 全仓 `src` grep 现算 |
 | ShopPilot 的 Qdrant 距离度量**未声明**（`grep Cosine\|Distance\.` → 0 命中） | **不成立**：`knowledge/QdrantRestClient.java:52` 建集合时硬编码 `vectors.put("distance", "Cosine")`。口径落在客户端而非 `application.yml`，但已锁定 | 见上，清单的 grep 结果取自旧副本或错误路径 |
 | 416 条场景分片 | **双算**：gold 的 180 条本身就是 part1-3 合并（`scripts/build_eval_set.py:18-24`），180 + 236 = 416 把 180 算了两遍。唯一用例数 **236**（180 gold + part4-7 的 56） | 逐文件非空行计数 |
