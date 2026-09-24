@@ -1,4 +1,4 @@
-﻿"""把 19 个 ticket 的 Handoff notes 里的三个追问汇总成面试问答清单。
+﻿"""把各 ticket 的 Handoff notes 里的三个追问汇总成面试问答清单。
 
 清单是生成的，不是手抄的：手抄会在复制过程中悄悄改掉措辞，
 而面试项目里最重要的就是我自己说的话和当时记的话是同一份。
@@ -13,10 +13,16 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 ISSUES = REPO / ".scratch" / "shoppilot-mvp" / "issues"
 
-# 两种记录格式：早期 ticket 用 - *Q：…* A：…*，后续 ticket 用 1. "…" —— …
+# 三种记录格式（按出现年代）：
+#   早期  `- *Q：…* A：…`
+#   中期  `1. 「…」 —— …`
+#   近轮  `1. *Q：…* A：…`（票 45 起）
+# 第三种曾长期没被认出来，导致票 45-52 的追问静默漏采集（清单头部还写着"覆盖 N 个 ticket"，
+# 看不出少了谁）。加把它补上，并把下面 missing 那段变成真正的信号。
 FORMS = (
     re.compile(r"^-\s+\*Q[：:](.+?)\*\s+A[：:](.+)$"),
     re.compile(r"^\d+\.\s+[「\"](.+?)[」\"]\s+——\s+(.+)$"),
+    re.compile(r"^\d+\.\s+\*Q[：:](.+?)\*\s+A[：:](.+)$"),
 )
 
 
