@@ -19,7 +19,7 @@
 - [ ] JVM 用例：两个客户端发出的请求体都含该字段且值等于配置
 - [ ] JVM 用例：`max-output-tokens: 0` 时两个客户端都不下发该字段
 - [ ] `ConfigValidationTest` 补越界校验（负数即启动失败）
-- [ ] 收口时确认 180 条 gold 读数未漂移（默认值给足余量应当不漂移）；若漂移，记录归因
+- [x] 收口时确认 180 条 gold 读数未漂移 —— **2026-09-25 已验，三条腿**（见 Handoff 的「验证落点」）：解析证明该上限在本工作负载上**不可能生效**；正向对照证明旋钮**确实活着**；24 条 dev 实测与 2026-09-10 基线逐条比 23/24 一致、唯一差异是变好。**未做**的是 180 条全量重跑（要约 19 万 token 且比较会被后几轮改动混淆，见下）
 - [ ] 覆盖率：新增代码带用例，`check_coverage.py` 仍 exit 0
 
 **Verify:**
@@ -44,8 +44,14 @@ python scripts/check_coverage.py
 - `OpenAiCompatibleLlmClientTest`：请求体 `max_tokens == 1024`（两条既有用例各加一条断言）；`zeroMaxOutputTokensOmitsTheField` 断言 0 时字段不存在。
 - `OllamaLlmClientTest`（新建 3 条）：`options.num_predict == 512` 且 `has("max_tokens")` 为 false；0 时 `options` 里无 `num_predict`；流式路径同样下发（`stream: true` + `num_predict == 256`）。
 - `ConfigValidationTest.maxOutputTokensMustNotBeNegative`：`-1` 即启动失败；`applicationPlaceholderSetIsPinned` 同步登记新占位符。
-- 全量：gateway 253 → 269 的一部分。
-- **未验证**：180 条 gold 读数是否漂移（需云端额度重跑 dev 全量评测）。按未验证登记，不得声称「未漂移」。
+- **验证落点（2026-09-25 补齐，三条腿）**：
+  1. **解析证明「这个上限不可能生效」**：仓库里全部 dev 明细（180 条全量跑 + 按意图补跑）共 **1176 条**的 `completion_tokens` 是 p50=63 / p95=222 / **max=440**，**超过 1024 的 0 条**；今天 cap 开那轮 24 条的 max 是 362。`max_tokens` 只限制生成长度，够不到就完全不影响输出 → 在 1024 上它**截断不了任何一条答案**。
+  2. **正向对照证明「旋钮确实活着」**：把 `SHOPPILOT_LLM_MAX_OUTPUT_TOKENS` 压到 20（写在 `.env`，见下面那条坑）后重启，同一问句的答案被**截在 20 token、句子断在半路**（`…不是“二`）。旋钮生效、字段确实下发到 DashScope、且 DashScope 认它。
+  3. **实测对照**：dev 档 24 条全过（10 个意图 100%、0 错误、completion 合计 3401）。与 **2026-09-10 基线逐条比：23/24 一致**，唯一差异 `ACT-ADR-03` 是 `False → True`（**变好**，不是漂移）。
+- **未做（如实登记）**：180 条**全量重跑**。两个理由：① 机制问题已由第 1 条解析证明结清；② 更要紧的是**全量重跑与本问题的比较会被混淆**——round17 之后 `StyleService` 往 system prompt 里注入了风格段、dev 档还多了情绪分类那一次 LLM 调用，所以「今天跑出的数字 vs 09-10 基线」的差异**不能归因到票 50**。要实测票 50 的贡献只能做同代码的 A/B（cap 1024 vs 0，各 180 条，约 38 万 token）。
+- **两个会再咬人的坑（本轮实测踩到）**：
+  1. **环境变量只能走 `.env`**：launcher 由 `lib-launch.ps1` 的 **WMI `Win32_Process.Create`** 创建，**WMI 起的进程不继承调用方环境**，runner 脚本里只有 `.env` 的键。所以在 shell 里 `export SHOPPILOT_LLM_MAX_OUTPUT_TOKENS=0` **完全无效**——我第一次的 A/B 因此是「cap 开 vs cap 开」，白跑一轮。要改任何 `SHOPPILOT_*` 一律写 `.env`（`.env.example` 的措辞「设环境变量」指的正是这个文件）。
+  2. **换 profile 必须先 stop**：`start-gateway.ps1 -Profile dev` 在已有网关运行时，新进程会以 `Port 8082 already in use` 启动失败，而 `/actuator/health/readiness` 仍从**旧进程**返回 200 → 假绿。判据要用 `/api/v1/support/ops/switches` 的 `llmMode`，不是 readiness。
 
 **你需要能当场回答的三个追问**
 
