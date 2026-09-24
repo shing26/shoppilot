@@ -38,6 +38,7 @@ METRICS = [
     ("shoppilot_retrieve_dense_seconds", "", "稠密检索：只有 Qdrant 打分，向量在缓存读阶段已算好并被进程内缓存复用"),
     ("shoppilot_retrieve_lexical_seconds", "", "词法检索（ES）"),
     ("shoppilot_llm_latency_seconds", "mode:perf", "模型整轮（perf=Mock 固定 500ms）"),
+    ("shoppilot_embedding_latency_seconds", "result:remote", "新问句向量化：真打远程那一路（ADR 0044 票 47 新增）"),
 ]
 
 
@@ -134,19 +135,31 @@ def main() -> int:
                       round(sample["max_s"] * 1000, 1), note))
         print(f"{name:<40}{sample['count']:>7.0f}{avg_ms:>10.1f}{sample['max_s'] * 1000:>10.1f}  {note}")
 
-    # 新问法的远程向量化没有计时器包住（发生在 L2 查表内部），只能自己量一次放进来
-    vectorize = probe_vectorize(args.model, 8)
-    if vectorize:
-        terms.append(("embedding_novel_probe", vectorize["n"], vectorize["p50_ms"],
-                      vectorize["max_ms"], "本机 bge-m3 单条新问句向量化（无服务端计时器，探针实测）"))
-        print(f"{'embedding_novel_probe':<40}{vectorize['n']:>7}{vectorize['p50_ms']:>10.1f}"
-              f"{vectorize['max_ms']:>10.1f}  本机 bge-m3 单条新问句向量化（探针实测）")
+    # 向量化那一段现在有服务端计时器了（ADR 0044 票 47），优先读它；读不到（网关未起、或这一轮
+    # 没有任何真打远程的调用）再退回外部探针。**两种口径不是一回事**：计时器是「请求路径上真打
+    # 远程那些调用的均值」，含并发与队列等待；探针是另起一条新问句单独量的 p50，不含。差异本身
+    # 就是结论，所以下面把取值来源一起打出来。
+    vectorize_ms = None
+    vectorize_source = ""
+    vectorize_sample = metric("shoppilot_embedding_latency_seconds", "result:remote")
+    if vectorize_sample and vectorize_sample["count"]:
+        vectorize_ms = vectorize_sample["total_s"] / vectorize_sample["count"] * 1000
+        vectorize_source = "服务端计时器"
+    else:
+        vectorize = probe_vectorize(args.model, 8)
+        if vectorize:
+            vectorize_ms = vectorize["p50_ms"]
+            vectorize_source = "外部探针"
+            terms.append(("embedding_novel_probe", vectorize["n"], vectorize["p50_ms"],
+                          vectorize["max_ms"], "本机 bge-m3 单条新问句向量化（无远程样本，退回探针实测）"))
+            print(f"{'embedding_novel_probe':<40}{vectorize['n']:>7}{vectorize['p50_ms']:>10.1f}"
+                  f"{vectorize['max_ms']:>10.1f}  本机 bge-m3 单条新问句向量化（探针实测）")
 
     ttft_row = next((t for t in terms if t[0] == "shoppilot_ttft_seconds"), None)
     dense_row = next((t for t in terms if t[0] == "shoppilot_retrieve_dense_seconds"), None)
     lexical_row = next((t for t in terms if t[0] == "shoppilot_retrieve_lexical_seconds"), None)
-    if ttft_row and dense_row and lexical_row and vectorize:
-        residual = ttft_row[2] - (300.0 + vectorize["p50_ms"] + dense_row[2] + lexical_row[2])
+    if ttft_row and dense_row and lexical_row and vectorize_ms is not None:
+        residual = ttft_row[2] - (300.0 + vectorize_ms + dense_row[2] + lexical_row[2])
         terms.append(("mock_first_token_floor", "", 300.0, "",
                       "perf MockLLM 固定首字下限（配置值，非实测）"))
         terms.append(("orchestration_residual", ttft_row[1], round(residual, 1), "",
@@ -154,7 +167,7 @@ def main() -> int:
         print("\n=== 归因（均值口径；减完已知项剩下的才是网关自己花的）===")
         print(f"服务端 TTFT 均值            {ttft_row[2]:8.1f} ms")
         print(f"  - Mock 首字下限            {300.0:8.1f} ms")
-        print(f"  - 新问法向量化（探针）      {vectorize['p50_ms']:8.1f} ms")
+        print(f"  - 新问法向量化（{vectorize_source}）{vectorize_ms:8.1f} ms")
         print(f"  - 稠密检索（向量已算好）    {dense_row[2]:8.1f} ms")
         print(f"  - 词法检索（ES）            {lexical_row[2]:8.1f} ms")
         print(f"  = 网关编排余量              {residual:8.1f} ms")

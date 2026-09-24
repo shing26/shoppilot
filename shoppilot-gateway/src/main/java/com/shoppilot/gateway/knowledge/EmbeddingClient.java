@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.config.GatewayProperties;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -50,6 +51,21 @@ public class EmbeddingClient {
     private final Counter cacheHitCounter;
     private final Counter dedupeMergedCounter;
     private final Counter warmupRetryCounter;
+    /**
+     * 向量化耗时，桶与 {@link #remoteCounter} 等三个计数器**同分法**（ADR 0044 票 47）。
+     *
+     * <p>没有这个计时器之前，`scripts/ttft_attribution.py` 只能自己探针量一次远程向量化再放进
+     * 算式——它是未命中 TTFT 里占比最大的一段（本机 311 / 725 ms），却只能靠估算。三桶同分法的
+     * 用处是「计数 × 均值」能逐桶对上：进程内缓存命中按 {@link Duration#ZERO} 记，因为它本来就
+     * 没有外部往返，记零是事实而不是省略。
+     *
+     * <p>失败的调用也照记（Micrometer 的 {@code record(Supplier)} 走 finally）：调用方等到的就是
+     * 那个耗时，把它排除掉会让「慢」这件事从延迟曲线上消失，而失败次数另有
+     * {@link #failureCounter} 单独计数。
+     */
+    private final Timer remoteTimer;
+    private final Timer cacheHitTimer;
+    private final Timer dedupeMergedTimer;
     private final Map<String, float[]> cache = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<float[]>> inflight = new ConcurrentHashMap<>();
 
@@ -65,6 +81,14 @@ public class EmbeddingClient {
                 .tag("result", "in-process-cache").register(registry);
         this.dedupeMergedCounter = Counter.builder("shoppilot_embedding_calls_total")
                 .tag("result", "singleflight-merge").register(registry);
+        this.remoteTimer = Timer.builder("shoppilot_embedding_latency_seconds")
+                .tag("result", "remote")
+                .description("向量化耗时；result 分法与 shoppilot_embedding_calls_total 一致")
+                .register(registry);
+        this.cacheHitTimer = Timer.builder("shoppilot_embedding_latency_seconds")
+                .tag("result", "in-process-cache").register(registry);
+        this.dedupeMergedTimer = Timer.builder("shoppilot_embedding_latency_seconds")
+                .tag("result", "singleflight-merge").register(registry);
         this.warmupRetryCounter = Counter.builder("shoppilot_embedding_warmup_retry_total")
                 .description("离线预热/入库路径上的向量化重试次数（运行期请求不重试）")
                 .register(registry);
@@ -75,11 +99,12 @@ public class EmbeddingClient {
         if (!config.inProcessCache()) {
             // 归因实验（no-embedding-cache profile）：去重层整体关掉，每个请求真打一次 bge-m3。
             remoteCounter.increment();
-            return request(normalized, config.timeout());
+            return remoteTimer.record(() -> request(normalized, config.timeout()));
         }
         float[] cached = cache.get(normalized);
         if (cached != null) {
             cacheHitCounter.increment();
+            cacheHitTimer.record(Duration.ZERO);
             return cached;
         }
         return loadOnce(normalized);
@@ -97,19 +122,12 @@ public class EmbeddingClient {
         CompletableFuture<float[]> existing = inflight.putIfAbsent(normalized, leader);
         if (existing != null) {
             dedupeMergedCounter.increment();
-            try {
-                // 等待者多给 1 秒：发起者超时后会把异常广播过来，等待者不该再排一轮队
-                return existing.get(config.timeout().plusSeconds(1).toMillis(), TimeUnit.MILLISECONDS);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("等待向量化结果时被中断", interrupted);
-            } catch (ExecutionException | TimeoutException failure) {
-                throw new IllegalStateException("向量化失败（并发发起者未成功，已复用其结果）", failure);
-            }
+            // 等待者的耗时记在 singleflight-merge 桶：它等的是发起者那一趟上游往返，不是自己发起的
+            return dedupeMergedTimer.record(() -> awaitLeader(existing));
         }
         remoteCounter.increment();
         try {
-            float[] vector = request(normalized, config.timeout());
+            float[] vector = remoteTimer.record(() -> request(normalized, config.timeout()));
             leader.complete(vector);
             if (cache.size() > CACHE_MAX) {
                 cache.clear();
@@ -121,6 +139,22 @@ public class EmbeddingClient {
             throw failure;
         } finally {
             inflight.remove(normalized, leader);
+        }
+    }
+
+    /**
+     * 等并发发起者的结果。等待者多给 1 秒：发起者超时后会把异常广播过来，等待者不该再排一轮队。
+     *
+     * <p>抽成方法是为了让调用点能用 {@code Timer.record(Supplier)} 计时——计时器不接受受检异常。
+     */
+    private float[] awaitLeader(CompletableFuture<float[]> existing) {
+        try {
+            return existing.get(config.timeout().plusSeconds(1).toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("等待向量化结果时被中断", interrupted);
+        } catch (ExecutionException | TimeoutException failure) {
+            throw new IllegalStateException("向量化失败（并发发起者未成功，已复用其结果）", failure);
         }
     }
 
