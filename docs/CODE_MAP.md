@@ -20,8 +20,8 @@
 | `cache` | L1/L2 查询、语义阈值、极性守卫、写回资格与异步池 | `CacheService`、`L2SemanticCache`、`PolarityGuard`、`WriteBackPolicy`、`WriteBackPool` |
 | `knowledge` | embedding、Qdrant/ES 客户端、RRF 混合检索、知识纪元 | `HybridRetriever`、`EmbeddingClient`、`QdrantRestClient`、`EsRestClient`、`KbEpoch` |
 | `ingest` | Markdown 政策切块与离线入库 | `MarkdownChunker`、`IngestRunner` |
-| `llm` | local/dev/perf 三种模型实现、超时/预算和 LLM 故障注入 | `LlmGateway`、`OllamaLlmClient`、`OpenAiCompatibleLlmClient`、`MockLlmClient`、`TokenBudget` |
-| `agent` | 10 状态编排、工具派发、会话、幂等、fallback 与工单 | `AgentStateMachine`、`ToolDispatcher`、`BizMockClient`、`FallbackService` |
+| `llm` | local/dev/perf 三种模型实现、超时/预算、显式输出上限与 LLM 故障注入 | `LlmGateway`、`OllamaLlmClient`、`OpenAiCompatibleLlmClient`、`MockLlmClient`、`TokenBudget` |
+| `agent` | 10 状态编排、工具派发、会话、幂等、fallback 与工单；计划步骤与上下文组成的观测出口（ADR 0044 票 48/49） | `AgentStateMachine`、`AgentResult`、`ToolDispatcher`、`BizMockClient`、`FallbackService` |
 | `web` | 同步/SSE 聊天入口、运维接口、错误信封、调试台事件出口 | `ChatController`、`SseEventSink`、`OpsController`、`ApiErrorWriter` |
 | `config` | 配置绑定/校验、健康组、dev 默认值、线程与 HTTP 客户端、运行时指标 | `GatewayProperties`、`ValidatedServerProperties`、`DevDefaultsPolicy`、`RuntimeStateMetrics` |
 
@@ -67,7 +67,8 @@
 | 缓存资格、L2、极性、写回池 | `cache/*Test` |
 | 意图 T0 | `triage/T0RuleLayerTest` |
 | embedding 合并、预热、Qdrant wire | `knowledge/*Test` |
-| LLM 兼容与 token 预算 | `llm/OpenAiCompatibleLlmClientTest`、`llm/TokenBudgetTest` |
+| LLM 兼容与 token 预算 | `llm/OpenAiCompatibleLlmClientTest`、`llm/OllamaLlmClientTest`（输出上限按 `options.num_predict` 下发）、`llm/TokenBudgetTest` |
+| 向量化分段耗时与计划/上下文观测 | `knowledge/EmbeddingLatencyTimerTest`（三桶与三计数器同分法）、`web/GatewayMainPathJvmTest` 的 `planStepsAreReportedInExecutionOrder` / `contextCompositionMirrorsCitationsAndHistory`、`web/SseEventSinkTest` 的 `done` 帧字段 |
 | 会话归属 | `agent/ConversationOwnershipTest` |
 | fallback 与幂等 | `agent/FallbackReasonTest`、`agent/IdempotencyServiceTest` |
 | 业务租户隔离、幂等、工单工作流 | `shoppilot-biz-mock/src/test/java/...` |

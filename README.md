@@ -206,7 +206,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | 命中路径 TP99 | <30 ms | **32 / 22 / 90 / 480 / 840 / 970 ms**（100/200/400/800/1200/1600 并发）；SSE 侧独立复核 P99 45 / 48 / 123 / 603 ms（50/100/200/500 长连接） | 派生事件 `cache[hitpath]` 分位数；该路径模型与远程向量化增量恒为 0。22 ms 是**未饱和队列下的读数**；队列饱和与代跑分别看 `shoppilot_writeback_queue_depth`、`shoppilot_writeback_caller_runs_total`。SSE 复核是客户端口径，含环回与线程调度，比服务端略高属正常 | 同上 + `verify-hit-zero-llm.ps1` + `sse-ttft-*-sweepmix.csv` |
 | 未命中 TTFT（知识路径） | <500 ms | **未达成**：P50 690 ms（1 并发串行）→ 1031 / 1036 / 1049 ms（50 / 100 / 200 并发）→ 1499 ms（500 并发） | 客户端发请求→第一个 `event: token` 帧；样本只取 `meta.cacheLayer=NONE` 且非动作意图（`scripts/run_sse_ttft.py` 分桶）；perf 的 Mock 首字固定占 300 ms | `sse-ttft-20260909-151606-1-attrib.csv`、`sse-ttft-20260909-144654-50-sweepmix.csv` 等 4 份 |
 | 未命中 TTFT（动作路径） | 不设判据 | P50 1146 / 1148 / 1160 / 1634 ms（50→500 并发） | 动作意图按设计要走两轮工具调用，perf 下每轮 Mock 各 300 ms，与 500 ms 不是同一预算，故单列不并入上一条 | 同上（`action_*` 列） |
-| 未命中 TTFT 的归因 | 报出谁花的 | 服务端 TTFT 均值 725 ms = Mock 首字下限 300 + 本机单条新问句向量化 311 + 稠密检索 4.8 + 词法检索 5.8 + **编排余量 104 ms** | 单连接串行、网关刚重启（服务端计时器按进程累计）；向量化那一步服务端没有计时器包住，由探针实测 | `ttft-attribution-20260909-151609-1conn.csv`、`probe_embedding_latency.py` |
+| 未命中 TTFT 的归因 | 报出谁花的 | 服务端 TTFT 均值 725 ms = Mock 首字下限 300 + 本机单条新问句向量化 311 + 稠密检索 4.8 + 词法检索 5.8 + **编排余量 104 ms** | 单连接串行、网关刚重启（服务端计时器按进程累计）；**该 311 是探针口径的历史读数**（`probe_embedding_latency.py` 从外部量），票 47 / ADR 0044 起服务端有 `shoppilot_embedding_latency_seconds{result=remote}`、归因脚本优先读它，两口径不可直接相减比较；本行在下次跑归因前保持原值 | `ttft-attribution-20260909-151609-1conn.csv`、`probe_embedding_latency.py` |
 | 吞吐极限 | ≥1200 QPS 且错误率<0.1% | **1013 QPS**@800（L1 主导）/ **1141 QPS**@400（L2 主导），错误率 0% | `qps_scope=chat-only`，Locust 4 进程同机发压；@800 峰值 CPU 94%、最低空闲内存 0.0 GB；@400 峰值 CPU 93%、最低空闲内存 0.0 GB；均为登记当时状态，不作跨轮证据 | `ladder-l1-…-final.csv`、`env-l1-perf-20260908-231233-final.json`；`ladder-l2-…-l2.csv`、`env-l2-perf-20260909-000535-l2.json` |
 | L2 路径吞吐 | 报天花板与归因 | **23.8-64.8 QPS**（每请求真打 bge-m3）vs 同档 845-1141 QPS（有进程内向量缓存），同并发差 **18-36 倍** | profile `perf,no-embedding-cache`，`embed_cached` 全程 0、远程向量化≈非命中请求数（L1 命中不需要向量）；生产侧解法见 ADR 0011：embedding 拆独立批处理服务 + 向量缓存命中率当一等指标 | `ladder-l2-perf,no-embedding-cache-20260909-133010-l2emb.csv` |
 | 虚拟线程收益 | 开关两组 | 400 并发 **+64%**、800 并发 **+65%**；100 并发 -3%、200 并发 -3% | 同模型同并发，只关 `spring.threads.virtual.enabled` + 200 平台线程池 | `ladder-l1-perf,no-virtual-20260909-011351-novirtual.csv` |
@@ -249,8 +249,13 @@ slot_ask | fallback | duplicate_submit | rate_limited
   `meta.cacheLayer` 与 `meta.intent` 分桶）。拆开后：未命中知识路径 1 并发串行 690 ms，
   50-200 并发 1031-1049 ms 基本不随并发变，500 并发才抬到 1499 ms。
   归因（`scripts/ttft_attribution.py`，服务端计时器口径）：725 ms 均值里 Mock 首字固定下限占 300 ms、
-  本机 bge-m3 单条新问句向量化占 311 ms（`scripts/probe_embedding_latency.py` 实测，服务端没有计时器包住这一步）、
+  本机 bge-m3 单条新问句向量化占 311 ms（`scripts/probe_embedding_latency.py` 实测）、
   稠密 + 词法检索合计 10 ms，**剩 104 ms 才是网关编排自己花的**。
+  **换代指针（round19 票 47 / ADR 0044）**：上面那个 311 是**探针口径**的历史读数——当时向量化这一步
+  服务端没有计时器包住，只能另起一条新问句从外部量。票 47 起 `EmbeddingClient` 有了
+  `shoppilot_embedding_latency_seconds{result=remote}`，归因脚本已改为优先读它、读不到才退回探针。
+  **两个口径不可直接相减比较**：计时器是请求路径上真打远程那些调用的均值（含并发与队列等待），
+  探针是单独量的 p50（不含）。本行数字在下次跑归因前保持探针口径原值，不预填新值。
   也就是说 500 ms 这条线在"perf 的 Mock + 单机 CPU 跑 embedding"这个形态下**光靠固定项就过不去**（300+311=611 ms），
   要达成得把向量化挪出请求关键路径（ADR 0011 的独立批处理服务），或在 dev 口径下用云端模型与云端向量重测——
   PLAN 本来就写明 dev 模式只报实测不承诺。把 Mock 首字下限调小能让表变绿，但那不是系统变快，不做。
@@ -328,6 +333,11 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
   日志的留存、索引与访问面都比数据库宽得多。真实投产要换成不可逆的假名标识（每租户一个盐的哈希或专用映射服务），
   并把"谁能在日志平台上按身份键检索"当成与数据库权限同等级的门来管。
 - **政策语料是 LLM 生成后人工校对的合成数据**，不是真实平台条款；90 个规则块要测的是链路而不是召回率上限。
+- **风格档位的 intent 维度当前不可能命中**：档位在 INTAKE 阶段算（`AgentStateMachine` 调 `StyleService.tierFor`），
+  那时意图还没判定，所以传的是 `null`；而 `style/profiles.yml` 里本来也没写 intent 规则。三者是自洽的——
+  规则引擎 `Rule.matches(channel, emotion, intent)` 确实支持 intent 维度，`StyleServiceTest` 也有 7 处传真 Intent 的用例——
+  所以这是**预留维度 + 诚实的 null**，不是配置与实现漂移。要让 intent 真正参与档位判定，得先把档位计算点移到 TRIAGE 之后，
+  那会改 system prompt 的内容，属行为变更（ADR 0044 把它登记为已知边界，本轮不改代码）。
 - **ES 停在够用级、不做 rerank 是判断不是未完成**：16 条查询上 dense-only 已经 16/16，精排没有可证明的收益，
   这条对比表就放在 `docs/retrieval-comparison.md`，打平也照登。
 - **0.95 工作点上 L2 语义缓存召回实测为 0**：bge-m3 在短中文同意图改写对上最大余弦 0.9435。
