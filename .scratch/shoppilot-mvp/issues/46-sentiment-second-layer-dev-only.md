@@ -19,7 +19,7 @@
 - [x] **正对照**：`SentimentGateTest.devModeStillUsesTheLlmLayer`（dev → 同一句必须真的调一次 `complete`）
 - [x] 变异对照：守卫改回 `"perf".equals(...)` → 上面前两条**同时变红**
 - [x] 活体**机制**：local 档下三次请求后 `shoppilot_sentiment_llm_classified_total` 增量为 **0**（F1 登记时 94%），trace 为 `sentiment=UNCERTAIN via local-lexicon-only`
-- [ ] 活体**整脚本** `verify-hit-zero-llm.ps1` 转绿 —— **受阻于环境**：本机 `OLLAMA_MAX_LOADED_MODELS=1`，两模型不能同时驻留，未命中路径的生成调用等模型换入换出（约 6 s）超过网关读超时 → `LLM_CIRCUIT_OPEN` → 首答不可写回 → 下游四条断言连带红。放开条件 = `OLLAMA_MAX_LOADED_MODELS≥2` + 重启 Ollama（机器级设置，本票未擅自改）
+- [x] 活体**整脚本** `verify-hit-zero-llm.ps1` 转绿 —— **2026-09-24 已达成（10/10 PASS、exit 0）**。此前记的阻塞原因是 `OLLAMA_MAX_LOADED_MODELS=1`，**这条归因是错的**：当天实测报的是 `cudaMalloc failed: out of memory` 与 `failed to allocate CUDA_Host buffer`（本机同时跑四套项目共 17 个容器，显存与主机内存瞬时争抢；当时 `/api/ps` 零模型驻留）。逐个预热四个模型后 `qwen2.5:3b` 与 `bge-m3` 可同时驻留，**且该环境变量全程未改（仍为 1）**，脚本即 10/10 通过。本票的机制修复（第二层限定 dev）未变，转绿只是环境不再争抢
 
 **Verify:**
 
@@ -45,7 +45,7 @@ pwsh -NoProfile -File scripts/verify-hit-zero-llm.ps1
 - **变异对照**：守卫改回 `"perf".equals(...)` → 前两条同时红（`Tests run: 20, Failures: 2`），恢复即绿。
 - 全量：`.\mvnw.cmd -B -ntp verify` → `3 + 21 + 253 = 277` 绿，收口审计 G6 常数 `[3, 21, 250]` → `[3, 21, 253]`，并刷新本地 `logs/acceptance/{build,unit}.log`（G6 读它们；跑 `run-acceptance.ps1 -Only build,unit -SkipStack`，它要求工作树干净，且 `mvn verify` 前须先 `down.ps1` 否则 jar 被占用）。
 - 活体**机制已实测**（这是本票的关键读数）：local 档连续三次请求，`shoppilot_sentiment_llm_classified_total` 增量 **0**（F1 登记时是 94%），trace 为 `sentiment=UNCERTAIN via local-lexicon-only`——情绪门在 local 已零次模型调用。
-- **未达成**：整脚本 `verify-hit-zero-llm.ps1` 仍红（10 项里 6 项 FAIL），但根因在环境不在修法——本机 `OLLAMA_MAX_LOADED_MODELS=1`（User 与 Machine 两处显式设为 1），bge-m3 与 qwen2.5:3b 不能同时驻留；未命中路径的生成调用要等一次模型换入换出（约 6 s）而超过网关读超时，于是 `FALLBACK LLM_CIRCUIT_OPEN 本地模型返回 500`，首答落不了可写回状态，下游四条断言（citations / L2 写回 / 第二次命中 L1 / 命中路径模型调用增量）连带红。trace 原文证明门与 triage 都是对的：`TRIAGE layer=T0 intent=POLICY_FRESH admissible=true`、`RETRIEVE dense=20 lexical=20 fused=5 degraded=false`。**这条读数按未达成登记，不摘红**；放开条件 = 把 Ollama 配成 `OLLAMA_MAX_LOADED_MODELS≥2` 并重启。该值是机器级设置且在两处被显式写下，本票没有擅自改。
+- **未达成（2026-09-23 登记，2026-09-24 已关闭）**：整脚本 `verify-hit-zero-llm.ps1` 当时红（10 项里 6 项 FAIL），**按未达成登记、未摘红**。当时的归因是本机 `OLLAMA_MAX_LOADED_MODELS=1`，bge-m3 与 qwen2.5:3b 不能同时驻留、生成调用等模型换入换出超读超时 → `FALLBACK LLM_CIRCUIT_OPEN 本地模型返回 500` → 首答落不了可写回状态，下游四条断言连带红（trace 原文当时证明门与 triage 都是对的：`TRIAGE layer=T0 intent=POLICY_FRESH admissible=true`、`RETRIEVE dense=20 lexical=20 fused=5 degraded=false`）。**换代指针（2026-09-24）**：这条归因**是错的**——实测报的是 `cudaMalloc failed: out of memory` 与 `failed to allocate CUDA_Host buffer`（四套项目共 17 个容器并发抢显存与主机内存，当时 `/api/ps` 零模型驻留，所以根本不是"两模型不能同时驻留"）。逐个预热模型后 `qwen2.5:3b` 与 `bge-m3` 同时驻留，**该环境变量全程未改（仍为 1）**，脚本 **10/10 PASS、exit 0**。旧读数与旧归因按原样保留在此，只补这条更正。
 
 **你需要能当场回答的三个追问**
 

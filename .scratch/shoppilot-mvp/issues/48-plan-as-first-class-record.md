@@ -19,7 +19,7 @@
 - [ ] JVM 用例：前步失败中止时含 1 条，且能看出是中止（`planAborted` 语义可见）
 - [ ] JVM 用例：不调工具的纯政策回答 `plan` 为空数组（不是 null）
 - [ ] `PlanExecutionTest` 全部原样通过（执行语义未变的证据）
-- [ ] `verify-console.mjs` 新增一条断言：真实 SSE 流的 `done` 帧含非空 `plan`
+- [x] `verify-console.mjs` 新增一条断言：真实 SSE 流的 `done` 帧含非空 `plan` —— **2026-09-24 已跑，36/36 全过**，该条打印 `plan=0 ruleIds=5 citations=5`（政策问句的 `plan` 正确为空数组）。另用独立探针补了 non-empty 那一半：动作问句 `plan=[{tool: queryLogistics, status: NOT_FOUND, latencyMillis: 567, arguments: {orderNo: 90001}}]`，四个字段齐备
 - [ ] 覆盖率：新增 gateway 代码带用例，`check_coverage.py` 仍 exit 0
 
 **Verify:**
@@ -46,7 +46,7 @@ node scripts/verify-console.mjs
 - `GatewayMainPathJvmTest.planStepsAreReportedInExecutionOrder`：两步链 → `plan.length()==2`，每步工具名/状态/参数/耗时齐备。
 - `GatewayMainPathJvmTest.policyAnswerReportsEmptyPlanArray`：纯政策回答 → `plan` 是空数组。
 - `SseEventSinkTest.doneCarriesPlanAndContextWithNormalizedEmpties` / `doneNormalizesNullsInsteadOfEmittingNull`：`done` 帧字段与空值归一。
-- `verify-console.mjs`：新增断言直接读原始 SSE 流（**本机未真跑**，见 round19 spec 的未达成登记）。
+- `verify-console.mjs`：新增断言直接读原始 SSE 流。**2026-09-24 活体整跑 36/36 全过**（含该断言），另用独立探针验证了 non-empty 分支（动作问句 1 条 `PlanStep`，`queryLogistics` / `NOT_FOUND` / 567 ms / `{orderNo: 90001}`）。
 - **变异对照**：去掉 `planSteps.add(...)` → `planStepsAreReportedInExecutionOrder` 变红（与票 49 的变异同批跑，两条各红各的）。
 - 全量：gateway 253 → 269 的一部分（本票 2 条 + 票 49 的 2 条）。
 

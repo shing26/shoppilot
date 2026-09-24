@@ -49,6 +49,7 @@ python scripts/ttft_attribution.py
 - **变异对照**：把 `cacheHitTimer` 的标签从 `in-process-cache` 改成 `remote` → **5 条里 3 条红**（`cacheHitIsTimedWithoutRemoteCall`、`bucketsStayAlignedWithCounters`、`dedupeOffRecordsEveryRequestAsRemote`），恢复即绿。
 - **第一版踩的坑**：最后一条原本断言「缓存桶的 Timer 不存在」（`find(...).timer()` 为 null）。红了——三个 Timer 在构造期就 `register` 好了，桶是**存在但零样本**。判据改成「计数为零」，这本来也是更强的断言（存在但恒零的桶与恒绿的夹具一样是摆设，要证的是「这条路径一次都没走过」）。
 - 全量回归与覆盖率见票 52 的收口读数（本票新增 gateway 代码已配用例，gateway LINE 不得低于门槛 54.0）。
+- **活体（2026-09-24 补跑）**：本票验收列里的「活体 console 一步」已跑——`verify-console.mjs` **36/36 全过**。**仍未做**：`ttft_attribution.py` 没重跑（它要求网关切 `perf` profile 并清缓存），所以 README 那行 725 ms 归因**仍是探针口径的原值**，新读数按 round19 spec 的登记「下次跑归因时产生」；归因脚本的指标优先路径已就位、有回退，语法与分支都核对过。
 
 **你需要能当场回答的三个追问**
 

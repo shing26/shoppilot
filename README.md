@@ -540,12 +540,16 @@ pwsh -NoProfile -File scripts/verify-fallback.ps1       # 降级原因逐条复�
 pwsh -NoProfile -File scripts/verify-idempotency.ps1    # 并发同 token 与状态前置校验
 pwsh -NoProfile -File scripts/verify-ratelimit.ps1      # 同步 429 与 SSE rate_limited
 pwsh -NoProfile -File scripts/verify-polarity.ps1       # 反义对不互命中（要求 local/dev 模式）
-node scripts/verify-console.mjs                         # 调试台 35 项（Playwright）
+node scripts/verify-console.mjs                         # 调试台 36 项（Playwright）
 # round17 新增的五条：情绪门 / 渠道契约 / 风格档位 / 反馈闭环 / 计划步骤
 # （各脚本的语义断言另有 0 token 的 JVM 用例兜底；五条已并入 run-acceptance 矩阵——步骤名
 #   emotion/channel/style/feedback/plansteps，门禁从 17 步扩到 22 步。2026-09-20 已用便携 pwsh
 #   7.4.20 整跑过一次：503s、16 步绿 / 6 步红（plan、hitzero、fallback、emotion、feedback、
-#   plansteps），六步红的四条根因登记在 round17 spec 的「活体验收登记」表，判据一字未改）
+#   plansteps），六步红的四条根因登记在 round17 spec 的「活体验收登记」表，判据一字未改。
+#   **2026-09-24 复测（round19 收口后）：512s、18 步绿 / 4 步红**（action、emotion、feedback、
+#   plansteps）——plan/hitzero/fallback 三步转绿；`action` 是本次新出现的红，已用「回退到
+#   round19 起点重建后同样红」的对照实验定位为**先前就存在的问题、不是 round19 引入**，
+#   机制见 docs/EVIDENCE.md 的 22 步矩阵行）
 pwsh -NoProfile -File scripts/verify-emotion.ps1        # 词典层 8 条定案 + 12 条不误升级 + 高优工单
 pwsh -NoProfile -File scripts/verify-channel.ps1        # 三渠道同答 / 跨渠道会话不互串 / email 回执单 / 渠道计数
 pwsh -NoProfile -File scripts/verify-style.ps1          # SSE meta 档位矩阵（完整矩阵见 StyleServiceTest 6 项）

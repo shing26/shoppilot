@@ -134,6 +134,8 @@
 7. **上下文输入侧裁剪（单请求 token 预算）**：现状有硬截断（历史滑窗 + 单条条款 600 字上限），无摘要、无单请求预算。触发条件 = 出现超预算的真实请求或长会话投诉。**本轮只做输出上限（票 50）不做输入裁剪**——输入裁剪会改 Prompt 内容，进而可能改 180 条 gold 读数，代价与本轮「旁挂」定义冲突。
 8. **知识反向沉淀自动咬合**：入库→检索→缓存写回→纪元失效这条链完整；反向缺失——问答结论只进答案缓存不进知识库，`kbEpoch.bump()` 只有两个调用点（离线入库 `IngestRunner.java:127` + 人工运维 `OpsController.java:299`）。ADR 0039 写的「（触发条件下）知识库修订 → kb_epoch 递增」中，`markReviewed` 是队列终点，无任何代码连线。触发条件 = ADR 0039 第 19 行：显式评分覆盖率达到可观测水平。
 
+9. **工具 schema 描述不对称（2026-09-24 全量矩阵新暴露）**：`QueryOrderDetailRequest` 的 orderNo 描述带「用户未提供时必须追问而非猜测」，而 `QueryLogisticsRequest` / `ApplyRefundRequest` / `ModifyDeliveryAddressRequest` 只写「平台订单号，例如 10023」。本地 3B 模型照抄了那个示例值 → 编造出 `10023` 并真的派发（`action` 步的三条 slot_ask 断言因此红）。**这是先前就存在的问题，不是 round19 引入**（回退到 `06331a4` 重建后同样红）。触发条件 = 下一轮要动工具契约面时（改 schema description 属功能改动，不在本轮旁挂定义内）。可选的更强做法是让 `isFabricatedOrderNo` 之外再加一层「模型自报的参数是否出自对话」的判据，那需要新决策。
+
 ## 收口状态（2026-09-24）
 
 六张票全部实现并各自留 Handoff。当前 JVM verify `3 + 21 + 269 = 293` 绿（round18 收口时为 `3 + 21 + 249 = 273`，票 45/46 到 277，本轮到 293）。
@@ -170,10 +172,19 @@
 
 - 票 48 第 5 条原写「`verify-console.mjs` 新增一条断言：真实 SSE 流的 `done` 帧含**非空** `plan`（走 action 意图的演示步）」。实现时改成钉**确定的东西**：`plan` 是数组（空或非空都合法——取决于模型这一轮要不要工具）、`context.ruleIds` 非空且与 `citations` 同源同序（政策问句必然检索到条款，与模型行为无关）。理由：让活体门禁依赖「3B 模型这一轮会不会发 tool call」就是引入抖动，而「plan 非空」那一半已经由 JVM 用例在确定性桩下钉住了。**判据的强度没有降低，只是把不确定性那一半挪到了能确定的那一层。**
 
-**本轮已知未做（登记不执行 + 未达成）**
+**活体针对性与全量矩阵（2026-09-24 补齐，round19 收口后同日）**
 
-- 八项登记不执行见上节，各带触发条件。
-- **活体针对性步未跑**：`verify-console.mjs` 的新断言只做了 `node --check` 与静态核对，没有真跑（需起栈 + Playwright 浏览器）。
-- **全量 22 步活体矩阵未跑**（ADR 0044 的 Consequences 已写明本轮不跑）。
-- **票 50 的「180 条 gold 读数未漂移」未验证**：重跑 dev 全量评测需云端额度与预算。
-- 本机 Ollama 环境未改（`OLLAMA_MAX_LOADED_MODELS=1`），票 46 登记的放开条件不变。
+票 48 第 5 条那条「未真跑」的活体断言，以及此前一直挂在账上的全量 22 步矩阵，当天补跑完毕：
+
+- **`verify-console.mjs` 36/36 全过**，含新增那条：`done frame carries plan array and context composition (tickets 48/49) — plan=0 ruleIds=5 citations=5`。**票 48/49 的活体针对性步由此关闭**。
+- 另有两条独立探针（直接读原始 SSE 流，不依赖页面渲染）作为交叉证据：政策问句的 `done.context.ruleIds` 与 `citations` **逐项同序一致（各 5 条）**、`historyTurns=0`（新会话）、`estimatedPromptTokens=1946`、`plan=[]`；动作问句的 `plan` 有 1 条 `{tool: queryLogistics, status: NOT_FOUND, latencyMillis: 567, arguments: {orderNo: 90001}}`，四个字段齐备（`NOT_FOUND` 是归属双条件的正确行为）。
+- **全量 22 步矩阵：512 s、18 步绿 / 4 步红**（落点 `logs/acceptance-run-20260924-180518.log`）。相比 2026-09-20 的 16 绿 / 6 红，`plan`、`hitzero`、`fallback` **三步转绿**（分别由 round17 后的脚本修复、票 46 / ADR 0043、票 45 / ADR 0042 交账）；**`verify-hit-zero-llm.ps1` 10/10、exit 0**，即票 46 那条挂红关闭。
+- **`action` 是本次新出现的红，已定性为先前就存在的问题、不是 round19 引入**：把工作树回退到 round19 起点 `06331a4` 重建后同一步**同样红**（对照实验，7 s、同样的三条 slot_ask 断言失败）。机制：本地 3B 模型把工具 schema 描述里的示例订单号（`@ToolParam(description = "平台订单号，例如 10023")`，自 `f58e439` 起在仓）直接填进 `orderNo`，而 `ToolDispatcher.isFabricatedOrderNo` 只校验格式（`\d{1,12}`）——`10023` 格式合法因而拦不住。**新登记项**：`QueryLogisticsRequest` 的描述缺了 `QueryOrderDetailRequest` 那句「用户未提供时必须追问而非猜测」，这处描述不对称是可改的，但属功能改动、不在 round19 的旁挂定义内，**本轮只登记不执行**。
+- 四步红里的 `emotion` / `feedback` / `plansteps` 是 2026-09-20 那批的延续，不在本轮范围。
+
+**一处归因更正（重要）**：此前把活体阻塞记为 `OLLAMA_MAX_LOADED_MODELS=1`（票 46 Handoff 与 EVIDENCE 都这么写）。当天的实测报的是 **`cudaMalloc failed: out of memory`** 与 **`failed to allocate CUDA_Host buffer`**——本机同时跑着四套项目共 17 个容器，显存与主机内存瞬时争抢，而当时 `/api/ps` 显示**零模型驻留**，所以根本不是「两个模型不能同时驻留」。逐个预热四个模型后 `qwen2.5:3b` 与 `bge-m3` 可同时驻留，**且该环境变量全程未改（仍为 1）**。结论：该阻塞是资源争抢引起的瞬时状态，不是配置问题；下次遇到同类红应先断开源（显存/主机内存占用），而不是先改那个变量。旧读数按原样保留，本条只是加归因更正。
+
+**本轮仍未验证**
+
+- **票 50 的「180 条 gold 读数未漂移」**：重跑 dev 全量评测需云端额度与预算，本轮未跑。不得声称「未漂移」。
+- 上述四步红中的三步（`action` 之外的 `emotion` / `feedback` / `plansteps`）仍红。
