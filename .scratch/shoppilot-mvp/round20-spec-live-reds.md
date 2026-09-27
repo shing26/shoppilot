@@ -76,6 +76,42 @@
 8. 活体：`pwsh -NoProfile -File scripts/verify-action-loop.ps1` 由 8 PASS / 3 FAIL 转为全过（修前红 / 修后绿两组读数）。
 9. schema 描述对称化（把 `QueryOrderDetailRequest` 那句「用户未提供时必须追问而非猜测」补到另外三个请求）**只能作为辅助**，且必须在 Handoff 里写清它**不构成收口证据**——prompt 级劝阻对 3B 的有效性未证，`ACT-LOG-12` 要的是行为保证。改描述时要保证 `ToolSchemaGeneratorTest.java:50` 的 `contains("10023")` 断言仍成立。
 
+## 收口状态（2026-09-27）
+
+四张票全部实现并各自留 Handoff。**全量 22 步矩阵复测：805 s、20 步绿 / 2 步红**（落点 `logs/acceptance-run-20260927-161245.log`）——四条红里 **`action` 与 `emotion` 转绿**，剩下两步正是本轮登记为"间歇"与"已知不达成"的那两个。JVM `3 + 21 + 276 = 300` 绿（gateway 269 → 276）。
+
+| 票 | 状态 | 关键落点 |
+|---|---|---|
+| 53 `feedback` 读数与刺激 | implemented | 加 `Get-Implied` 助手消掉三参数调用；`negative` 刺激换成 `转人工`；退款改用拥有者 C001 + 幂等键按进程取；四次连跑 3×`6/1` + 1×`7/0`——`implied_retry` 间歇，机制见票面 |
+| 54 `emotion` 用例重分类 | implemented | `EMO-ESC-02` 移入"显式转人工"（`USER_REQUESTED` + 不带 high）；新增 `EMO-ESC-09` 补位；**并修掉一处中止**（队列反查缺 bearer → 401 → 中止，20 条断言从未运行）→ `PASS 30 / FAIL 0` |
+| 55 `plansteps` 登记更正 | implemented | 删掉不存在的 `PlanExpressionTest` 引用（全仓仅此一处）；`aborted` 生命周期语义；补取证口径；该步**判据一字不改**、local 档登记为已知不达成 |
+| 56 `orderNo` 溯源守卫 | implemented | `isUntrustedOrderNo`（格式 + 溯源）；判据面 = 买家说过的话；`verify-action-loop.ps1` 8 PASS/3 FAIL → **11/11** |
+
+**四步红现在的性质（都已如实登记，没有一条是"看着红了就改判据"）**
+
+- **`action` 转绿**：票 56 的行为守卫接管——模型编的 `10023` 被转成 `[orderNo]` 追问。这条同时是 gold 未达成（`ACT-LOG-12`），**gold 一个字没改**。
+- **`emotion` 转绿**：票 54 让用例追上 ADR 0042；顺带发现该步此前**跑到第 9 条就因 401 中止**，20 条断言从未执行。
+- **`feedback` 仍红（6 PASS / 1 FAIL）**：`implied_retry` 间歇——四次连跑 3 红 1 绿，红的那几次 SSE trace 显示模型在含上一轮成功答复的会话里**不肯再发工具调用**，重复请求走不到幂等层。绿的那次计数 `0 → 1` 证明幂等层本身正确。**按登记处置、不修代码去迎合脚本**（登记节第 5 项另有它引出的新发现）。
+- **`plansteps` 仍红（0 / 7）**：local 3B 不产生两步链。**判据一字不改**——ADR 0043 明令禁止"把判据改窄去适配实现"。
+
+**CI 五步门禁（本机读数，2026-09-27）**
+
+| 步 | 读数 |
+|---|---|
+| 1 构建与 JVM 测试 | `3 + 21 + 276 = 300` 绿 |
+| 2 判据自检 | `合计 40/40 通过`（票 54 改了 part4，判据未动，自检不受影响） |
+| 3 离线 rescore | `RESCORE DONE cases=180 files=6 tool_diff=4` —— **差异集仍恰好那 4 条**，即票 56 的行为守卫没有扰动离线判据（rescore 走的是判据而非网关） |
+| 4 套件夹具 | `SUITE SELFCHECK ok=24`（判分器未改） |
+| 5 覆盖率棘轮 | `gateway 58.52% / biz-mock 77.49% / tool-api 41.73%` 对门槛 `54.0 / 76.0 / 40.0`，`COVERAGE OK` |
+
+**本轮未覆盖 / 未达成（照登，不摘）**
+
+1. **`ACTION_REFUND` 的 dev 回归没跑**：日预算在跑到第四条时不足（`232140/260000`，该条需 48366）。所以**不得声称"四个动作意图都不退化"**——只覆盖了 ORDER / LOGISTICS / ADDRESS 三条。
+2. **`plansteps` 在 local 档仍红**（登记为已知不达成）。
+3. **`feedback` 的 `implied_retry` 间歇**（登记为模型行为边界）。
+4. **schema 描述对称化未做**（可选辅助，不构成收口证据）。
+5. **矩阵耗时 805 s**，比 2026-09-24 的 512 s 长——主要是 `emotion` 步现在真的跑完 30 条（91 s vs 此前中止在 9 条）、`plan` 步 101 s、`eval` 步 105 s。**这不是判据变了，是原本被中止的断言开始跑了。**
+
 ## 冻结与收口
 
 - 本轮结束后回到 ADR 0031 冻结机制，**不自动续期**。

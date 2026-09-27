@@ -36,7 +36,7 @@
 - 想核对全部证据：[`docs/EVIDENCE.md`](docs/EVIDENCE.md)：数字对应的报告、原始产物与复现命令。
 - [`AGENTS.md`](AGENTS.md)：接手顺序、source of truth、修改禁令、验证与 Handoff 流程。
 - [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)：按项目定位制定的 v1.0 收口、作品集与冻结路线。
-- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-52 的当前状态。
+- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-56 的当前状态。
 - [`docs/CODE_MAP.md`](docs/CODE_MAP.md)：模块所有权、请求链路源码落点和已知代码债候选。
 
 ## 快速开始（一条命令）
@@ -520,7 +520,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（3 + 21 + 269 = 293 项）
+# 单元、架构与主链路 JVM 集成测试（3 + 21 + 276 = 300 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -569,7 +569,7 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七�
 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
 Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
-这条门禁覆盖干净 runner 上的构建与 293 条 JVM 测试：round16 的三条网关主链路 JVM
+这条门禁覆盖干净 runner 上的构建与 300 条 JVM 测试：round16 的三条网关主链路 JVM
 集成 smoke（缓存命中、工具循环、fallback），票 41 的四条工具循环语义用例（超限 FALLBACK、
 预算检查出答案、写动作守卫、多 toolCalls 防御），票 35 的五条 Prompt 版本化用例
 （生产资源加载与三种 fail-fast 形态），票 36 的六条情绪门用例（词典层 0 token 定案、
@@ -892,11 +892,11 @@ shoppilot-biz-mock/    业务中台：orders / logistics / coupons / refunds / t
 shoppilot-tool-api/    纯契约 jar：10 意图枚举 + Function Schema + 工具 DTO（网关与 biz-mock 共用）
 loadtest/              locustfile（四种流量模型）与 results/（保留 ladder-*.csv 与 env-*.json）
 eval/results/         工具调用评测 CSV/meta（入库的评测证据）
-docs/adr/              ADR 0001-0044（0022 未占用），正文里每处 ADR 编号都能点进去
+docs/adr/              ADR 0001-0045（0022 未占用），正文里每处 ADR 编号都能点进去
 docs/                  阈值标定、意图标定、检索对比、压测报告、证据地图、代码地图、面试问答清单
 knowledge/             30 篇政策语料
 scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、TTFT 扫描与归因、报告生成
-.scratch/shoppilot-mvp/ 正式 tracker、round spec、票 01-52、收口审计；不是临时草稿目录
+.scratch/shoppilot-mvp/ 正式 tracker、round spec、票 01-56、收口审计；不是临时草稿目录
 AGENTS.md  CHARTER.md  PLAN.md  CONTEXT.md
 ```
 

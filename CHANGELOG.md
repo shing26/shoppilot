@@ -8,7 +8,7 @@
 | --- | --- |
 | 轮次 spec | `.scratch/shoppilot-mvp/round*-spec-*.md` |
 | 票 | `.scratch/shoppilot-mvp/issues/` |
-| 决策 | [`docs/adr/`](docs/adr/)（编号 0001–0044，**0022 有意预留未占用**，见 ADR 0024 编号说明） |
+| 决策 | [`docs/adr/`](docs/adr/)（编号 0001–0045，**0022 有意预留未占用**，见 ADR 0024 编号说明） |
 | 指标证据 | [`docs/EVIDENCE.md`](docs/EVIDENCE.md) |
 | 发布声明与冻结策略 | [`RELEASE.md`](RELEASE.md) |
 
@@ -18,7 +18,23 @@
 
 ## [Unreleased]
 
-`v1.0.0` 之后的工作，共 **51 个提交**，尚未打新 tag。其中 round16 – round19 都是 `RELEASE.md` 冻结策略下的重开（round17 起由所有者政策覆盖，不再伪装成触发式重开）。
+`v1.0.0` 之后的工作，共 **60 个提交**，尚未打新 tag。其中 round16 – round20 都是 `RELEASE.md` 冻结策略下的重开（round17 起由所有者政策覆盖，不再伪装成触发式重开）。
+
+### round20 — 修 22 步矩阵的四条红 · 2026-09-25 → 09-27
+
+**三条走 ADR 0031 第 10 行的事实性修正豁免，一条走所有者政策覆盖**（ADR 0045 一条一条写明依据——既不把政策覆盖伪装成事实性修正，也不把豁免说成"必须开轮才能做"）。
+
+根因取证最重要的结论是：**四条红里三条的根因不在被测代码**。
+
+| 票 | 内容 | 依据 | ADR |
+| --- | --- | --- | --- |
+| — | round20 重开范围与两条依据的划分 | — | [0045](docs/adr/0045-round20-reopen-for-the-four-live-reds.md) |
+| 53 | `feedback` 步：两条读数**在结构上不可能通过**（`Get-Counter` 被管道调用而函数无 `ValueFromPipeline` → 参数前移 → 恒返回 `0.0`）；`negative` 的刺激与自己的注释矛盾；退款用了不拥有该单的买家、幂等键写死 | 事实性修正 | — |
+| 54 | `emotion` 步：`EMO-ESC-02` 的问句含 T0 升级词「转人工」，ADR 0042 之后落 `USER_REQUESTED` 是**正确行为**——把它重分类为"显式转人工"、新增 `EMO-ESC-09` 补位；**并修掉该步跑到第 9 条就因 401 中止**（队列反查缺 bearer） | 事实性修正 | — |
+| 55 | `plansteps`：更正两处不实登记（引用了**不存在**的 `PlanExpressionTest`；`aborted` 是进程生命周期累计值），该步在 local 档登记为已知不达成——**判据一字不动** | 事实性修正 | — |
+| 56 | `orderNo` 溯源守卫：模型自报的单号必须出自买家的话（`isUntrustedOrderNo` = 格式 + 溯源），复用既有 `askSlot` 出口 | **所有者政策覆盖** | — |
+
+结果：22 步矩阵 **805 s、20 步绿 / 2 步红**（`action`、`emotion` 转绿；`feedback` 的 `implied_retry` 间歇、`plansteps` 在 local 档已知不达成——两步都按登记处置，没有一条是"看着红了就改判据"）。票 56 同时修掉了 gold `ACT-LOG-12` 的未达成，**gold 一字未改**。
 
 ### round19 — 可信性观测补齐 · 2026-09-24
 

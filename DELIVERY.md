@@ -10,7 +10,7 @@
 
 | # | 回答的问题 | 本仓落在哪 | 状态 |
 | --- | --- | --- | --- |
-| ① | 为什么做它？解决什么？放弃过什么？ | [`CHARTER.md`](CHARTER.md)（业务背景与痛点、架构指标、里程碑）<br>[`PLAN.md`](PLAN.md)（架构形态、主链路、排期）<br>[`docs/adr/`](docs/adr/)（**44 编号 / 43 篇**，0022 有意预留） | 具备 |
+| ① | 为什么做它？解决什么？放弃过什么？ | [`CHARTER.md`](CHARTER.md)（业务背景与痛点、架构指标、里程碑）<br>[`PLAN.md`](PLAN.md)（架构形态、主链路、排期）<br>[`docs/adr/`](docs/adr/)（**45 编号 / 44 篇**，0022 有意预留） | 具备 |
 | ② | 凭什么说它 work？ | [`docs/EVIDENCE.md`](docs/EVIDENCE.md)（证据分层 + 指标入账规则）<br>[`docs/loadtest-report.md`](docs/loadtest-report.md)<br>[`docs/threshold-calibration.md`](docs/threshold-calibration.md) | 具备 |
 | ③ | 怎么一步步变成现在这样？ | [`CHANGELOG.md`](CHANGELOG.md)（按**轮**而非 semver 组织） | 具备 |
 | ④ | 什么算完成？现在到哪？什么不做？ | [`RELEASE.md`](RELEASE.md)（发布声明、达标项、**三条未达标红线**、Freeze policy） | 具备 |
@@ -35,13 +35,13 @@ start http://127.0.0.1:8082
 
 ---
 
-## 当前状态（2026-09-24）
+## 当前状态（2026-09-27）
 
 - **发布**：`v1.0.0` 已冻结（tag → `7f4334c`，CI run `35104751284` 验证）
-- **未发布**：`v1.0.0` 之后 **51 个提交**，属 round15 – round19 五轮
-- **当前轮**：无进行中的轮次。最近一轮是 round19「可信性观测补齐」，**已收口**。round17 起的三轮重开都是[显式的政策覆盖](docs/adr/0044-round19-reopen-for-trust-observability.md)（依次为 [0033](docs/adr/0033-round17-reopen-for-architecture-completeness.md) / [0041](docs/adr/0041-round18-reopen-for-scoring-dimension-completeness.md) / 0044），不满足 ADR 0031 的触发条件，均已诚实记录为覆盖，且**不自动续期**
+- **未发布**：`v1.0.0` 之后 **60 个提交**，属 round15 – round20 六轮
+- **当前轮**：无进行中的轮次。最近一轮是 round20「修 22 步矩阵的四条红」，**已收口**——22 步矩阵从 18 绿 / 4 红转到 **20 绿 / 2 红**（`action`、`emotion` 转绿；剩下的 `feedback` 的 `implied_retry` 间歇与 `plansteps` 在 local 档已知不达成，两步都按登记处置）。round17 起的三轮重开都是[显式的政策覆盖](docs/adr/0045-round20-reopen-for-the-four-live-reds.md)（依次为 [0033](docs/adr/0033-round17-reopen-for-architecture-completeness.md) / [0041](docs/adr/0041-round18-reopen-for-scoring-dimension-completeness.md) / 0044 / 0045），不满足 ADR 0031 的触发条件，均已诚实记录为覆盖，且**不自动续期**；round20 内部还分了两种依据（三条事实性修正 + 一条政策覆盖）
 - **三条未达标红线**（缓存拦截率、吞吐峰值、未命中 TTFT）**照挂不摘**，判据与归因见 `RELEASE.md`。**不通过改口径、阈值或 Mock 参数刷绿**
-- **round19 的三条未达成**同样照登：活体针对性步未真跑、全量 22 步矩阵本轮不跑、输出上限是否影响 180 条 gold 读数未验证
+- **未覆盖项同样照登**：round19 的三条未达成里两条已关（票 50 的读数验证完成、活体针对性步已跑）、一条（输出上限是否影响 180 条 gold）仍在；round20 的 `ACTION_REFUND` dev 回归因日预算不足没跑——**不得声称"四个动作意图都不退化"**
 
 ---
 
@@ -62,7 +62,7 @@ start http://127.0.0.1:8082
 
 | 项 | 现状 | 选项 |
 | --- | --- | --- |
-| `pom.xml` 版本 | `0.1.0-SNAPSHOT` | **A** 改 `1.0.0` —— 与 tag 对齐，声明"仓内即已发布版本"<br>**B** 改 `1.1.0-SNAPSHOT` —— 承认 `v1.0.0` 之后有 51 个未发布提交，正在走向下一个版本<br><span class="st">脚本已全部用通配符（`shoppilot-gateway-*.jar`），两条路都不会打断启动链</span> |
+| `pom.xml` 版本 | `0.1.0-SNAPSHOT` | **A** 改 `1.0.0` —— 与 tag 对齐，声明"仓内即已发布版本"<br>**B** 改 `1.1.0-SNAPSHOT` —— 承认 `v1.0.0` 之后有 60 个未发布提交，正在走向下一个版本<br><span class="st">脚本已全部用通配符（`shoppilot-gateway-*.jar`），两条路都不会打断启动链</span> |
 
 ### 已登记的口径说明（非缺陷）
 
