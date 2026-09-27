@@ -114,7 +114,7 @@
 | 52 | [`52-round19-registration-closeout.md`](issues/52-round19-registration-closeout.md) | implemented | round19 登记文档收口与证据同步（ADR 0044） |
 | 53 | [`53-feedback-harness-readings.md`](issues/53-feedback-harness-readings.md) | ready-for-agent | `feedback` 步修两条恒失败读数与错刺激（ADR 0045；**事实性修正**，不动被测代码） |
 | 54 | [`54-emotion-case-reclassification.md`](issues/54-emotion-case-reclassification.md) | ready-for-agent | `EMO-ESC-02` 重分类为显式转人工样本 + 新增强情绪样本（ADR 0045；**事实性修正**，用例数据与 ADR 0042 冲突） |
-| 55 | [`55-plansteps-registration-corrections.md`](issues/55-plansteps-registration-corrections.md) | ready-for-agent | `plansteps` 更正两处不实登记并登记为已知不达成（ADR 0045；**判据一字不动**） |
+| 55 | [`55-plansteps-registration-corrections.md`](issues/55-plansteps-registration-corrections.md) | implemented | `plansteps` 更正不实登记（不存在的 `PlanExpressionTest`、`aborted` 生命周期语义）+ 补取证口径 + 登记为已知不达成（ADR 0045；**判据一字不动**） |
 | 56 | [`56-orderno-provenance-guard.md`](issues/56-orderno-provenance-guard.md) | ready-for-agent | `orderNo` 溯源守卫（ADR 0045；**所有者政策覆盖**；同时是 gold `ACT-LOG-12` 未达成） |
 
 ## 如何新增或领取工作

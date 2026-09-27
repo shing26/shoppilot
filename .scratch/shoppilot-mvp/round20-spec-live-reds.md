@@ -20,7 +20,7 @@
 1. **`Get-Counter` 的管道绑定错误**：`scripts/verify-feedback.ps1:27` 声明 `function Get-Counter([string]$Metrics, [string]$Name, [string]$Tags)`，**无 `ValueFromPipeline`**；`:103/106/116/123` 却写成 `Get-Metrics | Get-Counter "name" 'tag'`。用仓库自己的 pwsh 7.4.20 实测：管道形式下 `Metrics=[name] Name=[tag] Tags=[]`（参数前移一格），于是 `:28` 的 `$_ -like "$Name*$Tags*"` 永不命中 → 返回 `0.0` → `0 -gt 0` 假 → 恒 FAIL。对照 `negative` 用的是位置形式（`:39/:93`），所以它能读到真实值。
 2. **`negative` 的刺激缺失**：`:36` 注释写「用一个必然走降级的问题（不在政策库且无工具诉求）」，而 `:42` 实际发的是用来验引用块的正常政策问句——实测 `intent=POLICY_RETURN cache=NONE degraded=false`，`fallbackReason` 为空，按 `FeedbackService.java:107` 就不该自增。**注释描述的是意图，代码做的是另一件事。**
 3. **`EMO-ESC-02` 是 20 条问句里唯一含升级词的一条**：机械核对 8 条升级样本 + 12 条非升级样本，只有它含 `T0RuleLayer.ESCALATE_WORDS`（`triage/T0RuleLayer.java:50`）里的「转人工」；`EMO-ESC-07` 的「真人领导」与 `EMO-ESC-08` 的「人工处理」都不在词表内。且 `eval/cases-part4-emotion.jsonl:2` 的 `"intent": "ACTION_LOGISTICS"` 同样已失效（活体被 T0 判成 `ESCALATE`）。
-4. **`plansteps` 的两处不实登记**：① round17 spec 的 F3 行与 `issues/39-plan-ordered-steps.md` 都引 `PlanExpressionTest` 作覆盖源，**该文件在仓内不存在**（只有 `main/.../agent/PlanExpression.java`），实际覆盖者是 `PlanExecutionTest` 第 2/3 条；② `steps=2:0 aborted:7` 里的 `aborted:7` 是**进程启动以来累计**的 Prometheus 计数器，被当成本次 7 条用例的读数。
+4. **`plansteps` 的两处不实登记**：① round17 spec 的 F3 行（`:106`）把 `PlanExpressionTest` 列为 0 token 覆盖源，**该文件在仓内不存在**（只有 `main/.../agent/PlanExpression.java`），实际覆盖者是 `PlanExecutionTest` 第 2/3 条；**全仓只此一处引错**（取证时曾误记为"F3 行与票 39 都引"，票 55 已核实并更正——票 39 引的是正确的 `PlanExecutionTest`）；② `steps=2:0 aborted:7` 里的 `aborted:7` 是**进程启动以来累计**的 Prometheus 计数器，被当成本次 7 条用例的读数。
 5. **`action` 同时也是 gold 未达成**：`eval/cases-part2-action.jsonl:30` 的 `ACT-LOG-12` 逐字要求 `"slotAsk": true, "mustNotContainArgs": ["orderNo"]`（同类还有 `ACT-LOG-11`、`ACT-ORD-11/12`）。所以这条红不是验收脚本自创的口径——**修好它会让 gold 更绿**。
 6. **四个 schema 描述不对称**：只有 `QueryOrderDetailRequest.java:6` 带「用户未提供时必须追问而非猜测」，`QueryLogisticsRequest` / `ApplyRefundRequest` / `ModifyDeliveryAddressRequest` 三条只写「平台订单号，例如 10023」。本问句被 T0 判成 `ACTION_LOGISTICS`，模型选的正是 `queryLogistics`。
 7. **模型已给参数时网关没有第二道**：`deriveActionCall` 的入口条件是 `rounds == 0 && !toolUsed`（`AgentStateMachine.java:405-408`），模型一发工具就整体跳过；`ToolDispatcher.dispatch(call, token)` 的签名里没有 `query`，拿不到"用户说过什么"。
@@ -57,7 +57,7 @@
 
 ### 票 55 — `plansteps` 的登记更正（不改判据）
 
-1. 删除或更正两处对 `PlanExpressionTest` 的引用（round17 spec F3 行、`issues/39-plan-ordered-steps.md`），改成实际覆盖者 `PlanExecutionTest` 第 2/3 条。
+1. 更正 `PlanExpressionTest` 引用（round17 spec 的 F3 行 `:106`），改成实际覆盖者 `PlanExecutionTest` 第 2/3 条。**注意只此一处**：`issues/39-plan-ordered-steps.md` 引的是正确的 `PlanExecutionTest`，不在改动面。
 2. 在 round17 spec 的 F3 行与 `docs/EVIDENCE.md` 的矩阵行里写明：`aborted` 是**进程生命周期累计计数器**，`steps=2:0` 与 `rejected:0` 才是"从未达成"的硬证据。
 3. 补一句可自证的取证口径：`verify-plan.ps1` 的 `Get-ToolSteps`（`:24-26`）只筛 `TOOL_EXEC` 行、丢了 `round=` 行，所以**归因无法从该脚本自证**；要看完整响应 trace 的 `round=` 序列，或加读 `shoppilot_llm_multi_tool_calls_total`（识别"一次回复塞两个调用、代码只取第一个"这个真实混淆项）与 `shoppilot_llm_write_nudge_total`。
 4. 把该步在 local 档**登记为已知不达成**（判据一字不动），措辞要与 `README.md` 已有的「未达成照登」一致。
