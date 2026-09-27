@@ -390,7 +390,7 @@ class GatewayMainPathJvmTest {
 
         mvc.perform(post("/api/v1/support/chat")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"query\":\"我的订单到哪了\"}"))
+                        .content("{\"query\":\"我的订单90001到哪了\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.answer").value("您的订单正在配送中"));
 
@@ -632,6 +632,89 @@ class GatewayMainPathJvmTest {
                 .orElseThrow(() -> new AssertionError("规划请求里没有买家问题那条 user 消息"));
         assertTrue(userMessage.startsWith("【政策条款】\n（本轮未检索到相关条款）\n\n【买家问题】\n"),
                 "零召回占位文本必须原样保留，实际=" + userMessage);
+    }
+
+    @Test
+    @DisplayName("票 56：模型给的订单号格式合法但买家没报过 → 转 slot_ask，不拿它撞库")
+    void fabricatedOrderNoIsAskedBackInsteadOfDispatched() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        // 10023 是工具 schema 描述里的示例值（`平台订单号，例如 10023`）——本地 3B 会照抄它
+        when(llm.complete(any())).thenReturn(new LlmTypes.Reply("", List.of(
+                new LlmTypes.ToolCall("call-p56-1", ToolName.QUERY_LOGISTICS.apiName(),
+                        Map.of("orderNo", "10023"))), 10, 2, null));
+        BizMockClient bizMock = mock(BizMockClient.class);
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_LOGISTICS, "T1", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"帮我查下物流轨迹\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slotAsked").value(true));
+
+        verify(bizMock, never()).call(any(), anyMap(), any());
+    }
+
+    @Test
+    @DisplayName("票 56：单号只出现在助手的旧回复里 → 不算出处，照样转 slot_ask")
+    void orderNoOnlyInAnAssistantTurnIsNotProvenance() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.complete(any())).thenReturn(new LlmTypes.Reply("", List.of(
+                new LlmTypes.ToolCall("call-p56-2", ToolName.QUERY_LOGISTICS.apiName(),
+                        Map.of("orderNo", "10023"))), 10, 2, null));
+        BizMockClient bizMock = mock(BizMockClient.class);
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+        SessionStore store = mock(SessionStore.class);
+        when(store.load(anyString(), anyString(), anyString())).thenReturn(new SessionStore.Session(
+                CONVERSATION,
+                List.of(new SessionStore.Turn("user", "帮我查下物流轨迹"),
+                        new SessionStore.Turn("assistant", "您的订单 10023 正在配送中")),
+                null, new LinkedHashMap<>(), 0));
+        when(store.appendTurn(any(), anyString(), anyString())).thenAnswer(call -> call.getArgument(0));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_LOGISTICS, "T1", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class), perfModeGate(),
+                HybridRetriever.Result.unavailable(7L), store);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"帮我查下物流轨迹\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slotAsked").value(true));
+
+        // 助手回复里的单号不构成出处：它的来源可能就是模型自己上一次编的
+        verify(bizMock, never()).call(any(), anyMap(), any());
+    }
+
+    @Test
+    @DisplayName("票 56 续办：追问之后买家补单号 → 这一轮的单号算出处，照常派发")
+    void resumedTurnTrustsTheOrderNoTheBuyerJustSupplied() throws Exception {
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_LOGISTICS), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"物流已更新\"}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+        SessionStore store = mock(SessionStore.class);
+        when(store.load(anyString(), anyString(), anyString())).thenReturn(new SessionStore.Session(
+                CONVERSATION, List.of(new SessionStore.Turn("user", "帮我查下物流轨迹")),
+                ToolName.QUERY_LOGISTICS.apiName(), new LinkedHashMap<>(), 0));
+        when(store.appendTurn(any(), anyString(), anyString())).thenAnswer(call -> call.getArgument(0));
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("物流已更新，正在派送中"));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_LOGISTICS, "T1", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class),
+                perfModeGate(), HybridRetriever.Result.unavailable(7L), store);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"90001 这单到哪了\"}"))
+                .andExpect(status().isOk());
+
+        // 待办重放这条路不进模型（正则取槽位）；单号由本轮买家那句给出，所以溯源放行
+        verify(bizMock).call(eq(ToolName.QUERY_LOGISTICS), anyMap(), eq(null));
     }
 
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,

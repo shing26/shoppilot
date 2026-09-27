@@ -314,7 +314,7 @@ public class AgentStateMachine {
             LlmTypes.ToolCall call = new LlmTypes.ToolCall(rawCall.id(), rawCall.name(), resolution.arguments());
             messages.add(LlmTypes.Message.assistant(lastReply.content(), List.of(call)));
             long dispatchStarted = System.nanoTime();
-            ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken);
+            ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken, dialogueText(query, session));
             long dispatchMillis = (System.nanoTime() - dispatchStarted) / 1_000_000L;
             if (dispatch.unknown()) {
                 // 模型编出了不存在的工具：不拿 null 工具往下走，直接兜底
@@ -421,7 +421,8 @@ public class AgentStateMachine {
                 LlmTypes.ToolCall derivedCall = new LlmTypes.ToolCall("gateway-derived",
                         derived.tool().apiName(), derived.slots());
                 messages.add(LlmTypes.Message.assistant(null, List.of(derivedCall)));
-                ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(derivedCall, idempotencyToken);
+                ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(derivedCall, idempotencyToken,
+                        dialogueText(query, session));
                 step(trace, sink, AgentState.TOOL_EXEC,
                         "gateway-derived " + dispatch.tool() + "=" + dispatch.status()
                                 + " modelArgs=" + traceArgs(derivedCall.arguments()));
@@ -617,7 +618,7 @@ public class AgentStateMachine {
                     AgentResult.ContextComposition.NONE);
         }
         LlmTypes.ToolCall call = new LlmTypes.ToolCall("resumed", tool.apiName(), arguments);
-        ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken);
+        ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken, dialogueText(query, session));
         step(trace, sink, AgentState.TOOL_EXEC, tool + "=" + dispatch.status());
         if (dispatch.duplicate()) {
             sink.duplicateSubmit(tool, "该请求已处理过，本次未重复执行");
@@ -793,6 +794,26 @@ public class AgentStateMachine {
 
     private static SessionStore.Session clearPending(SessionStore.Session session) {
         return new SessionStore.Session(session.conversationId(), session.turns(), null, new LinkedHashMap<>(), 0);
+    }
+
+    /**
+     * 订单号溯源守卫的判据面（ADR 0045 票 56）：**买家说过的话**——本轮 query 加历史里的买家轮次。
+     *
+     * <p>刻意只收买家轮次，不收助手回复、也不收检索回来的政策条款：助手回复可能转述过模型编的
+     * 单号，条款正文里也可能出现数字——把它们算进来，等于用自己编的东西给自己背书，第二道守卫
+     * 就白设了。续办路径天然覆盖：{@code resumePending} 的参数由 {@code extractSlots(tool, query)}
+     * 从**本轮补充的那句话**里取，而那句话就是这里的 query。
+     */
+    private static String dialogueText(String query, SessionStore.Session session) {
+        StringBuilder text = new StringBuilder(query == null ? "" : query);
+        if (session != null && session.turns() != null) {
+            for (SessionStore.Turn turn : session.turns()) {
+                if ("user".equals(turn.role())) {
+                    text.append('\n').append(turn.text() == null ? "" : turn.text());
+                }
+            }
+        }
+        return text.toString();
     }
 
     private static int sum(List<LlmTypes.Reply> replies, boolean prompt) {

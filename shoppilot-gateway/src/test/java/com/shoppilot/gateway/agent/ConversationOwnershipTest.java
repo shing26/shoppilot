@@ -185,12 +185,12 @@ class ConversationOwnershipTest {
         });
         ToolDispatcher dispatcher = mock(ToolDispatcher.class);
         when(dispatcher.missingSlots(any(), any())).thenReturn(List.of());
-        when(dispatcher.dispatch(any(), any())).thenReturn(ownerAddressResult());
+        when(dispatcher.dispatch(any(), any(), any())).thenReturn(ownerAddressResult());
 
         AgentResult result = runAs(INTRUDER, INTRUDER_TURN, llm, dispatcher);
 
         // 动作没被发动：A 办到一半的改址不该由 B 的输入触发
-        verify(dispatcher, never()).dispatch(any(), any());
+        verify(dispatcher, never()).dispatch(any(), any(), any());
         // A 说过的任何一件参数都没进模型
         assertThat(prompts).isNotEmpty();
         for (LlmTypes.Request prompt : prompts) {
@@ -220,12 +220,12 @@ class ConversationOwnershipTest {
         });
         ToolDispatcher dispatcher = mock(ToolDispatcher.class);
         when(dispatcher.missingSlots(any(), any())).thenReturn(List.of());
-        when(dispatcher.dispatch(any(), any())).thenReturn(ownerAddressResult());
+        when(dispatcher.dispatch(any(), any(), any())).thenReturn(ownerAddressResult());
 
         AgentResult result = runAs(OWNER, OWNER_TURN, llm, dispatcher);
 
         // 这条通路是活的：没有它，上面那条 never() 可能是白绿
-        verify(dispatcher).dispatch(any(), any());
+        verify(dispatcher).dispatch(any(), any(), any());
         assertThat(prompts).hasSize(1);
         assertThat(result.answer()).contains(OWNER_STREET);
         // 办完之后待办清掉，会话回到无 pending 状态

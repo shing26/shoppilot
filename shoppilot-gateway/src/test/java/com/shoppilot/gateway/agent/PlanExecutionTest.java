@@ -167,7 +167,9 @@ class PlanExecutionTest {
                 toolCall("call-2", ToolName.APPLY_REFUND, Map.of("orderNo", "{steps[0].result.nonexistent}")));
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any()))
                 .thenReturn(new BizMockClient.Outcome(ToolStatus.OK, "{\"status\":\"OK\"}", false));
-        AgentResult second = machine().run("引用缺失字段", null, EventSink.NOOP);
+        // 问句里带上单号：溯源守卫（ADR 0045 票 56）要求买家报过这个值，否则第一枪就被拦成追问，
+        // 测不到本用例要测的"表达式引用缺失字段"那条分支。单号在这里只是脚手架。
+        AgentResult second = machine().run("订单90001引用缺失字段", null, EventSink.NOOP);
         assertEquals(FallbackReason.TOOL_UNAVAILABLE, second.fallbackReason());
         verify(bizMock, never()).call(eq(ToolName.APPLY_REFUND), anyMap(), any());
     }
@@ -183,7 +185,7 @@ class PlanExecutionTest {
                         "{\"status\":\"NOT_FOUND\",\"message\":\"订单不存在\"}", false));
         when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("这笔订单查不到，请核对订单号"));
 
-        AgentResult result = machine().run("查不到就别退了", null, EventSink.NOOP);
+        AgentResult result = machine().run("订单99999查不到就别退了", null, EventSink.NOOP);
 
         verify(bizMock, times(1)).call(any(), anyMap(), any());
         verify(bizMock, never()).call(eq(ToolName.APPLY_REFUND), anyMap(), any());

@@ -18,6 +18,8 @@ import java.util.Map;
  * 工具执行前的槽位校验与调用分发。
  *
  * <p>缺必填槽位一律交回状态机追问，绝不猜（猜订单号等于拿别人的订单）。
+ * 订单号还要再过一道**溯源**：格式合法但买家在对话里没说过，同样按编造处理——模型照抄工具
+ * schema 描述里的示例值 `例如 10023` 就是这么进来的（ADR 0045 票 56）。
  */
 @Component
 public class ToolDispatcher {
@@ -36,7 +38,8 @@ public class ToolDispatcher {
     private static final java.util.regex.Pattern ORDER_NO = java.util.regex.Pattern.compile("\\d{1,12}");
 
     /**
-     * @param fabricated 模型给出的订单号格式非法，等同于凭空编造，不允许发起查询
+     * @param fabricated 模型给出的订单号**不可信**：格式非法、或格式合法但买家在对话里没说过。
+     *                   两种情况都不允许发起查询（ADR 0045 票 56）
      */
     public record Dispatch(ToolName tool, ToolStatus status, String json, List<String> missingSlots, String label,
                            boolean fabricated, boolean duplicate) {
@@ -55,7 +58,11 @@ public class ToolDispatcher {
         }
     }
 
-    public Dispatch dispatch(LlmTypes.ToolCall call, String idempotencyToken) {
+    /**
+     * @param dialogue 买家说过的话（本轮 query + 历史买家轮次），用于订单号溯源；由状态机传进来，
+     *                 因为它才是掌握会话的地方。见 {@link #isUntrustedOrderNo}
+     */
+    public Dispatch dispatch(LlmTypes.ToolCall call, String idempotencyToken, String dialogue) {
         ToolName tool = ToolName.fromApiName(call.name());
         if (tool == null) {
             return new Dispatch(null, ToolStatus.UNAVAILABLE,
@@ -67,7 +74,7 @@ public class ToolDispatcher {
         if (!missing.isEmpty()) {
             return new Dispatch(tool, null, null, missing, label(tool, arguments), false, false);
         }
-        if (isFabricatedOrderNo(arguments.get("orderNo"))) {
+        if (isUntrustedOrderNo(arguments.get("orderNo"), dialogue)) {
             // 宁可回一句"请提供正确订单号"，也不能拿一个编造的单号去撞库：那是越权探测的入口
             return new Dispatch(tool, null, null, List.of("orderNo"), null, true, false);
         }
@@ -113,8 +120,40 @@ public class ToolDispatcher {
         }
     }
 
-    private static boolean isFabricatedOrderNo(Object orderNo) {
-        return orderNo != null && !ORDER_NO.matcher(String.valueOf(orderNo).trim()).matches();
+    /**
+     * 订单号是否**不可信**。两道判据叠加，缺一不可（ADR 0045 票 56 定了口径）：
+     *
+     * <p>① **格式**：与 biz-mock 的造数一致（1-12 位数字），拦住明显不是单号的长串；
+     * <p>② **溯源**：格式合法还不够，这个值必须**在买家说过的话里出现过**。
+     *
+     * <p>为什么要第二道：本地 3B 模型会把工具 schema 描述里的示例值（`平台订单号，例如 10023`）
+     * 直接填进 `orderNo`，而 `10023` 格式完全合法——只查格式拦不住，工具就真的带着一个没人报过的
+     * 单号去撞库。这条也是 gold 的要求：`eval/cases-part2-action.jsonl` 的 `ACT-LOG-12` 逐字写着
+     * `"slotAsk": true` 且 `"mustNotContainArgs": ["orderNo"]`。
+     *
+     * <p>**判据面只算买家说过的**（本轮 query + 历史买家轮次，由状态机传入）：助手回复可能转述过
+     * 模型编的单号，检索回来的政策条款里也可能有数字——把它们算进来等于用自己编的东西给自己背书。
+     *
+     * <p>**已知边界**：溯源用子串匹配。所以"买家把单号拆开写、模型又给归一化了"（如买家写
+     * `900-02`、模型给 `90002`）会被判成不可信、退回追问一次。宁可多问一句也不拿没出处的东西
+     * 撞库——追问的代价是体验，撞库的代价是越权探测。换更宽的匹配（例如只比数字串）会让
+     * "模型从别处抄个数字"重新变得可能，得不偿失。
+     *
+     * <p>**另一条边界（写在代码里，免得下一个人踩）**：判据面**只算买家说过的话，不含前步工具结果**。
+     * 今天这样够用：四个工具都不会返回「别的订单」，计划链后步引用的单号本来就是买家报给前步的那个值，
+     * 所以在买家话里找得到。**若将来加入 `queryOrderList` 这类一次返回多单的工具**，后步就可能引用
+     * 一个买家从没报过的单号，那时必须把前步结果一并纳入判据面，否则计划链会被误拦。登记在
+     * round20 spec 的登记节。
+     */
+    private static boolean isUntrustedOrderNo(Object orderNo, String dialogue) {
+        if (orderNo == null) {
+            return false;
+        }
+        String value = String.valueOf(orderNo).trim();
+        if (!ORDER_NO.matcher(value).matches()) {
+            return true;
+        }
+        return dialogue == null || !dialogue.contains(value);
     }
 
     public List<String> missingSlots(ToolName tool, Map<String, Object> arguments) {
