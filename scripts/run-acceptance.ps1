@@ -62,6 +62,10 @@ $steps = [ordered]@{
     hitzero   = @{ Kind = 'ps1'; Cmd = 'scripts\verify-hit-zero-llm.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('全部通过：命中路径零模型调用') }
     action    = @{ Kind = 'ps1'; Cmd = 'scripts\verify-action-loop.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('业务办理闭环验收通过') }
     idem      = @{ Kind = 'ps1'; Cmd = 'scripts\verify-idempotency.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('state check rejected it') }
+    # round21 票 62（ADR 0047）：退款审批闸门端到端——受理→审核队列→放行/驳回→买家读回。
+    # 排在 idem 之后：两者都要打模型发 applyRefund，同一条重负载路径，挨着排不额外压栈。
+    # 既有 22 步的任何判据都没动，这一步是 add-only。
+    refund    = @{ Kind = 'ps1'; Cmd = 'scripts\verify-refund-approval.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('退款审批闸门验收通过') }
     fallback  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-fallback.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('queue size:') }
     ratelimit = @{ Kind = 'ps1'; Cmd = 'scripts\verify-ratelimit.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('rate_limited') }
     polarity  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-polarity.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('验收通过') }
