@@ -31,6 +31,18 @@ public enum ToolName {
         return description;
     }
 
+    /**
+     * 该动作是否需要人工审批（ADR 0047）。判据是「**不可逆或涉及资金**」，不是「是否写库」——
+     * 所以 {@link #MODIFY_DELIVERY_ADDRESS}（写 {@code address_history}、有版本、可再改回）不入闸门，
+     * 而 {@link #APPLY_REFUND} 入闸门。声明式挂在这里（与 {@link #intent()} 同层），强制点在 biz-mock
+     * （状态真相的所有者）；下次给别的动作加闸门是加一行分类，不是重设计。
+     *
+     * <p>先例是 {@code IdempotencyService.isWrite(ToolName)} —— 但那是"是否写库"的判据，与本节不同。
+     */
+    public boolean requiresApproval() {
+        return this == APPLY_REFUND;
+    }
+
     public static ToolName fromApiName(String name) {
         return Arrays.stream(values())
                 .filter(t -> t.apiName.equals(name))

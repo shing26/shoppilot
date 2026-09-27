@@ -67,6 +67,10 @@ public class Refund {
         return id;
     }
 
+    public String getTenantId() {
+        return tenantId;
+    }
+
     public String getOrderId() {
         return orderId;
     }
@@ -81,6 +85,11 @@ public class Refund {
 
     public String getStatus() {
         return status;
+    }
+
+    /** 只由审核动作推进（ADR 0047）：受理后 {@code PENDING_REVIEW} → {@code PROCESSING}/{@code REJECTED}。 */
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public Instant getCreatedAt() {

@@ -63,6 +63,16 @@ public class ToolDispatcher {
      *                 因为它才是掌握会话的地方。见 {@link #isUntrustedOrderNo}
      */
     public Dispatch dispatch(LlmTypes.ToolCall call, String idempotencyToken, String dialogue) {
+        return dispatch(call, idempotencyToken, dialogue, null);
+    }
+
+    /**
+     * @param requestFingerprint 本轮 query 的指纹，用于请求级幂等回放索引；拿不到就传 null
+     *                           （那时不写、也不查索引，行为与 ADR 0008 时期一致）。见
+     *                           {@link IdempotencyService#lookupByClientToken}
+     */
+    public Dispatch dispatch(LlmTypes.ToolCall call, String idempotencyToken, String dialogue,
+                             String requestFingerprint) {
         ToolName tool = ToolName.fromApiName(call.name());
         if (tool == null) {
             return new Dispatch(null, ToolStatus.UNAVAILABLE,
@@ -79,18 +89,30 @@ public class ToolDispatcher {
             return new Dispatch(tool, null, null, List.of("orderNo"), null, true, false);
         }
         if (IdempotencyService.isWrite(tool)) {
-            return executeWrite(tool, arguments, idempotencyToken);
+            return executeWrite(tool, arguments, idempotencyToken, requestFingerprint);
         }
         BizMockClient.Outcome outcome = bizMockClient.call(tool, arguments,
                 null);
         return new Dispatch(tool, outcome.status(), outcome.json(), List.of(), label(tool, arguments), false, false);
     }
 
+    /**
+     * 请求级回放查询（ADR 0046 票 58）。放在这里而不是状态机，是因为"什么算同一次提交"这件事
+     * 本来就归 {@link IdempotencyService} 管，而它只被本类持有——状态机不必为它多一个依赖。
+     */
+    public java.util.Optional<IdempotencyService.Replay> lookupReplay(String idempotencyToken,
+                                                                      String requestFingerprint) {
+        return idempotency.lookupByClientToken(TenantContext.tenantId(), TenantContext.customerId(),
+                idempotencyToken, requestFingerprint);
+    }
+
     /** 写操作：先过幂等与业务锁，只有执行成功的结果才落成幂等结果。 */
-    private Dispatch executeWrite(ToolName tool, Map<String, Object> arguments, String clientToken) {
+    private Dispatch executeWrite(ToolName tool, Map<String, Object> arguments, String clientToken,
+                                  String requestFingerprint) {
         String tenantId = TenantContext.tenantId();
         String customerId = TenantContext.customerId();
-        IdempotencyService.Guard guard = idempotency.begin(tenantId, customerId, tool, arguments, clientToken);
+        IdempotencyService.Guard guard =
+                idempotency.begin(tenantId, customerId, tool, arguments, clientToken, requestFingerprint);
         if (guard.duplicate()) {
             // 幂等重放 = 买家把同一个动作又发了一遍，是满意度的隐式负信号（ADR 0039 / 票 37）
             registry.counter("shoppilot_feedback_implied_total", "kind", "implied_retry").increment();
@@ -104,7 +126,10 @@ public class ToolDispatcher {
         }
         try {
             BizMockClient.Outcome outcome = bizMockClient.call(tool, arguments, guard.token());
-            if (outcome.status() == ToolStatus.OK) {
+            if (outcome.status() == ToolStatus.OK || outcome.status() == ToolStatus.PENDING_APPROVAL) {
+                // 受理（PENDING_APPROVAL）也算"首次执行成功"：它是一条确定的结果，必须落幂等。
+                // 不落这行，同 token 第二次会落到 biz-mock 的 IDEMPOTENT_REPLAY 而不经网关 duplicate 分支，
+                // duplicate_submit 会消失（ADR 0047 决策九）。两者都不是失败，都不该 abandon。
                 idempotency.complete(tenantId, customerId, tool, guard, outcome.json());
             } else {
                 // 业务拒绝不能固化：状态改好了以后用户有权再试一次

@@ -101,8 +101,8 @@ class PlanExecutionTest {
     /** 幂等层放行：不重复、不忙锁、无缓存结果（本类测的是计划执行语义，不是幂等）。 */
     private static IdempotencyService idempotencyStub() {
         IdempotencyService idempotency = mock(IdempotencyService.class);
-        when(idempotency.begin(any(), any(), any(), any(), any()))
-                .thenReturn(new IdempotencyService.Guard(false, false, null, "plan-test-token", null));
+        when(idempotency.begin(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new IdempotencyService.Guard(false, false, null, "plan-test-token", null, null, null));
         return idempotency;
     }
 

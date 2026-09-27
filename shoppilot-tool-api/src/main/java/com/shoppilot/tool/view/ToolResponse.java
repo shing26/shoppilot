@@ -21,6 +21,15 @@ public record ToolResponse<T>(
         return new ToolResponse<>(tool, ToolStatus.OK, payload, null, List.of());
     }
 
+    /**
+     * 需要人工审批的资金动作已受理（ADR 0047）。语义是**受理**不是**失败**，所以 payload 非空、
+     * 且不并入 {@link #succeeded()}（那会涟漪到所有把 `OK` 当"办成"的调用点；判"已受理"一律用
+     * {@code status == ToolStatus.PENDING_APPROVAL}）。
+     */
+    public static <T> ToolResponse<T> pendingApproval(String tool, T payload) {
+        return new ToolResponse<>(tool, ToolStatus.PENDING_APPROVAL, payload, null, List.of());
+    }
+
     public static <T> ToolResponse<T> failure(String tool, ToolStatus status, String message, List<String> allowedActions) {
         return new ToolResponse<>(tool, status, null, message, allowedActions == null ? List.of() : allowedActions);
     }

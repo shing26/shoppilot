@@ -115,7 +115,8 @@ class TenantIsolationAndIdempotencyTest {
         String refundToken = "norefund-args-" + System.nanoTime();
         JsonNode refund = call("/api/tools/applyRefund", "{\"orderNo\":\"" + target.orderNo() + "\"}",
                 target.tenantId(), target.customerId(), refundToken);
-        assertThat(refund.path("status").asText()).isEqualTo("OK");
+        // 受理态（ADR 0047）：资金未放行，落 PENDING_REVIEW 并回 PENDING_APPROVAL
+        assertThat(refund.path("status").asText()).isEqualTo("PENDING_APPROVAL");
         // RefundView 不回传 reason，落库侧验默认值才算数
         List<String> stored = jdbc.queryForList(
                 "select reason || '|' || amount_fen from refunds where order_id = ? and idempotency_token = ?",
@@ -154,7 +155,7 @@ class TenantIsolationAndIdempotencyTest {
             pool.shutdownNow();
         }
 
-        assertThat(statuses.stream().filter("OK"::equals).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter("PENDING_APPROVAL"::equals).count()).isEqualTo(1);
         assertThat(statuses.stream().filter("IDEMPOTENT_REPLAY"::equals).count()).isEqualTo(attempts - 1L);
         Integer rows = jdbc.queryForObject(
                 "select count(*) from refunds where order_id = ? and idempotency_token = ?", Integer.class,

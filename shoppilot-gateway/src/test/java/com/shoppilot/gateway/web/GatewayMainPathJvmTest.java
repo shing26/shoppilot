@@ -717,6 +717,98 @@ class GatewayMainPathJvmTest {
         verify(bizMock).call(eq(ToolName.QUERY_LOGISTICS), anyMap(), eq(null));
     }
 
+    @Test
+    @DisplayName("请求级幂等回放：同 token 重试不再问模型、不重复执行，直接回放首次结果（ADR 0046 票 58）")
+    void repeatedRequestReplaysTheFirstResultWithoutCallingTheModel() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        BizMockClient bizMock = mock(BizMockClient.class);
+        FallbackService fallback = mock(FallbackService.class);
+        IdempotencyService idempotency = mock(IdempotencyService.class);
+        // 首次执行留下的结果：索引命中后回放的就是它（真实实现里 complete() 写指针、结果另存一个键）
+        when(idempotency.lookupByClientToken(eq(TENANT), eq(CUSTOMER), eq("tok-1"), anyString()))
+                .thenReturn(Optional.of(new IdempotencyService.Replay(ToolName.APPLY_REFUND,
+                        "{\"status\":\"OK\",\"payload\":{\"refundId\":\"RF-777\",\"orderNo\":\"90001\","
+                                + "\"status\":\"PROCESSING\"}}")));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, idempotency, registry);
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_REFUND, "T1", true),
+                mock(CacheService.class), llm, dispatcher, fallback);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"这单我要退款 90001\",\"idempotencyToken\":\"tok-1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value(containsString("RF-777")))
+                .andExpect(jsonPath("$.answer").value(containsString("本次没有重复提交")))
+                .andExpect(jsonPath("$.toolUsed").value(true));
+
+        // 回放的全部意义就在这四条：不打模型、不重复执行、不当成降级落工单
+        verify(llm, never()).complete(any());
+        verify(llm, never()).stream(any(), any());
+        verify(bizMock, never()).call(any(), anyMap(), any());
+        verify(fallback, never()).escalate(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("正对照：请求里没有 token 时不查索引——回放不该被无条件触发")
+    void withoutAClientTokenTheRequestNeverLooksUpTheReplayIndex() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("已为您登记退款申请"));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("已为您登记退款申请"));
+        IdempotencyService idempotency = mock(IdempotencyService.class);
+        ToolDispatcher dispatcher = new ToolDispatcher(mock(BizMockClient.class), idempotency, registry);
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_REFUND, "T1", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"这单我要退款 90001\"}"))
+                .andExpect(status().isOk());
+
+        verify(idempotency, never()).lookupByClientToken(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("退款受理：PENDING_APPROVAL 回确定性受理话术并收尾，不打第二跳模型（ADR 0047 票 59）")
+    void refundApprovalStopsAtTheGateWithoutASecondModelHop() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.complete(any())).thenReturn(new LlmTypes.Reply("", List.of(
+                new LlmTypes.ToolCall("call-refund-1", ToolName.APPLY_REFUND.apiName(), Map.of("orderNo", "90001"))),
+                12, 3, null));
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.APPLY_REFUND), anyMap(), anyString()))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.PENDING_APPROVAL,
+                        "{\"status\":\"PENDING_APPROVAL\",\"payload\":{\"refundId\":\"RF-777\",\"orderNo\":\"90001\","
+                                + "\"status\":\"PENDING_REVIEW\"}}", false));
+        IdempotencyService idempotency = mock(IdempotencyService.class);
+        when(idempotency.begin(anyString(), anyString(), any(ToolName.class), anyMap(), any(), any()))
+                .thenReturn(new IdempotencyService.Guard(false, false, null, "tok", null, null, () -> {
+                }));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, idempotency, registry);
+
+        FallbackService fallback = mock(FallbackService.class);
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_REFUND, "T1", true),
+                mock(CacheService.class), llm, dispatcher, fallback);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"订单90001申请退款\"}"))
+                .andExpect(status().isOk())
+                // 受理话术写明资金未动、等待人工审核，并带上申请编号（只可能来自工具结果）
+                .andExpect(jsonPath("$.answer").value(containsString("等待人工审核")))
+                .andExpect(jsonPath("$.answer").value(containsString("RF-777")))
+                .andExpect(jsonPath("$.toolUsed").value(true))
+                .andExpect(jsonPath("$.fallbackReason").doesNotExist());
+
+        // 受理即收尾：一次规划调用，没有第二跳、没有流式总结、不落工单（受理不是降级）
+        verify(llm, times(1)).complete(any());
+        verify(llm, never()).stream(any(), any());
+        verify(fallback, never()).escalate(any(), any(), any());
+        assertEquals(1.0d, registry.get("shoppilot_refund_pending_total").counter().count());
+    }
+
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
                             ToolDispatcher dispatcher, FallbackService fallback) {
         return mockMvc(triageResult, cache, llm, dispatcher, fallback, perfModeGate());

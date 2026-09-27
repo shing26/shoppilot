@@ -140,6 +140,20 @@ public class AgentStateMachine {
                     "emotion=" + sentiment.emotion() + " via " + sentiment.source(), styleTier);
         }
 
+        String requestFingerprint = requestFingerprint(query, idempotencyToken);
+
+        // 请求级幂等回放（ADR 0046 票 58）：客户端带着同一个 token 重试**同一次请求**时，回放首次结果，
+        // 不打模型、也不重复执行。放这一位置有两条理由：① 不扰动上面那道情绪门的既有优先级（ADR 0034/0042
+        // 的排序是两次回归换来的，回放不该抢在安全出口之前）；② 放在 hasPending 之前——回放不是槽位补齐。
+        // 它刻意**不**走 fallback 出口：回放不是降级，落工单会污染「降级 9」的口径（ADR 0009/0046）。
+        if (requestFingerprint != null) {
+            Optional<IdempotencyService.Replay> replay =
+                    dispatcher.lookupReplay(idempotencyToken.trim(), requestFingerprint);
+            if (replay.isPresent()) {
+                return replayAnswer(replay.get(), session, query, sink, trace, tenantId, customerId, conversationId);
+            }
+        }
+
         if (session.hasPending()) {
             sink.meta(conversationId, null, CacheService.Layer.NONE);
             return resumePending(session, query, idempotencyToken, tenantId, customerId, conversationId, trace, sink,
@@ -314,7 +328,8 @@ public class AgentStateMachine {
             LlmTypes.ToolCall call = new LlmTypes.ToolCall(rawCall.id(), rawCall.name(), resolution.arguments());
             messages.add(LlmTypes.Message.assistant(lastReply.content(), List.of(call)));
             long dispatchStarted = System.nanoTime();
-            ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken, dialogueText(query, session));
+            ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken,
+                    dialogueText(query, session), requestFingerprint(query, idempotencyToken));
             long dispatchMillis = (System.nanoTime() - dispatchStarted) / 1_000_000L;
             if (dispatch.unknown()) {
                 // 模型编出了不存在的工具：不拿 null 工具往下走，直接兜底
@@ -354,6 +369,12 @@ public class AgentStateMachine {
                     dispatch.tool() == null ? call.name() : dispatch.tool().apiName(),
                     dispatch.status() == null ? "UNKNOWN" : dispatch.status().name(),
                     dispatchMillis, resolution.arguments()));
+            if (dispatch.status() == ToolStatus.PENDING_APPROVAL) {
+                // 受理即收尾（ADR 0047 票 59）：资金动作已受理、等待人工审核，不打第二跳模型。
+                // 受理不是失败，不走 fallback 出口——落工单会污染「降级 9」的口径与 ADR 0009 的语义。
+                return ModelRun.solo(pendingApprovalAnswer(dispatch, session, query, sink, trace, tenantId,
+                        customerId, triage.layer(), List.copyOf(planSteps)));
+            }
             messages.add(LlmTypes.Message.tool(call.id(), dispatch.json()));
             if (failedStep(dispatch.status()) && rounds < properties.agent().maxToolRounds()) {
                 // 前步失败即中止整条 Plan（ADR 0036）：后步的前提已不成立，不让模型继续往下调。
@@ -618,7 +639,8 @@ public class AgentStateMachine {
                     AgentResult.ContextComposition.NONE);
         }
         LlmTypes.ToolCall call = new LlmTypes.ToolCall("resumed", tool.apiName(), arguments);
-        ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken, dialogueText(query, session));
+        ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken, dialogueText(query, session),
+                requestFingerprint(query, idempotencyToken));
         step(trace, sink, AgentState.TOOL_EXEC, tool + "=" + dispatch.status());
         if (dispatch.duplicate()) {
             sink.duplicateSubmit(tool, "该请求已处理过，本次未重复执行");
@@ -626,6 +648,10 @@ public class AgentStateMachine {
             sink.toolExecuting(tool, dispatch.label());
         }
         sink.toolResult(tool, dispatch.status(), summarize(dispatch));
+        if (dispatch.status() == ToolStatus.PENDING_APPROVAL) {
+            return pendingApprovalAnswer(dispatch, session, query, sink, trace, tenantId, customerId, "SESSION",
+                    List.of());
+        }
         sessionStore.save(tenantId, customerId, clearPending(session));
         if (dispatch.degraded()) {
             return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query,
@@ -804,6 +830,62 @@ public class AgentStateMachine {
      * 就白设了。续办路径天然覆盖：{@code resumePending} 的参数由 {@code extractSlots(tool, query)}
      * 从**本轮补充的那句话**里取，而那句话就是这里的 query。
      */
+    /**
+     * 请求指纹：本轮 query 归一化后的哈希（ADR 0046 票 58）。
+     *
+     * <p>只在客户端**显式**带了 token 时才算，否则返回 null。两条理由：派生 token 在模型之前算不出来
+     * （它要工具参数），而"客户端复用旧 token 却换了要求"这个问题也只在显式 token 下存在。传 null 时
+     * 幂等层既不写、也不查请求级索引 —— 行为与 ADR 0008 时期逐字一致。
+     */
+    private static String requestFingerprint(String query, String idempotencyToken) {
+        if (idempotencyToken == null || idempotencyToken.isBlank()) {
+            return null;
+        }
+        return QueryNormalizer.md5(QueryNormalizer.normalize(query));
+    }
+
+    /**
+     * 幂等回放的回答出口：确定性话术 + {@code duplicate_submit} 事件，不打模型、不落缓存、不进工具循环。
+     *
+     * <p>会话照常推进（回放也是这一轮真实发生过的事，下一轮该看得到它），并清掉待办动作——若走到这里，
+     * 说明那次请求已经办成过，会话上不该还挂着一个待补的槽位。
+     */
+    private AgentResult replayAnswer(IdempotencyService.Replay replay, SessionStore.Session session, String query,
+                                     EventSink sink, List<AgentResult.TraceStep> trace, String tenantId,
+                                     String customerId, String conversationId) {
+        Intent intent = replay.tool().intent();
+        String answer = ReplayReply.render(replay.tool(), replay.resultJson());
+        sink.meta(conversationId, intent, CacheService.Layer.NONE);
+        step(trace, sink, AgentState.REPLY, "replay=" + replay.tool().apiName());
+        sink.duplicateSubmit(replay.tool(), answer);
+        sessionStore.save(tenantId, customerId, sessionStore.appendTurn(clearPending(session), query, answer));
+        sink.token(answer);
+        return new AgentResult(answer, intent, "replay", CacheService.Layer.NONE, List.of(), trace, null, null,
+                false, 0, 0, true, false, promptCatalog.version(), List.of(),
+                AgentResult.ContextComposition.NONE);
+    }
+
+    /**
+     * 退款审批闸门的受理出口（ADR 0047 票 59）：确定性受理话术 + {@code shoppilot_refund_pending_total}，
+     * 不打模型、不落缓存、不进工具循环。会话照常推进并清掉待办动作——受理已经发生过。
+     *
+     * <p>与 {@link #replayAnswer} 的区别是事件：受理推的是 {@code tool_result}（已在调用点发出），
+     * 不是 {@code duplicate_submit} —— 这是**新受理的一笔**，不是重复提交。
+     */
+    private AgentResult pendingApprovalAnswer(ToolDispatcher.Dispatch dispatch, SessionStore.Session session,
+                                              String query, EventSink sink, List<AgentResult.TraceStep> trace,
+                                              String tenantId, String customerId, String layer,
+                                              List<AgentResult.PlanStep> planSteps) {
+        registry.counter("shoppilot_refund_pending_total").increment();
+        String answer = ReplayReply.pendingApproval(dispatch.tool(), dispatch.json());
+        step(trace, sink, AgentState.REPLY, "pending-approval=" + dispatch.tool().apiName());
+        sessionStore.save(tenantId, customerId, sessionStore.appendTurn(clearPending(session), query, answer));
+        sink.token(answer);
+        return new AgentResult(answer, dispatch.tool().intent(), layer, CacheService.Layer.NONE, List.of(), trace,
+                null, null, false, 0, 0, true, false, promptCatalog.version(), planSteps,
+                AgentResult.ContextComposition.NONE);
+    }
+
     private static String dialogueText(String query, SessionStore.Session session) {
         StringBuilder text = new StringBuilder(query == null ? "" : query);
         if (session != null && session.turns() != null) {

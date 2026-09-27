@@ -201,19 +201,117 @@ public class BizMockService {
         try {
             Refund saved = transactionTemplate.execute(status -> {
                 Refund inserted = refundRepository.save(new Refund(TenantContextHolder.tenantId(), orderId,
-                        order.getCustomerId(), amount, reason, idempotencyToken, "PROCESSING",
+                        order.getCustomerId(), amount, reason, idempotencyToken, PENDING_REVIEW,
                         Instant.now()));
                 order.setStatus(OrderStatus.REFUNDING);
                 orderRepository.save(order);
                 return inserted;
             });
-            return ToolResponse.ok(ToolName.APPLY_REFUND.apiName(), toRefundView(saved));
+            // 受理不是放行（ADR 0047）：资金要人工审核后才动。订单已在同一事务里置 REFUNDING
+            // （受理即冻结后续改动），所以"同一订单只允许一笔在办退款"由既有的 STATE_NOT_ALLOWED 分支守住。
+            return ToolResponse.pendingApproval(ToolName.APPLY_REFUND.apiName(), toRefundView(saved));
         } catch (DataIntegrityViolationException raceWithConcurrentSubmit) {
             return transactionTemplate.execute(status ->
                     refundRepository.findByOrderIdAndIdempotencyToken(orderId, idempotencyToken)
                             .map(winner -> replay(ToolName.APPLY_REFUND, winner))
                             .orElseGet(() -> ToolResponse.failure(ToolName.APPLY_REFUND.apiName(),
                                     ToolStatus.IDEMPOTENT_REPLAY, "重复提交已被唯一约束拦截", List.of())));
+        }
+    }
+
+    /** 退款单状态：受理后待人工审核。 */
+    private static final String PENDING_REVIEW = "PENDING_REVIEW";
+    /** 审核放行后进入资金处理。 */
+    private static final String PROCESSING = "PROCESSING";
+    /** 审核驳回。 */
+    private static final String REJECTED = "REJECTED";
+
+    /** 审核队列（ADR 0047）：只列待审核的退款单，租户由仓储的 {@code @TenantId} 谓词兜住。 */
+    @Transactional(readOnly = true)
+    public List<RefundView> listPendingRefunds() {
+        return refundRepository.findByStatusOrderByCreatedAtAsc(PENDING_REVIEW).stream()
+                .map(this::toRefundView).toList();
+    }
+
+    /**
+     * 人工审核退款申请（ADR 0047）：受理与放行拆成两态，资金放行必须由人触发。
+     *
+     * <p>{@code APPROVE} 把 {@code PENDING_REVIEW → PROCESSING}（**唯一不可逆迁移**）；
+     * {@code REJECT} 置 {@code REJECTED} 并按订单已落的时间戳**推导**回滚（不加 {@code prior_status} 列、
+     * 不做迁移）—— 回滚后订单回到 {@code PAID|SHIPPED|DELIVERED}，买家可再申请。
+     * 已审过的再审一律 {@code STATE_NOT_ALLOWED}。
+     *
+     * <p>{@code note} 不落库：驳回理由在 v1 不承诺给买家，而给审核者自己看的理由没有消费者；
+     * "审核发生过"由状态迁移 + 指标 + request-id 日志证明（ADR 0047 决策四）。
+     */
+    @Transactional
+    public ToolResponse<RefundView> reviewRefund(String refundId, String decision, String note) {
+        Long id = parseRefundId(refundId);
+        if (id == null) {
+            return ToolResponse.failure(ToolName.APPLY_REFUND.apiName(), ToolStatus.NOT_FOUND,
+                    "未找到该退款申请", List.of());
+        }
+        Optional<Refund> found = refundRepository.findById(id);
+        if (found.isEmpty()) {
+            return ToolResponse.failure(ToolName.APPLY_REFUND.apiName(), ToolStatus.NOT_FOUND,
+                    "未找到该退款申请", List.of());
+        }
+        Refund refund = found.get();
+        if (!TenantContextHolder.tenantId().equals(refund.getTenantId())) {
+            // find(id) 不拼接 @TenantId 谓词（只有查询会），所以这里显式比对一次——
+            // 与订单归属同一口径：跨租户一律归入 NOT_FOUND，不区分"存在但不可见"。
+            return ToolResponse.failure(ToolName.APPLY_REFUND.apiName(), ToolStatus.NOT_FOUND,
+                    "未找到该退款申请", List.of());
+        }
+        if (!PENDING_REVIEW.equals(refund.getStatus())) {
+            return ToolResponse.failure(ToolName.APPLY_REFUND.apiName(), ToolStatus.STATE_NOT_ALLOWED,
+                    "该退款申请已审核过，当前状态为 " + refund.getStatus(), List.of());
+        }
+        if ("APPROVE".equalsIgnoreCase(decision)) {
+            refund.setStatus(PROCESSING);
+            return ToolResponse.ok(ToolName.APPLY_REFUND.apiName(), toRefundView(refundRepository.save(refund)));
+        }
+        if ("REJECT".equalsIgnoreCase(decision)) {
+            refund.setStatus(REJECTED);
+            Refund saved = refundRepository.save(refund);
+            rollbackOrder(refund.getOrderId());
+            return ToolResponse.ok(ToolName.APPLY_REFUND.apiName(), toRefundView(saved));
+        }
+        throw new IllegalArgumentException("未知审核决定 " + decision + "，可选 APPROVE / REJECT");
+    }
+
+    /**
+     * 驳回回滚：先前状态由订单已落的时间戳**无损推导**（ADR 0047 决策四）。
+     * 退款只对 {@code PAID|SHIPPED|DELIVERED} 开放，故这四个分支覆盖全部合法入手态。
+     */
+    private void rollbackOrder(String orderId) {
+        orderRepository.findById(orderId).ifPresent(order -> {
+            order.setStatus(derivePriorStatus(order));
+            orderRepository.save(order);
+        });
+    }
+
+    private static OrderStatus derivePriorStatus(Order order) {
+        if (order.getDeliveredAt() != null) {
+            return OrderStatus.DELIVERED;
+        }
+        if (order.getShippedAt() != null) {
+            return OrderStatus.SHIPPED;
+        }
+        if (order.getPaidAt() != null) {
+            return OrderStatus.PAID;
+        }
+        return OrderStatus.CREATED;
+    }
+
+    private static Long parseRefundId(String refundId) {
+        if (refundId == null || refundId.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(refundId.trim());
+        } catch (NumberFormatException notANumber) {
+            return null;
         }
     }
 
