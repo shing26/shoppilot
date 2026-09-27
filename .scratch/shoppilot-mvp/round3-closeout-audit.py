@@ -530,12 +530,14 @@ body_a = len(re.findall(r"(?m)^A：", qa))
 # 换代指针（2026-09-23 事实性修正）：round18 的票 42-44 收尾后本文件一直没重生成，头部停在
 # 157/42；重生后 166/45。同期修掉票 14 追问里的一处错枚举（漏 INTENT_UNRESOLVED、又把主动
 # 转人工计进「七种」），问答库与生成源重新逐字一致。
-# 判据本身没放宽：头部计数、正文 Q 条目、A 条目三者仍必须逐字相等。
-check("E5 问答库 202 问、头部计数 = 正文 Q 条目 = 答案条数",
-      head_line is not None and int(head_line.group(1)) == 202 == body_q == body_a and body_a == 202,
+# 换代指针（round21 收口）：票 59-63 的 Handoff 追问进入生成源，问答库 190 → **223**，
+# 覆盖 53 → **64** 个 ticket（票 01-63 全部有收尾记录）。判据本身没放宽：头部计数、
+# 正文 Q 条目、A 条目三者仍必须逐字相等。
+check("E5 问答库 223 问、头部计数 = 正文 Q 条目 = 答案条数",
+      head_line is not None and int(head_line.group(1)) == 223 == body_q == body_a and body_a == 223,
       f"头部 {head_line.group(1) if head_line else '-'}，正文 Q {body_q}，A {body_a}")
-check("E5b 问答库覆盖 57 个 ticket 且无缺收尾记录",
-      head_line is not None and head_line.group(2) == "57" and "缺收尾记录" not in qa,
+check("E5b 问答库覆盖 64 个 ticket 且无缺收尾记录",
+      head_line is not None and head_line.group(2) == "64" and "缺收尾记录" not in qa,
       f"头部行 {head_line.group(0) if head_line else '-'}；正文无缺收尾记录={'缺收尾记录' not in qa}")
 
 ticket20 = read(REPO / ".scratch" / "shoppilot-mvp" / "issues" / "20-action-order-attribution.md")

@@ -9,7 +9,7 @@
   LOCAL  G4 落点为 17 步全绿、总耗时 511s
   LOCAL  G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）
   LOCAL  G5b README 索引行与落点矩阵同读数
-  LOCAL  G6 surefire 3 + 12 + 206 = 221（build 与 unit 两份日志的 Results 段各自核过）
+  LOCAL  G6 surefire 5 + 29 + 290 = 324（build 与 unit 两份日志的 Results 段各自核过）
   LOCAL  G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0
   LOCAL  G8 打字机断言落在 > 60 字这一真判据上（未放宽）
   LOCAL  H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符
@@ -22,16 +22,16 @@
 ==============================================================================
 A. 零额度 / git 状态
 ==============================================================================
-PASS  A1 origin/main == HEAD
-        HEAD=accff4343 origin/main=accff4343
-PASS  A2 工作树 clean（审计自身读数产物除外，见 A2b）
-        无输出（当轮审计脚本已提交）
+FAIL  A1 origin/main == HEAD
+        HEAD=25f6dba4e origin/main=c28eb0446
+FAIL  A2 工作树 clean（审计自身读数产物除外，见 A2b）
+        未提交且不可豁免 7 项：['.scratch/shoppilot-mvp/round3-closeout-audit.py', 'docs/EVIDENCE.md', 'docs/console.png', 'eval/results/tool-eval-20260928-040944-rescore.csv', 'eval/results/tool-eval-20260928-052219-local-smoke-meta.json', 'eval/results/tool-eval-20260928-052219-local-smoke-summary.csv', 'eval/results/tool-eval-20260928-052219-local-smoke.csv']
 PASS  A2b 自排除名单不得长出文档/脚本路径（防长成免检通道）
         名单 ['.scratch/shoppilot-mvp/round3-closeout-audit.txt']；本次实际被豁免 ['.scratch/shoppilot-mvp/round3-closeout-audit.txt']
 PASS  A3 tokensUsedToday == 0（本轮零额度）
         tokensUsedToday=0 mode=local budget=260000
 PASS  A3b 本轮提交信息里没有花钱跑测的痕迹（零额度的离线反证）
-        bb45004..HEAD 共 46 笔提交，无一含花钱跑测字样
+        c28eb04..HEAD 共 8 笔提交，无一含花钱跑测字样
 
 ==============================================================================
 B. 判据与阈值未被改动（反刷分）
@@ -46,7 +46,7 @@ PASS  B5 唯一判据：tool_ok 赋值只在 judge() 内
 PASS  B6 第三轮窗口改动面未越界（判据/gold/ADR/PLAN/CONTEXT/Java 零改动；注意白名单含 scripts 那两支 ps1）
         11a12ac..a6ccdcb 共 14 个文件，全在白名单内
 PASS  B7 本轮窗口未碰内容级禁面（gold 与判据阈值所在文件、既有 ADR 出现即红；改动清单为读数）
-        禁面零命中；bb45004..HEAD 改动 86 个文件：.gitignore、.scratch/shoppilot-mvp/issues/21-bind-address-gated-credential-fail-fast.md、.scratch/shoppilot-mvp/issues/22-conversation-owned-by-shop-and-customer.md、.scratch/shoppilot-mvp/issues/23-dependency-health-outside-readiness.md、.scratch/shoppilot-mvp/issues/24-mdc-trace-correlation-across-async.md、.scratch/shoppilot-mvp/issues/25-rest-error-envelope.md、.scratch/shoppilot-mvp/issues/26-debug-console-remaining-defects.md、.scratch/shoppilot-mvp/issues/27-writeback-pool-shutdown-seam-and-saturation.md、.scratch/shoppilot-mvp/issues/28-config-format-validation-and-secret-non-echo.md、.scratch/shoppilot-mvp/issues/29-state-gauges-four-groups.md、.scratch/shoppilot-mvp/issues/30-bookkeeping-closure-readme-scopes-and-registries.md、.scratch/shoppilot-mvp/issues/31-crash-attribution-and-heap-caps.md、.scratch/shoppilot-mvp/round13-spec-backend-shell-hardening.md、.scratch/shoppilot-mvp/round14-spec-shutdown-metrics-and-evidence-closure.md、.scratch/shoppilot-mvp/round3-closeout-audit.py、.scratch/shoppilot-mvp/round3-closeout-audit.txt、.scratch/shoppilot-mvp/round3-plan.md、CONTEXT.md、README.md、docs/adr/0023-implementation-round-gate-switched-to-content-level-red-lines.md、docs/adr/0024-scope-is-interview-artifact-not-productionization.md、docs/adr/0025-conversation-owned-by-shop-and-customer.md、docs/adr/0026-degradable-dependencies-stand-outside-the-readiness-gate.md、docs/adr/0027-mdc-propagated-manually-across-async-boundaries.md、docs/adr/0028-rest-error-envelope-covers-gateway-generated-errors-only.md、docs/adr/0029-dev-defaults-legality-decided-by-bind-address.md、docs/adr/0030-round14-closure-scope-and-reopen-triggers.md、docs/console.png、docs/interview-qa.md、docs/prod-readiness-2026-09-12.md、scripts/clean_clone_check.ps1、scripts/ingest.ps1、scripts/run_experiment_suite.ps1、scripts/run_loadtest.py、scripts/start-bizmock.ps1、scripts/start-gateway.ps1、scripts/stop.ps1、scripts/verify-console.mjs、scripts/verify-plan-actions.ps1、scripts/watchdog.ps1、shoppilot-biz-mock/pom.xml、shoppilot-gateway/pom.xml、shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/AgentStateMachine.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/BizMockClient.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/SessionStore.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/cache/WriteBackPool.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/AsyncConfig.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/CircuitBreakerConfiguration.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/DependencyHealthConfiguration.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/DevDefaultsConfiguration.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/DevDefaultsEnvironmentPostProcessor.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/DevDefaultsPolicy.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/GatewayProperties.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/OpsAccess.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/RuntimeStateMetrics.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/ValidatedServerProperties.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/identity/AuthController.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/identity/AuthFilter.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/identity/MockIdentityCondition.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/identity/RequestTrace.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/knowledge/EsRestClient.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/web/ApiError.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/web/ApiErrorWriter.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/web/ChatController.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/web/GatewayErrorHandler.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/web/OpsController.java、shoppilot-gateway/src/main/resources/META-INF/spring.factories、shoppilot-gateway/src/main/resources/application.yml、shoppilot-gateway/src/main/resources/logback-spring.xml、shoppilot-gateway/src/main/resources/static/index.html、shoppilot-gateway/src/test/java/com/shoppilot/gateway/agent/ConversationOwnershipTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/cache/WriteBackPoolTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/config/ConfigValidationTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/config/DependencyHealthTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/config/DevDefaultsEnvironmentPostProcessorTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/config/DevDefaultsPolicyTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/config/DevDefaultsStartupBlockerTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/config/LogbackRotationTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/config/OpsAccessTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/config/RuntimeStateMetricsTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/config/ServedConsoleHidesDevDefaultsTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/identity/AuthFilterTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/identity/MockIdentityConditionTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/identity/RequestTraceTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/web/RestErrorEnvelopeTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/web/TraceCorrelationAcrossAsyncTest.java
+        禁面零命中；c28eb04..HEAD 改动 57 个文件：.gitattributes、.scratch/shoppilot-mvp/README.md、.scratch/shoppilot-mvp/issues/30-bookkeeping-closure-readme-scopes-and-registries.md、.scratch/shoppilot-mvp/issues/57-metric-count-and-report-provenance.md、.scratch/shoppilot-mvp/issues/58-idempotent-replay-before-the-model.md、.scratch/shoppilot-mvp/issues/59-refund-approval-gate.md、.scratch/shoppilot-mvp/issues/60-buyer-refund-readback.md、.scratch/shoppilot-mvp/issues/61-console-refund-review-panel.md、.scratch/shoppilot-mvp/issues/62-refund-approval-live-verification.md、.scratch/shoppilot-mvp/issues/63-round21-closeout.md、.scratch/shoppilot-mvp/round21-spec-last-mile-and-machine-backing.md、.scratch/shoppilot-mvp/round3-closeout-audit.py、CONTEXT.md、README.md、docs/CODE_MAP.md、docs/EVIDENCE.md、docs/adr/0046-round21-reopen-for-the-last-mile.md、docs/adr/0047-refund-review-is-a-state-transition-gate.md、docs/console.png、docs/interview-qa.md、eval/results/tool-eval-20260928-040944-rescore.csv、eval/results/tool-eval-20260928-044434-local-smoke-meta.json、eval/results/tool-eval-20260928-044434-local-smoke-summary.csv、eval/results/tool-eval-20260928-044434-local-smoke.csv、eval/results/tool-eval-20260928-050221-local-smoke-meta.json、eval/results/tool-eval-20260928-050221-local-smoke-summary.csv、eval/results/tool-eval-20260928-050221-local-smoke.csv、scripts/calibrate_threshold.py、scripts/provenance.py、scripts/retrieval_compare.py、scripts/run-acceptance.ps1、scripts/verify-console.mjs、scripts/verify-refund-approval.ps1、shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/domain/Refund.java、shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/repo/RefundRepository.java、shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/service/BizMockService.java、shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/web/RefundReviewController.java、shoppilot-biz-mock/src/test/java/com/shoppilot/bizmock/RefundReviewTest.java、shoppilot-biz-mock/src/test/java/com/shoppilot/bizmock/TenantIsolationAndIdempotencyTest.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/AgentStateMachine.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/IdempotencyService.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/ReplayReply.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/ToolDispatcher.java、shoppilot-gateway/src/main/java/com/shoppilot/gateway/web/OpsController.java、shoppilot-gateway/src/main/resources/static/index.html、shoppilot-gateway/src/test/java/com/shoppilot/gateway/agent/ConversationOwnershipTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/agent/IdempotencyServiceRequestReplayTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/agent/PlanExecutionTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/agent/ToolDispatcherApprovalTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/web/GatewayMainPathJvmTest.java、shoppilot-gateway/src/test/java/com/shoppilot/gateway/web/RestErrorEnvelopeTest.java、shoppilot-tool-api/src/main/java/com/shoppilot/tool/ToolName.java、shoppilot-tool-api/src/main/java/com/shoppilot/tool/view/OrderView.java、shoppilot-tool-api/src/main/java/com/shoppilot/tool/view/RefundReviewState.java、shoppilot-tool-api/src/main/java/com/shoppilot/tool/view/ToolResponse.java、shoppilot-tool-api/src/main/java/com/shoppilot/tool/view/ToolStatus.java、shoppilot-tool-api/src/test/java/com/shoppilot/tool/ToolContractApprovalTest.java
 
 ==============================================================================
 C. gold 标注边界（放开 4 条，其余不动）
@@ -73,7 +73,7 @@ PASS  D1 --selfcheck 退出码 0 且 ok=16
 PASS  D2 build_eval_set 退出码 0、对抗 72/180=40.0%、无 FAIL
         rc=0；  对抗样本 72/180 = 40.0%
 PASS  D3 verify_eval_judge 退出码 0 且 40/40 条断言全过
-        rc=0；合计行 ('40', '40')；FAIL 行 0；换行符漂移 0 个文件
+        rc=0；合计行 ('40', '40')；FAIL 行 0；换行符漂移 1 个文件
 PASS  D4 取证复跑未污染工作树（相对 A2 快照零新增）
         新增 []
 PASS  D4b 工作树快照解析稳定（同一批脏文件不得改名/被截断）
@@ -93,7 +93,7 @@ PASS  D10 复算临时产物已清理（不留未引用文件）
 E. 文档读数自洽（大小写敏感）
 ==============================================================================
 PASS  E1 README 有 93.3%+95.6% 并列的行 >= 3
-        行号 [178, 255, 267, 306]
+        行号 [215, 299, 311, 361]
 PASS  E2 对偶 8 个 id 在 README 可 grep
         缺 []
 PASS  E3 README 无假读数 `57/60`
@@ -101,13 +101,13 @@ PASS  E3 README 无假读数 `95.0%`
 PASS  E3 README 无假读数 `168/180 = 95.6%`
 PASS  E3 README 无假读数 `172/180 = 93.3%`
 PASS  E4 README 仍写明合并工具这条路被否决（钉同现行的三个特征，不是两个词各在不在）
-        命中行 [306]
+        命中行 [361]
 PASS  E4b 对照组：把那一行删掉后 E4 的判据必须变 False（钉这条不是恒绿）
         正本 True=True；删掉同现行后 False=True（删了 1 行）
-PASS  E5 问答库 93 问、头部计数 = 正文 Q 条目 = 答案条数
-        头部 93，正文 Q 93，A 93
-PASS  E5b 问答库覆盖 20 个 ticket 且无缺收尾记录
-        头部行 共 93 问，覆盖 20 个 ticket；正文无缺收尾记录=True
+PASS  E5 问答库 223 问、头部计数 = 正文 Q 条目 = 答案条数
+        头部 223，正文 Q 223，A 223
+PASS  E5b 问答库覆盖 64 个 ticket 且无缺收尾记录
+        头部行 共 223 问，覆盖 64 个 ticket；正文无缺收尾记录=True
 PASS  E6a 让位轮 185608 在 ticket 20 留痕
         README 0 处，ticket20 3 处
 PASS  E6b 未全绿那一轮 `200038` 在 README 与 ticket 20 都可 grep 到
@@ -120,9 +120,9 @@ PASS  E6c 落点轮 212011 在 README 与 ticket 20 都在
 F. 引用可解析 + 扫描器对照组
 ==============================================================================
 PASS  F1 文档里的 tool-eval 类产物名都指向在库文件（除 2 处写明是被删对象的删除记录）
-        8 份文档共 64 次 / 去重 39 名；tool-eval 类 16 名全可解析，豁免命中 ['tool-eval-20260911-050015-local-smoke', 'tool-eval-20260911-181037-rescore']
-PASS  F1c 文档里的 logs 类产物名都指向本机 logs/（本机限定：logs 不入库）
-        logs 类 23 名全部落在本机 logs/ 里
+        8 份文档共 66 次 / 去重 40 名；tool-eval 类 16 名全可解析，豁免命中 ['tool-eval-20260911-050015-local-smoke', 'tool-eval-20260911-181037-rescore']
+FAIL  F1c 文档里的 logs 类产物名都指向本机 logs/（本机限定：logs 不入库）
+        logs 类 MISSING：[('README.md', 'acceptance-run-20260920-183028'), ('README.md', 'acceptance-run-20260911-212011'), ('README.md', 'acceptance-run-20260910-203537'), ('README.md', 'acceptance-run-20260911-200038'), ('README.md', 'acceptance-run-20260911-201808'), ('README.md', 'acceptance-run-20260911-123307'), ('README.md', 'acceptance-run-20260911-121933'), ('README.md', 'acceptance-run-20260910-193757'), ('README.md', 'acceptance-run-20260911-121933'), ('README.md', 'acceptance-run-20260913-142932'), ('README.md', 'acceptance-run-20260913-094033'), ('README.md', 'acceptance-run-20260913-134050'), ('README.md', 'acceptance-run-20260913-141240'), ('README.md', 'acceptance-run-20260913-170410'), ('README.md', 'acceptance-run-20260913-163612'), ('README.md', 'acceptance-run-20260913-204500'), ('README.md', 'acceptance-run-20260913-200728'), ('README.md', 'acceptance-run-20260913-195335'), ('README.md', 'acceptance-run-20260914-060509'), ('README.md', 'acceptance-run-20260916-095520'), ('.scratch/shoppilot-mvp/round3-plan.md', 'acceptance-run-20260911-212011'), ('.scratch/shoppilot-mvp/round3-plan.md', 'acceptance-run-20260911-200038'), ('.scratch/shoppilot-mvp/round3-plan.md', 'acceptance-run-20260911-201808'), ('.scratch/shoppilot-mvp/round3-plan.md', 'acceptance-run-20260914-060509'), ('.scratch/shoppilot-mvp/round3-plan.md', 'acceptance-run-20260916-095520'), ('.scratch/shoppilot-mvp/issues/20-action-order-attribution.md', 'acceptance-run-20260911-212011'), ('.scratch/shoppilot-mvp/issues/20-action-order-attribution.md', 'acceptance-run-20260911-212011'), ('.scratch/shoppilot-mvp/issues/20-action-order-attribution.md', 'acceptance-run-20260911-123307'), ('.scratch/shoppilot-mvp/issues/20-action-order-attribution.md', 'acceptance-run-20260911-121933'), ('.scratch/shoppilot-mvp/issues/20-action-order-attribution.md', 'acceptance-run-20260911-185608')]
 PASS  F2 对照组：不存在的产物名必须被 resolvable() 判不可解析
         探针 tool-eval-20260911-999999-local-smoke → resolvable=False
 PASS  F2c 对照组：真实存在的产物名必须被同一个 resolvable() 判可解析（防 F2 单边恒绿）
@@ -132,7 +132,7 @@ PASS  F2b 豁免表没有死条目（每条豁免都真的在文档里出现）
 PASS  F3 对照组：比对大小写敏感（plan.md 不得命中 PLAN.md）
         PLAN.md 在库=True，plan.md 在库=False
 PASS  F4 README 相对链接全部可解析
-        共 6 条
+        共 17 条
 
 ==============================================================================
 G. 计划状态与门禁落点
@@ -143,30 +143,30 @@ PASS  G2 收口后无 pending
         pending 0 处
 PASS  G2b 落点那轮极性守卫真被触发（blocked 计数器增量 = 1）
         polarity.log 读数 ['1']
-PASS  G3 落点日志记 commit=9eede6d 且开跑时工作树 clean
-        run-acceptance  profile=local  commit=9eede6d  开跑时工作树=clean
-PASS  G4 落点为 17 步全绿、总耗时 511s
-        全部步骤通过（17 步）
-PASS  G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）
-        17 步全 exit 0，关键四步 {'stack': '80', 'demo': '12', 'polarity': '26', 'eval': '123'}
-PASS  G5b README 索引行与落点矩阵同读数
-        矩阵解析出 17 步；README 含 80s/12s/511s = True
-PASS  G6 surefire 3 + 12 + 206 = 221（build 与 unit 两份日志的 Results 段各自核过）
-        unit 模块小计 [3, 12, 206]，build 模块小计 [3, 12, 206]
+SKIP  G3 落点日志记 commit=9eede6d 且开跑时工作树 clean
+        本机限定·前置不成立：缺 logs/acceptance-run-20260911-212011.log（logs/ 不入库，见文件头「本机当轮对账单」）
+SKIP  G4 落点为 17 步全绿、总耗时 511s
+        本机限定·前置不成立：缺 logs/acceptance-run-20260911-212011.log（logs/ 不入库，见文件头「本机当轮对账单」）
+SKIP  G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）
+        本机限定·前置不成立：缺 logs/acceptance-run-20260911-212011.log（logs/ 不入库，见文件头「本机当轮对账单」）
+SKIP  G5b README 索引行与落点矩阵同读数
+        本机限定·前置不成立，缺 logs/acceptance-run-20260911-212011.log（logs/ 不入库，见文件头）
+PASS  G6 surefire 5 + 29 + 290 = 324（build 与 unit 两份日志的 Results 段各自核过）
+        unit 模块小计 [5, 29, 290]，build 模块小计 [5, 29, 290]
 PASS  G7 冒烟日志首行 SCORER SELFCHECK ok=16、末行 EVAL DONE cases=24 errors=0
         首行 SCORER SELFCHECK ok=16；末行 EVAL DONE cases=24 errors=0 mode=local limit=24
 PASS  G8 打字机断言落在 > 60 字这一真判据上（未放宽）
-        6 chunks / 129 chars
+        6 chunks / 132 chars
 
 ==============================================================================
 H. 文档自述与磁盘对拍（第四轮审查的教训固化成断言）
 ==============================================================================
-PASS  H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符（121933 曾被粗正则数成 15）
-        不符 {}
-PASS  H1b 每轮都是 17 步（不是步数变少造成的『更绿』）
-        {}
-PASS  H1d README 里每一处 N/17 主张都等于该轮日志实算（真读 README，不靠脚本内抄本）
-        从 README 抽出 3 处 {'200038': 16, '201808': 15, '121933': 16}；与日志实算不符 {}
+SKIP  H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符
+        本机限定·前置不成立：缺 logs/acceptance-run-20260911-212011.log（logs/ 不入库，见文件头「本机当轮对账单」）
+SKIP  H1b 每轮都是 17 步（不是步数变少造成的『更绿』）
+        本机限定·前置不成立：缺 logs/acceptance-run-20260911-212011.log（logs/ 不入库，见文件头「本机当轮对账单」）
+SKIP  H1d README 里每一处 N/17 主张都等于该轮日志实算
+        本机限定·前置不成立：缺 logs/acceptance-run-20260911-212011.log（logs/ 不入库，见文件头「本机当轮对账单」）
 PASS  J0 对照组：四个本机限定入口（find_pair 两种形状）喂『缺前置』都必须返回不适用/报缺，不得抛异常
         通过 ['build_rounds', 'find_pair', 'find_pair(目录在但空)', 'read_opt', 'local_missing']；问题 无
 PASS  J0b 对照组：check_local 用的前置谓词必须『缺的报缺、在的报在』（与 J0 不同源就又是一把尺子）
@@ -222,12 +222,23 @@ PASS  H13b 反证：被驳回的那处 `up.ps1` 第 115 行引用在 8 份文档
 PASS  H14 P10 六条判据的主干要求（含续行、去括号后）与本轮 fixed point 逐字相同
         6 条主干（含续行）逐字相同；括号内容有 0 条判据不同（第 [] 条），按 P11 ⑥⑨ 记，不当『一字未动』引用
 PASS  H15 入仓产物里 A1 记的 HEAD 是当前 HEAD 的祖先或本身（允许慢一笔，不许跑偏）
-        产物记 13192b80b，当前 HEAD accff4343，祖先关系=True
+        产物记 accff4343，当前 HEAD 25f6dba4e，祖先关系=True
 PASS  H12b 对照组：H12 那颗纯函数对 15 种合成产物必须按预期判绿/判红（钉住第七轮补的三条、P13 落盘期的调用点不变量、两条早退与取末行下标各自都有承重格：摘掉任一条，必有格子当场判错）
         15 格全部符合预期
 PASS  H16 本机限定清单两个方向都要对得上（声明 ⊇ 实跑 SKIP，且声明的每一项本轮真跑过）
-        声明 16 项、本次实跑 SKIP 0 项、本轮共跑过 94 项，两个方向都对得上
-PASS  H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）
-        末行 (95, 0, 0, 95) vs 应为 (95, 0, 0, 95)；产物里 H12 当时=绿；本次除 H12 外的红 0 项；产物自记红名单 无（改了跑器或本轮状态变了就得重跑并重新落盘产物）
-汇总：PASS 95  FAIL 0  SKIP 0  共 95 项
+        声明 16 项、本次实跑 SKIP 7 项、本轮共跑过 94 项，两个方向都对得上
+SKIP  H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）
+        本机限定·本次有 7 项 SKIP（缺 `logs/` 的形状），与入仓产物那份全绿末行不同源
+汇总：PASS 84  FAIL 3  SKIP 8  共 95 项
+  FAIL -> A1 origin/main == HEAD
+  FAIL -> A2 工作树 clean（审计自身读数产物除外，见 A2b）
+  FAIL -> F1c 文档里的 logs 类产物名都指向本机 logs/（本机限定：logs 不入库）
+  SKIP -> G3 落点日志记 commit=9eede6d 且开跑时工作树 clean
+  SKIP -> G4 落点为 17 步全绿、总耗时 511s
+  SKIP -> G5 落点矩阵逐步读数（stack 80 / demo 12 / polarity 26 / eval 123）
+  SKIP -> G5b README 索引行与落点矩阵同读数
+  SKIP -> H1 六轮门禁的 ok 步数与钉住的期望表逐轮相符
+  SKIP -> H1b 每轮都是 17 步（不是步数变少造成的『更绿』）
+  SKIP -> H1d README 里每一处 N/17 主张都等于该轮日志实算
+  SKIP -> H12 入仓读数产物的末行与本次实跑逐字段相同（钉住那句『以末行为准』）
 ==============================================================================
