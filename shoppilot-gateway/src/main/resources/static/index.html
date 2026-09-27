@@ -111,6 +111,10 @@
   .badge.OPEN { color: var(--amber); border-color: #fcd34d; background: #fffbeb; }
   .badge.ASSIGNED { color: var(--sky); border-color: #7dd3fc; background: #f0f9ff; }
   .badge.RESOLVED { color: var(--green); border-color: #86efac; background: #f0fdf4; }
+  /* 退款审核态（票 61 / ADR 0047）：待审是"等"，放行是"资金在走"，驳回是中性终态 */
+  .badge.PENDING_REVIEW { color: var(--amber); border-color: #fcd34d; background: #fffbeb; }
+  .badge.PROCESSING { color: var(--sky); border-color: #7dd3fc; background: #f0f9ff; }
+  .badge.REJECTED { color: var(--ink-3); border-color: var(--line); background: #f8fafc; }
   .empty { color: var(--ink-3); padding: 14px; }
   /* 运维回执与问答事件流分家（走查第 10 项）：ops 的行落在 #opslog 里，
      它不再是每轮 clearTimeline() 的清场对象，也不再混进 .ev 的序列。 */
@@ -187,6 +191,9 @@
   </div></div>
   <div class="ctl"><button class="sm" id="btnApply">注入</button><button class="sm" id="btnClear">清除</button>
     <button class="sm" id="btnFlush">清缓存</button><button class="sm" id="btnDemo">复位演示单</button></div>
+  <!-- 退款审核入口放页脚：header 高度被抽屉 inset 钉死在 49px，往里塞按钮要动那处几何；
+       页脚本来就 flex-wrap，加一颗按钮只是多一行，不动任何既有布局。 -->
+  <div class="ctl"><button class="sm" id="btnRefunds">退款审核</button></div>
   <div class="ctl"><span class="t">circuit</span><span class="val" id="circuit">-</span><span class="t">refunds</span><span class="val" id="refunds">-</span></div>
 </footer>
 <div class="scrim" id="scrim" hidden></div>
@@ -194,6 +201,11 @@
   <h2 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:0;padding:13px 12px;border-bottom:1px solid var(--line-2);font-weight:650" class="row">
     <span class="grow">工单队列</span><button class="sm" id="btnCloseTickets">关闭</button></h2>
   <div id="tickets"><div class="empty">尚未拉取</div></div>
+</aside>
+<aside class="drawer" id="refundDrawer">
+  <h2 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:0;padding:13px 12px;border-bottom:1px solid var(--line-2);font-weight:650" class="row">
+    <span class="grow">退款审核队列</span><button class="sm" id="btnCloseRefunds">关闭</button></h2>
+  <div id="refundQueue"><div class="empty">尚未拉取</div></div>
 </aside>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -607,8 +619,46 @@ async function loadTickets() {
   });
 }
 
-function syncSliders() {
-  $('delayV').textContent = $('delay').value + ' ms';
+// ---- 退款审核抽屉（票 61 / ADR 0047）----
+// 一道只存在于 curl 里的闸门在演示现场等于不存在，所以审核必须端上可演示。
+function openRefundDrawer() {
+  closeDrawer();
+  $('refundDrawer').classList.add('open');
+  $('scrim').hidden = false;
+  loadRefunds();
+}
+
+function closeRefundDrawer() {
+  $('refundDrawer').classList.remove('open');
+  $('scrim').hidden = true;
+}
+
+async function loadRefunds() {
+  const res = await api('GET', '/api/v1/support/ops/refunds/pending', null, true);
+  if (res.status !== 200) { $('refundQueue').innerHTML = '<div class="empty">拉取失败 ' + res.status + '</div>'; return; }
+  if (!res.body.length) { $('refundQueue').innerHTML = '<div class="empty">当前店铺暂无待审核退款</div>'; return; }
+  $('refundQueue').innerHTML = res.body.map((f) => `
+    <div class="tk">
+      <div><div class="id">申请 ${esc(f.refundId)} · 订单 ${esc(f.orderNo)} · ${esc(fmtTime(f.createdAt))}</div>
+        <div class="q">退款金额 ¥${(Number(f.amountFen) / 100).toFixed(2)}</div>
+        <div class="row" style="margin-top:6px">
+          <button class="sm" data-rf="${esc(f.refundId)}" data-decision="APPROVE">放行</button>
+          <button class="sm" data-rf="${esc(f.refundId)}" data-decision="REJECT">驳回</button>
+        </div></div>
+      <span class="badge ${esc(f.status)}">${esc(f.status)}</span>
+    </div>`).join('');
+  $('refundQueue').querySelectorAll('button[data-decision]').forEach((btn) => {
+    btn.onclick = async () => {
+      const r = await api('POST', '/api/v1/support/ops/refunds/' + btn.dataset.rf + '/review',
+        { decision: btn.dataset.decision });
+      report(r.status === 200, r.status === 200 ? `退款 ${btn.dataset.rf} -> ${btn.dataset.decision}`
+        : `审核被拒 ${r.status}：${btn.dataset.rf}`);
+      loadRefunds();
+    };
+  });
+}
+
+function syncSliders() {  $('delayV').textContent = $('delay').value + ' ms';
   $('failRateV').textContent = Number($('failRate').value).toFixed(2);
 }
 
@@ -639,10 +689,16 @@ $('btnDemo').onclick = async () => {
 };
 $('btnTickets').onclick = openDrawer;
 $('btnCloseTickets').onclick = closeDrawer;
-$('scrim').onclick = closeDrawer;
+$('btnRefunds').onclick = openRefundDrawer;
+$('btnCloseRefunds').onclick = closeRefundDrawer;
+// 两个抽屉共用一层遮罩：点遮罩或按 Esc 都应把**当前打开的那个**关掉（发票抽屉打开时
+// 工单抽屉本就被 openRefundDrawer 关掉了，所以这里两个都关是安全的）。
+$('scrim').onclick = () => { closeDrawer(); closeRefundDrawer(); };
 // Esc 关抽屉：键盘用户不该只能去找那颗鼠标才看得见的关闭按钮
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && $('drawer').classList.contains('open')) closeDrawer();
+  if (e.key !== 'Escape') return;
+  if ($('drawer').classList.contains('open')) closeDrawer();
+  if ($('refundDrawer').classList.contains('open')) closeRefundDrawer();
 });
 
 (async function boot() {

@@ -224,6 +224,55 @@ const scrimClosed = await page.evaluate(() => ({
 check('clicking the scrim closes the drawer', scrimClosed.open === 0 && scrimClosed.scrimHidden,
   JSON.stringify(scrimClosed));
 
+// ---- 退款审核面板（票 61 / ADR 0047）----
+// 一道只存在于 curl 里的闸门在演示现场等于不存在，所以这条走真实对话造一笔待审核退款：
+// ① 闸门必须在**真实 SSE 流**里可见（tool_result=PENDING_APPROVAL）；② 面板要经代理列出它；
+// ③ 面板的放行 / 驳回各点一次，队列随之清空。受理与否取决于模型肯不肯发 applyRefund，
+// 与 verify-idempotency.ps1 同源（活体依赖模型），不在这里另造一条更宽松的判据。
+await page.click('#btnNewConv');
+await page.fill('#q', '订单 90001 我要申请退款，商品有质量问题');
+await page.click('#btnSend');
+const sawPending = await page.waitForFunction(
+  () => [...document.querySelectorAll('#timeline .ev.tool_result')].some((e) => /PENDING_APPROVAL/.test(e.textContent)),
+  null, { timeout: 90000 })
+  .then(() => true)
+  .catch(async () => { console.log('  timeline was:\n    ' + await dumpTimeline()); return false; });
+check('refund request surfaces PENDING_APPROVAL in the live stream (ticket 61)', sawPending,
+  sawPending ? 'tool_result=PENDING_APPROVAL' : '(no PENDING_APPROVAL frame)');
+
+await page.click('#btnRefunds');
+await page.waitForSelector('#refundQueue .tk', { timeout: 15000 });
+const pendingBadges = await page.$$eval('#refundQueue .badge', (els) => els.map((e) => e.textContent));
+check('refund review drawer lists the pending refund via proxy (ticket 61)',
+  pendingBadges.includes('PENDING_REVIEW'), pendingBadges.join(','));
+await page.locator('#refundQueue .tk', { hasText: '90001' }).first()
+  .locator('button[data-decision="APPROVE"]').click();
+await page.waitForTimeout(1200);
+const afterApprove = await page.$$eval('#refundQueue .tk', (els) => els.map((e) => e.textContent));
+check('approving from the panel clears it from the queue (ticket 61)',
+  !afterApprove.some((t) => t.includes('90001')), `${afterApprove.length} rows left`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(250);
+
+// 驳回路径换一单（90002 是可退的发货单）：驳回后订单按时间戳推导回滚，这一半由 biz-mock 的
+// RefundReviewTest 在机器上钉住；这里只验面板这一趟走得通、且驳回后队列里不再有它。
+await page.click('#btnNewConv');
+await page.fill('#q', '订单 90002 我要申请退款');
+await page.click('#btnSend');
+const sawPending2 = await page.waitForFunction(
+  () => [...document.querySelectorAll('#timeline .ev.tool_result')].some((e) => /PENDING_APPROVAL/.test(e.textContent)),
+  null, { timeout: 90000 }).then(() => true).catch(() => false);
+await page.click('#btnRefunds');
+await page.waitForSelector('#refundQueue .tk', { timeout: sawPending2 ? 15000 : 1000 });
+await page.locator('#refundQueue .tk', { hasText: '90002' }).first()
+  .locator('button[data-decision="REJECT"]').click();
+await page.waitForTimeout(1200);
+const afterReject = await page.$$eval('#refundQueue .tk', (els) => els.map((e) => e.textContent));
+check('rejecting from the panel clears it from the queue (ticket 61)',
+  !afterReject.some((t) => t.includes('90002')), `${afterReject.length} rows left`);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(250);
+
 // 次一级那三项各要一格（票 26 第 10 勾）：时间戳是真渲染出来的、买家 id 有长度上限、
 // 下发的那份 HTML 末尾不再躺着两根连着的闭合标签。最后一条量的是**服务器下发的那一份**，
 // 不是 page.content() 里被解析器修过的那一份——游离标签恰恰会被解析器吃掉，量 DOM 等于自证。

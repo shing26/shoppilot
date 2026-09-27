@@ -93,6 +93,24 @@ public class OpsController {
     }
 
     /**
+     * 退款审核队列（ADR 0047 票 61）：待人工放行/驳回的退款申请。
+     *
+     * <p>名字与 {@code /feedback/review-queue} 的区别必须能被读出来：那条是**反馈点踩**的复核队列
+     * （对象是答案），这条是**退款申请**的审核队列（对象是资金动作）；`CONTEXT.md` 把两者钉成两件事。
+     */
+    @GetMapping("/refunds/pending")
+    public ResponseEntity<String> refundReviewQueue() {
+        return forward("GET", "/api/refunds/pending", null, true);
+    }
+
+    /** 放行或驳回一笔退款申请（ADR 0047）：走 biz-mock 的状态迁移门，网关只做代理与身份补全。 */
+    @PostMapping("/refunds/{refundId}/review")
+    public ResponseEntity<String> reviewRefund(@PathVariable String refundId,
+                                               @RequestBody Map<String, Object> body) {
+        return forward("POST", "/api/refunds/" + refundId + "/review", body, true);
+    }
+
+    /**
      * 店铺清单：调试台的租户下拉从这里取，不在页面里写死一份名单。
      * 写死的那份会和 biz-mock 的 tenants 表悄悄分家，届时"选不到店"会被当成前端 bug 查。
      */
