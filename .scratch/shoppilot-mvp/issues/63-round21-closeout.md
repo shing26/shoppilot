@@ -52,7 +52,8 @@ git diff --check && git status --short
 - **gold 180 条活体重跑未做**（需 dev 额度）：票 58/59/60 对 gold 的影响都只有静态依据，**不得声称 gold 未漂移**。
 - **本地 3B 的读回措辞缺口**（见票 62）：对「我那退款到哪了」判 `ACTION_REFUND` 后不调 `queryOrderDetail`。
 - **`stack` 步本机内存压力下构建期 OOM**：第二次矩阵改 `-SkipStack` 复用已起的栈，故 606 s 那次没有 stack 读数。
-- **收口审计**：`F1c` 仍红（round20 那次我删掉的历史本机日志不可逆，判据未动、未加豁免）；`A2` 若在提交前跑会红（提交后自绿）。
+- **收口审计**：读数 **PASS 85 / FAIL 2 / SKIP 8（共 95 项）**（`.scratch/shoppilot-mvp/round3-closeout-audit.txt`）。两条 FAIL 都照登、都不摘：① `A1 origin/main == HEAD` —— **本轮只提交到本机，未推送**；② `F1c` —— round20 那次我删掉的历史本机日志不可逆，**判据未动、未加豁免**。本轮新绿的三条：`E5`/`E5b`（问答库 202/57 → **223/64**）与 `G6`（surefire `5 + 29 + 290 = 324`；该条读 `logs/acceptance/{build,unit}.log`，所以必须跑**一次带 build 的矩阵**而非 `-SkipBuild`）。
+- **一处我自己撤回的错**：`eval/results/tool-eval-20260928-040944-rescore.csv` 曾随票 59 入库，是错的——审计 D9/D10 的规矩是「复算结果与 stamped 基线字节级相同、盘上只留那一份」（见 `docs/EVIDENCE.md` 的 round21 行）。已 `git rm` 撤回。
 
 **你需要能当场回答的三个追问**
 
