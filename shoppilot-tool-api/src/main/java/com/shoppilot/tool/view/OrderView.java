@@ -19,7 +19,12 @@ public record OrderView(
         AddressView address,
         Instant createdAt,
         Instant paidAt,
-        Instant shippedAt) {
+        Instant shippedAt,
+        /**
+         * 该订单当前退款申请的审核态（票 60）。无在办退款/无退款时为 null。
+         * 它补齐的正是 {@link OrderStatus#REFUNDING} 那格"待审与已放行同形"的缺口。
+         */
+        RefundReviewState refundReview) {
 
     public String amountYuan() {
         return String.format("%.2f", amountFen / 100.0d);

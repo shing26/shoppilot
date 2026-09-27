@@ -22,6 +22,7 @@ import com.shoppilot.tool.view.LogisticsView;
 import com.shoppilot.tool.view.ModifyAddressView;
 import com.shoppilot.tool.view.OrderStatus;
 import com.shoppilot.tool.view.OrderView;
+import com.shoppilot.tool.view.RefundReviewState;
 import com.shoppilot.tool.view.RefundView;
 import com.shoppilot.tool.view.TicketView;
 import com.shoppilot.tool.view.ToolResponse;
@@ -85,8 +86,32 @@ public class BizMockService {
             return unavailable(ToolName.QUERY_ORDER_DETAIL);
         }
         return findOwned(orderNo)
-                .map(order -> ToolResponse.ok(ToolName.QUERY_ORDER_DETAIL.apiName(), toView(order)))
+                .map(this::orderDetailResponse)
                 .orElseGet(() -> notFound(ToolName.QUERY_ORDER_DETAIL));
+    }
+
+    /**
+     * 订单详情的回执（票 60）：带上退款审核态；有在办退款时把**到账边界**写进 {@code message}
+     * —— 模型据它组织买家读回的话术，让"已放行"与"到账"不再混为一谈（ADR 0047 决策六）。
+     */
+    private ToolResponse<OrderView> orderDetailResponse(Order order) {
+        OrderView view = toView(order);
+        String note = refundBoundaryNote(view.refundReview());
+        return note == null
+                ? ToolResponse.ok(ToolName.QUERY_ORDER_DETAIL.apiName(), view)
+                : new ToolResponse<>(ToolName.QUERY_ORDER_DETAIL.apiName(), ToolStatus.OK, view, note, List.of());
+    }
+
+    /** 到账边界话术：明确写「到账由支付渠道处理」，因为到账的权威在支付通道，本仓没有（ADR 0047）。 */
+    private static String refundBoundaryNote(RefundReviewState state) {
+        if (state == null) {
+            return null;
+        }
+        return switch (state) {
+            case PENDING_REVIEW -> "该订单的退款申请已受理，正在等待人工审核；审核通过后到账由支付渠道处理。";
+            case RELEASED -> "该订单的退款申请已放行，资金处理中，到账由支付渠道处理。";
+            case REJECTED -> "该订单的退款申请已被驳回，订单已恢复原状态。";
+        };
     }
 
     @Transactional(readOnly = true)
@@ -376,7 +401,19 @@ public class BizMockService {
                 order.serviceFlagList(),
                 new AddressView(order.getReceiverName(), order.getReceiverPhone(), order.getProvince(),
                         order.getCity(), order.getDistrict(), order.getDetailAddress()),
-                order.getCreatedAt(), order.getPaidAt(), order.getShippedAt());
+                order.getCreatedAt(), order.getPaidAt(), order.getShippedAt(), latestRefundReviewState(order));
+    }
+
+    /** 订单最近一笔退款的审核态（票 60）；无退款、或退款处于未知状态时返回 null。 */
+    private RefundReviewState latestRefundReviewState(Order order) {
+        return refundRepository.findFirstByOrderIdOrderByCreatedAtDesc(order.getId())
+                .map(refund -> switch (refund.getStatus()) {
+                    case PENDING_REVIEW -> RefundReviewState.PENDING_REVIEW;
+                    case PROCESSING -> RefundReviewState.RELEASED;
+                    case REJECTED -> RefundReviewState.REJECTED;
+                    default -> null;
+                })
+                .orElse(null);
     }
 
     private RefundView toRefundView(Refund refund) {

@@ -14,4 +14,7 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
 
     /** 审核队列（ADR 0047）：租户由实体上的 {@code @TenantId} 自动拼接，这里只按状态取。 */
     List<Refund> findByStatusOrderByCreatedAtAsc(String status);
+
+    /** 订单最近一笔退款（票 60）：订单详情要带上它的审核态，供买家读回。 */
+    Optional<Refund> findFirstByOrderIdOrderByCreatedAtDesc(String orderId);
 }
