@@ -26,7 +26,9 @@
 - 2026-09-24：**round19 的三条未达成（按实登记，不摘红）**——① **活体针对性步未跑**：`verify-console.mjs` 新增的「原始 SSE 流的 `done` 帧带 `plan` 数组与 `context.ruleIds`」断言只做了语法检查（`node --check`）与静态核对，**没有真跑**（需 `up.ps1` 起栈 + Playwright 浏览器）；所以「新字段真的出现在真实 SSE 流里」这件事当前只有 JVM 层证据。② **全量 22 步活体矩阵未跑**（ADR 0044 的 Consequences 已写明本轮不跑：本机 `OLLAMA_MAX_LOADED_MODELS=1` 会让未命中路径必红，已知环境红与真实信号混在一起反而降信号），票 46 那条 `verify-hit-zero-llm.ps1` 的未达成项原样保留、放开条件不变。③ **票 50 的「180 条 gold 读数未漂移」未验证**：默认值给足余量（1024）以规避截断，但重跑 dev 全量评测需要云端额度与预算，本轮未跑；漂移与否按未验证登记，收口时不得声称「未漂移」。
 - 2026-09-24：**round19 的一处口径扩面（有意，非顺带）**——票 50 往 `application.yml` 新增了环境变量占位符 `SHOPPILOT_LLM_MAX_OUTPUT_TOKENS`，被 `ConfigValidationTest.applicationPlaceholderSetIsPinned` 当场拦住（该用例逐字钉着 SHOPPILOT 占位符集合）。处置是**显式登记进那份清单**而不是绕过门禁：加 env 覆盖是扩大可配置面，本仓的家法（ADR 0012 的日预算同理）是「要改的东西应该能靠环境变量改，而不是去动仓库里的配置文件」。CI 第 5 步覆盖率棘轮同期换代读数 `gateway 55.37% → 57.95%`。
 - 2026-09-24（同日晚，round19 收口后的活体复跑）：**全量 22 步矩阵 `logs/acceptance-run-20260924-180518.log`（512s，18 步绿 / 4 步红）**——比 2026-09-20 那份（503s、16 绿 / 6 红）好：`plan`、`hitzero`、`fallback` **三步转绿**（后两者分别由票 46 / ADR 0043 与票 45 / ADR 0042 交账），**票 46 那条一直挂着的 `verify-hit-zero-llm.ps1` 未达成项随之关闭（10/10、exit 0）**；round19 票 48 第 5 条那条「未真跑」的活体断言也关闭（`verify-console.mjs` **36/36**，含新增的 `done` 帧 plan/context 断言）。**`action` 是本次新出现的红，已用对照实验定性为先前就存在的问题、不是 round19 引入**：工作树回退到 round19 起点 `06331a4` 重建后同一步同样红；机制是本地 3B 模型照抄工具 schema 描述里的示例订单号 `10023`（`@ToolParam(description = "平台订单号，例如 10023")`，自 `f58e439` 起在仓），而 `ToolDispatcher.isFabricatedOrderNo` 只校验格式（`\d{1,12}`）拦不住格式合法的编造值。**新登记项（登记不执行）**：`QueryLogisticsRequest` 的 description 缺了 `QueryOrderDetailRequest` 那句「用户未提供时必须追问而非猜测」——这处不对称可改，但属功能改动、不在 round19 的旁挂定义内。**另一处归因更正**：此前把活体阻塞记为 `OLLAMA_MAX_LOADED_MODELS=1`，实测报的是 `cudaMalloc failed: out of memory` / `failed to allocate CUDA_Host buffer`（四套项目 17 个容器并发抢显存与主机内存，`/api/ps` 当时零模型驻留），**该变量全程未改（仍为 1）**、预热模型即解；更正落在票 46、ADR 0044 的换代指针与 `docs/EVIDENCE.md` 的 22 步矩阵行。四步红的另三步（emotion / feedback / plansteps）是 2026-09-20 那批的延续。**票 50 的「180 条 gold 未漂移」2026-09-25 已验**（解析：全部 1176 条 dev 明细 completion max=440 < 上限 1024，0 条越界；正向对照：压到 20 时答案被截断，证明旋钮活着；实测：24 条 dev 全过、与 09-10 基线逐条比 23/24 一致且唯一差异是变好）。**180 条全量重跑未做**，因为「今天跑 vs 09-10 基线」的比较被 round17 之后的风格注入等改动混淆、差异无法归因到票 50；要实测其贡献须做同代码 A/B（约 38 万 token）。
-- 当前没有 `ready-for-agent` 的开放 ticket。票 01-39 与 41、风格票、有意不做成文票、票 42-52 均已收口；round17、round18、round19 均已收口。
+- 2026-09-25：**round20 开轮（票 53-56，四条红的修复）**——对四条红逐条根因取证后，结论是**三条的根因不在被测代码**：`feedback`（4 PASS / 3 FAIL）的两条读数**在结构上不可能通过**（`verify-feedback.ps1:27` 的 `Get-Counter` 只有位置参数、没有 `ValueFromPipeline`，而 `:103/106/116/123` 用管道调用它 → 参数整体前移 → `:28` 的筛选永不命中 → 恒返回 `0.0`；**已用仓库自己的 pwsh 7.4.20 复现参数位移**），另一条的刺激与自己的注释矛盾（注释写"必然走降级"，实际发的是正常政策问句）；`emotion` 唯一失败项 `EMO-ESC-02` 的问句含 T0 升级词表里的「转人工」，按 ADR 0042 落 `USER_REQUESTED` 是**正确行为**（机械核对：20 条问句里**只有它一条**含升级词）；`plansteps` 的 0/7 是 local 3B 不产生两步链，且登记材料本身有两处不实（引用了**不存在**的 `PlanExpressionTest`；`aborted:7` 是进程生命周期累计值被当成本次读数）。**只有 `action` 是真功能缺陷**：3B 照抄 schema 描述里的示例值 `10023`（`@ToolParam(description = "平台订单号，例如 10023")`，自 `f58e439` 起在仓），而 `isFabricatedOrderNo` 只校验格式（`\d{1,12}`）拦不住；**这条同时也是 gold 未达成**（`eval/cases-part2-action.jsonl:30` 的 `ACT-LOG-12` 已逐字要求 `slotAsk:true` + `mustNotContainArgs:["orderNo"]`）。依据分两种：票 53/54/55 走 **ADR 0031 第 10 行的事实性修正豁免**（不动被测功能行为），票 56 走**所有者政策覆盖**（新增一层参数来源判定），ADR 0045 一条一条写明依据——既不把政策覆盖伪装成事实性修正，也不把豁免说成"必须开轮才能做"。建议顺序 **55 → 53 → 54 → 56**（最省栈的放最前，本机资源已紧）。
+- round20 的硬要求：票 53/54 把"恒定失败的读数"修成"真的在测量"，**门禁变绿不等于系统变好**，所以收口强制要求**修前红 / 修后绿两组活体读数**，只给修后绿的不算收口。票 55 例外，它本来就该继续红（**判据一字不动**——ADR 0043 明令禁止"把判据改窄去适配实现"）。
+- 当前 `ready-for-agent` 的开放 ticket = round20 的票 53-56。票 01-39 与 41、风格票、有意不做成文票、票 42-52 均已收口；round17、round18、round19 均已收口。
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
 - Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建、JVM 测试与 0 token 评测门禁（票 34：判据自检 + 离线 rescore 比对；round18 票 44 加第四步：覆盖率棘轮）；全量 22 步活体验收仍是作者本机证据。
 - 下一轮不能从旧 `ready-for-agent` 字样推断。重开条件与仍然挂红的裁决见 [`docs/adr/0030-round14-closure-scope-and-reopen-triggers.md`](../../docs/adr/0030-round14-closure-scope-and-reopen-triggers.md)。
@@ -51,6 +53,7 @@
 | round17 | 票 34-41，对齐完整落地级电商客服链路（外部审查补强并入） | [`round17-spec-architecture-completeness.md`](round17-spec-architecture-completeness.md) | done |
 | round18 | 票 42-44，补齐评分维度完备性（B8 数据层 + B9 测试体系） | [`round18-spec-scoring-dimension-completeness.md`](round18-spec-scoring-dimension-completeness.md) | done |
 | round19 | 票 47-52，补齐可信性观测（embedding 计时器 / Plan 记录 / 上下文组成 / 输出上限）；八项登记不执行 | [`round19-spec-trust-observability.md`](round19-spec-trust-observability.md) | done |
+| round20 | 票 53-56，修 22 步矩阵的四条红（三条事实性修正 + 一条 orderNo 溯源） | [`round20-spec-live-reds.md`](round20-spec-live-reds.md) | in-progress |
 
 ## Ticket 索引
 
@@ -109,6 +112,10 @@
 | 50 | [`50-explicit-output-token-cap.md`](issues/50-explicit-output-token-cap.md) | implemented | 显式输出上限 `max_tokens` / `num_predict`（ADR 0044；防输出失控，非成本优化；0 = 不限制） |
 | 51 | [`51-context-terms-and-style-boundary.md`](issues/51-context-terms-and-style-boundary.md) | implemented | `CONTEXT.md` 补 5 术语 + 风格档位 intent 维度已知边界（ADR 0044；不改代码） |
 | 52 | [`52-round19-registration-closeout.md`](issues/52-round19-registration-closeout.md) | implemented | round19 登记文档收口与证据同步（ADR 0044） |
+| 53 | [`53-feedback-harness-readings.md`](issues/53-feedback-harness-readings.md) | ready-for-agent | `feedback` 步修两条恒失败读数与错刺激（ADR 0045；**事实性修正**，不动被测代码） |
+| 54 | [`54-emotion-case-reclassification.md`](issues/54-emotion-case-reclassification.md) | ready-for-agent | `EMO-ESC-02` 重分类为显式转人工样本 + 新增强情绪样本（ADR 0045；**事实性修正**，用例数据与 ADR 0042 冲突） |
+| 55 | [`55-plansteps-registration-corrections.md`](issues/55-plansteps-registration-corrections.md) | ready-for-agent | `plansteps` 更正两处不实登记并登记为已知不达成（ADR 0045；**判据一字不动**） |
+| 56 | [`56-orderno-provenance-guard.md`](issues/56-orderno-provenance-guard.md) | ready-for-agent | `orderNo` 溯源守卫（ADR 0045；**所有者政策覆盖**；同时是 gold `ACT-LOG-12` 未达成） |
 
 ## 如何新增或领取工作
 
