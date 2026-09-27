@@ -12,9 +12,9 @@
 - [x] `FallbackReason.EMOTION_ESCALATION`（第 10 位）；`FallbackService` 增 4 参重载（priority），3 参原样保留
 - [x] biz-mock 工单链路 priority 字段：`Ticket` 实体（ddl-auto 自动建列）→ `CreateTicketRequest` → `createTicket` → `TicketView`（队列反查可见）
 - [x] 指标 4 个：`shoppilot_sentiment_lexicon_decided_total`、`shoppilot_sentiment_llm_classified_total`、`shoppilot_sentiment_llm_latency_seconds`、`shoppilot_sentiment_escalated_total{emotion}`
-- [x] `SentimentGateTest` 6 项 0 token：词典层 8 条升级定案（LLM 零触碰）、12 条非升级零误伤、ANGRY>URGENT 优先、第二层置信度判据、散文/围栏容错、perf 词典层-only
+- [x] `SentimentGateTest` 6 项 0 token：词典层 8 条升级定案（LLM 零触碰）、12 条非升级零误伤、ANGRY>URGENT 优先、第二层置信度判据、散文/围栏容错、perf 词典层-only —— **（2026-09-27 换代指针，票 54 / ADR 0045）**词表样本 8 → **9** 条：新增 `EMO-ESC-09` 补上被移出的 `EMO-ESC-02` 的位置（后者在活体脚本里改按 ADR 0042 走显式转人工；**本测试不经状态机、ADR 0042 管不到它**——那条问句含 `破店`，词典层照样定案 ANGRY，故留作有效词表样本）。对应的计数断言同步 `8.0d` → `9.0d`
 - [x] `GatewayMainPathJvmTest` 情绪升级集成用例：TRIAGE 之前落工单、`promptVersion` 进响应、模型零调用
-- [x] `verify-emotion.ps1` 活体验收脚本（20 条用例 + 工单队列反查 priority=high），UTF-8 BOM、PS 5.1 语法通过
+- [x] `verify-emotion.ps1` 活体验收脚本（20 条用例 + 工单队列反查 priority=high），UTF-8 BOM、PS 5.1 语法通过 —— **（2026-09-27 换代指针，票 54 / ADR 0045）**用例 20 → **21**、断言 30 条：新增"显式转人工"一类（`EMO-ESC-02`，判据 `USER_REQUESTED` + **不带** high）与补位样本 `EMO-ESC-09`。**并修掉一处中止**：该脚本的工单队列反查原先把 `/api/v1/support/ops/tickets` 当纯运维端点调用（只带 `X-Ops-Token`），而它走 JWT 鉴权 → 401 → `ErrorActionPreference=Stop` 当场中止，**那 8 条 priority 反查与 12 条非升级断言在矩阵里从没跑过**（长期只跑到第 9 条就结束）；补上 bearer 后 `PASS 30 / FAIL 0`、exit 0
 - [x] 评测集 `cases-part4-emotion.jsonl` 20 条已在票 34 前入库；CI rescore 门禁确认 judge 语义零漂移
 
 **Verify:**

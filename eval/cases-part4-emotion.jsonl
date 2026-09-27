@@ -1,11 +1,12 @@
 {"id": "EMO-ESC-01", "kind": "emotion", "emotion": "ANGRY", "intent": "ACTION_REFUND", "query": "你们就是骗子！订单SO20260901001拖了半个月不退款，我今天必须拿到说法，不然就去投诉到底", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
-{"id": "EMO-ESC-02", "kind": "emotion", "emotion": "ANGRY", "intent": "ACTION_LOGISTICS", "query": "说的三天到现在一周了物流一动不动，什么破店，给我转人工马上", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
+{"id": "EMO-ESC-02", "kind": "emotion", "emotion": "ANGRY", "intent": "ESCALATE", "query": "说的三天到现在一周了物流一动不动，什么破店，给我转人工马上", "expect": {"escalate": false, "reason": "USER_REQUESTED"}}
 {"id": "EMO-ESC-03", "kind": "emotion", "emotion": "ANGRY", "intent": "POLICY_RETURN", "query": "买了这么个破玩意儿还敢收我运费？黑心商家，我要曝光你们", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
 {"id": "EMO-ESC-04", "kind": "emotion", "emotion": "ANGRY", "intent": "ACTION_ORDER", "query": "第三次问了！每次都说稍等每次都没结果，再不解决我直接打12315投诉你们店", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
 {"id": "EMO-ESC-05", "kind": "emotion", "emotion": "URGENT", "intent": "ACTION_ADDRESS", "query": "急急急！快递马上就要发货了，我下单地址填错了，现在立刻马上帮我改掉", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
 {"id": "EMO-ESC-06", "kind": "emotion", "emotion": "URGENT", "intent": "ACTION_REFUND", "query": "我妈住院等着这笔退款交费，求你们今天一定帮我处理一下订单SO20260901002的退款", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
 {"id": "EMO-ESC-07", "kind": "emotion", "emotion": "ANGRY", "intent": "POLICY_RETURN", "query": "客服全是机器人踢皮球，一个能办事的都没有，我要找真人领导谈", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
 {"id": "EMO-ESC-08", "kind": "emotion", "emotion": "ANGRY", "intent": "ACTION_REFUND", "query": "退款拖了这么久还有脸让我等？废物系统，给我人工处理现在", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
+{"id": "EMO-ESC-09", "kind": "emotion", "emotion": "ANGRY", "intent": "POLICY_RETURN", "query": "什么破玩意儿！收到就是坏的，你们这质量也太差了", "expect": {"escalate": true, "reason": "EMOTION_ESCALATION"}}
 {"id": "EMO-CAL-01", "kind": "emotion", "emotion": "CALM", "intent": "POLICY_RETURN", "query": "请问七天无理由退货需要我自己出运费吗", "expect": {"escalate": false}}
 {"id": "EMO-CAL-02", "kind": "emotion", "emotion": "CALM", "intent": "ACTION_ORDER", "query": "帮我查一下订单SO20260901003现在什么状态了", "expect": {"escalate": false}}
 {"id": "EMO-CAL-03", "kind": "emotion", "emotion": "CALM", "intent": "POLICY_SHIPPING", "query": "物流一般多久更新一次轨迹呀", "expect": {"escalate": false}}

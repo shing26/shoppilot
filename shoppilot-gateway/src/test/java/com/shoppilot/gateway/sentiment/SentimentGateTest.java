@@ -32,7 +32,14 @@ class SentimentGateTest {
     private SimpleMeterRegistry registry;
     private SentimentGate gate;
 
-    /** 票 36 评测集的 8 条升级样本（6 ANGRY + 2 URGENT），全部必须由词典层 0 token 定案。 */
+    /**
+     * 票 36 评测集的升级样本（6 ANGRY + 3 URGENT 之外的 ANGRY 若干），全部必须由词典层 0 token 定案。
+     *
+     * <p>2026-09-27（票 54 / ADR 0045）：8 条 → 9 条。新增 EMO-ESC-09 补上「词典层 8 条」
+     * 里被移出的 EMO-ESC-02 的位置——后者在活体脚本里改按 ADR 0042 走显式转人工，但
+     * **本测试不经状态机、ADR 0042 管不到它**：那条问句含 `破店`，词典层照样定案 ANGRY，
+     * 所以它留在这里仍是有效的词表样本，只是活体那边把它归到了另一类。
+     */
     private static final List<String> LEXICON_ESCALATIONS = List.of(
             "你们就是骗子！订单SO20260901001拖了半个月不退款，我今天必须拿到说法，不然就去投诉到底",
             "说的三天到现在一周了物流一动不动，什么破店，给我转人工马上",
@@ -41,7 +48,8 @@ class SentimentGateTest {
             "客服全是机器人踢皮球，一个能办事的都没有，我要找真人领导谈",
             "退款拖了这么久还有脸让我等？废物系统，给我人工处理现在",
             "急急急！快递马上就要发货了，我下单地址填错了，现在立刻马上帮我改掉",
-            "我妈住院等着这笔退款交费，求你们今天一定帮我处理一下订单SO20260901002的退款");
+            "我妈住院等着这笔退款交费，求你们今天一定帮我处理一下订单SO20260901002的退款",
+            "什么破玩意儿！收到就是坏的，你们这质量也太差了");
 
     /** 12 条非升级样本（CALM/DISSATISFIED/UNCERTAIN），词典层一个都不能误伤。 */
     private static final List<String> NON_ESCALATIONS = List.of(
@@ -67,7 +75,7 @@ class SentimentGateTest {
     }
 
     @Test
-    @DisplayName("词典层：8 条升级样本 0 token 定案，完全不触碰 LLM")
+    @DisplayName("词典层：9 条升级样本 0 token 定案，完全不触碰 LLM")
     void lexiconEscalationsNeverTouchTheModel() {
         for (String query : LEXICON_ESCALATIONS) {
             SentimentGate.Verdict verdict = gate.evaluate(query);
@@ -77,7 +85,8 @@ class SentimentGateTest {
                     "定案 emotion 必须是 ANGRY/URGENT: " + query + " -> " + verdict.emotion());
         }
         verifyNoInteractions(llm);
-        assertEquals(8.0d, registry.get("shoppilot_sentiment_lexicon_decided_total").counter().count());
+        // 条数与 LEXICON_ESCALATIONS 同步；改成 9 是票 54 加 EMO-ESC-09 的结果，不是放宽。
+        assertEquals(9.0d, registry.get("shoppilot_sentiment_lexicon_decided_total").counter().count());
     }
 
     @Test

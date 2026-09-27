@@ -1,5 +1,6 @@
-﻿# 票 36 活体验收：情绪门 20 条用例（对应 eval/cases-part4-emotion.jsonl）。
-# 8 条词典层升级 → 必须在 TRIAGE 之前落 EMOTION_ESCALATION 工单（priority=high，队列反查）；
+﻿# 票 36 活体验收：情绪门用例（对应 eval/cases-part4-emotion.jsonl）。
+# 8 条**情绪驱动**的升级 → 必须在 TRIAGE 之前落 EMOTION_ESCALATION 工单（priority=high，队列反查）；
+# 1 条**显式转人工** → 按 ADR 0042 落 USER_REQUESTED（不是 EMOTION_ESCALATION，也不带 high）；
 # 12 条非升级 → 不得出现任何 fallback。词典层用例 0 token（不触发任何模型调用）。
 # 前置：网关起在 dev/local（需 Ollama 或 DashScope 配置）+ biz-mock + 容器栈。
 # 用法：pwsh -NoProfile -File scripts/verify-emotion.ps1
@@ -32,17 +33,25 @@ function Get-ChatResult([string]$Token, [string]$Query) {
     }
 }
 
-# 8 条词典层升级样本（id, 期望 emotion）；情绪门在 TRIAGE 前定案，落到 priority=high 工单
+# 8 条**情绪驱动**的升级样本（id, 期望 emotion）；情绪门在 TRIAGE 前定案，落到 priority=high 工单。
+# 2026-09-27（票 54 / ADR 0045）：EMO-ESC-02 移出到下面的 $explicitEscalations，由新增的
+# EMO-ESC-09 补位——所以「8 条」这个计数不变，变的是成员。原 02 的问句含 T0 升级词表里的
+# 「转人工」，ADR 0042 之后它按显式转人工优先，不再走情绪短路。
 $escalations = @(
     @{ id = "EMO-ESC-01"; emotion = "ANGRY" },
-    @{ id = "EMO-ESC-02"; emotion = "ANGRY" },
     @{ id = "EMO-ESC-03"; emotion = "ANGRY" },
     @{ id = "EMO-ESC-04"; emotion = "ANGRY" },
     @{ id = "EMO-ESC-05"; emotion = "URGENT" },
     @{ id = "EMO-ESC-06"; emotion = "URGENT" },
     @{ id = "EMO-ESC-07"; emotion = "ANGRY" },
-    @{ id = "EMO-ESC-08"; emotion = "ANGRY" }
+    @{ id = "EMO-ESC-08"; emotion = "ANGRY" },
+    @{ id = "EMO-ESC-09"; emotion = "ANGRY" }
 )
+# 1 条**显式转人工**样本：问句含「转人工」，按 ADR 0042 在 TRIAGE 之前不走情绪短路，放行到
+# triage 由既有 USER_REQUESTED 出口收口。判据两条：reason 必须是 USER_REQUESTED，且工单
+# **不带** high——只有 EMOTION_ESCALATION 才传 high（AgentStateMachine 的 escalate 分支），
+# 所以「带不带 high」正是两类出口的区分点，钉住它才不至于把两者混成"都是升级"。
+$explicitEscalations = @("EMO-ESC-02")
 # 查询原文与 eval/cases-part4-emotion.jsonl 一一对应（id -> query），拷自该文件
 $queries = @{
     "EMO-ESC-01" = "你们就是骗子！订单SO20260901001拖了半个月不退款，我今天必须拿到说法，不然就去投诉到底"
@@ -53,6 +62,7 @@ $queries = @{
     "EMO-ESC-06" = "我妈住院等着这笔退款交费，求你们今天一定帮我处理一下订单SO20260901002的退款"
     "EMO-ESC-07" = "客服全是机器人踢皮球，一个能办事的都没有，我要找真人领导谈"
     "EMO-ESC-08" = "退款拖了这么久还有脸让我等？废物系统，给我人工处理现在"
+    "EMO-ESC-09" = "什么破玩意儿！收到就是坏的，你们这质量也太差了"
     "EMO-CAL-01" = "请问七天无理由退货需要我自己出运费吗"
     "EMO-CAL-02" = "帮我查一下订单SO20260901003现在什么状态了"
     "EMO-CAL-03" = "物流一般多久更新一次轨迹呀"
@@ -85,10 +95,28 @@ foreach ($e in $escalations) {
     }
 }
 
+# ---- 1 条显式转人工：ADR 0042 之后落 USER_REQUESTED，不走情绪短路 ----
+$explicitTicketIds = @()
+foreach ($id in $explicitEscalations) {
+    $result = Get-ChatResult -Token $token -Query $queries[$id]
+    if ($result.fallbackReason -eq "USER_REQUESTED" -and $result.ticketId) {
+        $explicitTicketIds += $result.ticketId
+        $Pass++
+        Write-Host ("PASS  {0} 显式转人工落 USER_REQUESTED 工单 {1}" -f $id, $result.ticketId)
+    } else {
+        $Fail++
+        Write-Host ("FAIL  {0} 期望 USER_REQUESTED 工单（ADR 0042 显式优先），实际 fallbackReason={1}" -f $id, $result.fallbackReason)
+    }
+}
+
 # 队列反查：升级工单必须可按号查回，且 priority=high（ADR 0034）。
 # 走网关的运维代理（与 verify-fallback 同一条路）：`/api/tickets/{id}` 这条路由不存在，
 # 2026-09-20 首跑就崩在这里（"接口不存在"），整份报告只跑到第 8 条。
-$queue = Invoke-RestMethod -Uri "$Base/api/v1/support/ops/tickets" -Headers @{ "X-Ops-Token" = "dev-ops-token" }
+# **2026-09-27 更正（票 54）**：这里原先只带 X-Ops-Token、没带 bearer，而该端点走 JWT 鉴权，
+# 于是返回 401「missing bearer token」→ 本脚本 ErrorActionPreference=Stop，**在中止前
+# 下面 8 条 priority 反查与 12 条非升级断言全都没跑**（矩阵里这一步长期只跑到第 9 条）。
+$queue = Invoke-RestMethod -Uri "$Base/api/v1/support/ops/tickets" `
+    -Headers @{ Authorization = "Bearer $token"; "X-Ops-Token" = "dev-ops-token" }
 foreach ($id in $ticketIds) {
     $ticket = $queue | Where-Object { $_.id -eq $id } | Select-Object -First 1
     if (-not $ticket) {
@@ -100,6 +128,21 @@ foreach ($id in $ticketIds) {
     } else {
         $Fail++
         Write-Host ("FAIL  工单 {0} priority={1}（期望 high）" -f $id, $ticket.priority)
+    }
+}
+# 显式转人工那张单必须**不带** high——这是它与情绪升级单的区分点（票 54）：
+# 只有 EMOTION_ESCALATION 才传 high，钉住它才不至于把两类出口混成"都是升级"。
+foreach ($id in $explicitTicketIds) {
+    $ticket = $queue | Where-Object { $_.id -eq $id } | Select-Object -First 1
+    if (-not $ticket) {
+        $Fail++
+        Write-Host ("FAIL  显式转人工工单 {0} 在队列里查不到" -f $id)
+    } elseif ($ticket.priority -ne "high") {
+        $Pass++
+        Write-Host ("PASS  显式转人工工单 {0} 不带 high（priority={1}）" -f $id, $ticket.priority)
+    } else {
+        $Fail++
+        Write-Host ("FAIL  显式转人工工单 {0} 带了 high——只有情绪升级才该带（ADR 0042/0034）" -f $id)
     }
 }
 

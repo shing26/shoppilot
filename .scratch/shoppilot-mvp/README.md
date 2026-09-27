@@ -113,7 +113,7 @@
 | 51 | [`51-context-terms-and-style-boundary.md`](issues/51-context-terms-and-style-boundary.md) | implemented | `CONTEXT.md` 补 5 术语 + 风格档位 intent 维度已知边界（ADR 0044；不改代码） |
 | 52 | [`52-round19-registration-closeout.md`](issues/52-round19-registration-closeout.md) | implemented | round19 登记文档收口与证据同步（ADR 0044） |
 | 53 | [`53-feedback-harness-readings.md`](issues/53-feedback-harness-readings.md) | implemented | `feedback` 步修两条恒失败读数 + 错刺激 + 退款买家/幂等键两处（ADR 0045；**事实性修正**，不动被测代码；`implied_retry` 间歇，机制见 Handoff） |
-| 54 | [`54-emotion-case-reclassification.md`](issues/54-emotion-case-reclassification.md) | ready-for-agent | `EMO-ESC-02` 重分类为显式转人工样本 + 新增强情绪样本（ADR 0045；**事实性修正**，用例数据与 ADR 0042 冲突） |
+| 54 | [`54-emotion-case-reclassification.md`](issues/54-emotion-case-reclassification.md) | implemented | `EMO-ESC-02` 重分类为显式转人工样本 + 新增 `EMO-ESC-09` 补位；**并修掉一处中止**（队列反查缺 bearer，导致 20 条断言从未运行）（ADR 0045；**事实性修正**） |
 | 55 | [`55-plansteps-registration-corrections.md`](issues/55-plansteps-registration-corrections.md) | implemented | `plansteps` 更正不实登记（不存在的 `PlanExpressionTest`、`aborted` 生命周期语义）+ 补取证口径 + 登记为已知不达成（ADR 0045；**判据一字不动**） |
 | 56 | [`56-orderno-provenance-guard.md`](issues/56-orderno-provenance-guard.md) | ready-for-agent | `orderNo` 溯源守卫（ADR 0045；**所有者政策覆盖**；同时是 gold `ACT-LOG-12` 未达成） |
 

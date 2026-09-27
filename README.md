@@ -550,7 +550,7 @@ node scripts/verify-console.mjs                         # 调试台 36 项（Pla
 #   plansteps）——plan/hitzero/fallback 三步转绿；`action` 是本次新出现的红，已用「回退到
 #   round19 起点重建后同样红」的对照实验定位为**先前就存在的问题、不是 round19 引入**，
 #   机制见 docs/EVIDENCE.md 的 22 步矩阵行）
-pwsh -NoProfile -File scripts/verify-emotion.ps1        # 词典层 8 条定案 + 12 条不误升级 + 高优工单
+pwsh -NoProfile -File scripts/verify-emotion.ps1        # 8 条情绪升级（priority=high 工单反查）+ 1 条显式转人工（USER_REQUESTED，不带 high）+ 12 条不误升级 = 30 条断言
 pwsh -NoProfile -File scripts/verify-channel.ps1        # 三渠道同答 / 跨渠道会话不互串 / email 回执单 / 渠道计数
 pwsh -NoProfile -File scripts/verify-style.ps1          # SSE meta 档位矩阵（完整矩阵见 StyleServiceTest 6 项）
 pwsh -NoProfile -File scripts/verify-feedback.ps1       # 点踩落行 + 关联工单/引用块 + 复核队列 + 三隐式计数

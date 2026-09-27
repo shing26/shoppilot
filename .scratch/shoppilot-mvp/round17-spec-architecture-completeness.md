@@ -38,7 +38,7 @@ judge() 扩 schema 以本表为登记依据；扩 judge 必须同步补 selfchec
 ## 验收判据（每票一条，进 run-acceptance 矩阵）
 
 1. 票 41：轮次用尽 → FALLBACK 落工单（新 `FallbackReason.TOOL_ROUNDS_EXHAUSTED`，工单可按号反查）；请求 payload 含 `parallel_tool_calls:false`；模型返回多个 toolCalls 时只派发并只记录第一个（转录协议配对合法）且 multi-tool 计数可见；轮次上限 JVM 测试落地（关闭票 11 自陈缺口）。
-2. 票 36：`verify-emotion` —— 20 条情绪用例，词典层 8 条 0 token 定案断言；ANGRY 用例 6/6 与 URGENT 用例 2/2 落 EMOTION_ESCALATION 工单（队列反查），CALM/DISSATISFIED/UNCERTAIN 用例 0 误升级。
+2. 票 36：`verify-emotion` —— 20 条情绪用例，词典层 8 条 0 token 定案断言；ANGRY 用例 6/6 与 URGENT 用例 2/2 落 EMOTION_ESCALATION 工单（队列反查），CALM/DISSATISFIED/UNCERTAIN 用例 0 误升级。**（2026-09-27 换代指针，票 54 / ADR 0045）**：用例数 20 → 21、断言数 → 30——`EMO-ESC-02` 的问句含 T0 升级词表里的「转人工」，ADR 0042 之后改落 `USER_REQUESTED`（移入"显式转人工"一类，判据是 reason + **不带** high），由新增的 `EMO-ESC-09`（`破玩意儿`，不含任何升级词）补位，故「词典层 8 条」的计数不变、成员变了。**同时修掉一处中止**：该脚本的工单队列反查原先把 `/api/v1/support/ops/tickets` 当纯运维端点调用（只带 `X-Ops-Token`），而它走 JWT 鉴权 → 401 → `ErrorActionPreference=Stop` 当场中止，**那 8 条 priority 反查与 12 条非升级断言在矩阵里从没跑过**（长期只跑到第 9 条就结束）；补上 bearer 后整脚本 `PASS 30 / FAIL 0`、exit 0。
 3. 票 37：`verify-feedback` —— 点踩落 feedback 表 + 关联工单/ruleId 可查 + 复核队列可见，三断言；重问/降级/幂等重放三个隐式信号计数各断言一次。
 4. 票 38：`verify-channel` —— 同一句从 web/app/miniapp 进入答案一致、会话不互串；email 全链路落工单；限流按渠道维度可查。
 5. 票 39：`verify-plan` —— 两步链 8 条（含前步失败中止 2 条）、注入表达式 2 条判红；全量 357+56 条评测不低于基线（硬闸门，不达标本票挂账、round17 收缩）。
