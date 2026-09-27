@@ -31,7 +31,8 @@
 - [x] 全量：`.\mvnw.cmd -B -ntp verify` → `3 + 21 + 287 = 311` 绿（gateway 276 → **287**）
 - [x] 覆盖率棘轮：`check_coverage.py` exit 0，gateway LINE 58.52% → **59.47%**（门槛 54.0）
 - [x] 门禁：`verify_eval_judge.py` **40/40**；`eval_suites.py` **ok=24**；`git diff --check` 干净
-- [ ] **未做**：活体 `verify-idempotency.ps1`（需起栈）；gold 180 条回归（需额度）。见 Handoff「未覆盖」
+- [x] **活体 `verify-idempotency.ps1` 已补跑（2026-09-28 round21 收口期）：exit 0** —— 第 2 次同 token 调用推 `duplicate_submit`、退款行数 `0 -> 1`（只落一行）；第 3 步已发货单改地址落 `STATE_NOT_ALLOWED`
+- [ ] **未做**：gold 180 条回归（需额度）。见 Handoff「未覆盖」
 
 ## Handoff notes
 
@@ -54,8 +55,8 @@
 
 **未覆盖（按未达成登记，不摘红）**
 
-- **活体 `verify-idempotency.ps1` 未跑**（需起栈：Redis + biz-mock + gateway）。按脚本逻辑推断它**更稳**（两次调用是「不同 conversation id、同 query、同 token」→ 预回放命中，不再依赖模型重发工具），但**推断不算证据**：本票不声称该脚本已绿。
-- **gold 180 条回归未跑**（需 dev 额度）。静态依据如上，但**不声称"gold 未漂移"**。
+- **活体 `verify-idempotency.ps1` 已于 2026-09-28 补跑并转绿（exit 0）**：本票原先"未跑、不得声称已绿"的登记随之关闭。实测形态——第 1 次受理（`refunds 0 -> 1`），第 2 次同 token 走 `duplicate_submit` 且 `refunds` 仍是 1（**不再依赖模型重发工具**，这正是本票要的），第 3 步已发货单改地址落 `STATE_NOT_ALLOWED`。
+- **gold 180 条回归仍未跑**（需 dev 额度）。静态依据（`run_tool_eval.py:519` 的 payload 不发 token）成立，但**不声称"gold 未漂移"**。
 - 两项都登记在本轮收口（票 63）的活体批次里，按所有者裁定的「全套」预算执行。
 
 **你需要能当场回答的三个追问**

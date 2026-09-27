@@ -225,23 +225,41 @@ check('clicking the scrim closes the drawer', scrimClosed.open === 0 && scrimClo
   JSON.stringify(scrimClosed));
 
 // ---- 退款审核面板（票 61 / ADR 0047）----
-// 一道只存在于 curl 里的闸门在演示现场等于不存在，所以这条走真实对话造一笔待审核退款：
-// ① 闸门必须在**真实 SSE 流**里可见（tool_result=PENDING_APPROVAL）；② 面板要经代理列出它；
-// ③ 面板的放行 / 驳回各点一次，队列随之清空。受理与否取决于模型肯不肯发 applyRefund，
-// 与 verify-idempotency.ps1 同源（活体依赖模型），不在这里另造一条更宽松的判据。
-await page.click('#btnNewConv');
-await page.fill('#q', '订单 90001 我要申请退款，商品有质量问题');
-await page.click('#btnSend');
-const sawPending = await page.waitForFunction(
-  () => [...document.querySelectorAll('#timeline .ev.tool_result')].some((e) => /PENDING_APPROVAL/.test(e.textContent)),
-  null, { timeout: 90000 })
-  .then(() => true)
-  .catch(async () => { console.log('  timeline was:\n    ' + await dumpTimeline()); return false; });
+// 一道只存在于 curl 里的闸门在演示现场等于不存在，所以这条要造一笔待审核退款再看面板。
+// **造数据经网关 SSE 带一个新 token**（不是用页面输入框发的）：页面发的体里没有
+// `idempotencyToken`，网关就按「租户|买家|工具|参数」派生一个**确定性** token —— 同一句
+// 退款请求在 Redis 里已存过结果，之后每次重发都命中 `IDEMPOTENT_REPLAY`，闸门再也走不到。
+// 而 `#btnDemo`（复位演示单）只重置数据库、**不重置 Redis 幂等键**，所以这条残留能跨轮复现。
+// 客户端带自己的 token 本来就是 `idempotencyToken` 的正确用法（"同一逻辑请求"由客户端定义），
+// 这里正是照它用。① 闸门必须在真实 SSE 流里可见；② 面板经代理列出它；③ 放行 / 驳回各点一次。
+async function pendingRefundViaChat(orderNo, tries = 3) {
+  for (let i = 0; i < tries; i++) {
+    const { token } = await (await fetch(BASE + '/auth/mock-token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantId: 'T001', customerId: 'C001' }),
+    })).json();
+    const stream = await fetch(BASE + '/api/v1/support/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token,
+        'X-Conversation-Id': 'conv-refund-panel-' + orderNo + '-' + Date.now() },
+      body: JSON.stringify({ query: `订单 ${orderNo} 我要申请退款，商品有质量问题`,
+        idempotencyToken: 'panel-' + orderNo + '-' + Date.now() + '-' + i }),
+    });
+    // 本地 3B 的 function calling 是概率性的：这句有时不发 applyRefund。那是模型抖动，
+    // 不是闸门问题，所以给造数据 3 次机会；3 次都拿不到仍是 FAIL（判据没放宽）。
+    if (/PENDING_APPROVAL/.test(await stream.text())) return true;
+  }
+  return false;
+}
+
+await page.click('#btnDemo');
+await page.waitForTimeout(1200);
+const sawPending = await pendingRefundViaChat('90001');
 check('refund request surfaces PENDING_APPROVAL in the live stream (ticket 61)', sawPending,
-  sawPending ? 'tool_result=PENDING_APPROVAL' : '(no PENDING_APPROVAL frame)');
+  sawPending ? 'tool_result=PENDING_APPROVAL' : '(no PENDING_APPROVAL frame after 3 tries)');
 
 await page.click('#btnRefunds');
-await page.waitForSelector('#refundQueue .tk', { timeout: 15000 });
+await page.waitForSelector('#refundQueue .tk', { timeout: sawPending ? 15000 : 1500 });
 const pendingBadges = await page.$$eval('#refundQueue .badge', (els) => els.map((e) => e.textContent));
 check('refund review drawer lists the pending refund via proxy (ticket 61)',
   pendingBadges.includes('PENDING_REVIEW'), pendingBadges.join(','));
@@ -256,20 +274,19 @@ await page.waitForTimeout(250);
 
 // 驳回路径换一单（90002 是可退的发货单）：驳回后订单按时间戳推导回滚，这一半由 biz-mock 的
 // RefundReviewTest 在机器上钉住；这里只验面板这一趟走得通、且驳回后队列里不再有它。
-await page.click('#btnNewConv');
-await page.fill('#q', '订单 90002 我要申请退款');
-await page.click('#btnSend');
-const sawPending2 = await page.waitForFunction(
-  () => [...document.querySelectorAll('#timeline .ev.tool_result')].some((e) => /PENDING_APPROVAL/.test(e.textContent)),
-  null, { timeout: 90000 }).then(() => true).catch(() => false);
-await page.click('#btnRefunds');
-await page.waitForSelector('#refundQueue .tk', { timeout: sawPending2 ? 15000 : 1000 });
-await page.locator('#refundQueue .tk', { hasText: '90002' }).first()
-  .locator('button[data-decision="REJECT"]').click();
-await page.waitForTimeout(1200);
-const afterReject = await page.$$eval('#refundQueue .tk', (els) => els.map((e) => e.textContent));
-check('rejecting from the panel clears it from the queue (ticket 61)',
-  !afterReject.some((t) => t.includes('90002')), `${afterReject.length} rows left`);
+const sawPending2 = await pendingRefundViaChat('90002');
+let rejectedGone = false;
+if (sawPending2) {
+  await page.click('#btnRefunds');
+  await page.waitForSelector('#refundQueue .tk', { timeout: 15000 });
+  await page.locator('#refundQueue .tk', { hasText: '90002' }).first()
+    .locator('button[data-decision="REJECT"]').click();
+  await page.waitForTimeout(1200);
+  const afterReject = await page.$$eval('#refundQueue .tk', (els) => els.map((e) => e.textContent));
+  rejectedGone = !afterReject.some((t) => t.includes('90002'));
+}
+check('rejecting from the panel clears it from the queue (ticket 61)', rejectedGone,
+  sawPending2 ? '' : 'second refund never reached the gate after 3 tries');
 await page.keyboard.press('Escape');
 await page.waitForTimeout(250);
 

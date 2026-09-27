@@ -19,7 +19,7 @@
 - [x] 受理话术与 `queryOrderDetail` 答案明确写出到账边界（「已放行，到账由支付渠道处理」）
 - [x] JUnit 用例：待审核 / 已放行 / 已驳回三态读回可分辨
 - [x] 全量 `verify` 绿；`verify_eval_judge.py` 40/40
-- [ ] 活体 `verify-action-loop.ps1` 文本断言复核（起栈；未跑成按未达成登记）
+- [x] 活体 `verify-action-loop.ps1` **11/11 PASS、exit 0**（2026-09-28 补跑）
 
 **Verify**
 ```bash
@@ -46,7 +46,8 @@ pwsh -NoProfile -File scripts/verify-action-loop.ps1
 
 **未覆盖（按未达成登记，不摘红）**
 
-- **活体 `verify-action-loop.ps1` 的文本断言未复核**（需起栈）：工具结果变了 → dev 模型答案文本可能变。gold 不判文本，故 gold 不受影响；但活体那几步的文本断言必须复核才算数。属票 62 的活体批次。
+- **活体 `verify-action-loop.ps1` 已于 2026-09-28 补跑：11/11 PASS、exit 0** —— 本票原先「工具结果变了 → 模型答案文本可能变，需活体复核」的挂账随之关闭（答案文本断言未退化）。
+- **「退款进度」措辞的读回缺口**见票 62 的「未达成」：本地 3B 对「我那退款到哪了」判 `ACTION_REFUND` 后不调 `queryOrderDetail`，那一措辞下买家读回落空。本票的 `OrderView` 机制本身经「订单状态」措辞活体证成。
 
 **你需要能当场回答的三个追问**
 
