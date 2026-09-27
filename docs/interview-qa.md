@@ -3,7 +3,7 @@
 生成方式：`python scripts/collect_interview_questions.py`。
 每题答案直接取自当时写下的收尾记录，不做事后润色——答不上来的就是当时没想清楚的。
 
-共 208 问，覆盖 59 个 ticket。
+共 223 问，覆盖 64 个 ticket。
 
 用法：每条先只看问题，自己答 30 秒，再对答案。答不出细节的题回去读对应 ticket。
 
@@ -571,7 +571,7 @@ A：那会复制 `DependencyHealthConfiguration` 的判定；这里直接读 `de
 
 **Q：为什么指标名要在 README 里现场 grep 去重，不能手抄旧数量？**
 
-A：指标名会随实现换代，手抄数字没有来源也会悄悄过期；README 明确写出 grep 命令，读者能在当前 checkout 复算。**当前实算为 52**（票 57 校正：本票当时写的是 41，round18 时点为 51，round19 加 `shoppilot_embedding_latency_seconds` 后为 52 —— 数法一字未改，只有数字换代）。
+A：指标名会随实现换代，手抄数字没有来源也会悄悄过期；README 明确写出 grep 命令，读者能在当前 checkout 复算。**当前实算为 53**（票 57 校正：本票当时写的是 41，round18 时点为 51，round19 加 `shoppilot_embedding_latency_seconds` 后为 52，round21 票 59 加 `shoppilot_refund_pending_total` 后为 53 —— 数法一字未改，只有数字换代）。
 
 **Q：S5 为什么没有照票面写进 ADR 0030 的 P1 挂账组？**
 
@@ -985,6 +985,81 @@ A：不会，这正是 `queryHash` 那道条件的用处：指纹不等就**放�
 **Q：为什么请求级索引只存指针、结果仍读原来那个键？**
 
 A：为了不给同一事实造第二本账。结果复制进索引就意味着存在两份可能不一致的副本（写一半失败、TTL 不同步收走），而本仓对这类形状有明确前科否决。多一次 Redis 读换"结果的唯一真相只有一个键"，这笔账在本项目的量级下是划算的。
+
+
+## Ticket 59 — refund approval gate
+
+**Q：为什么审批闸门做在业务侧的状态迁移上，而不是做在会话轮次里？**
+
+A：闸门拦的是"钱动没动"，不是"买家打没打字"。会话内两段式的首轮不会派发 `applyRefund`，`TOOL_EXEC` 里没有该工具名 → 14 条退款 gold 全红且无退路；而且它会把"审批待确认"塞进 `CONTEXT.md:69` 已锁定的「待办动作」（那里是"信息不全、尚未执行"）。
+
+**Q：为什么给 `ToolStatus` 新增一个值，而不是复用 `OK` / `STATE_NOT_ALLOWED`？**
+
+A：复用 `OK` 会让"已受理"与"已放行"在 `tool_result` 与 trace 里同形，审计时无法证明门存在；复用 `STATE_NOT_ALLOWED` 语义错（这是受理不是拒绝）且会命中 `AgentStateMachine.failedStep` 把受理当"前步失败"中止 Plan；复用 `IDEMPOTENT_REPLAY` 语义相反。新增值已核安全（全仓无 `values()` 遍历、无穷尽 switch）。
+
+**Q：为什么审核端点要显式比对租户，`@TenantId` 不是自动的吗？**
+
+A：`@TenantId` 的判别器作用于**查询**，不作用于 `find(id)`。这是本票实测发现的（跨租户审核返回 200）。显式比对后跨租户一律 `NOT_FOUND`，与订单归属口径一致；派生查询（如 `findByStatus...`）仍由判别器自动过滤。
+
+
+## Ticket 60 — buyer refund readback
+
+**Q：为什么加一个新枚举而不是直接回传退款单的原始状态串？**
+
+A：原始串（`PENDING_REVIEW`/`PROCESSING`/`REJECTED`）是**业务内部**的状态名，直接把内部状态名喂给模型会让它有机会复述出内部术语；买家侧的三种处境（待审/已放行/已驳回）是一个稳定的对外契约，用独立的枚举把内部状态与对外表达解耦，`PROCESSING→RELEASED` 这层映射就是那道缝。
+
+**Q：到账边界为什么放 `message` 而不是 `OrderView` 的字段？**
+
+A：`message` 在本仓就是"给模型组织人话"的通道（`failure` 的 message 即此用途），散文放数据 record 会污染 DTO 的形状；而 `OrderView` 只承载可结构化的事实（审核态枚举）。
+
+**Q：这条碰不碰 gold？**
+
+A：不碰。gold 逐行断言 `{"tool","args","slotAsk"}`，**没有任何一条断言答案文本**，加字段构造上就碰不到判据；间接风险是 dev 模型答案文本可能变，那由活体复核（票 62）覆盖。
+
+
+## Ticket 61 — console refund review panel
+
+**Q：为什么退款审核入口放页脚而工单队列在页头？**
+
+A：抽屉的 `inset: 49px` 与页头 49px 高度同源，往页头加按钮要改那处几何（走查第 11 项的修复）；页脚本就 `flex-wrap`，加按钮零布局风险。这是**布局约束**下的取舍，不是设计偏好。
+
+**Q：面板断言为什么依赖模型发工具调用？**
+
+A：退款受理本来就要经模型（网关不为写动作派生工具调用）。这与 `verify-idempotency.ps1` 是同一条依赖，本票不为面板另造更宽松的判据（那会变成"用更弱的门让它变绿"）。
+
+**Q：「驳回后订单回可申请态」在面板上怎么没断？**
+
+A：面板读不到订单状态（它列的是退款单）。该语义由 biz-mock 的 `RefundReviewTest` 在机器上钉住（驳回→推导回滚→再申请成功）；面板这趟只验队列清空，两者合起来才是完整判据。
+
+
+## Ticket 62 — refund approval live verification
+
+**Q：为什么读回断言不用流式原文？**
+
+A：流式按 token 分帧，原始 SSE 文本里连续词被 `data:` 与换行切开，子串匹配结构上不可能命中；同步端点返回拼好的 `.answer`，那才是「买家看到的那句话」。
+
+**Q：脚本为什么把「退款到哪了」换成「订单 X 什么状态」？**
+
+A：前者在本地 3B 下落 `ACTION_REFUND` 且不调读工具（实测），换措辞是为了让**票 60 的机制**在活体上被真的走到；缺口本身没有掩盖，登记在「未达成」。
+
+**Q：回滚是怎么在活体上证成的？**
+
+A：两条——驳回那一笔的读回原文出现「订单已恢复原状态」，以及第 7 步对同一订单**再次申请成功**（`PENDING_APPROVAL`）。若回滚没发生，订单仍在 `REFUNDING`，第二次申请会落 `STATE_NOT_ALLOWED`。
+
+
+## Ticket 63 — round21 closeout
+
+**Q：为什么 JVM 从 `3 + 21 + 276` 涨到 `5 + 29 + 290`，涨得最多的是 biz-mock？**
+
+A：biz-mock 的 `reviewRefund` 与审核控制器是票 59 的新代码，而它的覆盖率余量当时只有 1.49pp，所以配套了 `RefundReviewTest` 8 条（三态迁移、推导回滚、跨租户、重复审核 409、未知决定 400）；tool-api 的 2 条覆盖新枚举与声明式审批策略；gateway 的 14 条里 10 条属票 58（回放）。
+
+**Q：为什么要在收口时把 `AgentStateMachine` 的债务行数从 665 改成 938？**
+
+A：那是核对时发现的**过期数字**（round19 的票 48/49 就把它推高了，一直没更正）。把它改对不是美化——它正是「这笔债还在长」的证据；本票同时记明 round21 的新增是用 helper 与外置渲染器做的，没有把这笔债推得更重。
+
+**Q：round21 结束了，`docs/PROJECT_PLAN.md` 要不要改？**
+
+A：不需要。本轮不改交付方向与冻结线；round21 是 ADR 0046 覆盖的一次政策覆盖轮，收口即回到 ADR 0031 机制，**不自动续期**（ADR 0046 的 Consequences 已写明）。
 
 
 ## Ticket readme — non goals

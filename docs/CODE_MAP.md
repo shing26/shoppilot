@@ -21,7 +21,7 @@
 | `knowledge` | embedding、Qdrant/ES 客户端、RRF 混合检索、知识纪元 | `HybridRetriever`、`EmbeddingClient`、`QdrantRestClient`、`EsRestClient`、`KbEpoch` |
 | `ingest` | Markdown 政策切块与离线入库 | `MarkdownChunker`、`IngestRunner` |
 | `llm` | local/dev/perf 三种模型实现、超时/预算、显式输出上限与 LLM 故障注入 | `LlmGateway`、`OllamaLlmClient`、`OpenAiCompatibleLlmClient`、`MockLlmClient`、`TokenBudget` |
-| `agent` | 10 状态编排、工具派发、会话、幂等、fallback 与工单；计划步骤与上下文组成的观测出口（ADR 0044 票 48/49） | `AgentStateMachine`、`AgentResult`、`ToolDispatcher`、`BizMockClient`、`FallbackService` |
+| `agent` | 10 状态编排、工具派发、会话、幂等、fallback 与工单；计划步骤与上下文组成的观测出口（ADR 0044 票 48/49）；**请求级幂等回放**（模型之前，ADR 0046 票 58）与**退款受理出口**（ADR 0047 票 59） | `AgentStateMachine`、`AgentResult`、`ToolDispatcher`、`BizMockClient`、`FallbackService`、`IdempotencyService`、`ReplayReply` |
 | `web` | 同步/SSE 聊天入口、运维接口、错误信封、调试台事件出口 | `ChatController`、`SseEventSink`、`OpsController`、`ApiErrorWriter` |
 | `config` | 配置绑定/校验、健康组、dev 默认值、线程与 HTTP 客户端、运行时指标 | `GatewayProperties`、`ValidatedServerProperties`、`DevDefaultsPolicy`、`RuntimeStateMetrics` |
 
@@ -32,9 +32,9 @@
 | `bizmock/domain` | Hibernate 实体和业务状态枚举 | `Order`、`Refund`、`Ticket`、`TicketStatus` |
 | `bizmock/repo` | tenant-aware repository 与唯一约束 | `OrderRepository`、`RefundRepository`、`TicketRepository` |
 | `bizmock/db/migration`（资源） | **模式的唯一产生源**：Flyway 版本化迁移（`ddl-auto` 已是 `validate`）。索引的真相源在这里，实体上的 `@Index` 注解在 `validate` 下不再被校验、只作文档 | `V1__baseline.sql`、`V2__index_feedback_review.sql`；回滚约定在 `db/rollback/U1__baseline_down.sql` |
-| `bizmock/service` | 查询、改地址、退款、工单、归属和状态前置校验 | `BizMockService` |
-| `bizmock/web` | 内部工具接口、工单接口、内部 token 校验、故障注入 | `ToolController`、`TicketController`、`InternalAuthFilter` |
-| `tool/request` / `tool/view` | 跨模块请求和响应 DTO | `QueryOrderDetailRequest`、`ToolResponse`、`TicketView` |
+| `bizmock/service` | 查询、改地址、退款、**退款审核（受理/放行/驳回 + 推导回滚）**、工单、归属和状态前置校验 | `BizMockService` |
+| `bizmock/web` | 内部工具接口、工单接口、**退款审核端点**、内部 token 校验、故障注入 | `ToolController`、`TicketController`、`RefundReviewController`、`InternalAuthFilter` |
+| `tool/request` / `tool/view` | 跨模块请求和响应 DTO | `QueryOrderDetailRequest`、`ToolResponse`（`ToolStatus.PENDING_APPROVAL`）、`OrderView`（`RefundReviewState`）、`TicketView` |
 | `tool/schema` | 工具 JSON schema 生成 | `ToolSchemaGenerator` |
 
 ## 请求主链路
@@ -47,11 +47,13 @@
 | trace 与 MDC | `identity/RequestTrace`、`config/AsyncConfig` |
 | 限流 | `ratelimit/RateLimitService` |
 | 意图判定与缓存准入 | `triage/TriageEngine`、`triage/T0RuleLayer`、`triage/T1CentroidLayer` |
+| 请求级幂等回放（模型之前、情绪门之后） | `agent/IdempotencyService.lookupByClientToken`、`agent/ReplayReply` |
 | L1/L2 缓存 | `cache/CacheService`、`cache/L1Cache`、`cache/L2SemanticCache`、`cache/PolarityGuard` |
 | 混合检索 | `knowledge/EmbeddingClient`、`knowledge/QdrantRestClient`、`knowledge/EsRestClient`、`knowledge/HybridRetriever` |
 | 模型计划 | `llm/LlmGateway`、`llm/LlmClient`、`llm/LlmTypes` |
 | 状态机与工具循环 | `agent/AgentStateMachine`、`agent/AgentState`、`agent/ToolDispatcher` |
 | 业务调用 | `agent/BizMockClient` -> `bizmock/web/ToolController` -> `bizmock/service/BizMockService` |
+| 退款审核（人工闸门） | `bizmock/web/RefundReviewController` -> `bizmock/service/BizMockService.reviewRefund`；网关代理 `web/OpsController`（`/ops/refunds/*`）；调试台面板 `static/index.html` |
 | SSE 事件 | `agent/EventSink`、`web/SseEventSink` |
 | 降级与工单 | `agent/FallbackService`、`agent/FallbackReason` |
 | 缓存写回 | `cache/WriteBackPolicy`、`cache/WriteBackPool` |
@@ -71,6 +73,9 @@
 | 向量化分段耗时与计划/上下文观测 | `knowledge/EmbeddingLatencyTimerTest`（三桶与三计数器同分法）、`web/GatewayMainPathJvmTest` 的 `planStepsAreReportedInExecutionOrder` / `contextCompositionMirrorsCitationsAndHistory`、`web/SseEventSinkTest` 的 `done` 帧字段 |
 | 会话归属 | `agent/ConversationOwnershipTest` |
 | fallback 与幂等 | `agent/FallbackReasonTest`、`agent/IdempotencyServiceTest` |
+| 请求级幂等回放 | `agent/IdempotencyServiceRequestReplayTest`（往返性质，Map 假 Redis）、`web/GatewayMainPathJvmTest.repeatedRequestReplaysTheFirstResultWithoutCallingTheModel` |
+| 退款审批闸门 | `agent/ToolDispatcherApprovalTest`（受理态落幂等）、`bizmock/RefundReviewTest`（三态迁移 / 推导回滚 / 跨租户 / 重复审核；独立 H2）、`web/GatewayMainPathJvmTest.refundApprovalStopsAtTheGateWithoutASecondModelHop`、`web/RestErrorEnvelopeTest.refundReviewProxiesWithTenantContext` |
+| 跨模块工具契约（审批策略与新状态值） | `shoppilot-tool-api/src/test/java/.../ToolContractApprovalTest` |
 | 业务租户隔离、幂等、工单工作流 | `shoppilot-biz-mock/src/test/java/...` |
 | 模式迁移与 schema 一致性 | `bizmock/SchemaMigrationTest`（迁移已应用、9 表齐备、`ddl-auto` 仍是 validate） |
 | 慢查询计划与索引守卫 | `bizmock/SlowQueryPlanTest`（含被否决的那笔优化，见 `docs/slow-query-optimization-2026-09-21.md`） |
@@ -84,7 +89,7 @@
 
 这些是整理时确认的候选，不表示应该立刻重构：
 
-- `agent/AgentStateMachine.java` 约 665 行，同时承担状态循环、Prompt、检索、缓存写回、fallback 和槽位抽取。未来按行为边界拆时，先用 ticket 固定现有测试和 SSE 契约。
+- `agent/AgentStateMachine.java` 约 938 行（round21 收口实测），同时承担状态循环、Prompt、检索、缓存写回、fallback 和槽位抽取。未来按行为边界拆时，先用 ticket 固定现有测试和 SSE 契约。round21 的两处新增（票 58 的 `replayAnswer`、票 59 的 `pendingApprovalAnswer`）都抽成 helper 并把话术渲染外置到 `agent/ReplayReply`，是为了**不加重**这笔债。
 - `agent/AgentStateMachine` 与 `agent/ToolDispatcher` 各自持有部分槽位策略。若继续出现参数校验漂移，可评估 `ToolInputPolicy`，不要为了“少一个类”先合并。
 - `web/ChatController` 的同步和流式路径重复限流、工单和 fallback 决策。若新增准入规则，优先抽 `ChatAdmission` 一类深模块，避免两条路径再次漏改。
 - `agent/ConversationOwnershipTest` 位于 agent 包，但实际读取并断言 `static/index.html`；若继续扩调试台断言，应迁到 web/console seam，而不是继续在 agent 测试里堆前端细节。

@@ -46,7 +46,7 @@ FIXED_POINT = "11a12ac"  # 第三轮起点
 #   这些条目断言的是「订正前那份文档里确实存在这句问题话」，而 HEAD 会随本轮提交前移，
 #   一旦提交了就永远取不到那句话，对照组反而把自己判红（第四轮收尾实际踩到过，见 ticket 20 第 10 条）。
 PRE_FIX = "a6ccdcb"  # 第四轮收口那一笔（对照组要取它**之前**那份文档，见下面 ROUND_FP 的分工）
-ROUND_FP = "e458677"  # round20 起点（round19 收口 + 票 50 读数验证之后那一笔）。逐轮重锚，见 ADR 0023。
+ROUND_FP = "c28eb04"  # round21 起点（round20 收口的那一笔）。逐轮重锚，见 ADR 0023。
 
 FAILS = []
 PASSES = []
@@ -92,7 +92,12 @@ _DEF_LANDED = 0
 # 票 46 换代：`3 + 21 + 250`（274）→ `3 + 21 + 253`（277）——仍只动 gateway：ADR 0043 新增 3 条
 # （`GatewayMainPathJvmTest.cacheHitPathStaysZeroModelCallsInLocalMode` 回归、
 # `SentimentGateTest.localModeIsLexiconOnly` 机制、`SentimentGateTest.devModeStillUsesTheLlmLayer` 正对照）。
-G6_EXPECT = [3, 21, 276]
+# round21 换代：`3 + 21 + 276`（300，round20 收口读数）→ `5 + 29 + 290`（324）。相对 round21 起点，
+# tool-api +2（`ToolContractApprovalTest`）、biz-mock +8（`RefundReviewTest`）、gateway +14
+# （票 58 的 `IdempotencyServiceRequestReplayTest` 9 条 + `GatewayMainPathJvmTest` 2 条 + 票 59 的
+# `ToolDispatcherApprovalTest` 1 条 + 票 61 的 `RestErrorEnvelopeTest.refundReviewProxiesWithTenantContext` 1 条
+# + 票 59 的 `GatewayMainPathJvmTest.refundApprovalStopsAtTheGateWithoutASecondModelHop` 1 条 = 14）。
+G6_EXPECT = [5, 29, 290]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 

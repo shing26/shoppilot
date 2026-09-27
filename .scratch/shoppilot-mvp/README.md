@@ -2,7 +2,7 @@
 
 这里是本仓的正式 ticket tracker，不是临时草稿目录。目录名里的 `.scratch` 是历史命名；路径已被 README、ticket、审计脚本和提交记录大量引用，不要为了改名而移动。
 
-最后整理日期：2026-09-21。
+最后整理日期：2026-09-28。
 
 ## 当前状态
 
@@ -31,9 +31,10 @@
 - 2026-09-27：**round20 收口时我自己造成的两处账，如实登记**——① **删了 20 个历史本机落点日志**：跑 round19 矩阵时我执行过 `rm -f logs/acceptance-run-*.log`，本意是清当轮旧文件，实际把 2026-09-10 → 09-20 的 20 个落点一起删了（含文档重点引用的 `acceptance-run-20260920-183028`，即 09-20 那次 22 步矩阵的落点）。`logs/` 不受版本控制，**git 恢复不了，不可逆**。收口审计 `F1c`（"文档里的 logs 类产物名都指向本机 logs/"）因此转红，**我按纪律保留这条红、没有把那些名字加进豁免表**——加进 `DELETION_RECORDS` 就是"为放行自己收窄门禁"。仓库本身未受损（`logs/` 是 gitignore 的本机证据，干净克隆里从来没有），受损的是本机对账面。**教训与当天早些时候那次同类事故同源**：清本机产物必须按本轮时间戳精确匹配，**不要用通配符扫整个目录**（另一次是 `rm -f eval/results/*-rescore.csv` 误删了 ADR 0021 的基线证据，那次 git 能恢复、已恢复）。② **收口审计另外两条 FAIL 都是如实的**：`A2` 是跑审计时带着未提交改动（提交后自会绿）；`A3`「本轮零额度」为假——本轮为票 56 的 gold 回归**真花了云端额度**（三个动作意图 54 条、约 23 万 token）。**一条判据都没改。**
 - 2026-09-27：**round20 收口（票 53-56，ADR 0045）**——全量 22 步矩阵复测 **805 s、20 步绿 / 2 步红**（落点 `logs/acceptance-run-20260927-161245.log`）：四条红里 **`action` 与 `emotion` 转绿**。**`action`**：票 56 的 `orderNo` 溯源守卫接管（`isUntrustedOrderNo` = 格式 + 溯源；判据面是"买家说过的话"），模型照抄 schema 示例值 `10023` 现在被转成 `[orderNo]` 追问——**同时是 gold `ACT-LOG-12` 的未达成，gold 一字未改**；`verify-action-loop.ps1` 8 PASS/3 FAIL → **11/11**。**`emotion`**：票 54 让用例追上 ADR 0042（`EMO-ESC-02` 移入"显式转人工"，新增 `EMO-ESC-09` 补位），**并挖出该步此前跑到第 9 条就因 401 中止**（队列反查缺 bearer）→ 补上后 `PASS 30 / FAIL 0`。**`feedback` 仍红（6/1）**：`implied_retry` 间歇（四次连跑 3 红 1 绿），SSE trace 显示模型在含上一轮成功答复的会话里不肯再发工具调用、重复请求走不到幂等层；绿的那次计数 `0 → 1` 证明幂等层正确——**按登记处置、不修代码迎合脚本**。**`plansteps` 仍红（0/7）**：local 3B 不产生两步链，**判据一字不改**（ADR 0043 明令禁止改窄判据适配实现），票 55 只更正了登记材料（删掉不存在的 `PlanExpressionTest` 引用、`aborted` 是进程生命周期累计值）。JVM `3 + 21 + 276 = 300` 绿（gateway 269 → 276），覆盖率 gateway **58.52%**，CI 三门禁 `40/40` + `tool_diff=4` + `ok=24`。**未覆盖照登**：`ACTION_REFUND` 的 dev 回归因日预算不足没跑（不得声称"四个动作意图都不退化"）。矩阵耗时从 512 s 涨到 805 s **不是判据变了**，是原本被中止的断言开始跑了（`emotion` 91 s vs 此前中止在 9 条）。
 - 2026-09-28：**round21 开轮（票 57-63，ADR 0046 + 0047；票 57/58 当日收口）**——触发物是外部审计 `D:\WorkBuddyData\Agent项目七维架构审计-v2-分类修正-20260927.md`（§4.2/§7 对 ShopPilot 的四条指控 + 一处数字纠正）。**逐条对仓核实后只有一条是全新发现**：① 高风险动作无人工确认（成立，但 round19 登记节第 3 项早已登记为**政策决定**）；② 零告警规则（成立于触发线未到 —— 本轮按"做实触发线"改为有效，见 round22）；③ 「记忆仅会话级、多实例不可用」**说得不精确**（会话/限流/token 预算都已是 Redis 后端，真正进程内的只有 `FeedbackService.java:50` 的 `trails`）；④ 180 条活体不进 CI（成立，早登记）；⑤ **README 写 41 个指标而实算 52（成立，且 `round18-spec:14` 早在 round18 就记 51，说明 41 从那时起就落后）**。**审计没看出来的那一格更重要**：它给 D4（RAG）/D6（评测）都判 ✅，但 CI 里**没有任何一条断言在守检索排序**（`eval_suites.py` 的 24 条夹具四个 kind 都不读 `ruleIds`/RRF 序），而唯一那份 RAG 质量证据 `docs/retrieval-comparison.md` 的 16 条查询 `dense` 与 `hybrid` **名次完全相同** → 对 RRF 回归判别力为零。该格不在 round21 范围内，登记给 round22。**14 项决策问答**（含主控推翻自身两处判断：退款读回的"高风险"不成立、告警的排除理由被 promtool 推翻）落成两份 ADR 与一份 spec。**票 57 收口**：`README:199` 与 `interview-qa:574` 的 41 → **52**（**改的是生成物的来源票 30，再重跑生成器**），`README` 的 round14 历史落点**保持 41 + 换代指针**，新增 `scripts/provenance.py` 给两份活体报告加 commit/语料 sha 表头（**报告正文未重生成**，故表头要等下次真跑才出现 —— 按未达成登记）；顺带补 `.gitattributes` 三条 `whitespace=cr-at-eol`（照仓库既有先例，不改存储）。**票 58 收口**：`IdempotencyService` 新增请求级回放索引（只存 `工具名|指纹|幂等键` **指针**，不复制结果 —— 不造第二本账）、`lookupByClientToken` 与 `agent/ReplayReply` 确定性话术，回放点在**模型之前、情绪门之后**（不扰动 ADR 0034/0042 的排序）、命中走既有 `duplicate_submit` 出口而**不落工单**（不是降级）。读数：JVM `3 + 21 + 276 = 300` → **`3 + 21 + 287 = 311` 绿**，gateway LINE 覆盖率 58.52% → **59.47%**；CI 三门禁 `40/40` + `ok=24`；**变异对照**（钩子条件改 `if (false)`）→ 回放用例转红，还原即绿。**一条判据都没改。活体（`verify-idempotency.ps1`）与 gold 回归未跑，按未覆盖登记。**
-- 当前 `ready-for-agent` 的开放票：**票 59-63**（round21 余下部分，依据 ADR 0046/0047）。它们的**范围与逐条口径已定**在本轮 spec 的 §2/§3/§4，**ticket 文件在领取时拆出**（spec 即其 Why 与 How）——这一点与仓库历轮的"先拆文件再领取"略有出入，是**有意**的：本轮 spec 已经把每票的落点、Verify 与验收项写到可执行粒度，先拆五份文件只是誊抄一遍。票 01-39 与 41、风格票、有意不做成文票、票 42-58 均已收口；round17、round18、round19、round20 均已收口，round21 进行中。
+- 2026-09-28：**round21 收口（票 59-63，ADR 0046/0047 的所有者政策覆盖）**——把「闭环的最后一公里」补齐：**票 59** 退款审批闸门（受理与放行拆两态，`ToolStatus.PENDING_APPROVAL` + 声明式审批策略 + 推导回滚 + 审核端点；**核心判断：HITL 不必是对话轮次，可以是状态迁移的门**，故 ADR 0008 的 2 轮预算与 ADR 0036 的 Plan ≤2 步一字未动）；**票 60** 买家读回（`OrderView.refundReview` 三态 + 到账边界写进 `ToolResponse.message`）；**票 61** 调试台审核面板（网关代理 + 第二个抽屉；顺带实测定位一处真实坑：**页面发的请求不带 `idempotencyToken`，网关派生确定性 token，`#btnDemo` 复位只清库不清 Redis** → 重发退款请求命中 `IDEMPOTENT_REPLAY`、闸门走不到）；**票 62** 活体验收 `verify-refund-approval.ps1` **7/7 PASS**；**票 63** 本收口。**读数**：JVM `3 + 21 + 287 = 311` → **`5 + 29 + 290 = 324` 绿**；覆盖率 gateway **59.75%** / biz-mock **79.30%** / tool-api **47.95%**（门槛 54.0/76.0/40.0）；指标名 **52 → 53**（+`shoppilot_refund_pending_total`）。**活体全套补做**：`verify-refund-approval.ps1` 7/7、`verify-idempotency.ps1` exit 0（**关闭票 58 那条一直挂着的未达成**）、`verify-console.mjs` **40/40**、`verify-action-loop.ps1` **11/11**；全量矩阵（22 步 → **23 步**）落点 `logs/acceptance-run-20260928-050418.log`（**606 s、21 绿 / 2 红**，红仍是 `feedback`、`plansteps` 两条登记项）。**离线 rescore** `cases=180 files=6 tool_diff=4`（gold 一字未改）。**未达成照登**：gold 180 条活体重跑需 dev 额度未做；本地 3B 对「我那退款到哪了」判 `ACTION_REFUND` 后不调 `queryOrderDetail`，该措辞下买家读回落空（登记给后续轮次）；`stack` 步在本机内存压力下构建期 OOM（第二次 `-SkipStack` 复用已起的栈）。**一条判据都没改。**
+- 当前 `ready-for-agent` 的开放票：**无**。票 01-39 与 41、风格票、有意不做成文票、票 42-63 均已收口；round17、round18、round19、round20、round21 均已收口。**round22（票 64-68）仍是草案**，须**另开一轮**：其中 65（task 级判据）与 67（告警 + `promtool test rules`）是「触发本次成立」，而 64（检索录放门，其触发条件就是它自己）与 66 是「政策越过」，两份依据不许混称；开轮决策（`/grill-with-docs`）后按同样形制评估新的依据文档再拆票。
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
-- Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建、JVM 测试与 0 token 评测门禁（票 34：判据自检 + 离线 rescore 比对；round18 票 44 加第四步：覆盖率棘轮）；全量 22 步活体验收仍是作者本机证据。
+- Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建、JVM 测试与 0 token 评测门禁（票 34：判据自检 + 离线 rescore 比对；round18 票 44 加第四步：覆盖率棘轮）；全量活体验收矩阵仍是作者本机证据（round21 起 **23 步**，新增 `refund`）。
 - 下一轮不能从旧 `ready-for-agent` 字样推断。重开条件与仍然挂红的裁决见 [`docs/adr/0030-round14-closure-scope-and-reopen-triggers.md`](../../docs/adr/0030-round14-closure-scope-and-reopen-triggers.md)。
 
 2026-09-16 的整理修正了四处历史状态位：
@@ -57,7 +58,7 @@
 | round18 | 票 42-44，补齐评分维度完备性（B8 数据层 + B9 测试体系） | [`round18-spec-scoring-dimension-completeness.md`](round18-spec-scoring-dimension-completeness.md) | done |
 | round19 | 票 47-52，补齐可信性观测（embedding 计时器 / Plan 记录 / 上下文组成 / 输出上限）；八项登记不执行 | [`round19-spec-trust-observability.md`](round19-spec-trust-observability.md) | done |
 | round20 | 票 53-56，修 22 步矩阵的四条红（三条事实性修正 + 一条 orderNo 溯源） | [`round20-spec-live-reds.md`](round20-spec-live-reds.md) | done |
-| round21 | 票 57-63：闭环最后一公里（指标数事实修正 / 幂等重放 / 退款审批闸门 / 买家读回 / 调试台面板 / 活体验收） | [`round21-spec-last-mile-and-machine-backing.md`](round21-spec-last-mile-and-machine-backing.md) | **open**（ADR 0046 + 0047 已立；票 57/58 已收口，59-63 待领取） |
+| round21 | 票 57-63：闭环最后一公里（指标数事实修正 / 幂等重放 / 退款审批闸门 / 买家读回 / 调试台面板 / 活体验收） | [`round21-spec-last-mile-and-machine-backing.md`](round21-spec-last-mile-and-machine-backing.md) | **done**（ADR 0046 + 0047 已立；票 57-63 全部收口） |
 | round22 | 票 64-68 草案：RAG 的机器背书（检索录放门 / task 级判据 / token 计量标签 / 告警 + promtool / 收口） | 同上（同在 round21 spec 内） | **draft**（未开轮，随 round21 收口后评估） |
 
 ## Ticket 索引
@@ -123,11 +124,11 @@
 | 56 | [`56-orderno-provenance-guard.md`](issues/56-orderno-provenance-guard.md) | implemented | `orderNo` 溯源守卫（ADR 0045；**所有者政策覆盖**；同时是 gold `ACT-LOG-12` 未达成；`verify-action-loop.ps1` 8 PASS/3 FAIL → **11/11**） |
 | 57 | [`57-metric-count-and-report-provenance.md`](issues/57-metric-count-and-report-provenance.md) | implemented | 指标名计数换代 41 → 52 + 两份活体报告 provenance 表头（ADR 0046；**ADR 0031 事实修正豁免**；`README:852` 的历史读数保持 41 + 换代指针） |
 | 58 | [`58-idempotent-replay-before-the-model.md`](issues/58-idempotent-replay-before-the-model.md) | implemented | 幂等重放时机前移：请求级回放索引，判重放不再取决于模型（ADR 0046；兑现既有 `idempotencyToken` 语义；关闭 round20 登记第 5 项） |
-| 59 | [`59-refund-approval-gate.md`](issues/59-refund-approval-gate.md) | ready-for-agent | 退款审批闸门（后端）：受理态 + 异步人工审核 + `ToolStatus.PENDING_APPROVAL`（ADR 0046/0047；**所有者政策覆盖**） |
-| 60 | [`60-buyer-refund-readback.md`](issues/60-buyer-refund-readback.md) | ready-for-agent | 买家读回：`OrderView` 承载退款审核态 + 到账边界写进话术（ADR 0046/0047；**所有者政策覆盖**） |
-| 61 | [`61-console-refund-review-panel.md`](issues/61-console-refund-review-panel.md) | ready-for-agent | 调试台审核面板（列表 / 放行 / 驳回）（ADR 0046/0047；**所有者政策覆盖**） |
-| 62 | [`62-refund-approval-live-verification.md`](issues/62-refund-approval-live-verification.md) | ready-for-agent | 审批闸门活体验收（`verify-refund-approval.ps1` + 矩阵 add-only）（ADR 0046/0047；**所有者政策覆盖**） |
-| 63 | [`63-round21-closeout.md`](issues/63-round21-closeout.md) | ready-for-agent | round21 收口（spec 登记节 / EVIDENCE / tracker / CODE_MAP / 审计常数换代 / 指标名重算换代） |
+| 59 | [`59-refund-approval-gate.md`](issues/59-refund-approval-gate.md) | implemented | 退款审批闸门（后端）：受理态 + 异步人工审核 + `ToolStatus.PENDING_APPROVAL`（ADR 0046/0047；**所有者政策覆盖**） |
+| 60 | [`60-buyer-refund-readback.md`](issues/60-buyer-refund-readback.md) | implemented | 买家读回：`OrderView` 承载退款审核态 + 到账边界写进话术（ADR 0046/0047；**所有者政策覆盖**） |
+| 61 | [`61-console-refund-review-panel.md`](issues/61-console-refund-review-panel.md) | implemented | 调试台审核面板（列表 / 放行 / 驳回）（ADR 0046/0047；**所有者政策覆盖**） |
+| 62 | [`62-refund-approval-live-verification.md`](issues/62-refund-approval-live-verification.md) | implemented | 审批闸门活体验收（`verify-refund-approval.ps1` + 矩阵 add-only）（ADR 0046/0047；**所有者政策覆盖**） |
+| 63 | [`63-round21-closeout.md`](issues/63-round21-closeout.md) | implemented | round21 收口（spec 登记节 / EVIDENCE / tracker / CODE_MAP / 审计常数换代 / 指标名重算换代） |
 
 ## 如何新增或领取工作
 
