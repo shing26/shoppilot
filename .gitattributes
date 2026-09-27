@@ -20,6 +20,13 @@ scripts/run_tool_eval.py whitespace=cr-at-eol
 scripts/build_eval_set.py whitespace=cr-at-eol
 scripts/verify_eval_judge.py whitespace=cr-at-eol
 
+# 两份活体报告脚本与它们的 provenance 模块同样是 CRLF（`calibrate_threshold.py` 的 index
+# 全 CRLF、`retrieval_compare.py` 的 index 是历史混合行尾）。理由与上面三支相同：CR 是行
+# 终止符的一部分，豁免检查不改变存储，避免每次加表头都报假红。
+scripts/retrieval_compare.py whitespace=cr-at-eol
+scripts/calibrate_threshold.py whitespace=cr-at-eol
+scripts/provenance.py whitespace=cr-at-eol
+
 # eval/results 产物由评测脚本在本机生成，行尾基线 CRLF（与已入仓的 0908/09-10 产物一致）；
 # 同 loadtest 的理由：CR 是行终止符的一部分，不改存储只豁免检查。
 eval/results/*.csv whitespace=cr-at-eol

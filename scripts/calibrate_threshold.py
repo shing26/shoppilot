@@ -23,6 +23,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+import provenance
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -214,6 +216,8 @@ def write_report(groups, scored, rows) -> None:
     lines = [
         "# L2 语义缓存阈值标定（ticket 17）",
         "",
+        # 本脚本直连 Ollama、不经网关，所以档位与知识纪元不适用（写 `-` 而不是猜一个值）
+        provenance.line(),
         f"样本对：同意图改写 {len(groups['positive'])}、反义 {len(groups['antonym'])}、"
         f"跨意图 {len(groups['cross_intent'])}、跨租户同意图 {len(groups['cross_tenant'])}。",
         "向量化：本地 Ollama `bge-m3`，1024 维，与运行期同一条 embedding 路径。",

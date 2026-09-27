@@ -196,7 +196,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 **这张表逐条写"怎么量的"，未达成的照写未达成。**所有数字来自 `loadtest/results/` 下的产物，
 表格由 `python scripts/build_loadtest_report.py` 生成，本文不誊写第二个数字。
 吞吐与延迟类指标衡量的是**网关编排层**，生成侧是固定延迟的 Mock，不含模型推理（ADR 0001）。
-当前 **41 个唯一 `shoppilot_*` 指标名**。数法：对 `shoppilot-gateway`、`shoppilot-biz-mock`、`shoppilot-tool-api` 的 `src/main` 做
+当前 **52 个唯一 `shoppilot_*` 指标名**。数法：对 `shoppilot-gateway`、`shoppilot-biz-mock`、`shoppilot-tool-api` 的 `src/main` 做
 `rg -o 'shoppilot_[A-Za-z0-9_]+'`，再按字面值去重；带 tag 的同一指标仍只算一个名字。
 
 | 指标 | 判据 | 实测 | 口径 | 证据 |
@@ -849,7 +849,8 @@ Spring 判的 400 被吸成 500，报文里还带着 `internal_error` 去冤枉�
 `开跑时工作树=dirty（2 个未提交改动：G6 当轮常数与未跟踪项目梳理快照）`，
 `开始 09:46:18 结束 09:55:20 总耗时 543s`，17 步全绿；surefire 三份模块小计
 `3 + 12 + 206 = 221`。这一轮把写回池停机 seam、配置格式校验、四组状态指标、记账收口与
-native OOM 归因分五票落地，指标名按三模块 `src/main` 去重后为 41；判据、阈值、gold 与评测口径未动。
+native OOM 归因分五票落地，指标名按三模块 `src/main` 去重后为 41（**这是 `commit=8c4b616` 当时的历史读数，按原样供着**；
+换代指针：round18 时点为 51，round19 加 `shoppilot_embedding_latency_seconds` 后为 52，当前口径见上文「指标与口径」段）；判据、阈值、gold 与评测口径未动。
 `docs/console.png` 与 `logs/acceptance/eval.log` 是这次落点的浏览器与冒烟证据。
 
 | PLAN 行 | 覆盖它的命令 |

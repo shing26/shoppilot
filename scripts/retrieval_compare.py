@@ -13,6 +13,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import provenance
+
 REPO = Path(__file__).resolve().parent.parent
 GATEWAY = "http://127.0.0.1:8082"
 ES = "http://127.0.0.1:19200"
@@ -66,6 +68,7 @@ def main() -> int:
         return 1
 
     rows = []
+    epochs = set()
     for query, expected, intent in CASES:
         probe = http(f"{GATEWAY}/api/v1/support/ops/retrieval?query={urllib.parse.quote(query)}"
                      f"&intent={intent}&limit=20", None, headers)
@@ -73,6 +76,7 @@ def main() -> int:
             print(f"FAIL: 探针返回异常 {probe}")
             return 1
         dense, fused = probe["denseTop"], probe["fusedTop"]
+        epochs.add(probe.get("kbEpoch"))
 
         def rank(order):
             for index, rule_id in enumerate(order):
@@ -91,13 +95,24 @@ def main() -> int:
             print(f"FAIL: 探针期间有召回引擎不可用，对比不可信: query={query}")
             return 1
 
+    if len(epochs) > 1:
+        # 知识纪元在采集期间变了：这份报告混了两个语料版本，比不了
+        print(f"FAIL: 采集期间知识纪元发生变化 {sorted(epochs)}，对比不可信")
+        return 1
+    kb_epoch = next(iter(epochs), None)
+    try:
+        llm_mode = http(f"{GATEWAY}/api/v1/support/ops/switches", None, headers).get("llmMode")
+    except Exception:
+        llm_mode = None
+
     dense_hits = sum(1 for r in rows if r["dense_rank"] and r["dense_rank"] <= TOP_K)
     fused_hits = sum(1 for r in rows if r["fused_rank"] and r["fused_rank"] <= TOP_K)
     improved = [r for r in rows if r["fused_rank"] and r["dense_rank"] and r["fused_rank"] < r["dense_rank"]]
     regressed = [r for r in rows if r["fused_rank"] and r["dense_rank"] and r["fused_rank"] > r["dense_rank"]]
 
     lines = ["# dense-only 与 hybrid 检索质量对比", "",
-             "生成：`python scripts/retrieval_compare.py`（需网关与三中间件在跑）。", "",
+             "生成：`python scripts/retrieval_compare.py`（需网关与三中间件在跑）。",
+             provenance.line(kb_epoch=kb_epoch, llm_mode=llm_mode), "",
              f"对比口径：**同一次检索里**分别取稠密召回的前 {TOP_K} 与 RRF 融合后的前 {TOP_K}，"
              "判据是「期望语料文件的任一规则块是否进入前 5」。"
              "90 个规则块、16 条查询、按文件名前缀判定命中（同一篇文档的三个块都算对，"
