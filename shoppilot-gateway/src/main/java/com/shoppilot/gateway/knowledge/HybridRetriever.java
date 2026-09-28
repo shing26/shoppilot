@@ -194,8 +194,13 @@ public class HybridRetriever {
         }
     }
 
-    /** Reciprocal Rank Fusion：两路都靠前的规则块胜出，避免单路刷分。 */
-    private List<Retrieved> rrf(List<Scored> dense, List<Scored> lexical) {
+    /**
+     * Reciprocal Rank Fusion：两路都靠前的规则块胜出，避免单路刷分。
+     *
+     * <p>包级可见只为了让录放门（{@code RetrievalFusionReplayTest}）能对**生产这一份实现**重算 ——
+     * 在测试里另写一份融合等于造出第二份判据。行为零改动。
+     */
+    List<Retrieved> rrf(List<Scored> dense, List<Scored> lexical) {
         Map<String, Aggregated> merged = new LinkedHashMap<>();
         accumulate(merged, dense, true);
         accumulate(merged, lexical, false);
@@ -234,7 +239,8 @@ public class HybridRetriever {
         }
     }
 
-    private record Scored(String ruleId, int rank, String scope, String title, String text) {
+    /** 包级可见同 {@link #rrf}：录放门要从两路序重建输入。 */
+    record Scored(String ruleId, int rank, String scope, String title, String text) {
     }
 
     private static final class Aggregated {

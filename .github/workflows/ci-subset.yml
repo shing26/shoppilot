@@ -65,6 +65,17 @@ jobs:
       - name: Task-level scorer selfcheck (0-token)
         run: python3 scripts/eval_task.py
 
+      # round22 票 64 / ADR 0049：检索融合录放门的**只校验那一层**（0 token、无网关）。
+      # 重算在 JVM（RetrievalFusionReplayTest，随上面那步 verify 一起跑）：它由夹具的两路序重算融合、
+      # 比对 top-K 前缀，并核「四个常数来自生产 application.yml」「语料 sha 现算相等」。
+      # 这一步只做 Python 独有的四件事：夹具 schema、fused ⊆ dense ∪ lexical、语料 sha、
+      # 常数与 yml 一致 —— **刻意不在 Python 里复算 RRF**（两份实现就是第二份判据）。
+      # 哈希钉防的是"夹具被悄悄换掉"：重录夹具必须同步改这个 env（与 check_coverage.py 同模式）。
+      - name: Retrieval fusion gate (0-token)
+        env:
+          RETRIEVAL_FIXTURE_SHA256: 4e2a4a5cc8ad9499af4f02833e7482f18a17a644b3db0f0e05cfa3490ff5050c
+        run: python3 scripts/retrieval_gate.py
+
       # round18 票 44 / ADR 0041：覆盖率棘轮。产物由上面那一步 verify 的 jacoco:report 产出，
       # 这一步只读产物按模块分别比门槛（LINE 设闸 / BRANCH 只报），同样是 0 token、纯 stdlib。
       # 它落在 CI 里是**范围边界的更正而不是判据改动**：round15 spec 把「覆盖率」列进 Out of Scope
