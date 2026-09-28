@@ -47,6 +47,8 @@
   - **「退款到哪了」这类措辞的读回**：round21 已登记过（原口径是「读回落空」），本次实测**更重** —— 放行态会给出**与事实相反**的结论（说「已发货，无法退款」）、驳回态给非答案。**登记级别上调**，并补上这条证据。修它要动 triage 或强制先读 `queryOrderDetail`，两者都碰 180 条 gold 的面 → 触发 = gold 回归额度到位（见下）或所有者裁定。
   - **追问中途换话题/取消没有出口**：`CONTEXT.md:69` 已把「下一次输入是补全不是新诉求」锁定为设计，所以"不重判意图"可解释；要修的是**话术与取消出口**（现在把「换话题」说成「缺少必要信息无法办理」并多造一张工单）→ 属功能改动，触发 = 所有者裁定。
   - **运行期 native OOM**：一个**已就绪、已在服务请求**的网关会被主机内存压力杀死（3% 与 10% 堆两档都复现，`hs_err_pid*.log` 落根目录），且 `scripts/watchdog.ps1` 只守护 biz-mock；这是主机级资源竞争（四套项目的容器抢 15GB 内存），不是代码缺陷 → 触发 = 演示/面试前需要长时间稳定运行时，给网关也配守护并把 `-XX:CICompilerCount/ReservedCodeCacheSize/MaxMetaspaceSize` 收进启动脚本默认值。
+  - **`console` 步的 `miss path renders as typewriter` 是间歇红（模型方差，判据一字未动）**：该断言含一条「推出的正文 > 60 字」的下界，而本地 3B 对同一问句的输出长度在 60–156 之间波动 —— QA 后那次全量矩阵是 `3 chunks / 60 chars`（60 不 > 60）转红，同一脚本单独跑两次都是 **43/43**（139–156 字）。**不改阈值**：它是「答案不是一句敷衍」的代理判据，缩到 50 就是改窄判据（ADR 0043 明令禁止）。登记为抖动，与 `feedback` 的 `implied_retry` 间歇同族。
+- 2026-09-28：**QA 后的全量矩阵落点**：`logs/acceptance-run-20260928-192522.log`（**839 s、22 绿 / 3 红**）。红的三个：`feedback`（`implied_retry` 间歇，登记项）、`plansteps`（local 档已知不达成，判据不动）、`console`（上面那条长度下界的模型方差）。**新加的 `task`/`funnel` 两步绿**，`refund` 等既有步全绿。
 - 2026-09-28：**QA 顺带抓出并已更正的两处我自己的文档错误**：① 票 66 / round21 spec / round22 spec 把 `source` 标签写成「perf/local 档记 estimate、dev 云端档记 provider」——**错的**，实际是 **Mock（perf）→ `estimate`，Ollama（local）与云端（dev）→ `provider`**（代码与 `LlmTokenSourceLabelTest` 一直是对的，错的是文档）；② README 的指标名段补一句「这是**源码口径**，不要拿运行期 `/actuator/metrics` 去数」（那边列的是 meter，带 tag 的组合各算一条，且冷启动有懒注册缺席）。
 - 当前 `ready-for-agent` 的开放票：**无**。票 01-39 与 41、风格票、有意不做成文票、票 42-68 均已收口；round17、round18、round19、round20、round21、round22 均已收口。**下一轮不能从旧字样推断**（重开条件见 ADR 0030 五条与 ADR 0031）。
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
