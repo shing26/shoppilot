@@ -76,6 +76,9 @@
 | 请求级幂等回放 | `agent/IdempotencyServiceRequestReplayTest`（往返性质，Map 假 Redis）、`web/GatewayMainPathJvmTest.repeatedRequestReplaysTheFirstResultWithoutCallingTheModel` |
 | 退款审批闸门 | `agent/ToolDispatcherApprovalTest`（受理态落幂等）、`bizmock/RefundReviewTest`（三态迁移 / 推导回滚 / 跨租户 / 重复审核；独立 H2）、`web/GatewayMainPathJvmTest.refundApprovalStopsAtTheGateWithoutASecondModelHop`、`web/RestErrorEnvelopeTest.refundReviewProxiesWithTenantContext` |
 | 跨模块工具契约（审批策略与新状态值） | `shoppilot-tool-api/src/test/java/.../ToolContractApprovalTest` |
+| 检索融合录放门（round22 票 64） | `knowledge/RetrievalFusionReplayTest`（JVM，重算的唯一 owner）、`ingest/MarkdownChunkerTest`、`scripts/retrieval_gate.py`（只校验不复算）+ `eval/retrieval-fixture-*.json`（append-only，录制器 `scripts/record_retrieval_fixture.py`） |
+| task 级判据（round22 票 65） | `scripts/eval_task.py`（判据 + 14 条夹具）+ `eval/cases-part8-task.jsonl`；活体入口 `run_tool_eval.py --task` |
+| 告警规则（round22 票 67） | `ops/alerts/shoppilot.rules.yml` + `ops/alerts/shoppilot.rules.test.yml`（`promtool test rules`，CI 的 `Alert rules unit test` 步） |
 | 业务租户隔离、幂等、工单工作流 | `shoppilot-biz-mock/src/test/java/...` |
 | 模式迁移与 schema 一致性 | `bizmock/SchemaMigrationTest`（迁移已应用、9 表齐备、`ddl-auto` 仍是 validate） |
 | 慢查询计划与索引守卫 | `bizmock/SlowQueryPlanTest`（含被否决的那笔优化，见 `docs/slow-query-optimization-2026-09-21.md`） |
@@ -93,7 +96,7 @@
 - `agent/AgentStateMachine` 与 `agent/ToolDispatcher` 各自持有部分槽位策略。若继续出现参数校验漂移，可评估 `ToolInputPolicy`，不要为了“少一个类”先合并。
 - `web/ChatController` 的同步和流式路径重复限流、工单和 fallback 决策。若新增准入规则，优先抽 `ChatAdmission` 一类深模块，避免两条路径再次漏改。
 - `agent/ConversationOwnershipTest` 位于 agent 包，但实际读取并断言 `static/index.html`；若继续扩调试台断言，应迁到 web/console seam，而不是继续在 agent 测试里堆前端细节。
-- `knowledge/HybridRetriever` 与 `ingest/MarkdownChunker` 缺少聚焦单测；只有在相关行为变更时补，不做全仓补测运动。
+- ~~`knowledge/HybridRetriever` 与 `ingest/MarkdownChunker` 缺少聚焦单测~~ —— **已还（round22 票 64 / ADR 0049）**：`RetrievalFusionReplayTest`（由录制的两路序重算融合，四个常数从生产 `application.yml` 绑定、语料 sha 现算）与 `MarkdownChunkerTest`（切块不重叠、ruleId 稳定 = ES `_id`/Qdrant point id 稳定）随该票一起交付，并接进 CI 的 `Retrieval fusion gate` 步。
 - `identity` 与 `web` 之间存在通过 `ApiErrorWriter` 形成的包环。ADR 0028 已限定错误信封只管网关自产错误；不重开错误信封协议时，不为消环做大搬迁。
 
 ## 明确不要动

@@ -70,6 +70,10 @@ $steps = [ordered]@{
     ratelimit = @{ Kind = 'ps1'; Cmd = 'scripts\verify-ratelimit.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('rate_limited') }
     polarity  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-polarity.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('验收通过') }
     l2        = @{ Kind = 'py'; Cmd = 'scripts\verify_l2_filters.py'; Arg = @(); Need = $true; Skip = $false; Expect = @('全部通过：L2') }
+    # round22 新增的两条 0 token 步（与 CI 同源，本地也跑一遍）：task 级判据的夹具自检、
+    # 检索融合录放门的只校验那一层。重算那半在 JVM（verify 时已跑），这里量的是脚本侧。
+    task      = @{ Kind = 'py'; Cmd = 'scripts\eval_task.py'; Arg = @(); Need = $false; Skip = $false; Expect = @('TASK SELFCHECK') }
+    funnel    = @{ Kind = 'py'; Cmd = 'scripts\retrieval_gate.py'; Arg = @(); Need = $false; Skip = $false; Expect = @('RETRIEVAL GATE ok') }
     console   = @{ Kind = 'node'; Cmd = 'scripts\verify-console.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('console checks passed') }
     # round17 新增的五条（ADR 0034 / 0035 / 0038 / 0039 / 0036）：都排在 console 之后——
     # 情绪门与计划两步都要打模型，重负载压在浏览器形状断言之前会给门禁制造假红（同 eval 那条的理由）。

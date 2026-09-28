@@ -60,7 +60,7 @@
 | round19 | 票 47-52，补齐可信性观测（embedding 计时器 / Plan 记录 / 上下文组成 / 输出上限）；八项登记不执行 | [`round19-spec-trust-observability.md`](round19-spec-trust-observability.md) | done |
 | round20 | 票 53-56，修 22 步矩阵的四条红（三条事实性修正 + 一条 orderNo 溯源） | [`round20-spec-live-reds.md`](round20-spec-live-reds.md) | done |
 | round21 | 票 57-63：闭环最后一公里（指标数事实修正 / 幂等重放 / 退款审批闸门 / 买家读回 / 调试台面板 / 活体验收） | [`round21-spec-last-mile-and-machine-backing.md`](round21-spec-last-mile-and-machine-backing.md) | **done**（ADR 0046 + 0047 已立；票 57-63 全部收口） |
-| round22 | 票 64-68：RAG 的机器背书（检索录放门 / task 级判据 / token 计量标签 / 告警 + promtool / 收口） | [`round22-spec-machine-backing.md`](round22-spec-machine-backing.md)；ADR 0048-0051 | **open**（ADR 0048 轮范围 + 0049/0050/0051 逐特性；票 64-68 待领取） |
+| round22 | 票 64-68：RAG 的机器背书（检索录放门 / task 级判据 / token 计量标签 / 告警 + promtool / 收口） | [`round22-spec-machine-backing.md`](round22-spec-machine-backing.md)；ADR 0048-0051 | **done**（ADR 0048 轮范围 + 0049/0050/0051 逐特性；票 64-68 全部收口） |
 
 ## Ticket 索引
 
@@ -130,11 +130,11 @@
 | 61 | [`61-console-refund-review-panel.md`](issues/61-console-refund-review-panel.md) | implemented | 调试台审核面板（列表 / 放行 / 驳回）（ADR 0046/0047；**所有者政策覆盖**） |
 | 62 | [`62-refund-approval-live-verification.md`](issues/62-refund-approval-live-verification.md) | implemented | 审批闸门活体验收（`verify-refund-approval.ps1` + 矩阵 add-only）（ADR 0046/0047；**所有者政策覆盖**） |
 | 63 | [`63-round21-closeout.md`](issues/63-round21-closeout.md) | implemented | round21 收口（spec 登记节 / EVIDENCE / tracker / CODE_MAP / 审计常数换代 / 指标名重算换代） |
-| 64 | [`64-retrieval-fusion-replay-gate.md`](issues/64-retrieval-fusion-replay-gate.md) | ready-for-agent | 检索融合 0 token 录放回归门（ADR 0048/0049；**政策越过**；**不闭合 round19 登记第 5 项**） |
-| 65 | [`65-task-level-judgement.md`](issues/65-task-level-judgement.md) | ready-for-agent | task-level 判据最小形态（ADR 0048/0050；**触发已到**；单独成列、不给总分） |
-| 66 | [`66-token-source-label.md`](issues/66-token-source-label.md) | ready-for-agent | token 计量加 `source` 标签（ADR 0048；**政策越过**；名字不变 → 计数不变；本轮最弱、可无损删） |
-| 67 | [`67-alert-rules-and-promtool.md`](issues/67-alert-rules-and-promtool.md) | ready-for-agent | 告警最小集 + `promtool test rules`（ADR 0048/0051；**触发已到**；不声称生产会响） |
-| 68 | [`68-round22-closeout.md`](issues/68-round22-closeout.md) | ready-for-agent | round22 收口（spec 登记节 / EVIDENCE / tracker / CODE_MAP / 审计常数换代 / 指标名重算） |
+| 64 | [`64-retrieval-fusion-replay-gate.md`](issues/64-retrieval-fusion-replay-gate.md) | implemented | 检索融合 0 token 录放回归门（ADR 0048/0049；**政策越过**；**不闭合 round19 登记第 5 项**） |
+| 65 | [`65-task-level-judgement.md`](issues/65-task-level-judgement.md) | implemented | task-level 判据最小形态（ADR 0048/0050；**触发已到**；单独成列、不给总分） |
+| 66 | [`66-token-source-label.md`](issues/66-token-source-label.md) | implemented | token 计量加 `source` 标签（ADR 0048；**政策越过**；名字不变 → 计数不变；本轮最弱、可无损删） |
+| 67 | [`67-alert-rules-and-promtool.md`](issues/67-alert-rules-and-promtool.md) | implemented | 告警最小集 + `promtool test rules`（ADR 0048/0051；**触发已到**；不声称生产会响） |
+| 68 | [`68-round22-closeout.md`](issues/68-round22-closeout.md) | implemented | round22 收口（spec 登记节 / EVIDENCE / tracker / CODE_MAP / 审计常数换代 / 指标名重算） |
 
 ## 如何新增或领取工作
 

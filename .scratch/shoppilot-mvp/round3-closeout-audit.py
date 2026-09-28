@@ -46,7 +46,7 @@ FIXED_POINT = "11a12ac"  # 第三轮起点
 #   这些条目断言的是「订正前那份文档里确实存在这句问题话」，而 HEAD 会随本轮提交前移，
 #   一旦提交了就永远取不到那句话，对照组反而把自己判红（第四轮收尾实际踩到过，见 ticket 20 第 10 条）。
 PRE_FIX = "a6ccdcb"  # 第四轮收口那一笔（对照组要取它**之前**那份文档，见下面 ROUND_FP 的分工）
-ROUND_FP = "c28eb04"  # round21 起点（round20 收口的那一笔）。逐轮重锚，见 ADR 0023。
+ROUND_FP = "5697702"  # round22 起点（round21 收口那一笔）。逐轮重锚，见 ADR 0023。
 
 FAILS = []
 PASSES = []
@@ -92,12 +92,10 @@ _DEF_LANDED = 0
 # 票 46 换代：`3 + 21 + 250`（274）→ `3 + 21 + 253`（277）——仍只动 gateway：ADR 0043 新增 3 条
 # （`GatewayMainPathJvmTest.cacheHitPathStaysZeroModelCallsInLocalMode` 回归、
 # `SentimentGateTest.localModeIsLexiconOnly` 机制、`SentimentGateTest.devModeStillUsesTheLlmLayer` 正对照）。
-# round21 换代：`3 + 21 + 276`（300，round20 收口读数）→ `5 + 29 + 290`（324）。相对 round21 起点，
-# tool-api +2（`ToolContractApprovalTest`）、biz-mock +8（`RefundReviewTest`）、gateway +14
-# （票 58 的 `IdempotencyServiceRequestReplayTest` 9 条 + `GatewayMainPathJvmTest` 2 条 + 票 59 的
-# `ToolDispatcherApprovalTest` 1 条 + 票 61 的 `RestErrorEnvelopeTest.refundReviewProxiesWithTenantContext` 1 条
-# + 票 59 的 `GatewayMainPathJvmTest.refundApprovalStopsAtTheGateWithoutASecondModelHop` 1 条 = 14）。
-G6_EXPECT = [5, 29, 290]
+# round22 换代：`5 + 29 + 290`（324）→ `5 + 29 + 304`（338）。gateway +14：
+# 票 64 的 `RetrievalFusionReplayTest` 5 条 + `MarkdownChunkerTest` 6 条（同交付，还 CODE_MAP 那笔债）、
+# 票 66 的 `LlmTokenSourceLabelTest` 3 条；tool-api 与 biz-mock 本轮未动。
+G6_EXPECT = [5, 29, 304]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 
@@ -530,14 +528,13 @@ body_a = len(re.findall(r"(?m)^A：", qa))
 # 换代指针（2026-09-23 事实性修正）：round18 的票 42-44 收尾后本文件一直没重生成，头部停在
 # 157/42；重生后 166/45。同期修掉票 14 追问里的一处错枚举（漏 INTENT_UNRESOLVED、又把主动
 # 转人工计进「七种」），问答库与生成源重新逐字一致。
-# 换代指针（round21 收口）：票 59-63 的 Handoff 追问进入生成源，问答库 190 → **223**，
-# 覆盖 53 → **64** 个 ticket（票 01-63 全部有收尾记录）。判据本身没放宽：头部计数、
-# 正文 Q 条目、A 条目三者仍必须逐字相等。
-check("E5 问答库 223 问、头部计数 = 正文 Q 条目 = 答案条数",
-      head_line is not None and int(head_line.group(1)) == 223 == body_q == body_a and body_a == 223,
+# 换代指针（round22 收口）：票 64-68 的 Handoff 追问进入生成源，问答库 223 → **238**，
+# 覆盖 64 → **69** 个 ticket。判据本身没放宽：头部计数、正文 Q 条目、A 条目三者仍必须逐字相等。
+check("E5 问答库 238 问、头部计数 = 正文 Q 条目 = 答案条数",
+      head_line is not None and int(head_line.group(1)) == 238 == body_q == body_a and body_a == 238,
       f"头部 {head_line.group(1) if head_line else '-'}，正文 Q {body_q}，A {body_a}")
-check("E5b 问答库覆盖 64 个 ticket 且无缺收尾记录",
-      head_line is not None and head_line.group(2) == "64" and "缺收尾记录" not in qa,
+check("E5b 问答库覆盖 69 个 ticket 且无缺收尾记录",
+      head_line is not None and head_line.group(2) == "69" and "缺收尾记录" not in qa,
       f"头部行 {head_line.group(0) if head_line else '-'}；正文无缺收尾记录={'缺收尾记录' not in qa}")
 
 ticket20 = read(REPO / ".scratch" / "shoppilot-mvp" / "issues" / "20-action-order-attribution.md")
