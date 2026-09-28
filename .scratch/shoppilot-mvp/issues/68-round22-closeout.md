@@ -46,7 +46,7 @@ git diff --check && git status --short
 - 覆盖率棘轮：gateway **62.79%** / biz-mock 79.30% / tool-api 47.95%（门槛 54.0/76.0/40.0，未动）。
 - 门禁：`verify_eval_judge.py` **40/40**、`eval_suites.py` **ok=24**、`eval_task.py` **ok=14**、`retrieval_gate.py` **自检 6/6 + ok cases=10**、离线 rescore 差异仍恰 4 条。
 - 全量矩阵（**25 步**）：`logs/acceptance-run-20260928-134721.log`，**786 s、23 绿 / 2 红**（红 = `feedback`、`plansteps`，两条都是登记项）。新加的 `task`/`funnel` 两步绿。
-- 收口审计：见下（本票执行时读数）。
+- 收口审计：**PASS 85 / FAIL 2 / SKIP 8（共 95 项）**（`.scratch/shoppilot-mvp/round3-closeout-audit.txt`）。两条 FAIL 都照登、都不摘：① `A1 origin/main == HEAD` —— 本轮只提交到本机，**未推送**；② `F1c` —— round20 那次我删掉的历史本机日志不可逆，判据未动、未加豁免。本轮新绿的：`G6`（surefire `5 + 29 + 304 = 338`）、`E5`/`E5b`（问答库 **238/69**）。
 
 **未达成（按实登记，不摘红）**
 
