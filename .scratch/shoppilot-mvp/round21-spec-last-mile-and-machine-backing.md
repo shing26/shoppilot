@@ -317,7 +317,7 @@ plan 缺失（离线明细无该字段） → None = 未观测
 缺的是**口径声明的机器可读性**，不是测量正确性。这一项是本轮最弱的一票，可无损删。
 
 **落点**：给现有计数器加 `source=provider|estimate` 标签（**名字不变 → 指标名计数不变**），照票 47
-的 `result` 标签先例；perf/local 档记 `estimate`、dev 云端档记 provider。**红线**：不改 `TokenBudget` 的放行语义。
+的 `result` 标签先例；**Mock（perf 档）记 `estimate`、Ollama（local 档）与云端（dev 档）记 `provider`**。**红线**：不改 `TokenBudget` 的放行语义。
 
 ---
 

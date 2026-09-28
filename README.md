@@ -198,6 +198,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 吞吐与延迟类指标衡量的是**网关编排层**，生成侧是固定延迟的 Mock，不含模型推理（ADR 0001）。
 当前 **53 个唯一 `shoppilot_*` 指标名**。数法：对 `shoppilot-gateway`、`shoppilot-biz-mock`、`shoppilot-tool-api` 的 `src/main` 做
 `rg -o 'shoppilot_[A-Za-z0-9_]+'`，再按字面值去重；带 tag 的同一指标仍只算一个名字。
+**这是源码口径，不要拿运行期的 `/actuator/metrics` 去数**：那一侧列的是 meter（带 tag 的每个组合各算一条，冷启动时还有懒注册的指标缺席），两个数不可能相等。
 （换代指针：round19 时点为 52，round21 票 59 加 `shoppilot_refund_pending_total` 后为 53；数法一字未改，见下文「round14 落点」段的历史读数处置。）
 
 | 指标 | 判据 | 实测 | 口径 | 证据 |

@@ -195,7 +195,10 @@ public class ToolDispatcher {
     /** 追问文案：只问缺的那一个，不重复问已给的。金额与退款原因、地址四段都是可选项，不会走到追问。 */
     public String question(ToolName tool, List<String> missingSlots) {
         if (missingSlots.contains("orderNo")) {
-            return "请提供您的订单号（例如 10023），我需要它才能为您查询或办理。";
+            // 刻意**不给示例单号**（原先写的是「例如 10023」，而 10023 按 SeedRunner 的编号规则是 T001 内
+            // 买家 C155 的真实订单号）：买家照抄它只会拿到 NOT_FOUND，模型也可能把示例值抄进参数。
+            // 工具 schema 描述里的示例值另有一层溯源守卫兜着（ADR 0045 票 56），买家可见话术这层直接不给数字。
+            return "请提供您的订单号（订单详情页可查），我需要它才能为您查询或办理。";
         }
         if (tool == ToolName.MODIFY_DELIVERY_ADDRESS) {
             return "还需要您补充收件信息：" + String.join("、", missingSlots) + "。";

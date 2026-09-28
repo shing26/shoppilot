@@ -180,9 +180,13 @@ public class AgentStateMachine {
                 step(trace, sink, AgentState.REPLY, "cache=" + lookup.layer());
                 CacheEntry entry = lookup.entry().get();
                 sink.token(entry.answer());
+                // 票 49 的不变量「context.ruleIds 与 citations 同源同序」在命中路径同样成立：
+                // 缓存条目随带引用（ADR 0003），这里把它镜像进观测字段。另外两格照实为零——
+                // 命中路径根本没有 Prompt（零模型调用），所以没有历史轮、也没有估出来的 token 数。
                 return new AgentResult(entry.answer(), triage.intent(), triage.layer(), lookup.layer(),
                         entry.sourceRuleIds(), trace, null, null, false, 0, 0, false, false,
-                        promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE);
+                        promptCatalog.version(), List.of(),
+                        new AgentResult.ContextComposition(List.copyOf(entry.sourceRuleIds()), 0, 0));
             }
             if (lookup.negative()) {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
@@ -442,8 +446,10 @@ public class AgentStateMachine {
                 LlmTypes.ToolCall derivedCall = new LlmTypes.ToolCall("gateway-derived",
                         derived.tool().apiName(), derived.slots());
                 messages.add(LlmTypes.Message.assistant(null, List.of(derivedCall)));
+                long derivedStarted = System.nanoTime();
                 ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(derivedCall, idempotencyToken,
                         dialogueText(query, session));
+                long derivedMillis = (System.nanoTime() - derivedStarted) / 1_000_000L;
                 step(trace, sink, AgentState.TOOL_EXEC,
                         "gateway-derived " + dispatch.tool() + "=" + dispatch.status()
                                 + " modelArgs=" + traceArgs(derivedCall.arguments()));
@@ -453,6 +459,11 @@ public class AgentStateMachine {
                     return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
                             FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json(), styleTier));
                 }
+                // 票 48 的契约是「plan 记的是真的执行过的步」。网关派生这一枪真的派发了，所以也要进 plan——
+                // 漏记会让 toolUsed=true 与 plan=[] 同现（票 65 的 task_done 读 plan，会因此误判）。
+                planSteps.add(new AgentResult.PlanStep(derived.tool().apiName(),
+                        dispatch.status() == null ? "UNKNOWN" : dispatch.status().name(),
+                        derivedMillis, derived.slots()));
                 messages.add(LlmTypes.Message.tool(derivedCall.id(), dispatch.json()));
             }
         }
@@ -479,6 +490,16 @@ public class AgentStateMachine {
                 return ModelRun.solo(fallback(AgentState.REPLY, trace, sink, mapLlmFailure(failure), query,
                         failure.getMessage(), styleTier));
             }
+        }
+
+        // 空答案不是答案（2026-09-28 黑盒 QA 实测）：模型既没发工具调用、也没给出正文时，
+        // 今天会返回 HTTP 200 + `answer:""` + 无工单——买家什么也没拿到，也没有可查的出口。
+        // 这与 ADR 0009「办不成就给一句实话并落可查工单」直接冲突，所以在这里兜住。
+        // 复用 LLM_CIRCUIT_OPEN 的措辞（"智能回复暂时不可用，已为您登记人工处理"）：**不新增枚举值**，
+        // 避免改动 README 的「枚举 10 / 降级 9」公开口径。
+        if (answer == null || answer.isBlank()) {
+            return ModelRun.solo(fallback(AgentState.REPLY, trace, sink, FallbackReason.LLM_CIRCUIT_OPEN, query,
+                    "模型未产出正文且未派发工具（空答案）", styleTier));
         }
 
         sessionStore.save(tenantId, customerId, sessionStore.appendTurn(clearPending(session), query, answer));

@@ -32,7 +32,7 @@ public final class ReplayReply {
             case APPLY_REFUND -> {
                 String orderNo = text(payload, "orderNo");
                 String refundId = text(payload, "refundId");
-                String status = text(payload, "status");
+                String status = refundStatusText(text(payload, "status"));
                 yield "这笔退款申请已经提交过了"
                         + (orderNo.isEmpty() ? "" : "（订单 " + orderNo + "）")
                         + (refundId.isEmpty() ? "" : "，申请编号 " + refundId)
@@ -72,6 +72,20 @@ public final class ReplayReply {
                         + "，正在等待人工审核。审核结果会再通知您；审核通过后到账由支付渠道处理，不在本客服承诺范围内。";
             }
             default -> PENDING_GENERIC;
+        };
+    }
+
+    /**
+     * 退款单状态是**内部枚举**（`Refund.status` 落库的值），不能原样说给买家：
+     * `PENDING_REVIEW` 这种串对买家没有意义（黑盒 QA 实测它在回放话术里被直接念出来）。
+     * 未识别的值落空串——宁可不说，也不把一个内部代号念给买家（与 GENERIC 同一条纪律）。
+     */
+    private static String refundStatusText(String status) {
+        return switch (status) {
+            case "PENDING_REVIEW" -> "待人工审核";
+            case "PROCESSING" -> "已放行、资金处理中";
+            case "REJECTED" -> "已被驳回";
+            default -> "";
         };
     }
 

@@ -14,7 +14,7 @@
 - **红线：不改 `TokenBudget` 的放行语义。** 预算是另一件事，本票只动计量标签。
 - **与票 67 相容**：67 的告警规则引用真实指标名；本票不改任何名字，故不触发规则的「改名即红」守卫。
 
-- [x] `shoppilot_llm_tokens_total` 带 `source` 标签，perf/local → `estimate`、dev → `provider`
+- [x] `shoppilot_llm_tokens_total` 带 `source` 标签，Mock（perf）→ `estimate`；Ollama（local）与云端（dev）→ `provider`
 - [x] **指标名计数不变**（现场 grep 现算仍为 53）
 - [x] `TokenBudget` 放行行为逐字不变（`TokenBudgetTest` 原样通过，不新增断言去适配）
 - [x] 两档的 `source` 取值有 JUnit 用例可分辨

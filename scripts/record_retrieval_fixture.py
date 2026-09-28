@@ -151,7 +151,10 @@ def main() -> int:
         "cases": cases,
     }
     out = Path(args.out) if args.out else REPO / "eval" / f"retrieval-fixture-{dt.date.today():%Y%m%d}.json"
-    out.write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # **显式 LF**：Path.write_text 在 Windows 下会把 \n 翻成 \r\n，而 git diff --check 会把新增的
+    # CRLF 行报成 trailing whitespace（仓库的 json/csv 一律 LF，见 .gitattributes 的分组注释）。
+    with out.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n")
     digest = hashlib.sha256(out.read_bytes()).hexdigest()
     print(f"\n夹具 {out.relative_to(REPO)}（{len(cases)} 条）")
     print(f"constants={constants} kb_epoch={epoch} llm_mode={fixture['llm_mode']}")

@@ -79,6 +79,11 @@ public class Refund {
         return amountFen;
     }
 
+    /** 审核者要看的「为什么退」（票 61 的面板此前看不到它，等于让人凭金额拍板）。 */
+    public String getReason() {
+        return reason;
+    }
+
     public String getIdempotencyToken() {
         return idempotencyToken;
     }

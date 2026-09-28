@@ -87,7 +87,10 @@
   .chip { font-family: var(--mono); font-size: 11px; background: #ecfdf8; border: 1px solid #a7f3d0;
     border-radius: 4px; padding: 0 3px; }
   footer { background: var(--panel); border-top: 1px solid var(--line); display: flex; align-items: center;
-    flex-wrap: wrap; gap: 9px 13px; padding: 9px 12px; min-height: 62px; }
+    flex-wrap: wrap; gap: 9px 13px; padding: 9px 12px; min-height: 62px;
+    /* 页脚抬到抽屉(20)与遮罩(19)之上：退款审核抽屉原先会把页脚自己的入口按钮与 circuit/refunds
+       两个读数格一起盖住——而审核时正要看那两个数（黑盒 QA 实测）。header 是 21，页脚取 22。 */
+    position: relative; z-index: 22; }
   .ctl { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
   .ctl .t { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); font-weight: 650; }
   input[type=range] { width: 104px; accent-color: var(--teal); }
@@ -253,7 +256,15 @@ async function api(method, path, body, withAuth = true) {
   if (withAuth && state.token) headers.Authorization = 'Bearer ' + state.token;
   // 运维凭证随每个请求带上：只有 ops 端点会读它，其余端点忽略
   headers['X-Ops-Token'] = $('opsToken').value.trim();
-  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  // 网络级失败（fetch 自己 reject）也走同一支笔：以前这里会直接抛出去，调用方只判 res.status，
+  // 于是读数格停在初始的 "-"、抽屉停在「尚未拉取」，还留下未捕获的 "Failed to fetch"。
+  // 返回 status:0 让所有调用方走它们既有的失败分支（那分支本来就写着「读不到 + 为什么」）。
+  let res;
+  try {
+    res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch (unreachable) {
+    return { status: 0, body: { message: '网关不可达（' + (unreachable && unreachable.message ? unreachable.message : 'network error') + '）' } };
+  }
   const text = await res.text();
   let parsed = null;
   try { parsed = text ? JSON.parse(text) : null; } catch (e) { parsed = { raw: text }; }
@@ -489,8 +500,9 @@ function setGauge(id, text, stale) {
   el.dataset.state = stale ? 'stale' : 'live';
 }
 
-/** 失败时要说出是哪一种失败：票 25 之后 403 的报文自带 code，没报文就退回状态码。 */
+/** 失败时要说出是哪一种失败：票 25 之后 403 的报文自带 code，没报文就退回状态码；网络级失败（status 0）单独说。 */
 function failureReason(res) {
+  if (res.status === 0) return '网关不可达';
   return res.body && res.body.code ? String(res.body.code) : 'HTTP ' + res.status;
 }
 
@@ -611,10 +623,15 @@ async function loadTickets() {
     </div>`).join('');
   $('tickets').querySelectorAll('button[data-to]').forEach((btn) => {
     btn.onclick = async () => {
-      const r = await api('PATCH', '/api/v1/support/ops/tickets/' + btn.dataset.tk + '/status', { status: btn.dataset.to });
-      report(r.status === 200, r.status === 200 ? `${btn.dataset.tk} -> ${btn.dataset.to}`
-        : `流转被拒 ${r.status}：${btn.dataset.tk} -> ${btn.dataset.to}`);
-      loadTickets();
+      const group = Array.from(btn.parentElement.querySelectorAll('button[data-to]'));
+      group.forEach((b) => { b.disabled = true; });
+      try {
+        const r = await api('PATCH', '/api/v1/support/ops/tickets/' + btn.dataset.tk + '/status', { status: btn.dataset.to });
+        report(r.status === 200, r.status === 200 ? `${btn.dataset.tk} -> ${btn.dataset.to}`
+          : `流转被拒（${esc(failureReason(r))}）：${esc((r.body && r.body.message) || btn.dataset.tk)}`);
+      } finally {
+        loadTickets();
+      }
     };
   });
 }
@@ -634,13 +651,18 @@ function closeRefundDrawer() {
 }
 
 async function loadRefunds() {
+  $('refundQueue').innerHTML = '<div class="empty">加载中…</div>';
   const res = await api('GET', '/api/v1/support/ops/refunds/pending', null, true);
-  if (res.status !== 200) { $('refundQueue').innerHTML = '<div class="empty">拉取失败 ' + res.status + '</div>'; return; }
+  if (res.status !== 200) {
+    $('refundQueue').innerHTML = '<div class="empty">拉取失败：' + esc(failureReason(res)) + '</div>';
+    return;
+  }
   if (!res.body.length) { $('refundQueue').innerHTML = '<div class="empty">当前店铺暂无待审核退款</div>'; return; }
   $('refundQueue').innerHTML = res.body.map((f) => `
     <div class="tk">
       <div><div class="id">申请 ${esc(f.refundId)} · 订单 ${esc(f.orderNo)} · ${esc(fmtTime(f.createdAt))}</div>
         <div class="q">退款金额 ¥${(Number(f.amountFen) / 100).toFixed(2)}</div>
+        <div class="q dim">退款原因：${esc(f.reason || '（买家未填）')}</div>
         <div class="row" style="margin-top:6px">
           <button class="sm" data-rf="${esc(f.refundId)}" data-decision="APPROVE">放行</button>
           <button class="sm" data-rf="${esc(f.refundId)}" data-decision="REJECT">驳回</button>
@@ -649,11 +671,30 @@ async function loadRefunds() {
     </div>`).join('');
   $('refundQueue').querySelectorAll('button[data-decision]').forEach((btn) => {
     btn.onclick = async () => {
-      const r = await api('POST', '/api/v1/support/ops/refunds/' + btn.dataset.rf + '/review',
-        { decision: btn.dataset.decision });
-      report(r.status === 200, r.status === 200 ? `退款 ${btn.dataset.rf} -> ${btn.dataset.decision}`
-        : `审核被拒 ${r.status}：${btn.dataset.rf}`);
-      loadRefunds();
+      const approve = btn.dataset.decision === 'APPROVE';
+      // 「放行」是**不可逆**的资金动作（ADR 0047）：点错就回不来了，所以先确认。
+      // 驳回可逆（订单会按时间戳推导回滚），不拦。
+      if (approve) {
+        const row = btn.closest('.tk');
+        const grip = row ? row.querySelector('.id').textContent.trim() : ('申请 ' + btn.dataset.rf);
+        const amount = row ? row.querySelector('.q').textContent.trim() : '';
+        if (!window.confirm('确认为这笔退款放行资金？\n\n' + grip + '\n' + amount
+            + '\n\n放行不可撤销，驳回可以回滚。')) return;
+      }
+      // 连点防护：请求在飞的时候禁用这一组按钮，否则三连点会打出三条相同的 POST
+      // （第二条起会被服务端 409 挡下，但回执会刷成三条噪音）。
+      const group = Array.from(btn.parentElement.querySelectorAll('button[data-decision]'));
+      group.forEach((b) => { b.disabled = true; });
+      try {
+        const r = await api('POST', '/api/v1/support/ops/refunds/' + btn.dataset.rf + '/review',
+          { decision: btn.dataset.decision });
+        // 非 200 时优先用下游报文里的原因（它是人话，例如「该退款申请已审核过，当前状态为 PROCESSING」），
+        // 拿不到才退回状态码。以前只拼 res.status，把下游已有的可读文案丢了。
+        report(r.status === 200, r.status === 200 ? `退款 ${btn.dataset.rf} ${approve ? '已放行' : '已驳回'}`
+          : `审核被拒（${esc(failureReason(r))}）：${esc((r.body && r.body.message) || btn.dataset.rf)}`);
+      } finally {
+        loadRefunds();
+      }
     };
   });
 }

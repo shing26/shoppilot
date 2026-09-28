@@ -50,6 +50,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -807,6 +808,109 @@ class GatewayMainPathJvmTest {
         verify(llm, never()).stream(any(), any());
         verify(fallback, never()).escalate(any(), any(), any());
         assertEquals(1.0d, registry.get("shoppilot_refund_pending_total").counter().count());
+    }
+
+    @Test
+    @DisplayName("空答案不是答案：模型不发工具也不给正文时，返回可查工单的降级而不是 200 空串（黑盒 QA 修复）")
+    void blankModelAnswerFallsBackWithATicket() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        // 本地 3B 实测会出现这一形态：既没有 tool call，也没有任何正文
+        when(llm.complete(any())).thenReturn(new LlmTypes.Reply("", List.of(), 10, 0, null));
+        BizMockClient bizMock = mock(BizMockClient.class);
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+        FallbackService fallback = mock(FallbackService.class);
+        when(fallback.escalate(eq(FallbackReason.LLM_CIRCUIT_OPEN), anyString(), anyString()))
+                .thenReturn(Optional.of("T-blank"));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_REFUND, "T1", true),
+                mock(CacheService.class), llm, dispatcher, fallback);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"订单90001我要退款\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value(containsString("工单号 T-blank")))
+                .andExpect(jsonPath("$.fallbackReason").value("LLM_CIRCUIT_OPEN"))
+                .andExpect(jsonPath("$.ticketId").value("T-blank"));
+        // 落工单是这条断言的要害：买家没拿到答案，就必须有一个可查的出口（ADR 0009）
+        verify(fallback).escalate(eq(FallbackReason.LLM_CIRCUIT_OPEN), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("网关派生的读工具也要进 plan：toolUsed=true 不许与 plan=[] 同现（黑盒 QA 修复）")
+    void gatewayDerivedDispatchIsRecordedInPlan() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        // 模型没发 function call：走网关派生那条路（ACTION_ORDER → 派生 queryOrderDetail）
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("订单 90001 目前处于已支付状态。"));
+        // 派生派发把 rounds 推到了 1，所以收尾走的是流式总结那一支
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("订单 90001 目前处于已支付状态。"));
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"payload\":{\"orderNo\":\"90001\"}}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"帮我查一下订单90001现在的状态\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.toolUsed").value(true))
+                // 票 48 的契约：plan 记的是真的执行过的步；这一枪真的派发了，所以必须有一条
+                .andExpect(jsonPath("$.plan.length()").value(1))
+                .andExpect(jsonPath("$.plan[0].tool").value("queryOrderDetail"))
+                .andExpect(jsonPath("$.plan[0].status").value("OK"));
+    }
+
+    @Test
+    @DisplayName("缓存命中路径的 context.ruleIds 镜像 citations（票 49 的不变量在命中路径同样成立）")
+    void cacheHitContextMirrorsCitations() throws Exception {
+        CacheService cache = mock(CacheService.class);
+        CacheEntry cached = CacheEntry.of("签收后七天内可以申请退货", Intent.POLICY_RETURN, TENANT,
+                CacheService.SCOPE_SHOP, 7L, List.of("POLICY-RETURN-01", "POLICY-RETURN-02"), "perf-mock", QUERY);
+        when(cache.lookup(eq(TENANT), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
+                .thenReturn(new CacheService.Lookup(CacheService.Layer.L1, Optional.of(cached), null,
+                        QUERY, false));
+
+        MockMvc mvc = mockMvc(TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d),
+                cache, mock(LlmGateway.class), mock(ToolDispatcher.class), mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"" + QUERY + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.citations.length()").value(2))
+                .andExpect(jsonPath("$.context.ruleIds.length()").value(2))
+                .andExpect(jsonPath("$.context.ruleIds[0]").value("POLICY-RETURN-01"))
+                .andExpect(jsonPath("$.context.ruleIds[1]").value("POLICY-RETURN-02"))
+                // 命中路径没有 Prompt（零模型调用），所以这两格照实为零
+                .andExpect(jsonPath("$.context.historyTurns").value(0))
+                .andExpect(jsonPath("$.context.estimatedPromptTokens").value(0));
+    }
+
+    @Test
+    @DisplayName("幂等回放话术不把内部枚举念给买家：PENDING_REVIEW 要翻成中文（黑盒 QA 修复）")
+    void replayReplyDoesNotLeakInternalRefundStatus() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        BizMockClient bizMock = mock(BizMockClient.class);
+        IdempotencyService idempotency = mock(IdempotencyService.class);
+        when(idempotency.lookupByClientToken(eq(TENANT), eq(CUSTOMER), eq("tok-9"), anyString()))
+                .thenReturn(Optional.of(new IdempotencyService.Replay(ToolName.APPLY_REFUND,
+                        "{\"status\":\"PENDING_APPROVAL\",\"payload\":{\"refundId\":\"RF-9\",\"orderNo\":\"90001\","
+                                + "\"status\":\"PENDING_REVIEW\"}}")));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, idempotency, registry);
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_REFUND, "T1", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"这单我要退款 90001\",\"idempotencyToken\":\"tok-9\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value(containsString("待人工审核")))
+                .andExpect(jsonPath("$.answer").value(not(containsString("PENDING_REVIEW"))));
     }
 
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,

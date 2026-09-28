@@ -41,6 +41,14 @@ page.on('console', (msg) => {
 });
 page.on('pageerror', (err) => (phase === 'probe' ? probeErrors : consoleErrors).push('pageerror:' + err.message));
 
+// 退款面板对「放行」加了二次确认（不可逆的资金动作，见 ADR 0047）。Playwright 默认**取消** dialog，
+// 不处理的话放行根本不会发生、那条断言会假红。这里显式接受，并记下每条的文案供新断言复核。
+const dialogs = [];
+page.on('dialog', async (dialog) => {
+  dialogs.push(dialog.message());
+  await dialog.accept();
+});
+
 const dumpTimeline = async () => (await page.$$eval('#timeline .ev',
   (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()))).join('\n    ');
 
@@ -263,9 +271,19 @@ await page.waitForSelector('#refundQueue .tk', { timeout: sawPending ? 15000 : 1
 const pendingBadges = await page.$$eval('#refundQueue .badge', (els) => els.map((e) => e.textContent));
 check('refund review drawer lists the pending refund via proxy (ticket 61)',
   pendingBadges.includes('PENDING_REVIEW'), pendingBadges.join(','));
+// 黑盒 QA 补的：审核者要判断「这笔钱该不该放」，光有金额拍不了板 —— 面板必须显示退款原因。
+const refundRow = await page.$$eval('#refundQueue .tk', (els) => els.map((e) => e.textContent));
+check('refund card carries the reason the reviewer needs (black-box QA fix)',
+  refundRow.some((t) => t.includes('退款原因')), refundRow.join(' | ').slice(0, 120));
+const dialogsBefore = dialogs.length;
 await page.locator('#refundQueue .tk', { hasText: '90001' }).first()
   .locator('button[data-decision="APPROVE"]').click();
 await page.waitForTimeout(1200);
+// 放行是**不可逆**的资金动作（ADR 0047）：误点不可撤销，所以面板先确认，且确认框要回显金额与订单。
+check('approving asks for confirmation and echoes what is being released (black-box QA fix)',
+  dialogs.length > dialogsBefore && /90001/.test(dialogs[dialogs.length - 1] || '')
+    && /¥/.test(dialogs[dialogs.length - 1] || ''),
+  (dialogs[dialogs.length - 1] || '(no dialog)').replace(/\n/g, ' / ').slice(0, 120));
 const afterApprove = await page.$$eval('#refundQueue .tk', (els) => els.map((e) => e.textContent));
 check('approving from the panel clears it from the queue (ticket 61)',
   !afterApprove.some((t) => t.includes('90001')), `${afterApprove.length} rows left`);
@@ -445,6 +463,21 @@ check('wrong ops token writes the failure reason into its own gauge',
   mismatchOk && /ops\.token_mismatch/.test(wrongToken.refunds)
     && wrongToken.refundsState === 'stale' && wrongToken.circuitState === 'live',
   JSON.stringify(wrongToken));
+// 黑盒 QA 补的正对照：**网络级**失败（后端进程没了、fetch 自己 reject）时，页面不许冻结在初始的 "-"。
+// 单开一页做，避免把主页面那条「页面无失败请求」断言污染成假红。
+const abortPage = await browser.newPage();
+await abortPage.route('**/api/v1/support/ops/**', (route) => route.abort('connectionrefused'));
+await abortPage.goto(BASE + '/', { waitUntil: 'load' });
+await abortPage.fill('#opsToken', OPS_TOKEN);
+await abortPage.waitForTimeout(1200);
+const abortGauge = await abortPage.evaluate(() => ({
+  circuit: document.getElementById('circuit').textContent,
+  state: document.getElementById('circuit').dataset.state,
+}));
+check('network-level failure marks the gauge stale instead of freezing on "-" (black-box QA fix)',
+  abortGauge.state === 'stale' && abortGauge.circuit.includes('读不到'), JSON.stringify(abortGauge));
+await abortPage.close();
+
 check('negative probes raise no page error and no unexpected status',
   probeErrors.length === 0, probeErrors.slice(0, 3).join(' | '));
 

@@ -418,7 +418,7 @@ public class BizMockService {
 
     private RefundView toRefundView(Refund refund) {
         return new RefundView(String.valueOf(refund.getId()), refund.getOrderId(), refund.getAmountFen(),
-                refund.getStatus(), refund.getCreatedAt());
+                refund.getStatus(), refund.getCreatedAt(), refund.getReason());
     }
 
     private TicketView toTicketView(Ticket ticket) {
