@@ -14,6 +14,8 @@
 
 **Execution status (2026-09-17):** Task 1-7 已落地；本地 JVM verify 为 `3 + 12 + 206 = 221` 全绿，`verify_eval_judge` 为 `40/40`，收口审计 `PASS 93 / FAIL 0 / SKIP 2`（共 95 项）。CI run `35104751284` 成功后，tag `v1.0.0` 已指向 release commit `7f4334c` 并完成冻结公告。独立 cold-read 已判 `PASS as a three-minute introduction`；Task 6 八站路线、站点课程与证据速查卡已落地，Task 8 的 portfolio / interview 门禁已核对。
 
+> **换代指针（2026-09-28）**：**本计划已执行完毕，本文的 baseline 与上面的 Execution status 都是 2026-09-17 的历史落点，不要再当现状读。** 冻结之后 round17 – round22 六轮重开（全部走**所有者显式政策覆盖**，见 `RELEASE.md` 的 Freeze policy 第 4 条与各轮 ADR），当前状态以 [`DELIVERY.md`](../DELIVERY.md)、[`RELEASE.md`](../RELEASE.md) 与 tracker `.scratch/shoppilot-mvp/README.md` 为准。本文件保留的是**交付方向与八站路线**——那部分仍然有效。
+
 ## Global Constraints
 
 - `v1.0.0` 之后不再新增功能。只允许修事实性错误、崩溃/回归、以及 ADR 0031 明确触发的变更。
