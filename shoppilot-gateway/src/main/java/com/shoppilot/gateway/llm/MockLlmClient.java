@@ -81,6 +81,12 @@ public class MockLlmClient implements LlmClient {
         return "perf";
     }
 
+    /** 本路的 token 数是按字符数**估**出来的（{@code estimateTokens}），不是供应商回报的真值。 */
+    @Override
+    public String tokenSource() {
+        return "estimate";
+    }
+
     private ToolName pickTool(String text, List<Map<String, Object>> available) {
         ToolName candidate;
         if (text.contains("地址") || text.contains("收货")) {

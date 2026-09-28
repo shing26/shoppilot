@@ -56,8 +56,10 @@ public class LlmGateway {
                 .tag("mode", delegate.mode()).tag("kind", "stream").register(registry);
         // Token 节约率要能在 perf 模式下测：日预算只在 dev 记账，压测里读不到，
         // 所以单独放一个"实际发给模型的 token 数"计数器，缓存开/关两组直接比差值。
+        // round22 票 66：再加一个 source 标签，把"这个数是估的还是供应商报的"写成机器可读的
+        // —— 加标签不加指标名，所以指标名计数不变。
         this.tokenCounter = Counter.builder("shoppilot_llm_tokens_total")
-                .tag("mode", delegate.mode()).register(registry);
+                .tag("mode", delegate.mode()).tag("source", delegate.tokenSource()).register(registry);
     }
 
     public String mode() {
