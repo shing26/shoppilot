@@ -1,0 +1,3 @@
+{"id": "TASK-ACT-01", "kind_task": "action", "kind": "plan", "intent": "ACTION_ORDER", "query": "帮我查一下订单 90001 现在的状态", "expect": {"targetTool": "queryOrderDetail"}}
+{"id": "TASK-POLICY-01", "kind_task": "policy", "kind": "policy", "intent": "POLICY_RETURN", "query": "七天无理由怎么算", "expect": {}}
+{"id": "TASK-ESC-01", "kind_task": "escalate", "kind": "emotion", "intent": "ESCALATE", "query": "转人工", "expect": {}}

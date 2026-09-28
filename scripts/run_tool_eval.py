@@ -559,6 +559,9 @@ def main() -> int:
     parser.add_argument("--suite", default="", metavar="名称[,名称]",
                         help="跑 round17 新增套件（emotion/channel/plan/style-feedback），与 gold 集分开、"
                              "判据在 eval_suites.py；与 --rescore 同属「不发 gold 请求」的路径")
+    parser.add_argument("--task", action="store_true",
+                        help="跑 round22 票 65 的 task 级判据（eval/cases-part8-task.jsonl，判据在 "
+                             "eval_task.py）：单独成列、不给总分、不并入四列")
     args = parser.parse_args()
 
     # 量具坏了就别花钱：夹具先跑，一次 HTTP 都不发，红就直接拒绝。
@@ -587,6 +590,18 @@ def main() -> int:
             return 2
         print(f"SUITE SELFCHECK ok={suite_fixtures}")
         return eval_suites.run(args, sys.modules[__name__])
+
+    if args.task:
+        # round22 票 65：判据独立成模块（不改 eval_suites 那份夹具载体），活体跑批复用本文件的
+        # HTTP 助手。预检与 --suite 同一条纪律：判据坏了就一次请求都不发。
+        import eval_task
+        task_failures, task_fixtures = eval_task.selfcheck()
+        for line in task_failures:
+            print("TASK CHECK FAILED  " + line)
+        if task_failures:
+            return 2
+        print(f"TASK SELFCHECK ok={task_fixtures}")
+        return eval_task.run(args, sys.modules[__name__])
 
     cases = [json.loads(line) for line in CASES.read_text(encoding="utf-8").splitlines() if line.strip()]
     if args.only_intent:

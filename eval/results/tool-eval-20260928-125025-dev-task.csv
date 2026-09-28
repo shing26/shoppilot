@@ -1,0 +1,4 @@
+answer_excerpt,id,kind_task,task_done
+智能回复暂时不可用，已为您登记人工处理。（工单号 T1790571022195-3）,TASK-ACT-01,action,False
+智能回复暂时不可用，已为您登记人工处理。（工单号 T1790571025124-4）,TASK-POLICY-01,policy,False
+已为您转接人工客服。（工单号 T1790571025156-5）,TASK-ESC-01,escalate,True
