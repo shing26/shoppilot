@@ -73,7 +73,7 @@ jobs:
       # 哈希钉防的是"夹具被悄悄换掉"：重录夹具必须同步改这个 env（与 check_coverage.py 同模式）。
       - name: Retrieval fusion gate (0-token)
         env:
-          RETRIEVAL_FIXTURE_SHA256: 9a23b0939fff854d3d84324d1b8fad416897cbbf7cf244ffc08c212ca1ac2c61
+          RETRIEVAL_FIXTURE_SHA256: 8f3ee90a1c0b3e865539fcc25a894d6befb3953e881fb5de8bdb65e516cac7fe
         run: python3 scripts/retrieval_gate.py
 
       # round18 票 44 / ADR 0041：覆盖率棘轮。产物由上面那一步 verify 的 jacoco:report 产出，

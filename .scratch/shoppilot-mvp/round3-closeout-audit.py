@@ -92,10 +92,9 @@ _DEF_LANDED = 0
 # 票 46 换代：`3 + 21 + 250`（274）→ `3 + 21 + 253`（277）——仍只动 gateway：ADR 0043 新增 3 条
 # （`GatewayMainPathJvmTest.cacheHitPathStaysZeroModelCallsInLocalMode` 回归、
 # `SentimentGateTest.localModeIsLexiconOnly` 机制、`SentimentGateTest.devModeStillUsesTheLlmLayer` 正对照）。
-# round22 换代：`5 + 29 + 290`（324）→ `5 + 29 + 304`（338）。gateway +14：
-# 票 64 的 `RetrievalFusionReplayTest` 5 条 + `MarkdownChunkerTest` 6 条（同交付，还 CODE_MAP 那笔债）、
-# 票 66 的 `LlmTokenSourceLabelTest` 3 条；tool-api 与 biz-mock 本轮未动。
-G6_EXPECT = [5, 29, 304]
+# round22 收口后（QA 走查补了 4 条用例：空答案守卫 / 派生工具进 plan / 命中路径 ruleIds 镜像 /
+# 回放话术不泄漏内部枚举）→ gateway 308，全仓 `5 + 29 + 308`（342）。
+G6_EXPECT = [5, 29, 308]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 
