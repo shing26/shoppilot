@@ -1,0 +1,48 @@
+# round22 票 67 / ADR 0051：ShopPilot 最小告警集（4 条）。
+#
+# 这些规则引用的是**真实存在的**指标名（现场对仓核过）。副作用很好：谁改了指标名，
+# `promtool test rules` 当场红 —— ops/alerts/shoppilot.rules.test.yml 是它的机器证明。
+#
+# **红线（ADR 0051）**：本仓证明的是「规则在该响的合成序列上确实响、不该响时不响」。
+# 它**不**证明本机或任何环境挂了 Prometheus、也**不**证明告警会送达 —— 不得声称生产会响。
+groups:
+  - name: shoppilot-gateway
+    rules:
+      - alert: ShoppilotDependencyDown
+        expr: shoppilot_dependency_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ShopPilot 可降级依赖有不 UP"
+          description: "shoppilot_dependency_up 的某一格为 0（向量 / 词法 / 语料）。"
+
+      - alert: ShoppilotBizMockCircuitOpen
+        expr: shoppilot_circuit_state == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ShopPilot 业务中台熔断打开"
+          description: "shoppilot_circuit_state 为 1（OPEN 或 FORCED_OPEN），业务调用被本地挡下。"
+
+      - alert: ShoppilotToolCallsFailing
+        expr: rate(shoppilot_tool_timeout_total[5m]) + rate(shoppilot_tool_unavailable_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ShopPilot 业务调用出现超时或不可用"
+          description: "shoppilot_tool_timeout_total 或 shoppilot_tool_unavailable_total 在 5 分钟窗口内有增长。"
+
+      - alert: ShoppilotFallbackRatioHigh
+        # 两侧都要 sum()：shoppilot_fallback_total 带 reason 标签而 shoppilot_requests_total 不带，
+        # 不同标签集的向量在 PromQL 里**默认不匹配**，直接相除会得到空结果（这正是本票实测踩到的坑，
+        # 见 ops/alerts/shoppilot.rules.test.yml 的「该响」用例）。比值本来就该按总量算，sum 是正解。
+        expr: sum(rate(shoppilot_fallback_total[5m])) / sum(rate(shoppilot_requests_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ShopPilot 降级率超过 20%"
+          description: "5 分钟窗口内 shoppilot_fallback_total 的增长率占 shoppilot_requests_total 增长率的 20% 以上。"

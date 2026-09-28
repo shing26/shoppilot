@@ -72,6 +72,29 @@ jobs:
       - name: Coverage ratchet (0-token)
         run: python3 scripts/check_coverage.py
 
+      # round22 票 67 / ADR 0051：告警规则的离线单元测试。ADR 0024 当年把「最小告警集」列为非目标，
+      # 理由是「本机无实例，写了只能证语法、证不了该响时会不会响」；`promtool test rules` 喂合成序列、
+      # 断言该响时响与不该响时不响，证的正是那一句，且满足那份 ADR 的总筛子（0 token、不依赖活体读数）。
+      # 因此 ADR 0030 第 5 条的触发线真正达成 —— 这一步是「触发已到」，不是政策越过。
+      #
+      # 代价照 ADR 0051 写实：这是本仓 CI 子集里**唯一**一个需要下载外部二进制的步骤，所以它排在
+      # 最后（失败时不该拖住前面那些 0 依赖步骤），版本 pin 死，并按发布方公布的 sha256sums.txt
+      # 校验下载物。**它证明的是规则在该响的合成序列上确实响，不证明生产会响。**
+      - name: Alert rules unit test (promtool, 0-token)
+        run: |
+          set -euo pipefail
+          VERSION=2.53.2
+          BASE="https://github.com/prometheus/prometheus/releases/download/v${VERSION}"
+          TARBALL="prometheus-${VERSION}.linux-amd64.tar.gz"
+          curl -fsSL -o "/tmp/${TARBALL}" "${BASE}/${TARBALL}"
+          curl -fsSL -o /tmp/prom-sha256sums.txt "${BASE}/sha256sums.txt"
+          (cd /tmp && grep " ${TARBALL}\$" prom-sha256sums.txt | sha256sum -c -)
+          tar -xzf "/tmp/${TARBALL}" -C /tmp "prometheus-${VERSION}.linux-amd64/promtool"
+          PROMTOOL="/tmp/prometheus-${VERSION}.linux-amd64/promtool"
+          "$PROMTOOL" check rules ops/alerts/shoppilot.rules.yml
+          cd ops/alerts
+          "$PROMTOOL" test rules shoppilot.rules.test.yml
+
       - name: Upload Surefire reports on failure
         if: failure()
         uses: actions/upload-artifact@v7

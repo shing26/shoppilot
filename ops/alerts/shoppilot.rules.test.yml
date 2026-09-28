@@ -1,0 +1,110 @@
+# round22 票 67 / ADR 0051：告警规则的合成序列测试（`promtool test rules`）。
+#
+# 每条规则**两侧**都要断：该响时响（exp_alerts 有内容）、不该响时不响（exp_alerts 为空）。
+# 这正是 ADR 0024 说「证不了」的那一句 —— 也是本票记「触发已到」的全部理由。
+#
+# 全部喂合成序列，0 token、不依赖任何活体实例。
+rule_files:
+  - shoppilot.rules.yml
+evaluation_interval: 1m
+tests:
+  # ---- 规则 1：依赖不齐（gauge == 0，持续 1 分钟）----------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_dependency_up{dependency="qdrant"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ShoppilotDependencyDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              dependency: qdrant
+            exp_annotations:
+              summary: "ShopPilot 可降级依赖有不 UP"
+              description: "shoppilot_dependency_up 的某一格为 0（向量 / 词法 / 语料）。"
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_dependency_up{dependency="qdrant"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ShoppilotDependencyDown
+        exp_alerts: []
+
+  # ---- 规则 2：业务中台熔断打开（gauge == 1，持续 1 分钟）--------------------------
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_circuit_state'
+        values: '0x2 1x8'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ShoppilotBizMockCircuitOpen
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "ShopPilot 业务中台熔断打开"
+              description: "shoppilot_circuit_state 为 1（OPEN 或 FORCED_OPEN），业务调用被本地挡下。"
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_circuit_state'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ShoppilotBizMockCircuitOpen
+        exp_alerts: []
+
+  # ---- 规则 3：业务调用超时 / 不可用（rate > 0，持续 5 分钟）-----------------------
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_tool_timeout_total'
+        values: '0+1x12'
+      - series: 'shoppilot_tool_unavailable_total'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ShoppilotToolCallsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "ShopPilot 业务调用出现超时或不可用"
+              description: "shoppilot_tool_timeout_total 或 shoppilot_tool_unavailable_total 在 5 分钟窗口内有增长。"
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_tool_timeout_total'
+        values: '0x12'
+      - series: 'shoppilot_tool_unavailable_total'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ShoppilotToolCallsFailing
+        exp_alerts: []
+
+  # ---- 规则 4：降级率超阈（fallback / requests > 0.2，持续 5 分钟）----------------
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_requests_total'
+        values: '0+10x12'
+      - series: 'shoppilot_fallback_total{reason="TOOL_UNAVAILABLE"}'
+        values: '0+3x12'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ShoppilotFallbackRatioHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "ShopPilot 降级率超过 20%"
+              description: "5 分钟窗口内 shoppilot_fallback_total 的增长率占 shoppilot_requests_total 增长率的 20% 以上。"
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_requests_total'
+        values: '0+10x12'
+      - series: 'shoppilot_fallback_total{reason="SLOT_UNRESOLVED"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ShoppilotFallbackRatioHigh
+        exp_alerts: []
