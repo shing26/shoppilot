@@ -541,7 +541,7 @@ pwsh -NoProfile -File scripts/verify-fallback.ps1       # 降级原因逐条复�
 pwsh -NoProfile -File scripts/verify-idempotency.ps1    # 并发同 token 与状态前置校验
 pwsh -NoProfile -File scripts/verify-ratelimit.ps1      # 同步 429 与 SSE rate_limited
 pwsh -NoProfile -File scripts/verify-polarity.ps1       # 反义对不互命中（要求 local/dev 模式）
-node scripts/verify-console.mjs                         # 调试台 36 项（Playwright）
+node scripts/verify-console.mjs                         # 调试台 40 项（Playwright）
 # round17 新增的五条：情绪门 / 渠道契约 / 风格档位 / 反馈闭环 / 计划步骤
 # （各脚本的语义断言另有 0 token 的 JVM 用例兜底；五条已并入 run-acceptance 矩阵——步骤名
 #   emotion/channel/style/feedback/plansteps，门禁从 17 步扩到 22 步。2026-09-20 已用便携 pwsh
@@ -550,7 +550,10 @@ node scripts/verify-console.mjs                         # 调试台 36 项（Pla
 #   **2026-09-24 复测（round19 收口后）：512s、18 步绿 / 4 步红**（action、emotion、feedback、
 #   plansteps）——plan/hitzero/fallback 三步转绿；`action` 是本次新出现的红，已用「回退到
 #   round19 起点重建后同样红」的对照实验定位为**先前就存在的问题、不是 round19 引入**，
-#   机制见 docs/EVIDENCE.md 的 22 步矩阵行）
+#   机制见 docs/EVIDENCE.md 的矩阵行）
+#   **步数换代指针**：round21 加 `refund` → 23 步（606s、21 绿 / 2 红）；round22 加
+#   `task`/`funnel` 两条 0 token 步 → **25 步**（786s、23 绿 / 2 红），落点与逐轮读数见
+#   docs/EVIDENCE.md 的「22 步全量活体验收」行（行标题保留旧数，换代指针写在同一行里）
 pwsh -NoProfile -File scripts/verify-emotion.ps1        # 8 条情绪升级（priority=high 工单反查）+ 1 条显式转人工（USER_REQUESTED，不带 high）+ 12 条不误升级 = 30 条断言
 pwsh -NoProfile -File scripts/verify-channel.ps1        # 三渠道同答 / 跨渠道会话不互串 / email 回执单 / 渠道计数
 pwsh -NoProfile -File scripts/verify-style.ps1          # SSE meta 档位矩阵（完整矩阵见 StyleServiceTest 6 项）
@@ -570,7 +573,7 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七�
 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
 Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
-这条门禁覆盖干净 runner 上的构建与 300 条 JVM 测试：round16 的三条网关主链路 JVM
+这条门禁覆盖干净 runner 上的构建与 338 条 JVM 测试：round16 的三条网关主链路 JVM
 集成 smoke（缓存命中、工具循环、fallback），票 41 的四条工具循环语义用例（超限 FALLBACK、
 预算检查出答案、写动作守卫、多 toolCalls 防御），票 35 的五条 Prompt 版本化用例
 （生产资源加载与三种 fail-fast 形态），票 36 的六条情绪门用例（词典层 0 token 定案、
@@ -579,16 +582,23 @@ Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 风格票的档位矩阵与注入拼装用例（基座 + 注入段同一次调用发出），票 39 的五条计划执行语义用例
 （前序依赖表达式、注入拒收、前步失败中止、单步回归），round18 的三条模式迁移用例
 （Flyway 基线已应用、9 张表齐备、`ddl-auto` 仍是 validate）与三条慢查询计划用例，
-以及 round19 的观测面用例：五条向量化计时用例（三桶与三个计数器逐桶同分法、缓存命中记零、
+round19 的观测面用例：五条向量化计时用例（三桶与三个计数器逐桶同分法、缓存命中记零、
 并发等待者、关掉去重层）、两条计划与上下文用例（两步链的 `plan` 条目、零召回占位文本
 逐字保留）、六条输出上限用例（OpenAI 兼容面 `max_tokens` 的两种形态、Ollama 侧
-`options.num_predict` 的下发与省略、配置越界），
+`options.num_predict` 的下发与省略、配置越界），round20 的 `orderNo` 溯源守卫用例，
+round21 的退款审批闸门用例（三态迁移与推导回滚、跨租户审核、受理态落幂等、受理分支不打
+第二跳模型、代理端点三个头）与请求级幂等回放用例，round22 的检索融合录放门用例
+（由两路序重算融合 + 夹具必须含分歧 + 四个常数与语料 sha）与切块器用例（不重叠、ruleId
+稳定、意图取自文件名前缀）、task 判据与 token 口径标签用例，
 不依赖 Docker、Redis、ES、Qdrant 或 Ollama。
 票 34 起它还包含 0 token 的评测门禁：判据自检（`verify_eval_judge.py` 40 项断言）、离线
 rescore 比对（按当前判据重算 2026-09-10 六份入库明细，钉住对偶矛盾四条的期望差异集合）、
-round17 新增套件判分器的 24 条夹具（`python scripts/eval_suites.py`），以及 round18 的
-覆盖率棘轮（`python scripts/check_coverage.py`，读各模块 JaCoCo 产物按模块比 LINE 门槛）——
-judge()、gold、新增套件判据或覆盖率的静默漂移都会让 CI 变红。它仍不替代本机 22 步全量验收，后者包含活体中间件、
+round17 新增套件判分器的 24 条夹具（`python scripts/eval_suites.py`）、round18 的
+覆盖率棘轮（`python scripts/check_coverage.py`，读各模块 JaCoCo 产物按模块比 LINE 门槛）、
+round22 的 task 判据夹具（`python scripts/eval_task.py`，14 条）、检索融合录放门的
+只校验那一层（`python scripts/retrieval_gate.py` + 夹具哈希钉）与告警规则单元测试
+（`promtool test rules`，4 条规则 × 两侧断言）——
+judge()、gold、新增套件判据或覆盖率的静默漂移都会让 CI 变红。它仍不替代本机 25 步全量验收，后者包含活体中间件、
 浏览器、评测与一键演示。CI 报红先修真实失败，不通过加跳过、改期望数或取消测试来换绿。
 
 ### 逐 ticket 验收动作 → 覆盖命令
@@ -894,7 +904,7 @@ shoppilot-biz-mock/    业务中台：orders / logistics / coupons / refunds / t
 shoppilot-tool-api/    纯契约 jar：10 意图枚举 + Function Schema + 工具 DTO（网关与 biz-mock 共用）
 loadtest/              locustfile（四种流量模型）与 results/（保留 ladder-*.csv 与 env-*.json）
 eval/results/         工具调用评测 CSV/meta（入库的评测证据）
-docs/adr/              ADR 0001-0045（0022 未占用），正文里每处 ADR 编号都能点进去
+docs/adr/              ADR 0001-0051（0022 未占用），正文里每处 ADR 编号都能点进去
 docs/                  阈值标定、意图标定、检索对比、压测报告、证据地图、代码地图、面试问答清单
 knowledge/             30 篇政策语料
 scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、TTFT 扫描与归因、报告生成

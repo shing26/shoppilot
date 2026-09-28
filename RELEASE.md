@@ -31,7 +31,7 @@ pwsh -NoProfile -File scripts/up.ps1
 pwsh -NoProfile -File scripts/demo.ps1
 ```
 
-完整入口见 [README.md](README.md) 的快速开始、三条演示和复现段。CI 子集在干净 Ubuntu runner 上只执行构建与全部 JVM 测试，不替代本机 22 步活体验收。
+完整入口见 [README.md](README.md) 的快速开始、三条演示和复现段。CI 子集在干净 Ubuntu runner 上执行**构建与全部 JVM 测试（338 条）**加**七道 0 token 门禁**（判据自检 / 离线 rescore / 套件夹具 / task 判据夹具 / 检索融合录放门 / 覆盖率棘轮 / 告警规则 `promtool test rules`），**不替代**本机 25 步活体验收。
 
 ## Known limits
 
@@ -47,6 +47,14 @@ pwsh -NoProfile -File scripts/demo.ps1
 
 1. 事实性错误、回归、崩溃或现有门禁要求的修复；
 2. [ADR 0030](docs/adr/0030-round14-closure-scope-and-reopen-triggers.md) 五条触发条件；
-3. [ADR 0031](docs/adr/0031-interview-feedback-is-the-sixth-reopen-trigger.md) 的面试反馈触发条件：同一缺口被不同面试官问过至少两次，且能在 1 个工作日内补齐。
+3. [ADR 0031](docs/adr/0031-interview-feedback-is-the-sixth-reopen-trigger.md) 的面试反馈触发条件：同一缺口被不同面试官问过至少两次，且能在 1 个工作日内补齐；
+4. **项目所有者的显式政策覆盖**（本项目所有者即唯一决策者）。这是**唯一**一条不需要外部事件的路径，因此**必须在开轮 ADR 里逐字写明"这是政策越权覆盖、不是触发已到"**，并写明该轮**不自动续期**。
+
+> **第 4 条是事后补记的，必须说清楚**：`v1.0.0` 之后的 round17 – round22 **六轮全部**走的是第 4 条
+> （依次 [0033](docs/adr/0033-round17-reopen-for-architecture-completeness.md) / [0041](docs/adr/0041-round18-reopen-for-scoring-dimension-completeness.md) /
+> 0044 / 0045 / [0046](docs/adr/0046-round21-reopen-for-the-last-mile.md) / [0048](docs/adr/0048-round22-reopen-for-machine-backing.md)），
+> 前三轮当时只在 tracker 与各轮 ADR 里记录，**本文件漏列了这一条**。补记不改变任何既往事实——
+> 每一轮都已在自己的 ADR 里诚实标注了依据（例如 round20 内部还分了「三条事实性修正 + 一条政策覆盖」、
+> round22 分了「65/67 触发已到、64/66 政策越过」），这里只是把那条一直在用的路径正式并入冻结策略。
 
 未触发的工作只登记到 [docs/interview-feedback.md](docs/interview-feedback.md)，不直接进入实现队列。

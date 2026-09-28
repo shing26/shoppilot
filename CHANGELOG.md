@@ -8,7 +8,7 @@
 | --- | --- |
 | 轮次 spec | `.scratch/shoppilot-mvp/round*-spec-*.md` |
 | 票 | `.scratch/shoppilot-mvp/issues/` |
-| 决策 | [`docs/adr/`](docs/adr/)（编号 0001–0045，**0022 有意预留未占用**，见 ADR 0024 编号说明） |
+| 决策 | [`docs/adr/`](docs/adr/)（编号 0001–0051，**0022 有意预留未占用**，见 ADR 0024 编号说明） |
 | 指标证据 | [`docs/EVIDENCE.md`](docs/EVIDENCE.md) |
 | 发布声明与冻结策略 | [`RELEASE.md`](RELEASE.md) |
 
@@ -18,7 +18,43 @@
 
 ## [Unreleased]
 
-`v1.0.0` 之后的工作，共 **60 个提交**，尚未打新 tag。其中 round16 – round20 都是 `RELEASE.md` 冻结策略下的重开（round17 起由所有者政策覆盖，不再伪装成触发式重开）。
+`v1.0.0` 之后的工作，共 **86 个提交**，尚未打新 tag。其中 round16 – round22 都是 `RELEASE.md` 冻结策略下的重开（round17 起由所有者政策覆盖，不再伪装成触发式重开）。
+
+### round22 — RAG 的机器背书 · 2026-09-28
+
+补的是「**谁在机器上守着这条链**」。触发物是 round21 期间对仓核实出的三条：CI 的 24 条夹具四个 kind 都**不读** `ruleIds`/RRF 序（改坏融合没人会红）、唯一那份 RAG 证据的 16 条查询 `dense` 与 `hybrid` **名次全同**、评测四列都是单维请求质量而**没有一列是端到端终局**。
+
+**依据分两类，不许混称**：65 / 67 记为「**触发已到**」（各自触发原文成立，不需要政策覆盖）；64 / 66 记为「**政策越过**」，其中 **64 的触发条件就是它自己**（「出现可离线复跑的录制/回放路径」），引自己当依据是循环论证——收口时不许讲成「登记第 5 项的触发已成立」。
+
+| 票 | 内容 | 依据 | ADR |
+| --- | --- | --- | --- |
+| — | round22 重开范围与逐票依据的四分类 | — | [0048](docs/adr/0048-round22-reopen-for-machine-backing.md) |
+| 64 | 检索融合 0 token 录放回归门：由录制的两路序**重算**融合比对 top-K 前缀，四个常数从生产 `application.yml` 绑定、语料 sha 现算；夹具 10 条、**10/10 在 top-5 上 dense≠fused**（原 16 条是 0/16）；同交付 `MarkdownChunkerTest`（还 `CODE_MAP` 那笔债） | **政策越过** | [0049](docs/adr/0049-retrieval-fusion-replay-gate.md) |
+| 65 | task 级判据最小形态：只读 `plan[]`/`context.ruleIds`/`fallbackReason` 三个既有字段，`task_done` **单独成列、不给总分、不并入四列** | **触发已到** | [0050](docs/adr/0050-task-level-judgement-minimal-form.md) |
+| 66 | token 计量加 `source=provider\|estimate` 标签：**名字不变 → 指标名计数不变**（仍 53）；不改 `TokenBudget` 放行语义 | **政策越过** | — |
+| 67 | 告警最小集 + `promtool test rules`：4 条规则 × 两侧断言（该响 / 不该响）；**实测抓到一处会静默失效的写法**（`rate(fallback)/rate(requests)` 两侧标签集不同 → PromQL 默认不匹配 → 规则永不触发而 `check rules` 照样 SUCCESS，两侧 `sum()` 才对） | **触发已到** | [0051](docs/adr/0051-alert-rules-and-promtool.md) |
+| 68 | 收口：审计常数换代、EVIDENCE / CODE_MAP / tracker 同步、指标名复核（**53，本轮不换代**） | — | — |
+
+**读数**：JVM `3 + 21 + 287` → **`5 + 29 + 304 = 338`** 绿；覆盖率 gateway 59.47% → **62.79%**；CI **五步 → 八步**（+task 判据 / +检索录放门 / +告警规则测试）；本机矩阵 23 步 → **25 步**，落点 `logs/acceptance-run-20260928-134721.log`（**786 s、23 绿 / 2 红**）；收口审计 **PASS 86 / FAIL 1 / SKIP 8**（唯一一红 `F1c`）；干净 runner 上 `ci-subset` **success**（八步全绿）。
+
+**未达成照登**：票 64 **不闭合** round19 登记第 5 项（不覆盖活体 hit@5）；**gold 180 条活体重跑未做，真因是「条件不成立」**（日预算 `260000` < 180 条所需约 40-60 万，不越 ADR 0012 的闸门）；票 65 的活体语义正例已补（`task_done 3 / 没办成 0 / 未观测 0`，更早那次 `1/2/0` 是环境红、两次并列供着）。
+
+### round21 — 闭环的最后一公里 · 2026-09-28
+
+补的是**钱动了有没有人看过**、以及**客户端重试拿不拿得到答案**。触发物是一份外部审计对 ShopPilot 的四条指控 + 一处数字纠正；**逐条对仓核实后只有一条是全新发现**（README 写的指标名数从 round18 起就落后）。
+
+| 票 | 内容 | 依据 | ADR |
+| --- | --- | --- | --- |
+| — | round21 重开范围与逐票依据的四分类 | — | [0046](docs/adr/0046-round21-reopen-for-the-last-mile.md) |
+| 57 | 指标名计数换代 41 → 52（改的是生成物的来源票再重跑生成器）；两份活体报告加 provenance 表头 | ADR 0031:10 事实修正 | — |
+| 58 | 幂等重放时机前移：请求级回放索引只在**客户端显式 token + query 指纹相等**时命中，判重放不再取决于模型肯不肯重发工具调用 | ADR 0031:10（兑现既有契约语义） | — |
+| 59 | 退款审批闸门：受理与放行拆两态（`Refund(PENDING_REVIEW)` → `PROCESSING`/`REJECTED` + `ToolStatus.PENDING_APPROVAL`），资金放行由人工审核推进；**HITL 不必是对话轮次，可以是状态迁移的门**（ADR 0008/0036 一字未动） | **政策越过** | [0047](docs/adr/0047-refund-review-is-a-state-transition-gate.md) |
+| 60 | 买家读回：`OrderView.refundReview` 三态 + 到账边界写进 `ToolResponse.message` | **政策越过** | — |
+| 61 | 调试台审核面板（列表 / 放行 / 驳回），经网关代理 | **政策越过** | — |
+| 62 | 审批闸门活体验收 `verify-refund-approval.ps1` + 矩阵 add-only 加步 | **政策越过** | — |
+| 63 | 收口 | — | — |
+
+**读数**：JVM `3 + 21 + 287 = 311` → **`5 + 29 + 290 = 324`** 绿；覆盖率 gateway 59.47% → 59.75%；指标名 **52 → 53**；活体 `verify-refund-approval.ps1` **7/7**、`verify-idempotency.ps1` exit 0、`verify-console.mjs` **40/40**、`verify-action-loop.ps1` **11/11**；矩阵 22 步 → 23 步。
 
 ### round20 — 修 22 步矩阵的四条红 · 2026-09-25 → 09-27
 
