@@ -93,7 +93,7 @@ plan 缺失（离线明细无该字段） → None = 未观测
 - 层一（JVM，唯一 owner）：`RetrievalFusionReplayTest` —— 由夹具的 `dense`/`lexical` 重算融合，断言 top-K 前缀 == `expected_fused_topk`；四个常数从**生产 `application.yml`** 绑定；`corpus_sha256` 现算相等。为此 `rrf()`（`HybridRetriever:198`）改**包级可见**（零行为改动）。
 - 层二（Python，不复算）：`scripts/retrieval_gate.py` 只做夹具 schema、`expected ⊆ dense ∪ lexical`、sha 与 CI pin 校验。
 - 夹具：`eval/retrieval-fixture-<date>.json`（append-only 家族），录制用现成 `/ops/retrieval` 探针（`OpsController.java:268`，一次调用同时返回 `denseTop`/`lexicalTop`/`fusedTop`）；pin `llm_mode`/`kb_epoch`/`corpus_sha256`/四个常数。**查询集必须新增能造分歧的 case**（跨店近重复条款、同主题相邻块），原 16 条对融合是 no-op。
-- CI：插在「套件夹具」后、「覆盖率棘轮」前（现五步 → 第 5 步 / 共 6 步）；`ci-subset.yml` 加 `env: RETRIEVAL_FIXTURE_SHA256`（哈希钉）。
+- CI：插在「套件夹具 / task 判据」后、「覆盖率棘轮」前 —— **收口时实测是第 6 步 / 共 8 步**（起草时按「现五步 → 共 6 步」算，漏了同一轮票 65 与票 67 各加的那一步）；`ci-subset.yml` 加 `env: RETRIEVAL_FIXTURE_SHA256`（哈希钉）。
 - 并入 `CODE_MAP.md:91` 已挂的债：`MarkdownChunkerTest` + `HybridRetriever` 融合用例同交付，**不单独开补测票**。
 
 **Verify**：`.\mvnw.cmd -B -ntp verify`（含新用例）；`python scripts/retrieval_gate.py`；CI 第 5 步。
@@ -118,7 +118,7 @@ plan 缺失（离线明细无该字段） → None = 未观测
 
 ### 票 68 — round22 收口
 
-spec 登记节、`docs/EVIDENCE.md` 新读数、tracker round 表与票索引、`docs/CODE_MAP.md`（`knowledge` 与 CI 步：五步 → 七步）、
+spec 登记节、`docs/EVIDENCE.md` 新读数、tracker round 表与票索引、`docs/CODE_MAP.md`（`knowledge` 与 CI 步：五步 → 八步）、
 **指标名重算并按仓库家法写换代指针**、收口审计 `ROUND_FP`/`G6_EXPECT` 换代。
 
 **注意**：收口时 `G6_EXPECT` 要按**现场 surefire 总数**重算，且必须跑**一次带 build 的矩阵**（审计 G6 读 `logs/acceptance/{build,unit}.log`；`-SkipBuild` 会让它读到旧日志而红 —— round21 踩过）。
@@ -176,7 +176,7 @@ spec 登记节、`docs/EVIDENCE.md` 新读数、tracker round 表与票索引、
 
 **读数**：JVM `5 + 29 + 304 = 338` 绿（gateway 290 → 304）；覆盖率 gateway **62.79%** /
 biz-mock 79.30% / tool-api 47.95%（门槛 54.0/76.0/40.0 未动）；**指标名 53 不变**
-（票 66 只加标签不加名 —— 本轮**没有**换代指针）；CI 从五步 → **七步**
+（票 66 只加标签不加名 —— 本轮**没有**换代指针）；CI 从五步 → **八步**
 （+`Task-level scorer selfcheck`、+`Retrieval fusion gate`、+`Alert rules unit test`）；
 本机矩阵从 23 步 → **25 步**（+`task`/`funnel`），落点 `logs/acceptance-run-20260928-134721.log`，
 **786 s、23 绿 / 2 红**（红 = `feedback`、`plansteps`，两条登记项）。

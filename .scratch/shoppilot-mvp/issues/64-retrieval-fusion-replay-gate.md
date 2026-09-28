@@ -17,7 +17,7 @@
 - **查询集必须新增「能造分歧」的 case**：原 16 条对融合是 no-op（这正是要修的病）。候选：跨店近重复条款（`return-07-shop-t001-window` vs `return-08-shop-t002-fresh` vs 平台级 `return-01-7day-basic`）、同主题相邻的 `shipping-01..07`。
 - **判据粒度升到 `ruleId` 级**：现有 `retrieval_compare.py:79` 按**文件名前缀**判（文档级）；`ruleId` 才是检索的真实单元，也补上「块级 hit@5 从未被测量」这一格。
 - **三道防假绿**：① 重算式断言（只改 `expected` 必红）；② 反证夹具（喂打乱后的输入必报 mismatch）；③ 哈希钉（`ci-subset.yml` 加 `env: RETRIEVAL_FIXTURE_SHA256`，与 `check_coverage.py` 的门槛写法同模式）。
-- **CI 放第 5 步**：插在「套件夹具」后、「覆盖率棘轮」前（现五步 → 共 6 步）。覆盖率影响**正面**（新测试是 test 代码不进分母，但会执行 `rrf`/`accumulate`）；**不新增任何 main 类**。
+- **CI 放第 6 步（共 8 步）**：插在「套件夹具 / task 判据」后、「覆盖率棘轮」前。开轮时写的是「现五步 → 共 6 步」，**收口时实际是 8 步** —— 同一轮里票 65（task 判据）与票 67（告警测试）各加了一步，事先没有把三处放在一起数。最终顺序：构建与 JVM → 判据自检 → 离线 rescore → 套件夹具 → **task 判据** → **检索录放门** → 覆盖率棘轮 → **告警规则测试**。覆盖率影响**正面**（新测试是 test 代码不进分母，但会执行 `rrf`/`accumulate`）；**不新增任何 main 类**。
 - **并入 `docs/CODE_MAP.md:91` 已挂的债**：`MarkdownChunkerTest` + `HybridRetriever` 融合用例与本票同交付（`rrf` 可见性本来就要动一次），**不单独开「补测运动」票**。
 - **与票 67 同改 `ci-subset.yml`**：两票各加一步，逻辑上互不阻塞，但别并行改同一文件。
 
