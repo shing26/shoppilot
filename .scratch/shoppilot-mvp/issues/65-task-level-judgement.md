@@ -55,11 +55,11 @@ python scripts/verify_eval_judge.py
 - 夹具自检：`python scripts/eval_task.py` → **TASK SELFCHECK ok=14**（含反例 A、反例 B、三条 `None` 分支、未知 kind 抛错）。
 - 门禁不变：`python scripts/verify_eval_judge.py` **40/40**；`python scripts/eval_suites.py` **ok=24**（24 条夹具未动）。
 - `gold` 与 rescore：`part8` 不在 `GOLD_CASE_FILES`，`build_eval_set.py` 的 `PARTS` 只含 part1-3，故 180 条结构与 rescore 差异集合不受影响。
-- **活体**：`python scripts/run_tool_eval.py --task` 跑通全链（`SCORER SELFCHECK ok=16` → `TASK SELFCHECK ok=14` → 出明细 CSV），读数见下。
+- **活体**：`python scripts/run_tool_eval.py --task` 跑通全链（`SCORER SELFCHECK ok=16` → `TASK SELFCHECK ok=14` → 出明细 CSV），读数见下。**语义正例已取到**：`task_done 3 / 没办成 0 / 未观测 0`。
 
 **未达成（按实登记，不摘红）**
 
-- **活体正例读数未取到（环境红）**：本机 Ollama 无模型驻留，warmup 报 `cudaMalloc failed: out of memory`（四套项目容器抢 4 GB 显存，见 `docs/EVIDENCE.md` 的本机三条硬限制）。两条 model-dependent 用例（action / policy）因此落 `LLM_*` 降级 → 判据如实判「没办成」。**这本身是判据正确的证明**（任务确实没办成），但它不是本票要的语义正例。读数：`eval/results/tool-eval-20260928-12*-dev-task.csv`（3 条：task_done 1 / 没办成 2 / 未观测 0）。放开条件 = 显存空出来；重跑 `python scripts/run_tool_eval.py --task` 即得干净读数。
+- ~~活体正例读数未取到~~ —— **已补（2026-09-28 晚）**：显存空出来之后生成模型加载成功，`python scripts/run_tool_eval.py --task` 得 **`task_done 3 / 没办成 0 / 未观测 0`**（明细 `eval/results/tool-eval-20260928-173008-dev-task.csv`）：action 那条真调到 `queryOrderDetail` 并答出订单状态、policy 那条答在条款上、escalate 那条落 `USER_REQUESTED` + 工单号。**本次两次读数并列供着**：更早那次（`…-125025-dev-task.csv`，`1/2/0`）是**环境红**——当时本机 Ollama 无模型驻留、`cudaMalloc failed: out of memory`（四套项目容器抢 4 GB 显存），两条 model-dependent 用例落 `LLM_*` 降级、判据如实判「没办成」。那次读数证明的是**判据能正确判负**，这次证明的是**语义正例成立**；两者都不是摘红的产物。
 - **CI 那一页只有夹具自检**（与 `eval_suites.py` 同例）：part8 的活体跑批进不了 CI（要网关 + 模型），能进 CI 的是判据本身。
 
 **你需要能当场回答的三个追问**

@@ -46,12 +46,13 @@ git diff --check && git status --short
 - 覆盖率棘轮：gateway **62.79%** / biz-mock 79.30% / tool-api 47.95%（门槛 54.0/76.0/40.0，未动）。
 - 门禁：`verify_eval_judge.py` **40/40**、`eval_suites.py` **ok=24**、`eval_task.py` **ok=14**、`retrieval_gate.py` **自检 6/6 + ok cases=10**、离线 rescore 差异仍恰 4 条。
 - 全量矩阵（**25 步**）：`logs/acceptance-run-20260928-134721.log`，**786 s、23 绿 / 2 红**（红 = `feedback`、`plansteps`，两条都是登记项）。新加的 `task`/`funnel` 两步绿。
-- 收口审计：**PASS 85 / FAIL 2 / SKIP 8（共 95 项）**（`.scratch/shoppilot-mvp/round3-closeout-audit.txt`）。两条 FAIL 都照登、都不摘：① `A1 origin/main == HEAD` —— 本轮只提交到本机，**未推送**；② `F1c` —— round20 那次我删掉的历史本机日志不可逆，判据未动、未加豁免。本轮新绿的：`G6`（surefire `5 + 29 + 304 = 338`）、`E5`/`E5b`（问答库 **238/69**）。
+- 收口审计：**PASS 86 / FAIL 1 / SKIP 8（共 95 项）**（`.scratch/shoppilot-mvp/round3-closeout-audit.txt`）。唯一一条红照登不摘：`F1c` —— round20 那次我删掉的历史本机日志不可逆，判据未动、未加豁免。**20 个提交推送后 `A1` 转绿**；`G6`（surefire `5 + 29 + 304 = 338`）、`E5`/`E5b`（问答库 **238/69**）、`A3`（本轮零额度，`tokensUsedToday=0`）均绿。
 
 **未达成（按实登记，不摘红）**
 
 - **票 64 不闭合 round19 登记第 5 项**（活体 hit@5 准确率进 CI）—— 本轮只补上「排序确定性 + 四个常数 + 语料/夹具指纹」这一层。
-- **票 65 的活体正例读数未取到**：本机无模型驻留（`cudaMalloc failed: out of memory`，四套项目容器抢显存），两条 model-dependent 用例落降级，判据如实判「没办成」。
+- **票 65 的活体语义正例已补**（2026-09-28 晚）：显存空出来后 `run_tool_eval.py --task` 得 `task_done 3 / 没办成 0 / 未观测 0`；更早那次 `1/2/0` 是环境红读数，两次并列供着（见票 65 Handoff）。
+- **gold 180 条活体重跑未做，且这次是「条件不成立」而不是「没空跑」**：`.env` 里有云端 key，但 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET=260000`，而 180 条 dev 全量约需 40-60 万 token —— **预算不够跑完**。用 `--force` 越过项目自己的日预算闸门（ADR 0012）不代做；放开条件 = 把该变量抬到 ≥60 万（或分两天跑）。
 - **票 67 的 CI 步未在干净 runner 上实跑**；且它按发布方 `sha256sums.txt` 校验下载物，而不是仓内硬编码 hash（本机到发布 CDN 不可达，拿不到那个值就**不猜**）。
 - **spec §4 第 2-6 项仍是我的 best judgment 默认值**（ADR 结构 4 份 / promtool 用 curl 固定版本 / 告警 4 条 / 票 66 保留 / 顺序 65→67→64→66→68），**所有者尚未逐条确认** —— 本轮已按这些默认值实现并收口，改任一项需要连带改对应 ADR 与实现。
 
