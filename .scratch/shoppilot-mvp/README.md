@@ -52,7 +52,9 @@
   - **`console` 步的 `miss path renders as typewriter` 是间歇红（模型方差，判据一字未动）**：该断言含一条「推出的正文 > 60 字」的下界，而本地 3B 对同一问句的输出长度在 60–156 之间波动 —— QA 后那次全量矩阵是 `3 chunks / 60 chars`（60 不 > 60）转红，同一脚本单独跑两次都是 **43/43**（139–156 字）。**不改阈值**：它是「答案不是一句敷衍」的代理判据，缩到 50 就是改窄判据（ADR 0043 明令禁止）。登记为抖动，与 `feedback` 的 `implied_retry` 间歇同族。
 - 2026-09-28：**QA 后的全量矩阵落点**：`logs/acceptance-run-20260928-192522.log`（**839 s、22 绿 / 3 红**）。红的三个：`feedback`（`implied_retry` 间歇，登记项）、`plansteps`（local 档已知不达成，判据不动）、`console`（上面那条长度下界的模型方差）。**新加的 `task`/`funnel` 两步绿**，`refund` 等既有步全绿。
 - 2026-09-28：**QA 顺带抓出并已更正的两处我自己的文档错误**：① 票 66 / round21 spec / round22 spec 把 `source` 标签写成「perf/local 档记 estimate、dev 云端档记 provider」——**错的**，实际是 **Mock（perf）→ `estimate`，Ollama（local）与云端（dev）→ `provider`**（代码与 `LlmTokenSourceLabelTest` 一直是对的，错的是文档）；② README 的指标名段补一句「这是**源码口径**，不要拿运行期 `/actuator/metrics` 去数」（那边列的是 meter，带 tag 的组合各算一条，且冷启动有懒注册缺席）。
-- 当前 `ready-for-agent` 的开放票：**无**。票 01-39 与 41、风格票、有意不做成文票、票 42-68 均已收口；round17、round18、round19、round20、round21、round22 均已收口。**下一轮不能从旧字样推断**（重开条件见 ADR 0030 五条与 ADR 0031）。
+- 2026-10-01：**定位改写 + program 开篇（ADR 0052-0057 立稿）**——两轮 grilling 落定。**其一，agent 自主性升级**（动态规划 + 反思重试；4 轮/4 步可配置、安全闸不可重试、失败三分法保 gold 零触碰、dev 小评测集）留在 [`agent-autonomy-spec.md`](agent-autonomy-spec.md)，**轮次待定**。**其二，"做系统"**——所有者裁定本仓从「面试作品」升级为**可运行的客服系统雏形**，七问定调：可运行雏形（自用/演示，**不宣称上线**）/ **拆多服务**/ **四域服务**（对话网关·知识·业务与工具·工单与坐席）/ **REST + Redis Streams**（三 topic 族，零新增中间件）/ **规则映射分流 + 坐席领取**（LLM 分流与自动派单登记不执行）/ **Vite+Vue3 双入口**（仓内首次进 node 依赖）/ **自建轻量身份域**（三角色 + 审计事件流）。**ADR 0052 改写 ADR 0024 的定位**（原文不动，加换代指针）：外部资源仍缺、可对账纪律与「不宣称上线」三条红线全部继承。**并裁定「系统竖切先行」**——agent 升级顺延到新结构（否则编排层要改两遍）。**本机资源账**：全栈约 7 GB、日常档子集约 3.5 GB，而本机只剩 0.5 GB 可用 → **验证必须分档**（全栈档仅清场日，且不得为跑全栈停别的项目容器）。
+- 2026-10-01：**round23 开轮（票 69-75，program 第一条竖切）**——主线「降级/审批/点踩产生工单 → 规则表分流进队列 → 坐席在工作台领取 → 处理回写 → 买家可读回」。**先做的第一件事不是写规则，是统一实体**：仓里「需要人工介入」是三个混血体（降级工单 / 复核队列 / 退款审批，三套机制三张表），分流没有分母。本轮**不做**身份域（0056，下一轮主体）、渠道出站消费端、知识与业务服务化、买家端前端——均登记不执行。**硬约束**：一条判据都没动（gold 180、阈值、`judge()`、降级枚举 10/降级 9）；`ddl-auto: validate` 全档不变（新表必须走 Flyway 否则启动红）；门禁 0 token（**Streams 真实 ACK 不得进 CI**，用内存 fake broker 钉契约与幂等）。
+- 当前 `ready-for-agent` 的开放票：**69-74**（票 75 收口票 blocked）。**下一轮不能从旧字样推断**：program 路线见上表；agent 升级的轮次待定。
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
 - Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建、JVM 测试与 0 token 评测门禁（票 34：判据自检 + 离线 rescore 比对；round18 票 44 加第四步：覆盖率棘轮）；全量活体验收矩阵仍是作者本机证据（round21 起 **23 步**，新增 `refund`）。
 - 下一轮不能从旧 `ready-for-agent` 字样推断。重开条件与仍然挂红的裁决见 [`docs/adr/0030-round14-closure-scope-and-reopen-triggers.md`](../../docs/adr/0030-round14-closure-scope-and-reopen-triggers.md)。
@@ -80,6 +82,8 @@
 | round20 | 票 53-56，修 22 步矩阵的四条红（三条事实性修正 + 一条 orderNo 溯源） | [`round20-spec-live-reds.md`](round20-spec-live-reds.md) | done |
 | round21 | 票 57-63：闭环最后一公里（指标数事实修正 / 幂等重放 / 退款审批闸门 / 买家读回 / 调试台面板 / 活体验收） | [`round21-spec-last-mile-and-machine-backing.md`](round21-spec-last-mile-and-machine-backing.md) | **done**（ADR 0046 + 0047 已立；票 57-63 全部收口） |
 | round22 | 票 64-68：RAG 的机器背书（检索录放门 / task 级判据 / token 计量标签 / 告警 + promtool / 收口） | [`round22-spec-machine-backing.md`](round22-spec-machine-backing.md)；ADR 0048-0051 | **done**（ADR 0048 轮范围 + 0049/0050/0051 逐特性；票 64-68 全部收口） |
+| **program** | **客服系统化演进**（跨多轮）：定位改为可运行的多租户客服系统雏形 | [`system-program-customer-service.md`](system-program-customer-service.md)；ADR **0052-0057** | **进行中**（七决策 2026-10-01 确认；路线：工单竖切 → 身份域 → 渠道出站/知识服务化 → agent 自主性升级） |
+| round23 | 票 69-75：program 第一条竖切（工单统一实体 / 分流规则表 / 事件骨干 / 工单与坐席服务 / 坐席工作台 / 验证分档 / 收口） | [`round23-spec-ticket-routing-vertical-slice.md`](round23-spec-ticket-routing-vertical-slice.md)；ADR 0052-0055、0057 | **ready-for-agent**（票 69 起；身份域 0056 与 agent 升级不在本轮） |
 
 ## Ticket 索引
 
@@ -154,6 +158,13 @@
 | 66 | [`66-token-source-label.md`](issues/66-token-source-label.md) | implemented | token 计量加 `source` 标签（ADR 0048；**政策越过**；名字不变 → 计数不变；本轮最弱、可无损删） |
 | 67 | [`67-alert-rules-and-promtool.md`](issues/67-alert-rules-and-promtool.md) | implemented | 告警最小集 + `promtool test rules`（ADR 0048/0051；**触发已到**；不声称生产会响） |
 | 68 | [`68-round22-closeout.md`](issues/68-round22-closeout.md) | implemented | round22 收口（spec 登记节 / EVIDENCE / tracker / CODE_MAP / 审计常数换代 / 指标名重算） |
+| 69 | [`69-unified-ticket-entity.md`](issues/69-unified-ticket-entity.md) | ready-for-agent | 工单统一实体：三混血体收敛为一表三来源 + Flyway V3（ADR 0055；**分母不得动**） |
+| 70 | [`70-routing-rules-and-priority.md`](issues/70-routing-rules-and-priority.md) | ready-for-agent | 分流规则表（可配置）+ 优先级 + SLA 计时（ADR 0055；无模型判断） |
+| 71 | [`71-event-backbone-streams.md`](issues/71-event-backbone-streams.md) | ready-for-agent | Redis Streams 事件骨干 + 消费组 ACK + 幂等消费（ADR 0054；0 token 门禁纪律） |
+| 72 | [`72-ticket-agent-service.md`](issues/72-ticket-agent-service.md) | ready-for-agent | 工单与坐席服务独立成第四服务 `:8092`（ADR 0053；乐观锁领取） |
+| 73 | [`73-agent-workspace-frontend.md`](issues/73-agent-workspace-frontend.md) | ready-for-agent | 坐席工作台（Vite+Vue3 第一入口，CI 八步→九步；ADR 0057） |
+| 74 | [`74-verification-tiering.md`](issues/74-verification-tiering.md) | ready-for-agent | 验证分档（日常档/全栈档）+ 事件对账门禁（ADR 0053 Consequences） |
+| 75 | [`75-round23-closeout.md`](issues/75-round23-closeout.md) | blocked | round23 收口（待 69-74） |
 
 ## 如何新增或领取工作
 
