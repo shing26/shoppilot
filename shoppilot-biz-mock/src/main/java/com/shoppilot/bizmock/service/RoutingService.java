@@ -1,11 +1,13 @@
 package com.shoppilot.bizmock.service;
 
+import com.shoppilot.bizmock.audit.AuditService;
 import com.shoppilot.bizmock.domain.RoutingRule;
 import com.shoppilot.bizmock.domain.Ticket;
 import com.shoppilot.bizmock.domain.TicketPriority;
 import com.shoppilot.bizmock.domain.TicketSource;
 import com.shoppilot.bizmock.domain.TicketStatus;
 import com.shoppilot.bizmock.repo.RoutingRuleRepository;
+import com.shoppilot.tool.audit.AuditActions;
 import com.shoppilot.bizmock.repo.TicketRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,10 +35,44 @@ public class RoutingService {
 
     private final RoutingRuleRepository ruleRepository;
     private final TicketRepository ticketRepository;
+    private final AuditService auditService;
 
-    public RoutingService(RoutingRuleRepository ruleRepository, TicketRepository ticketRepository) {
+    public RoutingService(RoutingRuleRepository ruleRepository, TicketRepository ticketRepository,
+                          AuditService auditService) {
         this.ruleRepository = ruleRepository;
         this.ticketRepository = ticketRepository;
+        this.auditService = auditService;
+    }
+
+    /**
+     * 新增一条规则（票 71）。
+     *
+     * <p>写入口之所以在票 71 才开：规则表没有审计时，「谁在什么时候改了队列」是查不到的，
+     * 而**能改但查不到谁改的，比不能改更糟**。现在审计事件有了，这个门才该开。
+     */
+    @Transactional
+    public RoutingRule createRule(String tenantId, String source, String reason, String queue,
+                                  TicketPriority priority, int slaMinutes, boolean enabled, String reviewer) {
+        RoutingRule rule = ruleRepository.save(new RoutingRule(tenantId, source, reason, queue, priority, slaMinutes,
+                enabled, Instant.now(), reviewer));
+        auditService.publish(AuditActions.ROUTING_RULE_CREATED, "ROUTING_RULE", String.valueOf(rule.getId()), reviewer,
+                "新增规则 " + tenantId + "/" + source + "/" + reason + " → " + queue
+                        + "（SLA " + slaMinutes + " 分钟，优先级 " + priority.name() + "）");
+        return rule;
+    }
+
+    /** 启停一条规则（票 71）。同样只允许启停，理由见 {@link RoutingRule#setEnabled}。 */
+    @Transactional
+    public RoutingRule setRuleEnabled(Long id, boolean enabled, String reviewer) {
+        RoutingRule rule = ruleRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("规则 " + id + " 不存在"));
+        rule.setEnabled(enabled);
+        rule.markUpdated(Instant.now(), reviewer);
+        RoutingRule saved = ruleRepository.save(rule);
+        auditService.publish(AuditActions.ROUTING_RULE_TOGGLED, "ROUTING_RULE", String.valueOf(id), reviewer,
+                (enabled ? "启用" : "停用") + " 规则 " + rule.getTenantId() + "/" + rule.getSource() + "/"
+                        + rule.getReason() + " → " + rule.getQueue());
+        return saved;
     }
 
     /** 分派结果：队列 + 优先级 + SLA 截止。 */

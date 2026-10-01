@@ -31,6 +31,13 @@
       <artifactId>spring-boot-starter-data-jpa</artifactId>
     </dependency>
     <dependency>
+      <!-- round23 票 71 / ADR 0054：审计事件流。**这是 biz-mock 第一次依赖 Redis**，
+           所以做成软依赖——通道不可达时 AuditService 走直写落表兜底，
+           退款放行这类资金动作不会因为审计发不出去而失败。 -->
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>

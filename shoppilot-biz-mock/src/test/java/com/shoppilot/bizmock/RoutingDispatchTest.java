@@ -16,6 +16,11 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -39,6 +44,9 @@ class RoutingDispatchTest {
     private static final String TOKEN = "test-internal";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final long TOLERANCE_MINUTES = 2;
+
+    @org.springframework.boot.test.web.server.LocalServerPort
+    int port;
 
     @Autowired
     TestRestTemplate rest;
@@ -153,19 +161,36 @@ class RoutingDispatchTest {
     }
 
     @Test
-    @DisplayName("规则表可查：枚举名与存储字面量并排给人看，写入口本轮刻意不做")
-    void ruleTableIsReadableButNotWritable() throws Exception {
+    @DisplayName("规则表可查：枚举名与存储字面量并排给人看")
+    void ruleTableIsReadable() throws Exception {
         JsonNode rules = json(get("/api/routing-rules", "T001", "C001"));
         assertThat(rules.size()).as("V4 播了 6 条初始规则").isGreaterThanOrEqualTo(6);
         assertThat(rules.get(0).path("priorityName").asText()).isNotEmpty();
         assertThat(rules.get(0).path("priorityLiteral").asText()).isNotEmpty();
+    }
 
-        ResponseEntity<String> write = rest.exchange("/api/routing-rules", HttpMethod.POST,
-                new HttpEntity<>("{\"tenantId\":\"*\",\"source\":\"*\",\"reason\":\"*\"}", headers("T001", "C001")),
-                String.class);
-        assertThat(write.getStatusCode().value())
-                .as("写入口随票 71 的事件骨干一起上——在那之前规则只能走迁移变更")
-                .isEqualTo(405);
+    /**
+     * 写入口的现状（**用例随票 71 改写，不是一次判据放宽**）。
+     *
+     * <p>票 70 时这里断言 POST 返回 405——那时规则能改但查不到谁改的，所以刻意不开写入口。
+     * 票 71 的审计事件落地后写入口才开（ADR 0056），所以 405 变成了 201；
+     * 换来的约束是**每一次写都带一条 audit 事件**，那条由 {@code AuditEventFlowTest} 钉住。
+     * 这里钉的是另一半：写入口仍然只允许新增与启停，且仍受内部 token 守护。
+     */
+    @Test
+    @DisplayName("规则写入口开放但仍受内部 token 守护（票 71 改写，用例随之改）")
+    void ruleWriteEntryIsOpenButGuarded() throws Exception {
+        // 用 JDK HttpClient 发这条：TestRestTemplate 在「无认证头 + 请求体」时会触发它自己的重试逻辑，
+        // 把「断言状态码」变成一个传输异常（同 TicketWorkflowTest 对 PATCH 的理由）。
+        String body = "{\"tenantId\":\"*\",\"source\":\"*\",\"reason\":\"*\","
+                + "\"queue\":\"X\",\"priority\":\"normal\",\"slaMinutes\":60}";
+        HttpRequest unauthenticated = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/routing-rules"))
+                .header("Content-Type", "application/json")
+                .header("X-Tenant-Id", "T001")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        int status = HttpClient.newHttpClient().send(unauthenticated, HttpResponse.BodyHandlers.ofString()).statusCode();
+        assertThat(status).as("没有内部 token 就不能改规则——写入口不是公开面").isNotEqualTo(201);
     }
 
     // --- helpers -------------------------------------------------------------------------

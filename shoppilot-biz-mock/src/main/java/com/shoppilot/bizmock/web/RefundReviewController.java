@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -38,13 +39,21 @@ public class RefundReviewController {
     }
 
     /**
-     * 放行或驳回。{@code note} 接受但不落库（审查人自用的理由在 v1 没有消费者，见 ADR 0047 决策四）。
+     * 放行或驳回。{@code note} 接受但不落业务表（审查人自用的理由在 v1 没有消费者，见 ADR 0047 决策四）；
+     * 但它会进审计事件的 detail——放行是不可逆的资金动作，理由得跟着留痕一起走。
+     *
+     * <p>{@code X-Reviewer} 是**调用方自报的**审核人，**不是认证过的身份**（身份域是下一轮，ADR 0056）。
+     * 所以它进的是审计而不是权限——带上内部 token 就能写这个头。**这条缺口照登**：补上真身份之前，
+     * 审计只能证明「有人做了什么」，不能证明「是谁」。
      */
     @PostMapping("/{refundId}/review")
     public ResponseEntity<ToolResponse<RefundView>> review(@PathVariable String refundId,
-                                                           @RequestBody ReviewRequest request) {
+                                                           @RequestBody ReviewRequest request,
+                                                           @RequestHeader(value = "X-Reviewer", required = false)
+                                                           String reviewer) {
         try {
-            ToolResponse<RefundView> response = service.reviewRefund(refundId, request.decision(), request.note());
+            ToolResponse<RefundView> response = service.reviewRefund(refundId, request.decision(), request.note(),
+                    reviewer);
             if (response.status() == ToolStatus.NOT_FOUND) {
                 return ResponseEntity.notFound().build();
             }

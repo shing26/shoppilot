@@ -1,11 +1,13 @@
 package com.shoppilot.bizmock.service;
 
+import com.shoppilot.bizmock.audit.AuditService;
 import com.shoppilot.bizmock.domain.Feedback;
 import com.shoppilot.bizmock.domain.Ticket;
 import com.shoppilot.bizmock.domain.TicketSource;
 import com.shoppilot.bizmock.repo.FeedbackRepository;
 import com.shoppilot.bizmock.repo.TicketRepository;
 import com.shoppilot.bizmock.tenant.TenantContextHolder;
+import com.shoppilot.tool.audit.AuditActions;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,12 +25,14 @@ public class FeedbackService {
     private final FeedbackRepository feedbackRepository;
     private final TicketRepository ticketRepository;
     private final RoutingService routingService;
+    private final AuditService auditService;
 
     public FeedbackService(FeedbackRepository feedbackRepository, TicketRepository ticketRepository,
-                           RoutingService routingService) {
+                           RoutingService routingService, AuditService auditService) {
         this.feedbackRepository = feedbackRepository;
         this.ticketRepository = ticketRepository;
         this.routingService = routingService;
+        this.auditService = auditService;
     }
 
     /** @param reviewStatus DOWN → PENDING（进复核队列）；UP → NONE（只计不审）。 */
@@ -80,16 +84,24 @@ public class FeedbackService {
                 .map(this::toView).toList();
     }
 
-    /** 人工复核完成：PENDING → REVIEWED。复核本身不触发任何自动改写（ADR 0039）。 */
+    /**
+     * 人工复核完成：PENDING → REVIEWED。复核本身不触发任何自动改写（ADR 0039）。
+     *
+     * <p>但复核**是**一次人工动作，所以要留痕（ADR 0056）：谁复核了哪条反馈。
+     * {@code reviewer} 同样是调用方自报的（身份域是下一轮），进审计不进权限。
+     */
     @Transactional
-    public FeedbackView markReviewed(String id) {
-        return transition(id, feedback -> {
+    public FeedbackView markReviewed(String id, String reviewer) {
+        FeedbackView view = transition(id, feedback -> {
             if (!"PENDING".equals(feedback.getReviewStatus())) {
                 throw new IllegalStateException("feedback " + id + " 不在 PENDING 状态，不能标记复核完成");
             }
             feedback.setReviewStatus("REVIEWED");
             return feedback;
         });
+        auditService.publish(AuditActions.FEEDBACK_REVIEWED, "FEEDBACK", view.id(), reviewer,
+                "复核完成；复核本身不触发任何自动改写（ADR 0039）");
+        return view;
     }
 
     private FeedbackView transition(String id, UnaryOperator<Feedback> change) {

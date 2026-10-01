@@ -141,6 +141,21 @@ public class RoutingRule {
         return enabled;
     }
 
+    /**
+     * 启停规则（票 71：写入口开放后才需要它）。
+     *
+     * <p>刻意只允许启停、不允许改匹配键与队列：改匹配键会让「这张单当初为什么去了那个队列」
+     * 再也复算不出来，而启停不影响历史分派的解释力。
+     */
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public void markUpdated(Instant when, String by) {
+        this.updatedAt = when;
+        this.updatedBy = by;
+    }
+
     public Instant getUpdatedAt() {
         return updatedAt;
     }

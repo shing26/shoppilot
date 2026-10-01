@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -38,11 +39,14 @@ public class FeedbackController {
         return service.reviewQueue();
     }
 
+    /** {@code X-Reviewer} 是调用方自报的复核人（身份域是下一轮，ADR 0056）：进审计，不进权限。 */
     @PatchMapping("/{feedbackId}/review")
-    public ResponseEntity<FeedbackService.FeedbackView> markReviewed(@PathVariable String feedbackId,
-                                                                     @RequestBody Map<String, @NotBlank String> body) {
+    public ResponseEntity<FeedbackService.FeedbackView> markReviewed(
+            @PathVariable String feedbackId,
+            @RequestBody Map<String, @NotBlank String> body,
+            @RequestHeader(value = "X-Reviewer", required = false) String reviewer) {
         try {
-            return ResponseEntity.ok(service.markReviewed(feedbackId));
+            return ResponseEntity.ok(service.markReviewed(feedbackId, reviewer));
         } catch (IllegalArgumentException notFound) {
             return ResponseEntity.notFound().build();
         } catch (IllegalStateException illegalTransition) {

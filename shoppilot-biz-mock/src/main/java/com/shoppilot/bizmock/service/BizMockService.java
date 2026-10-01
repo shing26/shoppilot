@@ -7,6 +7,7 @@ import com.shoppilot.bizmock.domain.Refund;
 import com.shoppilot.bizmock.domain.Ticket;
 import com.shoppilot.bizmock.domain.TicketSource;
 import com.shoppilot.bizmock.domain.TicketStatus;
+import com.shoppilot.bizmock.audit.AuditService;
 import com.shoppilot.bizmock.fault.FaultInjector;
 import com.shoppilot.bizmock.repo.AddressHistoryRepository;
 import com.shoppilot.bizmock.repo.LogisticsRepository;
@@ -15,6 +16,7 @@ import com.shoppilot.bizmock.repo.RefundRepository;
 import com.shoppilot.bizmock.repo.TicketRepository;
 import com.shoppilot.bizmock.tenant.TenantContextHolder;
 import com.shoppilot.tool.ToolName;
+import com.shoppilot.tool.audit.AuditActions;
 import com.shoppilot.tool.request.ApplyRefundRequest;
 import com.shoppilot.tool.request.ModifyDeliveryAddressRequest;
 import com.shoppilot.tool.view.AddressView;
@@ -60,10 +62,14 @@ public class BizMockService {
     /** 分流与 SLA（round23 票 70）：落库当场分派，列表读之前结算超时打戳。 */
     private final RoutingService routingService;
 
+    /** 审计（round23 票 71）：退款放行/驳回是唯一不可逆的资金迁移，必须留痕。 */
+    private final AuditService auditService;
+
     public BizMockService(OrderRepository orderRepository, LogisticsRepository logisticsRepository,
                           AddressHistoryRepository addressHistoryRepository, RefundRepository refundRepository,
                           TicketRepository ticketRepository, FaultInjector faultInjector,
-                          TransactionTemplate transactionTemplate, RoutingService routingService) {
+                          TransactionTemplate transactionTemplate, RoutingService routingService,
+                          AuditService auditService) {
         this.orderRepository = orderRepository;
         this.logisticsRepository = logisticsRepository;
         this.addressHistoryRepository = addressHistoryRepository;
@@ -72,6 +78,7 @@ public class BizMockService {
         this.faultInjector = faultInjector;
         this.transactionTemplate = transactionTemplate;
         this.routingService = routingService;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -273,7 +280,8 @@ public class BizMockService {
      * "审核发生过"由状态迁移 + 指标 + request-id 日志证明（ADR 0047 决策四）。
      */
     @Transactional
-    public ToolResponse<RefundView> reviewRefund(String refundId, String decision, String note) {
+    public ToolResponse<RefundView> reviewRefund(String refundId, String decision, String note,
+                                              String reviewer) {
         Long id = parseRefundId(refundId);
         if (id == null) {
             return ToolResponse.failure(ToolName.APPLY_REFUND.apiName(), ToolStatus.NOT_FOUND,
@@ -297,12 +305,18 @@ public class BizMockService {
         }
         if ("APPROVE".equalsIgnoreCase(decision)) {
             refund.setStatus(PROCESSING);
-            return ToolResponse.ok(ToolName.APPLY_REFUND.apiName(), toRefundView(refundRepository.save(refund)));
+            Refund saved = refundRepository.save(refund);
+            // 放行是唯一不可逆的资金迁移，必须留痕（ADR 0056）：谁在什么时候放行了哪一笔
+            auditService.publish(AuditActions.REFUND_APPROVED, "REFUND", String.valueOf(saved.getId()),
+                    reviewer, "退款放行，金额 " + saved.getAmountFen() + " 分");
+            return ToolResponse.ok(ToolName.APPLY_REFUND.apiName(), toRefundView(saved));
         }
         if ("REJECT".equalsIgnoreCase(decision)) {
             refund.setStatus(REJECTED);
             Refund saved = refundRepository.save(refund);
             rollbackOrder(refund.getOrderId());
+            auditService.publish(AuditActions.REFUND_REJECTED, "REFUND", String.valueOf(saved.getId()),
+                    reviewer, note == null || note.isBlank() ? "驳回，未填原因" : "驳回：" + note);
             return ToolResponse.ok(ToolName.APPLY_REFUND.apiName(), toRefundView(saved));
         }
         throw new IllegalArgumentException("未知审核决定 " + decision + "，可选 APPROVE / REJECT");
