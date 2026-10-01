@@ -75,7 +75,9 @@ class FallbackReasonTest {
     @BeforeEach
     void setUp() {
         received.clear();
+        // 降级单落在**工单服务**（round23 票 72：工单数据随服务搬走了），所以这里给的是 ticket 位。
         GatewayProperties properties = new GatewayProperties(null, null, null, null,
+                new GatewayProperties.Ticket(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
                 new GatewayProperties.BizMock(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
                 null, null, null, null, null);
         service = new FallbackService(HttpClient.newHttpClient(), mapper, properties, new SimpleMeterRegistry(),
@@ -135,7 +137,9 @@ class FallbackReasonTest {
         when(redis.opsForValue()).thenReturn(values);
         // 第一次：无在办工单 -> 落单；第二次：命中去重键 -> 只加计数
         when(values.get(anyString())).thenReturn(null).thenReturn("TK-EXISTING");
+        // ticket 位是降级单的落点（round23 票 72）：空着会让 escalate 里 NPE 被吞掉、返回空工单号。
         GatewayProperties properties = new GatewayProperties(null, null, null, null,
+                new GatewayProperties.Ticket(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
                 new GatewayProperties.BizMock(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
                 null, null, null, null, null);
         FallbackService deduping = new FallbackService(HttpClient.newHttpClient(), mapper, properties,
@@ -153,7 +157,9 @@ class FallbackReasonTest {
     void 去重存储不可用时仍然落单而不是丢掉降级痕迹() {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         when(redis.opsForValue()).thenThrow(new IllegalStateException("redis down"));
+        // ticket 位是降级单的落点（round23 票 72）：空着会让 escalate 里 NPE 被吞掉、返回空工单号。
         GatewayProperties properties = new GatewayProperties(null, null, null, null,
+                new GatewayProperties.Ticket(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
                 new GatewayProperties.BizMock(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
                 null, null, null, null, null);
         FallbackService service = new FallbackService(HttpClient.newHttpClient(), mapper, properties,

@@ -1,10 +1,10 @@
-package com.shoppilot.bizmock.service;
+package com.shoppilot.ticket;
 
+import com.shoppilot.ticket.domain.Ticket;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -16,10 +16,10 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 工单号唯一性（2026-09-08 mix80 压测暴露的缺陷）。
+ * 工单号唯一性（2026-09-08 mix80 压测暴露的缺陷，随工单数据一起搬过来）。
  *
  * <p>降级链路的终点就是这张 tickets 表：一旦同一毫秒内的两句话算出同一个号，
- * 主键冲突让 POST /api/tickets 返回 500，"转人工可查"这条否决项当场失守。
+ * 主键冲突让落单返回失败，"转人工可查"这条否决项当场失守。
  * 所以唯一性不能靠时钟精度，必须靠进程内单调序列。
  */
 class TicketIdTest {
@@ -39,7 +39,7 @@ class TicketIdTest {
                     .mapToObj(i -> pool.submit(() -> {
                         start.await();
                         for (int n = 0; n < perThread; n++) {
-                            ids.add(BizMockService.nextTicketId(sameInstant));
+                            ids.add(Ticket.nextId(sameInstant));
                         }
                         return null;
                     }))
@@ -56,7 +56,7 @@ class TicketIdTest {
     @Test
     @DisplayName("工单号长度落在列宽 40 以内且前缀可读")
     void staysWithinColumnWidth() {
-        String id = BizMockService.nextTicketId(Instant.ofEpochMilli(1_788_871_770_123L));
+        String id = Ticket.nextId(Instant.ofEpochMilli(1_788_871_770_123L));
 
         assertThat(id).startsWith("T1788871770123-");
         assertThat(id).hasSizeLessThanOrEqualTo(40);

@@ -29,10 +29,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 class SchemaMigrationTest {
 
-    /** V1__baseline.sql 建出的全部表。加表时这里和迁移文件必须一起改。 */
+    /**
+     * V1__baseline.sql 建出的全部表。加表时这里和迁移文件必须一起改。
+     *
+     * <p>换代指针（round23 票 72）：{@code tickets} 与 {@code routing_rules} 曾由 V3/V4 建出，
+     * 随工单数据搬到了 {@code shoppilot-ticket}（V6 把它们删掉）。**V3/V4 是已应用的历史迁移，
+     * checksum 不能动**，所以这里是「V1 建出过、V6 又删掉」而不是「V1 从没建过」。
+     */
     private static final List<String> BASELINE_TABLES = List.of(
             "coupons", "customers", "feedback", "logistics",
-            "order_addresses", "orders", "refunds", "tenants", "tickets");
+            "order_addresses", "orders", "refunds", "tenants");
 
     /** V1 里的三个既有索引；它们的依据记在对应实体的 @Table(indexes=...) 上。 */
     private static final List<String> BASELINE_INDEXES = List.of(
@@ -60,7 +66,7 @@ class SchemaMigrationTest {
     }
 
     @Test
-    @DisplayName("V1 基线建出了 9 张表与 3 个既有索引")
+    @DisplayName("V1 基线建出的表与 3 个既有索引（工单那两张随数据搬走了，见 V6）")
     void baselineCreatesAllTablesAndIndexes() {
         List<String> tables = jdbc.queryForList(
                 "select lower(table_name) from information_schema.tables where table_schema = 'PUBLIC'", String.class);
@@ -69,6 +75,7 @@ class SchemaMigrationTest {
         List<String> indexes = jdbc.queryForList(
                 "select lower(index_name) from information_schema.indexes where table_schema = 'PUBLIC'", String.class);
         assertThat(indexes).as("V1 基线建出的索引").containsAll(BASELINE_INDEXES);
+        assertThat(tables).as("工单数据随服务搬走了（V6 删表）").doesNotContain("tickets", "routing_rules");
     }
 
     @Test

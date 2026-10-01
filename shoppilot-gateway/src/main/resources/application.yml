@@ -112,6 +112,13 @@ shoppilot:
     singleflight-wait-timeout: 2s
     # 防击穿合并开关，只有 nosf profile 会关它（token 基线）
     singleflight-enabled: true
+  # 工单与坐席服务（round23 票 72 / ADR 0053）：降级单、邮件回执与坐席台都指向它，
+  # 不再指向 biz-mock——工单数据随服务搬走了（所有者裁定 B）。
+  ticket:
+    base-url: ${SHOPPILOT_TICKET_URL:http://127.0.0.1:8092}
+    internal-token: ${SHOPPILOT_INTERNAL_TOKEN:}
+    connect-timeout: 2s
+    read-timeout: 3s
   bizmock:
     base-url: ${SHOPPILOT_BIZMOCK_URL:http://127.0.0.1:8091}
     # 同上：默认值单一来源在 DevDefaultsPolicy。biz-mock 自己那份是接收端，保持原样。

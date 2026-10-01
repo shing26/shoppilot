@@ -83,6 +83,7 @@ ollama pull bge-m3                                # embedding，1024 维，全�
 ollama pull qwen2.5:3b                            # local 模式的生成模型
 mvn -o -DskipTests package                        # 干净机器去掉 -o 联网取依赖；或用 .\mvnw.cmd
 pwsh -NoProfile -File scripts/start-bizmock.ps1   # :8091，seed 3 租户 / 200 买家 / 5 万订单
+pwsh -NoProfile -File scripts/start-ticket.ps1    # :8092，工单与坐席服务（round23 票 72）
 pwsh -NoProfile -File scripts/ingest.ps1          # 30 篇政策 -> 90 规则块 -> ES + Qdrant，推进 kb_epoch
 pwsh -NoProfile -File scripts/start-gateway.ps1 -Profile local
 ```
@@ -131,6 +132,7 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
                              |
                     +--------v---------+        HTTP + X-Internal-Token（跨进程边界，ADR 0002）
                     | biz-mock :8091   |        H2 + Spring Data JPA，@TenantId 行级隔离
+                    | ticket :8092     |        H2 + Flyway，工单表与分流规则表随服务搬走（票 72）
                     | orders logistics coupons refunds tickets
                     +------------------+
 ```

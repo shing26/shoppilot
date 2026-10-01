@@ -13,6 +13,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.sql.Connection;
+import java.sql.Statement;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,9 +59,6 @@ class SlowQueryPlanTest {
     private static final int[] PENDING_EVERY_LEVELS = {10, 100, 1_000, 10_000};
 
     private static final int FEEDBACK_ITERATIONS = 200;
-    /** 工单列表单次是毫秒量级，采样少时 p95 只是某个离群点；100 次才让 p95 有意义。 */
-    private static final int TICKET_ITERATIONS = 100;
-
     /**
      * 与 FeedbackService.findByReviewStatusOrderByCreatedAtDesc 同形：Hibernate 生成的是全列 select
      * 加上 @TenantId 拼出的 tenant_id 谓词。**必须用 select \* 而不是 select id** —— 只取 id 时
@@ -68,12 +67,7 @@ class SlowQueryPlanTest {
     private static final String REVIEW_QUEUE_SQL =
             "select * from feedback where tenant_id = 't1' and review_status = 'PENDING' order by created_at desc";
 
-    /** 与 BizMockService.findAllByOrderByCreatedAtDesc 同形（同样带 @TenantId 谓词、同样全列）。 */
-    private static final String TICKET_LIST_SQL =
-            "select * from tickets where tenant_id = 't1' order by created_at desc";
-
     private static final String IDX_FEEDBACK = "IDX_FEEDBACK_REVIEW";
-    private static final String IDX_TICKET = "IDX_TICKET_CREATED";
 
     /**
      * 读数落盘的位置。**不走 stdout**：surefire 对每个测试方法的输出捕获不可靠（实测同一个类里
@@ -136,55 +130,21 @@ class SlowQueryPlanTest {
         }
     }
 
-    /**
-     * 被否决的那笔优化，留在这里当可复跑的记录：{@code tickets(tenant_id, created_at)} 让计划从
-     * {@code TICKETS.tableScan} 变成 {@code IDX_TICKET_CREATED: TENANT_ID = 't1'}，但三次连跑
-     * p50 一致比扫表差 10~45%，所以没有落进 V2。索引由本方法临时建、测完删掉。
-     */
-    @Test
-    @DisplayName("被否决的工单索引：计划变好但耗时一致变差")
-    void rejectedTicketListIndex() {
-        seedTickets();
-
-        PlanAndLatency before = measure(TICKET_LIST_SQL, TICKET_ITERATIONS);
-        assertThat(before.plan()).as("无索引时是扫表").contains("tableScan");
-
-        jdbc.execute("create index idx_ticket_created on tickets (tenant_id, created_at)");
-        try {
-            PlanAndLatency after = measure(TICKET_LIST_SQL, TICKET_ITERATIONS);
-            assertThat(after.plan()).as("有索引时计划确实用上了它").contains(IDX_TICKET);
-
-            record("ticket-list rows=" + countOf("tickets") + "  [索引已否决，未落进 V2]");
-            record("ticket-list   BEFORE plan: " + before.plan());
-            record("ticket-list   BEFORE p50=" + before.p50Micros() + "us p95=" + before.p95Micros() + "us");
-            record("ticket-list   AFTER  plan: " + after.plan());
-            record("ticket-list   AFTER  p50=" + after.p50Micros() + "us p95=" + after.p95Micros() + "us");
-        } finally {
-            jdbc.execute("drop index idx_ticket_created");
-        }
-    }
-
     private void seedFeedback(int pendingEvery) {
         jdbc.execute("delete from feedback");
-        jdbc.execute("""
-                insert into feedback (id, tenant_id, customer_id, conversation_id, verdict, review_status, created_at)
-                select 'F' || x, 't1', 'C001', 'conv-' || x, 'DOWN',
-                       case when mod(x, %d) = 0 then 'PENDING' else 'REVIEWED' end,
-                       timestamp with time zone '2026-01-01 00:00:00+00' + (x * interval '1' second)
-                from system_range(1, %d)
-                """.formatted(pendingEvery, ROWS));
-    }
-
-    private void seedTickets() {
-        jdbc.execute("delete from tickets");
-        // source 是 round23 票 69 加的 NOT NULL 列：手写 INSERT 必须显式给值，漏掉会被约束当场拦下。
-        jdbc.execute("""
-                insert into tickets (id, tenant_id, customer_id, reason, user_query, transcript, status, created_at, source)
-                select 'T' || x, 't1', 'C001', 'USER_REQUESTED', 'q' || x, 'transcript', 'OPEN',
-                       timestamp with time zone '2026-01-01 00:00:00+00' + (x * interval '1' second),
-                       'DEGRADE'
-                from system_range(1, %d)
-                """.formatted(ROWS));
+        try (Connection connection = jdbc.getDataSource().getConnection();
+             Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    insert into feedback (id, tenant_id, customer_id, conversation_id, verdict,
+                                          review_status, created_at)
+                    select 'F' || x, 't1', 'C001', 'conv-' || x, 'DOWN',
+                           case when mod(x, %d) = 0 then 'PENDING' else 'REVIEWED' end,
+                           timestamp with time zone '2026-01-01 00:00:00+00' + (x * interval '1' second)
+                      from system_range(1, %d)
+                    """.formatted(pendingEvery, ROWS));
+        } catch (Exception failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 
     private void dropFeedbackIndex() {

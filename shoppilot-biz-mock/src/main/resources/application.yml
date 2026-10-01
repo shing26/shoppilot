@@ -63,6 +63,10 @@ shoppilot:
     default-delay-ms: 0
     default-fail-rate: 0.0
     internal-token: ${SHOPPILOT_INTERNAL_TOKEN:dev-internal-token-change-me}
+    # 工单出口（round23 票 72）：工单数据在工单服务，这里只能调过去。
+    # 短超时是刻意的：调用方在用户的对话回合里，多等一秒就是一次可感知的卡顿。
+    ticket-base-url: ${SHOPPILOT_TICKET_URL:http://127.0.0.1:8092}
+    ticket-timeout: 2s
     seed:
       enabled: true
       tenants: 3

@@ -7,8 +7,9 @@
 | 模块 | 职责 | 依赖方向 |
 | --- | --- | --- |
 | `shoppilot-tool-api` | 跨进程工具契约：意图、工具名、请求/响应 DTO、OpenAPI/Function Schema 生成 | 不依赖 gateway 或 biz-mock |
-| `shoppilot-biz-mock` | 业务系统替身：订单、物流、优惠券、退款、工单、种子数据、租户隔离和故障注入 | 依赖 `shoppilot-tool-api` |
-| `shoppilot-gateway` | 买家入口：鉴权、限流、意图、缓存、检索、Agent 编排、SSE、降级、运维指标 | 依赖 `shoppilot-tool-api`，经 HTTP 调 biz-mock |
+| `shoppilot-biz-mock` | 业务系统替身：订单、物流、优惠券、退款、种子数据、租户隔离和故障注入 | 依赖 `shoppilot-tool-api` |
+| `shoppilot-gateway` | 买家入口：鉴权、限流、意图、缓存、检索、Agent 编排、SSE、降级、运维指标 | 依赖 `shoppilot-tool-api`，经 HTTP 调 biz-mock 与 ticket |
+| `shoppilot-ticket` | 工单与坐席服务（round23 票 72 / ADR 0053）：统一工单实体、规则分流、坐席领取、SLA、规则表 | 依赖 `shoppilot-tool-api`，**工单数据随服务走**；业务侧与网关经 HTTP 调它 |
 
 ## Gateway Package Ownership
 
@@ -79,7 +80,8 @@
 | 检索融合录放门（round22 票 64） | `knowledge/RetrievalFusionReplayTest`（JVM，重算的唯一 owner）、`ingest/MarkdownChunkerTest`、`scripts/retrieval_gate.py`（只校验不复算）+ `eval/retrieval-fixture-*.json`（append-only，录制器 `scripts/record_retrieval_fixture.py`） |
 | task 级判据（round22 票 65） | `scripts/eval_task.py`（判据 + 14 条夹具）+ `eval/cases-part8-task.jsonl`；活体入口 `run_tool_eval.py --task` |
 | 告警规则（round22 票 67） | `ops/alerts/shoppilot.rules.yml` + `ops/alerts/shoppilot.rules.test.yml`（`promtool test rules`，CI 的 `Alert rules unit test` 步） |
-| 业务租户隔离、幂等、工单工作流 | `shoppilot-biz-mock/src/test/java/...` |
+| 业务租户隔离、幂等 | `shoppilot-biz-mock/src/test/java/...` |
+| 工单工作流、规则分流、坐席领取、SLA、慢查询证据 | `shoppilot-ticket/src/test/java/...`（round23 票 72 随数据搬走） |
 | 模式迁移与 schema 一致性 | `bizmock/SchemaMigrationTest`（迁移已应用、9 表齐备、`ddl-auto` 仍是 validate） |
 | 慢查询计划与索引守卫 | `bizmock/SlowQueryPlanTest`（含被否决的那笔优化，见 `docs/slow-query-optimization-2026-09-21.md`） |
 | 跨模块 schema | `shoppilot-tool-api/src/test/java/.../ToolSchemaGeneratorTest` |

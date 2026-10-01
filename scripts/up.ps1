@@ -37,7 +37,7 @@ function Wait-For([scriptblock]$check, [string]$what, [int]$seconds) {
     return $false
 }
 
-Write-Host '[1/6] 中间件容器' -ForegroundColor Cyan
+Write-Host '[1/7] 中间件容器' -ForegroundColor Cyan
 docker compose up -d | Out-Host
 if ($LASTEXITCODE -ne 0) {
     # 干净检出最常撞的一行是 The container name "/shoppilot-es" is already in use：
@@ -49,7 +49,7 @@ foreach ($triple in @(@(16379, 'Redis', 'shoppilot-redis'), @(16333, 'Qdrant', '
     if (-not (Wait-For { Test-Port $triple[0] } "$($triple[1]) :$($triple[0])" 120)) { throw "$($triple[1]) 没起来，看 docker logs $($triple[2])" }
 }
 
-Write-Host '[2/6] 本地模型（bge-m3 供 embedding，qwen2.5:3b 供 local 模式生成）' -ForegroundColor Cyan
+Write-Host '[2/7] 本地模型（bge-m3 供 embedding，qwen2.5:3b 供 local 模式生成）' -ForegroundColor Cyan
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
     Write-Host '  !! 未找到 ollama：local 模式与入库都需要它。装好后重跑本脚本。' -ForegroundColor Yellow
     throw 'Ollama 未安装'
@@ -72,15 +72,15 @@ foreach ($model in @('bge-m3', 'qwen2.5:3b')) {
     if ($have) { Write-Host "  OK $model 已在本地" } else { & ollama pull $model | Out-Host }
 }
 
-Write-Host '[3/6] 构建' -ForegroundColor Cyan
+Write-Host '[3/7] 构建' -ForegroundColor Cyan
 function Find-FatJars {
-    @('shoppilot-gateway', 'shoppilot-biz-mock') | ForEach-Object {
+    @('shoppilot-gateway', 'shoppilot-biz-mock', 'shoppilot-ticket') | ForEach-Object {
         Get-ChildItem (Join-Path $root "$_\target") -Filter ($_ + '-*.jar') -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -notmatch 'sources|original' } | Select-Object -First 1
     }
 }
 $jars = Find-FatJars
-if ($SkipBuild -and $jars.Count -eq 2) {
+if ($SkipBuild -and $jars.Count -eq 3) {
     Write-Host '  OK 用现成的 jar（-SkipBuild）'
 } else {
     # 先试离线：本仓库日常用 -o 避开远程元数据抖动；离线失败（干净机器的典型情况）再联网取一次。
@@ -97,17 +97,17 @@ if ($SkipBuild -and $jars.Count -eq 2) {
 # 于是失败点变成"biz-mock 300 s 没 readiness"——离真因隔了两步、还看不出关系。
 # 所以在这里就红，红在"产物不齐"这一行，并把唯一的补救动作写出来。
 $built = Find-FatJars
-if ($built.Count -lt 2) {
+if ($built.Count -lt 3) {
     $have = @($built | ForEach-Object { $_.Directory.Parent.Name })
     $missing = @('shoppilot-gateway', 'shoppilot-biz-mock') | Where-Object { $_ -notin $have }
     throw ("构建没有产出 fat jar（缺：{0}）。这台机器上多半是内存不够把 Maven 的 JVM 打断了；" -f ($missing -join ', ')) + '重跑 scripts/up.ps1 即可（每一步都可重入）。'
 }
 
-Write-Host '[4/6] 业务 Mock 中台（seed 5 万订单，与入库并行）' -ForegroundColor Cyan
+Write-Host '[4/7] 业务 Mock 中台（seed 5 万订单，与入库并行）' -ForegroundColor Cyan
 & (Join-Path $root 'scripts\start-bizmock.ps1') | Out-Null
 
 if (-not $SkipIngest) {
-    Write-Host '[5/6] 政策知识库入库（幂等，重跑条目数不增长）' -ForegroundColor Cyan
+    Write-Host '[5/7] 政策知识库入库（幂等，重跑条目数不增长）' -ForegroundColor Cyan
     # 入库的 mvn 输出落文件而不是 Out-Null：它走管道会被吞掉，失败时只剩一行 throw，
     # 照 README 跑的人无从判断是 Ollama 没起还是 ES 拒绝连接。
     $ingestLog = Join-Path $root 'logs\ingest.out'
@@ -115,10 +115,18 @@ if (-not $SkipIngest) {
         Where-Object { $_ -cmatch '已入库|切分完成|纪元|ERROR|Exception' } | ForEach-Object { Write-Host "  $_" }
     if ($LASTEXITCODE -ne 0) { throw "入库失败（exit=$LASTEXITCODE），详见 logs\ingest.out" }
 } else {
-    Write-Host '[5/6] 跳过入库（-SkipIngest）' -ForegroundColor Yellow
+    Write-Host '[5/7] 跳过入库（-SkipIngest）' -ForegroundColor Yellow
 }
 
-Write-Host '[6/6] 网关' -ForegroundColor Cyan
+Write-Host '[6/7] 工单与坐席服务（round23 票 72）' -ForegroundColor Cyan
+# 顺序是刻意的：网关的降级落单指向它，而 biz-mock 的退款审批也要经它落单——
+# 它没就绪的话，网关一起来就会把「转人工」打到一个不存在的服务上。
+& (Join-Path $root 'scripts\start-ticket.ps1') | Out-Null
+if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8092/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } 'ticket :8092' 120)) {
+    throw '工单服务未就绪，看 logs	icket.out'
+}
+
+Write-Host '[7/7] 网关' -ForegroundColor Cyan
 # readiness 组：seed 5 万订单期间就是 503 OUT_OF_SERVICE，避免"health 已 UP 但库里还没数据"的抢跑
 # 180 s 不够：09-09 16:33 那次全量验收里，biz-mock 的 seed 与 [5/6] 的入库（90 块 × 向量化 + ES/Qdrant 写入）
 # 并行抢同一台 16 G 机器，3 分钟还没 UP，这一步直接红——而服务本身没坏，后面靠健康门又拉回来了。
@@ -135,5 +143,6 @@ if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8082/actuator/health/r
 Write-Host ''
 Write-Host "栈已就绪（profile=$Profile）：" -ForegroundColor Green
 Write-Host '  调试台   http://127.0.0.1:8082/'
+Write-Host '  工单服务 http://127.0.0.1:8092/actuator/health'
 Write-Host '  三条演示 pwsh -NoProfile -File scripts/demo.ps1'
 Write-Host '  停    栈 pwsh -NoProfile -File scripts/down.ps1'

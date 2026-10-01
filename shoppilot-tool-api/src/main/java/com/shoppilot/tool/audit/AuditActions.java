@@ -18,6 +18,11 @@ public final class AuditActions {
     public static final String ROUTING_RULE_CREATED = "ROUTING_RULE_CREATED";
     public static final String ROUTING_RULE_TOGGLED = "ROUTING_RULE_TOGGLED";
 
+    /** 坐席动作（round23 票 72）：谁领了、谁放了、谁结的单。 */
+    public static final String TICKET_CLAIMED = "TICKET_CLAIMED";
+    public static final String TICKET_RELEASED = "TICKET_RELEASED";
+    public static final String TICKET_RESOLVED = "TICKET_RESOLVED";
+
     /** 没有真人操作时的操作人占位值。与「匿名」区别开：它说明是系统动作，不是缺了操作人。 */
     public static final String SYSTEM_ACTOR = "system";
 }

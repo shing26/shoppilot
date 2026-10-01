@@ -1,6 +1,6 @@
-package com.shoppilot.bizmock.repo;
+package com.shoppilot.ticket.repo;
 
-import com.shoppilot.bizmock.domain.RoutingRule;
+import com.shoppilot.ticket.domain.RoutingRule;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;

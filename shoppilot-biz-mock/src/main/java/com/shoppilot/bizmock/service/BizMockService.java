@@ -4,19 +4,17 @@ import com.shoppilot.bizmock.domain.AddressHistory;
 import com.shoppilot.bizmock.domain.LogisticsNode;
 import com.shoppilot.bizmock.domain.Order;
 import com.shoppilot.bizmock.domain.Refund;
-import com.shoppilot.bizmock.domain.Ticket;
-import com.shoppilot.bizmock.domain.TicketSource;
-import com.shoppilot.bizmock.domain.TicketStatus;
 import com.shoppilot.bizmock.audit.AuditService;
 import com.shoppilot.bizmock.fault.FaultInjector;
 import com.shoppilot.bizmock.repo.AddressHistoryRepository;
 import com.shoppilot.bizmock.repo.LogisticsRepository;
 import com.shoppilot.bizmock.repo.OrderRepository;
 import com.shoppilot.bizmock.repo.RefundRepository;
-import com.shoppilot.bizmock.repo.TicketRepository;
 import com.shoppilot.bizmock.tenant.TenantContextHolder;
 import com.shoppilot.tool.ToolName;
 import com.shoppilot.tool.audit.AuditActions;
+import com.shoppilot.tool.workitem.TicketSource;
+import com.shoppilot.bizmock.workitem.WorkItemClient;
 import com.shoppilot.tool.request.ApplyRefundRequest;
 import com.shoppilot.tool.request.ModifyDeliveryAddressRequest;
 import com.shoppilot.tool.view.AddressView;
@@ -27,7 +25,6 @@ import com.shoppilot.tool.view.OrderStatus;
 import com.shoppilot.tool.view.OrderView;
 import com.shoppilot.tool.view.RefundReviewState;
 import com.shoppilot.tool.view.RefundView;
-import com.shoppilot.tool.view.TicketView;
 import com.shoppilot.tool.view.ToolResponse;
 import com.shoppilot.tool.view.ToolStatus;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -48,6 +45,8 @@ import java.util.Optional;
 @Service
 public class BizMockService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BizMockService.class);
+
     /** 退款时限：下单后 7 天内。 */
     private static final Duration REFUND_WINDOW = Duration.ofDays(7);
 
@@ -55,29 +54,27 @@ public class BizMockService {
     private final LogisticsRepository logisticsRepository;
     private final AddressHistoryRepository addressHistoryRepository;
     private final RefundRepository refundRepository;
-    private final TicketRepository ticketRepository;
     private final FaultInjector faultInjector;
     private final TransactionTemplate transactionTemplate;
 
-    /** 分流与 SLA（round23 票 70）：落库当场分派，列表读之前结算超时打戳。 */
-    private final RoutingService routingService;
+    /** 工单出口（round23 票 72）：工单数据在工单服务，这里只能调过去。 */
+    private final WorkItemClient workItemClient;
 
     /** 审计（round23 票 71）：退款放行/驳回是唯一不可逆的资金迁移，必须留痕。 */
     private final AuditService auditService;
 
     public BizMockService(OrderRepository orderRepository, LogisticsRepository logisticsRepository,
                           AddressHistoryRepository addressHistoryRepository, RefundRepository refundRepository,
-                          TicketRepository ticketRepository, FaultInjector faultInjector,
-                          TransactionTemplate transactionTemplate, RoutingService routingService,
+                          FaultInjector faultInjector,
+                          TransactionTemplate transactionTemplate, WorkItemClient workItemClient,
                           AuditService auditService) {
         this.orderRepository = orderRepository;
         this.logisticsRepository = logisticsRepository;
         this.addressHistoryRepository = addressHistoryRepository;
         this.refundRepository = refundRepository;
-        this.ticketRepository = ticketRepository;
         this.faultInjector = faultInjector;
         this.transactionTemplate = transactionTemplate;
-        this.routingService = routingService;
+        this.workItemClient = workItemClient;
         this.auditService = auditService;
     }
 
@@ -230,13 +227,8 @@ public class BizMockService {
                 Refund inserted = refundRepository.save(new Refund(TenantContextHolder.tenantId(), orderId,
                         order.getCustomerId(), amount, reason, idempotencyToken, PENDING_REVIEW,
                         Instant.now()));
-                // 受理即建审批工单（round23 票 69 / ADR 0055）：退款从这一刻起就是一个待人工处理的工作项，
-                // 与降级单、复核单共用一张表。回指写在 refunds.ticket_id 上而不是只塞 payload——
-                // 放行不可逆，它的责任链不能建立在解析 JSON 上。
-                TicketView workItem = createWorkItem(TicketSource.REFUND_APPROVAL, order.getCustomerId(),
-                        "REFUND_APPROVAL", "订单 " + orderId + " 的退款待人工审核", "", null,
-                        WorkItemPayload.of("refundId", String.valueOf(inserted.getId()), "orderId", orderId));
-                inserted.setTicketId(workItem.id());
+                // 受理即开审批工单（round23 票 69/72）：退款从这一刻起就是一个待人工处理的工作项。
+                openRefundApprovalWorkItem(inserted, orderId, order.getCustomerId());
                 refundRepository.save(inserted);
                 order.setStatus(OrderStatus.REFUNDING);
                 orderRepository.save(order);
@@ -357,82 +349,27 @@ public class BizMockService {
         }
     }
 
-    @Transactional
-    public TicketView createTicket(String customerId, String reason, String userQuery, String transcript,
-                                   String priority) {
-        return createWorkItem(TicketSource.ofReason(reason), customerId, reason, userQuery, transcript, priority,
-                null);
-    }
-
     /**
-     * 统一工作项的落库入口（round23 票 69 / ADR 0055）：四种来源共用这一条写入路径，
-     * 分流规则表（票 70）才有单一分母。
+     * 落一张退款审批工作项（round23 票 72）。
      *
-     * <p>落库**当场分派**（票 70）：队列、优先级、SLA 截止在写入路径上一次算完，
-     * 所以不存在「有一段时间这张单没有队列」的中间态。
+     * <p>工单数据搬到工单服务之后，这里**不再持有** {@code tickets} 表，退款受理只能经
+     * {@link WorkItemClient} 调过去。这一步因此跨进程、不再与退款插入同事务——
+     * 处置与边界写在这里：<b>审批的真源是 {@code refunds.PENDING_REVIEW}（审核队列读它），
+     * 工单是受理侧的工作项</b>。所以开单失败不会动资金状态，只留下一张没人处理的退款；
+     * 为此本次受理按**已受理**继续推进并 warn——宁可让队列里多一张单，也不要让买家的退款卡住。
      *
-     * @param payload 有上游记录时指回上游的 JSON；自包含来源传 null
+     * <p>回指 {@code refunds.ticket_id} 只在拿到工单号时写；拿不到就留空，
+     * 「查不到工单号」比「指向一个不存在的号」诚实。
      */
-    @Transactional
-    public TicketView createWorkItem(TicketSource source, String customerId, String reason, String userQuery,
-                                     String transcript, String priority, String payload) {
-        Instant now = Instant.now();
-        String id = nextTicketId(now);
-        RoutingService.Assignment assignment = routingService.assign(TenantContextHolder.tenantId(), source, reason,
-                priority);
-        Ticket ticket = new Ticket(id, TenantContextHolder.tenantId(), customerId, reason, truncate(userQuery),
-                transcript == null ? "" : transcript, "OPEN", now, assignment.priority().literal(), source,
-                assignment.queue(), null, assignment.slaDeadline(), payload);
-        return toTicketView(ticketRepository.save(ticket));
-    }
-
-    /** 工单号：实现住在 {@link Ticket#nextId}，这里保留原调用点（{@code TicketIdTest} 钉的就是同毫秒不撞）。 */
-    static String nextTicketId(Instant now) {
-        return Ticket.nextId(now);
-    }
-
-    /**
-     * 工单列表。读之前先结算 SLA 超时打戳（票 70）——惰性求值，省掉一个定时线程池。
-     * 打戳只写 {@code escalatedAt}，不改状态，所以这一步不会让读路径变成写语义上的陷阱。
-     */
-    @Transactional
-    public List<TicketView> listTickets() {
-        routingService.escalateOverdue(TenantContextHolder.tenantId(), Instant.now());
-        return ticketRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toTicketView).toList();
-    }
-
-    /**
-     * 按 id 取工单，且**必须**显式比对租户。
-     *
-     * <p>{@code find(id)} 不拼接 {@code @TenantId} 谓词（只有查询会），所以只靠仓储层是不够的——
-     * 跨租户既能读到别人的工单，也能改别人的工单状态。与退款审核同一口径：跨租户一律
-     * 「不存在」，不区分"存在但不可见"。本票（69）的用例把这个既有缺陷逮了出来，顺手在这里收口。
-     */
-    private Optional<Ticket> findOwnedTicket(String ticketId) {
-        return ticketRepository.findById(ticketId)
-                .filter(ticket -> TenantContextHolder.tenantId().equals(ticket.getTenantId()));
-    }
-
-    /** 租户隔离由仓储层的 @TenantId 谓词兜住，这里再按 id 取时走 {@link #findOwnedTicket}。 */
-    @Transactional(readOnly = true)
-    public Optional<TicketView> findTicket(String ticketId) {
-        return findOwnedTicket(ticketId).map(this::toTicketView);
-    }
-
-    @Transactional
-    public Optional<TicketView> updateTicketStatus(String ticketId, String status) {
-        TicketStatus target = TicketStatus.parse(status);
-        if (target == null) {
-            throw new IllegalArgumentException("未知工单状态 " + status + "，可选 " + TicketStatus.names());
+    private void openRefundApprovalWorkItem(Refund refund, String orderId, String customerId) {
+        String ticketId = workItemClient.create(TicketSource.REFUND_APPROVAL, customerId,
+                "REFUND_APPROVAL", "订单 " + orderId + " 的退款待人工审核", "", null,
+                "{\"refundId\":\"" + refund.getId() + "\",\"orderId\":\"" + orderId + "\"}");
+        if (ticketId == null) {
+            log.warn("退款 {} 的审批工单没开成；审核队列仍可处理（真源是 refunds 表）", refund.getId());
+            return;
         }
-        return findOwnedTicket(ticketId).map(ticket -> {
-            TicketStatus current = TicketStatus.parse(ticket.getStatus());
-            if (current == null || !current.canTransitionTo(target)) {
-                throw new IllegalStateException("工单不允许从 " + ticket.getStatus() + " 流转到 " + target);
-            }
-            ticket.setStatus(target.name());
-            return toTicketView(ticketRepository.save(ticket));
-        });
+        refund.setTicketId(ticketId);
     }
 
     /** 可选参数留空 = 不改这一项；退款原因的默认值见 applyRefund。 */
@@ -474,12 +411,6 @@ public class BizMockService {
                 refund.getStatus(), refund.getCreatedAt(), refund.getReason());
     }
 
-    private TicketView toTicketView(Ticket ticket) {
-        return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
-                ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt(),
-                ticket.getSource(), ticket.getQueue(), ticket.getAssignee(), ticket.getSlaDeadline(),
-                ticket.getPayload(), ticket.getEscalatedAt());
-    }
 
     private ToolResponse<RefundView> replay(ToolName tool, Refund refund) {
         return new ToolResponse<>(tool.apiName(), ToolStatus.IDEMPOTENT_REPLAY, toRefundView(refund),

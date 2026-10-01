@@ -12,7 +12,6 @@ import com.shoppilot.bizmock.repo.LogisticsRepository;
 import com.shoppilot.bizmock.repo.OrderRepository;
 import com.shoppilot.bizmock.repo.RefundRepository;
 import com.shoppilot.bizmock.repo.TenantRepository;
-import com.shoppilot.bizmock.repo.TicketRepository;
 import com.shoppilot.bizmock.tenant.TenantContextHolder;
 import com.shoppilot.tool.view.OrderStatus;
 import jakarta.persistence.EntityManager;
@@ -68,7 +67,6 @@ public class SeedRunner implements ApplicationRunner {
     private final CouponRepository couponRepository;
     private final AddressHistoryRepository addressHistoryRepository;
     private final RefundRepository refundRepository;
-    private final TicketRepository ticketRepository;
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final AtomicBoolean running = new AtomicBoolean();
@@ -85,7 +83,7 @@ public class SeedRunner implements ApplicationRunner {
     public SeedRunner(TenantRepository tenantRepository, CustomerRepository customerRepository,
                       OrderRepository orderRepository, LogisticsRepository logisticsRepository,
                       CouponRepository couponRepository, AddressHistoryRepository addressHistoryRepository,
-                      RefundRepository refundRepository, TicketRepository ticketRepository,
+                      RefundRepository refundRepository,
                       JdbcTemplate jdbcTemplate, TransactionTemplate transactionTemplate) {
         this.tenantRepository = tenantRepository;
         this.customerRepository = customerRepository;
@@ -94,7 +92,6 @@ public class SeedRunner implements ApplicationRunner {
         this.couponRepository = couponRepository;
         this.addressHistoryRepository = addressHistoryRepository;
         this.refundRepository = refundRepository;
-        this.ticketRepository = ticketRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
     }

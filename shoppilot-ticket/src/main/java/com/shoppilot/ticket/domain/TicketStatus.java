@@ -1,4 +1,4 @@
-package com.shoppilot.bizmock.domain;
+package com.shoppilot.ticket.domain;
 
 import java.util.Arrays;
 import java.util.List;
@@ -9,6 +9,9 @@ import java.util.Locale;
  *
  * <p>状态值必须校验：客服工作台允许把 status 写成任意字符串的话，
  * 一个拼错的 RESOLVED 就让工单永远进不了队列，而"已结单"是降级链路的终点证据。
+ *
+ * <p>随工单数据一起搬到本服务（round23 票 72）。状态机本身一字未改——
+ * 搬家不是改行为，跨租户/跨进程的问题各有各的修法，不该混在一次搬迁里。
  */
 public enum TicketStatus {
     OPEN,

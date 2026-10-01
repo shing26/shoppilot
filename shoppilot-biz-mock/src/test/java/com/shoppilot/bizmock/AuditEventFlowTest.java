@@ -36,6 +36,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>测试里把 {@link AuditChannel} 换成内存实现（所有者裁定 D），所以跑的是**流那条路**而不是
  * 直写兜底；兜底那条由 {@link #fallsBackToDirectWriteWhenTheChannelIsDown()} 单独钉。
  *
+ * <p><b>规则变更那一半随规则表搬到了工单服务</b>（round23 票 72，见那边的
+ * {@code RuleAuditTest}）：审计流是两边共用的，但生产动作各有各的归属。
+ * 工单出口也换成了测试替身——本轮起不了全栈（裁定 A），而「退款受理要开审批单」必须继续被测到。
+ *
  * <p>走真实 HTTP：审计的租户上下文来自 Header，跳过 HTTP 等于把要验的隔离当成前提用掉。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -57,6 +61,16 @@ class AuditEventFlowTest {
     AuditEventRowRepository auditRows;
     @Autowired
     InMemoryAuditChannel channel;
+
+    @TestConfiguration
+    static class StubWorkItems {
+        /** 工单服务本轮起不来（裁定 A），生产实现换成测试替身。 */
+        @Bean
+        @Primary
+        com.shoppilot.bizmock.workitem.InMemoryWorkItemClient workItemClient() {
+            return new com.shoppilot.bizmock.workitem.InMemoryWorkItemClient();
+        }
+    }
     @org.springframework.boot.test.web.server.LocalServerPort
     int port;
 
@@ -102,23 +116,6 @@ class AuditEventFlowTest {
         assertThat(auditQuery("FEEDBACK_REVIEWED").toString())
                 .as("复核完成要留痕，但复核本身仍不触发任何自动改写（ADR 0039）")
                 .contains(feedbackId).contains("carol");
-    }
-
-    @Test
-    @DisplayName("规则新增与启停都留痕——票 70 关掉的那个写入口，靠这个才有存在理由")
-    void ruleChangesAreAudited() throws Exception {
-        ResponseEntity<String> created = rest.exchange("/api/routing-rules", HttpMethod.POST,
-                new HttpEntity<>("{\"tenantId\":\"T001\",\"source\":\"DEGRADE\",\"reason\":\"SLOT_UNRESOLVED\","
-                        + "\"queue\":\"ESCALATION_T1\",\"priority\":\"money\",\"slaMinutes\":30}",
-                        headers("T001", "dave")), String.class);
-        assertThat(created.getStatusCode().value()).isEqualTo(201);
-        long ruleId = JSON.readTree(created.getBody()).path("id").asLong();
-
-        assertThat(patch("/api/routing-rules/" + ruleId + "/enabled", "{\"enabled\":false}", "dave"))
-                .as("启停规则应成功").isEqualTo(200);
-
-        String audit = auditQuery("ROUTING_RULE_CREATED").toString() + auditQuery("ROUTING_RULE_TOGGLED").toString();
-        assertThat(audit).contains("dave").contains("ESCALATION_T1").contains("停用");
     }
 
     @Test

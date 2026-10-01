@@ -1,10 +1,10 @@
-package com.shoppilot.bizmock.service;
+package com.shoppilot.ticket.service;
 
 /**
  * 工单 payload 的极简拼装（round23 票 69 / ADR 0055）。
  *
  * <p>payload 只承载「有上游记录时指回上游」的那几个 id，所以刻意不进 JSON 库：
- * 领域层不引序列化框架，这个类就是全部。值来自内部 id 与渠道字段，转义只处理引号与反斜杠——
+ * 领域层不引序列化框架，这个类就是全部。值来自内部 id，转义只处理引号与反斜杠——
  * 遇到需要更严格转义的输入，正确做法是把它变成一列（refunds.ticket_id 就是这么处理的）。
  */
 final class WorkItemPayload {

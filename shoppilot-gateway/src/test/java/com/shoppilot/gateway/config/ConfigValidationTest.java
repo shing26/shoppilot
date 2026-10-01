@@ -56,7 +56,10 @@ class ConfigValidationTest {
             "SHOPPILOT_OPS_TOKEN",
             "SHOPPILOT_QDRANT_URL",
             "SHOPPILOT_REDIS_HOST",
-            "SHOPPILOT_REDIS_PORT");
+            "SHOPPILOT_REDIS_PORT",
+            // round23 票 72：工单服务地址。加 env 覆盖是扩大可配置面，
+            // 家法同 ADR 0012 的日预算——所以它登记进这份清单，而不是绕过门禁。
+            "SHOPPILOT_TICKET_URL");
 
     private ApplicationContextRunner runner() {
         return new ApplicationContextRunner()

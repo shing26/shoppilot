@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-& (Join-Path $root 'scripts\stop.ps1') -Ports '8082,8091'
+& (Join-Path $root 'scripts\stop.ps1') -Ports '8082,8091,8092'
 
 $watchdog = Join-Path $root 'logs\watchdog.pid'
 if (Test-Path $watchdog) {

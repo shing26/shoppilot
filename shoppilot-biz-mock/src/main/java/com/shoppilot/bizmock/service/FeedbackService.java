@@ -2,12 +2,13 @@ package com.shoppilot.bizmock.service;
 
 import com.shoppilot.bizmock.audit.AuditService;
 import com.shoppilot.bizmock.domain.Feedback;
-import com.shoppilot.bizmock.domain.Ticket;
-import com.shoppilot.bizmock.domain.TicketSource;
 import com.shoppilot.bizmock.repo.FeedbackRepository;
-import com.shoppilot.bizmock.repo.TicketRepository;
 import com.shoppilot.bizmock.tenant.TenantContextHolder;
 import com.shoppilot.tool.audit.AuditActions;
+import com.shoppilot.tool.workitem.TicketSource;
+import com.shoppilot.bizmock.workitem.WorkItemClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,16 +23,16 @@ public class FeedbackService {
 
     private static final AtomicLong FEEDBACK_SEQ = new AtomicLong();
 
+    private static final Logger log = LoggerFactory.getLogger(FeedbackService.class);
+
     private final FeedbackRepository feedbackRepository;
-    private final TicketRepository ticketRepository;
-    private final RoutingService routingService;
+    private final WorkItemClient workItemClient;
     private final AuditService auditService;
 
-    public FeedbackService(FeedbackRepository feedbackRepository, TicketRepository ticketRepository,
-                           RoutingService routingService, AuditService auditService) {
+    public FeedbackService(FeedbackRepository feedbackRepository, WorkItemClient workItemClient,
+                           AuditService auditService) {
         this.feedbackRepository = feedbackRepository;
-        this.ticketRepository = ticketRepository;
-        this.routingService = routingService;
+        this.workItemClient = workItemClient;
         this.auditService = auditService;
     }
 
@@ -52,7 +53,7 @@ public class FeedbackService {
     }
 
     /**
-     * 点踩进复核队列时同时开一张复核工单（round23 票 69 / ADR 0055）。
+     * 点踩进复核队列时同时开一张复核工单（round23 票 69/72）。
      *
      * <p>它和会话里那张降级单是**两件事**：降级单结的是「这次对话办不了」，复核单结的是
      * 「这句答案的内容对不对」。所以不覆盖 {@code feedback.ticketId}（那列指回升级单），
@@ -60,21 +61,18 @@ public class FeedbackService {
      *
      * <p>UP 不开单：只计不审，没有人工要处理的事。
      *
-     * <p>这张单照样走分流（票 70）：队列为空的工作项在坐席台里是**看不见**的，
-     * 「开了单但没人能领」比没开单更糟。
+     * <p>工单数据在工单服务（票 72），所以这里是跨进程调用：开单失败**不阻断**复核状态流转——
+     * 复核队列的真源是 {@code review_status}，工单是它的工作项，缺了就少一个入口，不是数据丢了。
      */
     private void openReviewWorkItem(Feedback feedback, String reason) {
-        TicketSource source = TicketSource.FEEDBACK_REVIEW;
-        RoutingService.Assignment assignment = routingService.assign(TenantContextHolder.tenantId(), source,
-                "FEEDBACK_REVIEW", null);
-        Instant now = Instant.now();
-        ticketRepository.save(new Ticket(Ticket.nextId(now), TenantContextHolder.tenantId(),
-                feedback.getCustomerId(), "FEEDBACK_REVIEW",
-                truncate("会话 " + feedback.getConversationId() + " 的答复待复核", 512),
-                reason == null ? "" : truncate(reason, 8000), "OPEN", now,
-                assignment.priority().literal(), source, assignment.queue(), null, assignment.slaDeadline(),
-                WorkItemPayload.of("feedbackId", feedback.getId(),
-                        "conversationId", feedback.getConversationId())));
+        String ticketId = workItemClient.create(TicketSource.FEEDBACK_REVIEW, feedback.getCustomerId(),
+                "FEEDBACK_REVIEW", "会话 " + feedback.getConversationId() + " 的答复待复核",
+                reason == null ? "" : reason, null,
+                "{\"feedbackId\":\"" + feedback.getId() + "\",\"conversationId\":\""
+                        + feedback.getConversationId() + "\"}");
+        if (ticketId == null) {
+            log.warn("复核工单 {} 没开成；复核队列仍可处理（真源是 feedback.review_status）", feedback.getId());
+        }
     }
 
     /** ingest 待复核队列：本店范围内 PENDING 状态的反馈，按时间倒序。 */

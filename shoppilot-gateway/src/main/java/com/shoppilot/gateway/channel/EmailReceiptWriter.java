@@ -28,12 +28,12 @@ public class EmailReceiptWriter {
 
     private final HttpClient http;
     private final ObjectMapper mapper;
-    private final GatewayProperties.BizMock config;
+    private final GatewayProperties.Ticket config;
 
     public EmailReceiptWriter(HttpClient http, ObjectMapper mapper, GatewayProperties properties) {
         this.http = http;
         this.mapper = mapper;
-        this.config = properties.bizmock();
+        this.config = properties.ticket();
     }
 
     /** @return 回执工单号；下游不可达时 empty（如实返回，不静默假装落单成功）。 */

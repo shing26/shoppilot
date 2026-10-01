@@ -80,10 +80,34 @@ public class OpsController {
         this.errors = errors;
     }
 
-    /** 本店工单队列，按当前身份的租户隔离。 */
+    /** 本店工单队列，按当前身份的租户隔离（工单数据在工单服务，票 72）。 */
     @GetMapping("/tickets")
-    public ResponseEntity<String> listTickets() {
-        return forward("GET", "/api/tickets", null, true);
+    public ResponseEntity<String> listTickets(
+            @RequestParam(required = false) String queue,
+            @RequestParam(required = false) String status) {
+        String query = (queue == null || queue.isBlank()) ? "" : "?queue=" + queue
+                + (status == null || status.isBlank() ? "" : "&status=" + status);
+        return forwardToTicket("GET", "/api/tickets" + query, null);
+    }
+
+    /** 坐席领取：同一张单恰好一人领得到，领不到回 409（工单服务侧的条件更新保证）。 */
+    @PostMapping("/tickets/{ticketId}/claim")
+    public ResponseEntity<String> claimTicket(@PathVariable String ticketId,
+                                              @RequestHeader(value = "X-Agent", required = false) String agent) {
+        return forwardToTicket("POST", "/api/tickets/" + ticketId + "/claim", null, agent);
+    }
+
+    @PostMapping("/tickets/{ticketId}/release")
+    public ResponseEntity<String> releaseTicket(@PathVariable String ticketId,
+                                                @RequestHeader(value = "X-Agent", required = false) String agent) {
+        return forwardToTicket("POST", "/api/tickets/" + ticketId + "/release", null, agent);
+    }
+
+    @PostMapping("/tickets/{ticketId}/resolve")
+    public ResponseEntity<String> resolveTicket(@PathVariable String ticketId,
+                                                @RequestBody Map<String, Object> body,
+                                                @RequestHeader(value = "X-Agent", required = false) String agent) {
+        return forwardToTicket("POST", "/api/tickets/" + ticketId + "/resolve", body, agent);
     }
 
     /** ingest 待复核队列（ADR 0039）：DOWN 且未复核的反馈，人工从这里认领。 */
@@ -119,10 +143,15 @@ public class OpsController {
         return forward("GET", "/api/admin/tenants", null, false);
     }
 
+    /**
+     * 状态流转保留：调试台（运维页，ADR 0057 的过渡态）还在用它。
+     * 坐席台走 claim/release/resolve 三个动作端点，不再直接改状态——
+     * 「谁把单结掉的」需要动作留痕，而状态机本身允许 OPEN 直接到 RESOLVED。
+     */
     @PatchMapping("/tickets/{ticketId}/status")
     public ResponseEntity<String> updateTicketStatus(@PathVariable String ticketId,
                                                      @RequestBody Map<String, Object> body) {
-        return forward("PATCH", "/api/tickets/" + ticketId + "/status", body, true);
+        return forwardToTicket("PATCH", "/api/tickets/" + ticketId + "/status", body);
     }
 
     @GetMapping("/fault")
@@ -343,6 +372,43 @@ public class OpsController {
             return denied(access);
         }
         return forward(method, path, body, false);
+    }
+
+    /**
+     * 转发到工单服务（round23 票 72）。与 {@link #forward} 的区别只有目标服务与
+     * {@code X-Agent} 头——两条转发刻意分开写，不做成「目标可选」参数：
+     * 那种写法会让「这个端点到底打向谁」变成每次读都要确认的事。
+     */
+    private ResponseEntity<String> forwardToTicket(String method, String path, Map<String, Object> body) {
+        return forwardToTicket(method, path, body, null);
+    }
+
+    private ResponseEntity<String> forwardToTicket(String method, String path, Map<String, Object> body,
+                                                   String agent) {
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(
+                    URI.create(properties.ticket().baseUrl() + path))
+                    .timeout(properties.ticket().readTimeout())
+                    .header("Content-Type", "application/json")
+                    .header("X-Internal-Token", properties.ticket().internalToken());
+            TenantContext.Identity identity = TenantContext.current();
+            builder.header("X-Tenant-Id", identity.tenantId());
+            builder.header("X-Customer-Id", identity.customerId() == null ? "" : identity.customerId());
+            if (agent != null && !agent.isBlank()) {
+                builder.header("X-Agent", agent);
+            }
+            HttpRequest.BodyPublisher publisher = body == null
+                    ? HttpRequest.BodyPublishers.noBody()
+                    : HttpRequest.BodyPublishers.ofString(writeJson(body));
+            builder.method(method, publisher);
+            HttpResponse<String> response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            return ResponseEntity.status(response.statusCode())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(response.body());
+        } catch (Exception downstreamUnavailable) {
+            return errors.entity(HttpStatus.BAD_GATEWAY.value(), ApiError.DOWNSTREAM_UNREACHABLE,
+                    "工单服务不可达：" + downstreamUnavailable.getMessage());
+        }
     }
 
     private ResponseEntity<String> forward(String method, String path, Map<String, Object> body,

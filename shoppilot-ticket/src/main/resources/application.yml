@@ -1,0 +1,60 @@
+server:
+  port: 8092
+  # 只监听本机：浏览器不得直连本服务（沿用 biz-mock 的纪律），网关是唯一调用方
+  address: 127.0.0.1
+
+spring:
+  application:
+    name: shoppilot-ticket
+  datasource:
+    # 内存库，每次起栈重建 —— 与 biz-mock 同一口径。工单是审计资产不是热数据，
+    # 「跨重启可查」本来就不在本仓承诺范围内（CONTEXT.md 的可查工单条）。
+    url: jdbc:h2:mem:shoppilot-ticket;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        default_schema: PUBLIC
+        # 行级隔离（ADR 0005 防线二）。解析器在无请求上下文时以 PLATFORM 身份运行——
+        # routing_rules 没有 @TenantId 列，但多租户 session factory 下的任何查询都要一个租户标识，
+        # 所以这个键不给，Flyway 与 bean 初始化阶段就会炸（实测踩过）。
+        tenant_identifier_resolver: com.shoppilot.ticket.tenant.HibernateTenantResolver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 16379
+      timeout: 2s
+  jackson:
+    default-property-inclusion: non_null
+
+shoppilot:
+  ticket:
+    # 审计流：发出去就行，落表由 biz-mock 的消费者做（ADR 0054）。
+    redis:
+      host: 127.0.0.1
+      port: 16379
+    # 没有 seed 订单：工单不产生订单，数据全靠调用方落单（ADR 0053「跨域只走 API」）
+    seed:
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.shoppilot.ticket: INFO

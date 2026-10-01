@@ -1,9 +1,9 @@
-package com.shoppilot.bizmock.web;
+package com.shoppilot.ticket.web;
 
-import com.shoppilot.bizmock.domain.RoutingRule;
-import com.shoppilot.bizmock.domain.TicketPriority;
-import com.shoppilot.bizmock.repo.RoutingRuleRepository;
-import com.shoppilot.bizmock.service.RoutingService;
+import com.shoppilot.ticket.domain.RoutingRule;
+import com.shoppilot.ticket.domain.TicketPriority;
+import com.shoppilot.ticket.repo.RoutingRuleRepository;
+import com.shoppilot.ticket.service.RoutingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,14 +20,12 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * 分流规则表（round23 票 70/71 / ADR 0055、0056）。
+ * 分流规则表（round23 票 70/71/72 / ADR 0055、0056）。
  *
- * <p>票 70 时它是**只读**的：规则能改但查不到谁改的，比不能改更糟。票 71 的审计事件落地后
- * 写入口才开——每一次写都带一条 {@code audit} 事件，所以「这张单当初去了哪个队列」这件事
- * 现在能一路回溯到规则变更。
+ * <p>写入口在票 71 才开：规则能改但查不到谁改的，比不能改更糟。每一次写都带一条审计事件，
+ * 所以「这张单当初去了哪个队列」现在能一路回溯到规则变更。
  *
- * <p>只允许**新增**与**启停**，不允许改匹配键与队列：改匹配键会让历史分派再也复算不出来。
- * {@code X-Reviewer} 是调用方自报的（身份域是下一轮，ADR 0056）：进审计，不进权限。
+ * <p>只允许**新增**与**启停**；匹配键与队列一旦落库就不再改。
  */
 @RestController
 @RequestMapping("/api/routing-rules")
@@ -41,7 +39,6 @@ public class RoutingRuleController {
         this.routingService = routingService;
     }
 
-    /** 全量规则表（含未启用行），按 id 升序——读的人要能自己判断哪条更具体。 */
     @GetMapping
     @Transactional(readOnly = true)
     public List<RuleView> list() {
@@ -51,30 +48,28 @@ public class RoutingRuleController {
                 .toList();
     }
 
-    /** 新增规则。租户与匹配键用 {@code *} 表示通配。 */
     @PostMapping
     @Transactional
     public ResponseEntity<RuleView> create(@RequestBody RuleRequest request,
-                                            @RequestHeader(value = "X-Reviewer", required = false) String reviewer) {
+                                            @RequestHeader(value = "X-Agent", required = false) String agent) {
         try {
             RoutingRule saved = routingService.createRule(
                     request.tenantId(), request.source(), request.reason(), request.queue(),
                     TicketPriority.of(request.priority()), request.slaMinutes(),
-                    !Boolean.FALSE.equals(request.enabled()), reviewer);
+                    !Boolean.FALSE.equals(request.enabled()), agent);
             return ResponseEntity.status(HttpStatus.CREATED).body(toView(saved));
         } catch (IllegalArgumentException badRequest) {
             return ResponseEntity.badRequest().build();
         }
     }
 
-    /** 启停规则。这是唯一的原地修改：匹配键与队列一旦落库就不再改。 */
     @PatchMapping("/{ruleId}/enabled")
     @Transactional
     public ResponseEntity<RuleView> setEnabled(@PathVariable Long ruleId,
                                                @RequestBody EnableRequest request,
-                                               @RequestHeader(value = "X-Reviewer", required = false) String reviewer) {
+                                               @RequestHeader(value = "X-Agent", required = false) String agent) {
         try {
-            RoutingRule saved = routingService.setRuleEnabled(ruleId, Boolean.TRUE.equals(request.enabled()), reviewer);
+            RoutingRule saved = routingService.setRuleEnabled(ruleId, Boolean.TRUE.equals(request.enabled()), agent);
             return ResponseEntity.ok(toView(saved));
         } catch (IllegalArgumentException notFound) {
             return ResponseEntity.notFound().build();

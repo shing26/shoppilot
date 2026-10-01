@@ -29,6 +29,10 @@ LINE_FLOORS = {
     "shoppilot-gateway": 54.0,
     "shoppilot-biz-mock": 76.0,
     "shoppilot-tool-api": 40.0,
+    # round23 票 72 新增的第四个服务（实测 LINE 69.34%）。**新模块必须进这张表**——
+    # 不进就是让它绕过覆盖率门禁，而门禁的价值恰恰在于「新写的代码也要被量」。
+    # 门槛 = floor(69.34) - 1.0 = 68.0。
+    "shoppilot-ticket": 68.0,
 }
 
 REPORT_REL = Path("target") / "site" / "jacoco" / "jacoco.xml"

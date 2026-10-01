@@ -18,6 +18,7 @@ public record GatewayProperties(
         @Valid Embedding embedding,
         @Valid Retrieval retrieval,
         @Valid Cache cache,
+        @Valid Ticket ticket,
         @Valid BizMock bizmock,
         @Valid Agent agent,
         @Valid RateLimit ratelimit,
@@ -90,6 +91,19 @@ public record GatewayProperties(
                     message = "shoppilot.cache.singleflight-wait-timeout must be greater than 0")
             Duration singleflightWaitTimeout,
             boolean singleflightEnabled) {
+    }
+
+    /**
+     * 工单与坐席服务（round23 票 72 / ADR 0053）。与 {@link BizMock} 同形：
+     * 固定服务名 + 内部凭证 + 收发超时，不需要服务发现。
+     */
+    public record Ticket(
+            String baseUrl,
+            String internalToken,
+            @DurationMin(nanos = 1, message = "shoppilot.ticket.connect-timeout must be greater than 0")
+            Duration connectTimeout,
+            @DurationMin(nanos = 1, message = "shoppilot.ticket.read-timeout must be greater than 0")
+            Duration readTimeout) {
     }
 
     public record BizMock(

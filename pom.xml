@@ -15,6 +15,7 @@
     <module>shoppilot-tool-api</module>
     <module>shoppilot-biz-mock</module>
     <module>shoppilot-gateway</module>
+    <module>shoppilot-ticket</module>
   </modules>
 
   <properties>

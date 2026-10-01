@@ -202,7 +202,8 @@ class EmbeddingLatencyTimerTest {
                 null,
                 new GatewayProperties.Embedding(baseUrl, "bge-m3", DIM,
                         Duration.ofSeconds(5), Duration.ofSeconds(60), inProcessCache),
-                null, null, null, null, null, null, null, null);
+                null, null,
+                null, null, null, null, null, null, null);
         EmbeddingClient client = new EmbeddingClient(
                 java.net.http.HttpClient.newHttpClient(), new ObjectMapper(), properties, registry);
         return new Fixture(client, registry);

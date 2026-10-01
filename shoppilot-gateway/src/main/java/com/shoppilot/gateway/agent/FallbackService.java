@@ -32,7 +32,7 @@ public class FallbackService {
 
     private final HttpClient http;
     private final ObjectMapper mapper;
-    private final GatewayProperties.BizMock config;
+    private final GatewayProperties.Ticket config;
     private final MeterRegistry registry;
     private final StringRedisTemplate redis;
 
@@ -40,7 +40,7 @@ public class FallbackService {
                            StringRedisTemplate redis) {
         this.http = http;
         this.mapper = mapper;
-        this.config = properties.bizmock();
+        this.config = properties.ticket();
         this.registry = registry;
         this.redis = redis;
     }
