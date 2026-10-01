@@ -365,6 +365,26 @@ check("B7 本轮窗口未碰内容级禁面（gold 与判据阈值所在文件�
       (f"禁面命中 {forbidden}；" if forbidden else "禁面零命中；")
       + f"{ROUND_FP}..HEAD 改动 {len(changed_now)} 个文件：{'、'.join(changed_now) or '（无）'}")
 
+# round23 票 74：事件对账门禁（ADR 0054 的「第三类证据」承诺的机器落点）。
+# 钉的是 surefire 报告而不是脚本输出：门禁真跑过、且条数没被悄悄削掉，两件事一起判。
+EVENT_GATE_REPORT = REPO / "shoppilot-biz-mock/target/surefire-reports/com.shoppilot.bizmock.audit.EventReconciliationTest.txt"
+EVENT_GATE_EXPECT = 4  # 发布=消费=落账 / 重投不重复入账 / 拒绝留在 pending / 三者同时自洽
+
+
+def event_gate():
+    text = EVENT_GATE_REPORT.read_text(encoding="utf-8", errors="ignore")
+    m = re.search(r"Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)", text)
+    if not m:
+        return False, "报告里认不出 Tests run 段"
+    ran, failed, errored = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    return (ran == EVENT_GATE_EXPECT and failed == 0 and errored == 0,
+            f"事件对账门禁 {ran} 条（期望 {EVENT_GATE_EXPECT}）、失败 {failed}、错误 {errored}；"
+            f"真实 Redis 上的 pending/MAXLEN 仍未验证（裁定 D，照登）")
+
+
+check_local("G8 事件对账门禁（发布=消费=落账、pending 归零、重投不重复入账）",
+            [EVENT_GATE_REPORT], event_gate)
+
 print()
 print("=" * 78)
 print("C. gold 标注边界（放开 4 条，其余不动）")

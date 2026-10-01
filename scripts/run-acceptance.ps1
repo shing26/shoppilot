@@ -15,11 +15,17 @@
       pwsh -NoProfile -File scripts/run-acceptance.ps1                    # 全跑（含构建）
       pwsh -NoProfile -File scripts/run-acceptance.ps1 -SkipBuild         # 用现成 jar
       pwsh -NoProfile -File scripts/run-acceptance.ps1 -Only l2,ratelimit # 只跑指定步骤
+      pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier daily        # 日常档：不起栈，只跑 0 token 与 JVM 层
 #>
 param(
     [switch]$SkipBuild,
     [switch]$SkipStack,
     [string]$Profile = 'local',
+    # round23 票 74：档位切的是**步骤集合**，不是判据——每一步的判据在两档里逐字相同。
+    #   daily = 0 token 与 JVM 层那几步（不起栈）：任意机器可跑，不吃内存；
+    #   full  = 全部步骤（起四服务栈 + 活体），约 7 GB，仅清场日。
+    # 默认 full：分档是为了让日常可跑，不���为了改变既有行为。
+    [ValidateSet('daily', 'full')] [string]$Tier = 'full',
     [string[]]$Only = @(),
     # 默认让 up.ps1 连知识库入库一起跑：ticket 04 的「重跑不增长」要有 logs\ingest.out 才判得成，
     # 干净机器少了这一步，ES/Qdrant 里根本没有语料。
@@ -97,6 +103,18 @@ $steps = [ordered]@{
     eval      = @{ Kind = 'py'; Cmd = 'scripts\run_tool_eval.py'; Arg = @('--limit', '24', '--tag', 'smoke'); Need = $true; Skip = $false; Expect = @('EVAL DONE') }
 }
 
+# daily 档的步骤集合：不起栈、不打模型，判据与 full 档逐字相同，只是选了一组不依赖活体栈的步骤。
+# 列名写死而不是从 Need 反推——反推会把「某一步今天临时不依赖栈」悄悄变成口径变更，而这里要的是常量的意图。
+$DailySteps = @('syntax', 'stop', 'build', 'unit', 'report', 'task', 'funnel')
+
+if ($Tier -eq 'daily') {
+    $unknown = @($DailySteps | Where-Object { -not $steps.Contains($_) })
+    if ($unknown.Count -gt 0) { throw "daily 档引用了不存在的步骤：$($unknown -join ', ')" }
+    Write-Host "档位：daily（$($DailySteps.Count) 步，不起栈；full 档的判据逐字相同）" -ForegroundColor Cyan
+} else {
+    Write-Host "档位：full（$($steps.Count) 步，含起栈与活体链路）" -ForegroundColor Cyan
+}
+
 $results = @()
 $started = Get-Date
 # 工作树干不干净必须在**开跑之前**问：门禁自己会写 logs/、eval/results/、docs/console.png，
@@ -145,9 +163,15 @@ foreach ($name in $want) {
         Write-Host "-Only 里有不认识的名字：$name（可用：$($steps.Keys -join ', ')）" -ForegroundColor Red
         exit 2
     }
+    if ($Tier -eq 'daily' -and $name -notin $DailySteps) {
+        # 不静默忽略：点名它在 full 档、不在 daily 档，并说清怎么跑
+        Write-Host "-Only 里的 $name 属于 full 档（要起栈）；daily 档步骤：$($DailySteps -join ', ')。想跑它请用 -Tier full" -ForegroundColor Red
+        exit 2
+    }
 }
 foreach ($name in $steps.Keys) {
     $step = $steps[$name]
+    if ($Tier -eq 'daily' -and $name -notin $DailySteps) { continue }
     if ($want.Count -gt 0 -and $name -notin $want) { continue }
     if ($step.Skip) {
         Write-Host "`n--- $name 跳过（开关关着）" -ForegroundColor DarkGray
@@ -227,7 +251,7 @@ if (-not $commit) { $commit = 'unknown' }
 # 这两个脚本的改动都在里面）。"全绿"必须说清绿在哪一份代码上，所以顺手记工作树干不干净。
 $total = [int]((Get-Date) - $started).TotalSeconds
 @(
-    "run-acceptance  profile=$Profile  commit=$commit  开跑时工作树=$treeAtStart"
+    "run-acceptance  tier=$Tier  profile=$Profile  commit=$commit  开跑时工作树=$treeAtStart"
     ("开始 {0:yyyy-MM-dd HH:mm:ss}  结束 {1:yyyy-MM-dd HH:mm:ss}  总耗时 ${total}s" -f $started, (Get-Date))
     "逐步日志目录 $outDir"
     $(if ($dirtyAtStart.Count -gt 0) { '开跑时未提交的改动：' + ($dirtyAtStart -join ' | ') } else { $null })
@@ -235,6 +259,7 @@ $total = [int]((Get-Date) - $started).TotalSeconds
     ('{0,-10} {1,5}  {2}' -f 'step', 'exit', 'note')
     ($results | ForEach-Object { '{0,-10} {1,5}  {2}' -f $_.Step, $_.Exit, $_.Note })
     ''
+    "档位定义：daily=$($DailySteps -join ',')；full=$($steps.Keys -join ',')"
     $(if ($failed.Count -eq 0) { "全部步骤通过（$($results.Count) 步）" } else { "失败步骤：$(($failed | ForEach-Object { $_.Step }) -join ', ')" })
 ) | Out-File -FilePath $runLog -Encoding utf8
 if ($failed.Count -gt 0) {

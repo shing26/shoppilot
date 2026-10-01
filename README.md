@@ -84,6 +84,9 @@ ollama pull qwen2.5:3b                            # local 模式的生成模型
 mvn -o -DskipTests package                        # 干净机器去掉 -o 联网取依赖；或用 .\mvnw.cmd
 pwsh -NoProfile -File scripts/start-bizmock.ps1   # :8091，seed 3 租户 / 200 买家 / 5 万订单
 pwsh -NoProfile -File scripts/start-ticket.ps1    # :8092，工单与坐席服务（round23 票 72）
+# 验收矩阵分两档（round23 票 74）：档位切的是**步骤集合**，判据逐字相同
+pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier daily   # 日常档：不起栈，只跑 0 token 与 JVM 层（≈3.5 GB → 实际不到 1 GB）
+pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四服务 + 活体链路（≈7 GB，仅清场日）
 pwsh -NoProfile -File scripts/ingest.ps1          # 30 篇政策 -> 90 规则块 -> ES + Qdrant，推进 kb_epoch
 pwsh -NoProfile -File scripts/start-gateway.ps1 -Profile local
 ```
@@ -322,6 +325,10 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 
 ## 已知限制（不藏）
 
+- **验收矩阵分两档，而 full 档本轮一次没跑成**：`run-acceptance.ps1 -Tier daily|full`（round23 票 74）。
+  档位切的是**步骤集合**、判据两档逐字相同——daily 只跑不起栈的那些（语法、构建与单测、负载报告、task 判据、检索门禁），
+  实测 4 步 2 秒；full 要起四服务栈（≈7 GB），**本机只剩 0.5 GB 可用内存，只能在清场日跑**。
+  未跑的红**不得冒充**日常档信号。收口审计本轮实跑 **96 项机器断言**（round23 票 74 新增 G8 事件对账门禁）。
 - **H2 内嵌库在写密集路径上是瓶颈**；50 并发同 token 的退款实测 1 行 + 49 个重放，但换 MySQL 才是生产形态。
 - **表结构由 Flyway 版本化迁移产生，不是 Hibernate 自动建表**：`ddl-auto` 已是 `validate`，模式的唯一产生源是
   `shoppilot-biz-mock/src/main/resources/db/migration/`（V1 基线由 Hibernate 导出后固化）。**迁移只管表结构怎么产生，
