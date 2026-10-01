@@ -25,5 +25,7 @@ public record TicketView(
         /** SLA 截止时间。 */
         Instant slaDeadline,
         /** 有上游记录时指回上游 id 的 JSON；自包含来源为 null。 */
-        String payload) {
+        String payload,
+        /** 超时打戳时刻（票 70）；非空即代表已被观测到超时，但工单状态不变。 */
+        Instant escalatedAt) {
 }

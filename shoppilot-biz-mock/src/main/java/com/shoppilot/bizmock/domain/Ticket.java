@@ -72,6 +72,13 @@ public class Ticket {
     private Instant slaDeadline;
 
     /**
+     * 超时打戳时刻（round23 票 70）。非空即代表「已被观测到超时」。
+     * 它**不改工单状态**——超时不是关闭，也不是失败（ADR 0055）。
+     */
+    @Column(name = "escalated_at")
+    private Instant escalatedAt;
+
+    /**
      * 来源有上游记录时（反馈复核、退款审批）指回上游 id 的 JSON；自包含来源留空。
      * 形状与拼装见 {@code service/WorkItemPayload}。
      */
@@ -192,6 +199,14 @@ public class Ticket {
 
     public void setSlaDeadline(Instant slaDeadline) {
         this.slaDeadline = slaDeadline;
+    }
+
+    public Instant getEscalatedAt() {
+        return escalatedAt;
+    }
+
+    public void setEscalatedAt(Instant escalatedAt) {
+        this.escalatedAt = escalatedAt;
     }
 
     public String getPayload() {

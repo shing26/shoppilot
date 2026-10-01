@@ -57,10 +57,13 @@ public class BizMockService {
     private final FaultInjector faultInjector;
     private final TransactionTemplate transactionTemplate;
 
+    /** 分流与 SLA（round23 票 70）：落库当场分派，列表读之前结算超时打戳。 */
+    private final RoutingService routingService;
+
     public BizMockService(OrderRepository orderRepository, LogisticsRepository logisticsRepository,
                           AddressHistoryRepository addressHistoryRepository, RefundRepository refundRepository,
                           TicketRepository ticketRepository, FaultInjector faultInjector,
-                          TransactionTemplate transactionTemplate) {
+                          TransactionTemplate transactionTemplate, RoutingService routingService) {
         this.orderRepository = orderRepository;
         this.logisticsRepository = logisticsRepository;
         this.addressHistoryRepository = addressHistoryRepository;
@@ -68,6 +71,7 @@ public class BizMockService {
         this.ticketRepository = ticketRepository;
         this.faultInjector = faultInjector;
         this.transactionTemplate = transactionTemplate;
+        this.routingService = routingService;
     }
 
     @Transactional(readOnly = true)
@@ -350,6 +354,9 @@ public class BizMockService {
      * 统一工作项的落库入口（round23 票 69 / ADR 0055）：四种来源共用这一条写入路径，
      * 分流规则表（票 70）才有单一分母。
      *
+     * <p>落库**当场分派**（票 70）：队列、优先级、SLA 截止在写入路径上一次算完，
+     * 所以不存在「有一段时间这张单没有队列」的中间态。
+     *
      * @param payload 有上游记录时指回上游的 JSON；自包含来源传 null
      */
     @Transactional
@@ -357,8 +364,11 @@ public class BizMockService {
                                      String transcript, String priority, String payload) {
         Instant now = Instant.now();
         String id = nextTicketId(now);
+        RoutingService.Assignment assignment = routingService.assign(TenantContextHolder.tenantId(), source, reason,
+                priority);
         Ticket ticket = new Ticket(id, TenantContextHolder.tenantId(), customerId, reason, truncate(userQuery),
-                transcript == null ? "" : transcript, "OPEN", now, priority, source, null, null, null, payload);
+                transcript == null ? "" : transcript, "OPEN", now, assignment.priority().literal(), source,
+                assignment.queue(), null, assignment.slaDeadline(), payload);
         return toTicketView(ticketRepository.save(ticket));
     }
 
@@ -367,8 +377,13 @@ public class BizMockService {
         return Ticket.nextId(now);
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * 工单列表。读之前先结算 SLA 超时打戳（票 70）——惰性求值，省掉一个定时线程池。
+     * 打戳只写 {@code escalatedAt}，不改状态，所以这一步不会让读路径变成写语义上的陷阱。
+     */
+    @Transactional
     public List<TicketView> listTickets() {
+        routingService.escalateOverdue(TenantContextHolder.tenantId(), Instant.now());
         return ticketRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toTicketView).toList();
     }
 
@@ -449,7 +464,7 @@ public class BizMockService {
         return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
                 ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt(),
                 ticket.getSource(), ticket.getQueue(), ticket.getAssignee(), ticket.getSlaDeadline(),
-                ticket.getPayload());
+                ticket.getPayload(), ticket.getEscalatedAt());
     }
 
     private ToolResponse<RefundView> replay(ToolName tool, Refund refund) {

@@ -22,10 +22,13 @@ public class FeedbackService {
 
     private final FeedbackRepository feedbackRepository;
     private final TicketRepository ticketRepository;
+    private final RoutingService routingService;
 
-    public FeedbackService(FeedbackRepository feedbackRepository, TicketRepository ticketRepository) {
+    public FeedbackService(FeedbackRepository feedbackRepository, TicketRepository ticketRepository,
+                           RoutingService routingService) {
         this.feedbackRepository = feedbackRepository;
         this.ticketRepository = ticketRepository;
+        this.routingService = routingService;
     }
 
     /** @param reviewStatus DOWN → PENDING（进复核队列）；UP → NONE（只计不审）。 */
@@ -52,13 +55,20 @@ public class FeedbackService {
      * 复核单的 id 走 payload 指回本条 feedback。
      *
      * <p>UP 不开单：只计不审，没有人工要处理的事。
+     *
+     * <p>这张单照样走分流（票 70）：队列为空的工作项在坐席台里是**看不见**的，
+     * 「开了单但没人能领」比没开单更糟。
      */
     private void openReviewWorkItem(Feedback feedback, String reason) {
-        ticketRepository.save(new Ticket(Ticket.nextId(Instant.now()), TenantContextHolder.tenantId(),
+        TicketSource source = TicketSource.FEEDBACK_REVIEW;
+        RoutingService.Assignment assignment = routingService.assign(TenantContextHolder.tenantId(), source,
+                "FEEDBACK_REVIEW", null);
+        Instant now = Instant.now();
+        ticketRepository.save(new Ticket(Ticket.nextId(now), TenantContextHolder.tenantId(),
                 feedback.getCustomerId(), "FEEDBACK_REVIEW",
                 truncate("会话 " + feedback.getConversationId() + " 的答复待复核", 512),
-                reason == null ? "" : truncate(reason, 8000), "OPEN", Instant.now(), null,
-                TicketSource.FEEDBACK_REVIEW, null, null, null,
+                reason == null ? "" : truncate(reason, 8000), "OPEN", now,
+                assignment.priority().literal(), source, assignment.queue(), null, assignment.slaDeadline(),
                 WorkItemPayload.of("feedbackId", feedback.getId(),
                         "conversationId", feedback.getConversationId())));
     }
