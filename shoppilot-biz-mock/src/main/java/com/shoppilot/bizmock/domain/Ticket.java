@@ -51,6 +51,34 @@ public class Ticket {
     @Column(name = "priority", length = 10)
     private String priority;
 
+    /**
+     * 工单来源（round23 票 69 / ADR 0055）。迁移回填 {@code DEGRADE}，非空。
+     *
+     * <p>取值见 {@link TicketSource}。
+     */
+    @Column(name = "source", nullable = false, length = 24)
+    private String source;
+
+    /** 分派到的队列；null = 尚未分派（分派是票 70 的规则表干的活）。 */
+    @Column(name = "queue", length = 32)
+    private String queue;
+
+    /** 领取这张工单的坐席；null = 无人领取（座登模型见 ADR 0055）。 */
+    @Column(name = "assignee", length = 32)
+    private String assignee;
+
+    /** SLA 截止时间；只用于计时与超时升级标记，不承诺解决时限。 */
+    @Column(name = "sla_deadline")
+    private Instant slaDeadline;
+
+    /**
+     * 来源有上游记录时（反馈复核、退款审批）指回上游 id 的 JSON；自包含来源留空。
+     * 形状与拼装见 {@code service/WorkItemPayload}。
+     */
+    @Lob
+    @Column(name = "payload", length = 2000)
+    private String payload;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -59,6 +87,14 @@ public class Ticket {
 
     public Ticket(String id, String tenantId, String customerId, String reason, String userQuery,
                   String transcript, String status, Instant createdAt, String priority) {
+        this(id, tenantId, customerId, reason, userQuery, transcript, status, createdAt, priority,
+                TicketSource.DEGRADE, null, null, null, null);
+    }
+
+    /** 统一工单构造：四种来源共用（ADR 0055）。 */
+    public Ticket(String id, String tenantId, String customerId, String reason, String userQuery,
+                  String transcript, String status, Instant createdAt, String priority, TicketSource source,
+                  String queue, String assignee, Instant slaDeadline, String payload) {
         this.id = id;
         this.tenantId = tenantId;
         this.customerId = customerId;
@@ -68,6 +104,26 @@ public class Ticket {
         this.status = status;
         this.createdAt = createdAt;
         this.priority = priority;
+        this.source = source.name();
+        this.queue = queue;
+        this.assignee = assignee;
+        this.slaDeadline = slaDeadline;
+        this.payload = payload;
+    }
+
+    /**
+     * 工单号后缀序列。
+     *
+     * <p>原来只用 "T + 毫秒 + 内容哈希"：大促压测里同一店铺同一句话在同一毫秒内落几十张单，
+     * 内容一样、时间戳一样，工单号就撞在一张表的主键上，返回 500，降级链路直接断在终点
+     * （2026-09-08 mix80 压测暴露，见 {@code TicketIdTest}）。加一个进程内单调序列，
+     * 让 (毫秒, 序列) 这一对唯一，不依赖时钟精度。
+     */
+    private static final java.util.concurrent.atomic.AtomicLong TICKET_SEQ =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    public static String nextId(Instant now) {
+        return "T" + now.toEpochMilli() + "-" + Long.toUnsignedString(TICKET_SEQ.getAndIncrement(), 36);
     }
 
     public String getPriority() {
@@ -108,5 +164,37 @@ public class Ticket {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public String getQueue() {
+        return queue;
+    }
+
+    public void setQueue(String queue) {
+        this.queue = queue;
+    }
+
+    public String getAssignee() {
+        return assignee;
+    }
+
+    public void setAssignee(String assignee) {
+        this.assignee = assignee;
+    }
+
+    public Instant getSlaDeadline() {
+        return slaDeadline;
+    }
+
+    public void setSlaDeadline(Instant slaDeadline) {
+        this.slaDeadline = slaDeadline;
+    }
+
+    public String getPayload() {
+        return payload;
     }
 }

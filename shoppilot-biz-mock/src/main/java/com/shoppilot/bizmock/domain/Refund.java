@@ -48,6 +48,13 @@ public class Refund {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /**
+     * 审批工单号（round23 票 69 / ADR 0055）。受理即建工单，回指放在这一列而不是只塞进
+     * 工单的 payload：放行是不可逆的资金动作，它的责任链不能建立在解析 JSON 上。
+     */
+    @Column(name = "ticket_id", length = 40)
+    private String ticketId;
+
     protected Refund() {
     }
 
@@ -99,5 +106,13 @@ public class Refund {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public String getTicketId() {
+        return ticketId;
+    }
+
+    public void setTicketId(String ticketId) {
+        this.ticketId = ticketId;
     }
 }

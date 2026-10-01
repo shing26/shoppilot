@@ -46,7 +46,10 @@ FIXED_POINT = "11a12ac"  # 第三轮起点
 #   这些条目断言的是「订正前那份文档里确实存在这句问题话」，而 HEAD 会随本轮提交前移，
 #   一旦提交了就永远取不到那句话，对照组反而把自己判红（第四轮收尾实际踩到过，见 ticket 20 第 10 条）。
 PRE_FIX = "a6ccdcb"  # 第四轮收口那一笔（对照组要取它**之前**那份文档，见下面 ROUND_FP 的分工）
-ROUND_FP = "5697702"  # round22 起点（round21 收口那一笔）。逐轮重锚，见 ADR 0023。
+ROUND_FP = "6bc45f3"  # round23 起点（program 路线 + ADR 0052-0057 + 票 69-75 那一笔）。逐轮重锚，见 ADR 0023。
+# 换代指针不许追加到既有 ADR 顶上：那些 ADR 是**开轮前的授权**，落在本轮窗口之内就会被 B7
+# 当成「本轮改判据面」判红（round23 票 69 实测踩到：给 0024 加一行指针当场四条红）。
+# 所以指针写在 tracker 与本轮 spec 里，既有 ADR 一个字不动。
 
 FAILS = []
 PASSES = []
@@ -94,6 +97,11 @@ _DEF_LANDED = 0
 # `SentimentGateTest.localModeIsLexiconOnly` 机制、`SentimentGateTest.devModeStillUsesTheLlmLayer` 正对照）。
 # round22 收口后（QA 走查补了 4 条用例：空答案守卫 / 派生工具进 plan / 命中路径 ruleIds 镜像 /
 # 回放话术不泄漏内部枚举）→ gateway 308，全仓 `5 + 29 + 308`（342）。
+# 换代指针（round23 票 69）：**本常数不随票改，只在收口随新鲜活体读数改**。它读的是
+# logs/acceptance/{unit,build}.log——上一次活体矩阵的落点（当前仍是 2026-09-28 那份
+# `5 + 29 + 308`）。票 69 让 biz-mock 29 → 36（当前实测 `5 + 36 + 308 = 349`），
+# 但矩阵没重跑，所以此刻**按定义就是 342**；提前把常数改成 349 只会造出一条
+# 「你还没重跑矩阵」的红，而不是「防线失效」的红。真正的换代在票 75 收口时连同新落点一起做。
 G6_EXPECT = [5, 29, 308]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))

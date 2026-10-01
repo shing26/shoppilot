@@ -177,10 +177,12 @@ class SlowQueryPlanTest {
 
     private void seedTickets() {
         jdbc.execute("delete from tickets");
+        // source 是 round23 票 69 加的 NOT NULL 列：手写 INSERT 必须显式给值，漏掉会被约束当场拦下。
         jdbc.execute("""
-                insert into tickets (id, tenant_id, customer_id, reason, user_query, transcript, status, created_at)
+                insert into tickets (id, tenant_id, customer_id, reason, user_query, transcript, status, created_at, source)
                 select 'T' || x, 't1', 'C001', 'USER_REQUESTED', 'q' || x, 'transcript', 'OPEN',
-                       timestamp with time zone '2026-01-01 00:00:00+00' + (x * interval '1' second)
+                       timestamp with time zone '2026-01-01 00:00:00+00' + (x * interval '1' second),
+                       'DEGRADE'
                 from system_range(1, %d)
                 """.formatted(ROWS));
     }

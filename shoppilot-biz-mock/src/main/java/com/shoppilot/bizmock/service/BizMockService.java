@@ -5,6 +5,7 @@ import com.shoppilot.bizmock.domain.LogisticsNode;
 import com.shoppilot.bizmock.domain.Order;
 import com.shoppilot.bizmock.domain.Refund;
 import com.shoppilot.bizmock.domain.Ticket;
+import com.shoppilot.bizmock.domain.TicketSource;
 import com.shoppilot.bizmock.domain.TicketStatus;
 import com.shoppilot.bizmock.fault.FaultInjector;
 import com.shoppilot.bizmock.repo.AddressHistoryRepository;
@@ -37,7 +38,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 四个原子业务动作 + 工单。业务规则（状态前置校验、归属、幂等兜底）全部在这里强制，
@@ -48,15 +48,6 @@ public class BizMockService {
 
     /** 退款时限：下单后 7 天内。 */
     private static final Duration REFUND_WINDOW = Duration.ofDays(7);
-
-    /**
-     * 工单号后缀序列。
-     *
-     * <p>原来只用 "T + 毫秒 + 内容哈希"：大促压测里同一店铺同一句话在同一毫秒内落几十张单，
-     * 内容一样、时间戳一样，工单号就撞在一张表的主键上，返回 500，降级链路直接断在终点。
-     * 加一个进程内单调序列，让 (毫秒, 序列) 这一对唯一，不依赖时钟精度。
-     */
-    private static final AtomicLong TICKET_SEQ = new AtomicLong();
 
     private final OrderRepository orderRepository;
     private final LogisticsRepository logisticsRepository;
@@ -228,6 +219,14 @@ public class BizMockService {
                 Refund inserted = refundRepository.save(new Refund(TenantContextHolder.tenantId(), orderId,
                         order.getCustomerId(), amount, reason, idempotencyToken, PENDING_REVIEW,
                         Instant.now()));
+                // 受理即建审批工单（round23 票 69 / ADR 0055）：退款从这一刻起就是一个待人工处理的工作项，
+                // 与降级单、复核单共用一张表。回指写在 refunds.ticket_id 上而不是只塞 payload——
+                // 放行不可逆，它的责任链不能建立在解析 JSON 上。
+                TicketView workItem = createWorkItem(TicketSource.REFUND_APPROVAL, order.getCustomerId(),
+                        "REFUND_APPROVAL", "订单 " + orderId + " 的退款待人工审核", "", null,
+                        WorkItemPayload.of("refundId", String.valueOf(inserted.getId()), "orderId", orderId));
+                inserted.setTicketId(workItem.id());
+                refundRepository.save(inserted);
                 order.setStatus(OrderStatus.REFUNDING);
                 orderRepository.save(order);
                 return inserted;
@@ -343,16 +342,29 @@ public class BizMockService {
     @Transactional
     public TicketView createTicket(String customerId, String reason, String userQuery, String transcript,
                                    String priority) {
+        return createWorkItem(TicketSource.ofReason(reason), customerId, reason, userQuery, transcript, priority,
+                null);
+    }
+
+    /**
+     * 统一工作项的落库入口（round23 票 69 / ADR 0055）：四种来源共用这一条写入路径，
+     * 分流规则表（票 70）才有单一分母。
+     *
+     * @param payload 有上游记录时指回上游的 JSON；自包含来源传 null
+     */
+    @Transactional
+    public TicketView createWorkItem(TicketSource source, String customerId, String reason, String userQuery,
+                                     String transcript, String priority, String payload) {
         Instant now = Instant.now();
         String id = nextTicketId(now);
         Ticket ticket = new Ticket(id, TenantContextHolder.tenantId(), customerId, reason, truncate(userQuery),
-                transcript == null ? "" : transcript, "OPEN", now, priority);
+                transcript == null ? "" : transcript, "OPEN", now, priority, source, null, null, null, payload);
         return toTicketView(ticketRepository.save(ticket));
     }
 
-    /** 工单号：毫秒保证跨时间有序，序列保证同一毫秒内不撞主键。 */
+    /** 工单号：实现住在 {@link Ticket#nextId}，这里保留原调用点（{@code TicketIdTest} 钉的就是同毫秒不撞）。 */
     static String nextTicketId(Instant now) {
-        return "T" + now.toEpochMilli() + "-" + Long.toUnsignedString(TICKET_SEQ.getAndIncrement(), 36);
+        return Ticket.nextId(now);
     }
 
     @Transactional(readOnly = true)
@@ -360,10 +372,22 @@ public class BizMockService {
         return ticketRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toTicketView).toList();
     }
 
-    /** 租户隔离由仓储层的 @TenantId 谓词兜住，这里只按 id 取。 */
+    /**
+     * 按 id 取工单，且**必须**显式比对租户。
+     *
+     * <p>{@code find(id)} 不拼接 {@code @TenantId} 谓词（只有查询会），所以只靠仓储层是不够的——
+     * 跨租户既能读到别人的工单，也能改别人的工单状态。与退款审核同一口径：跨租户一律
+     * 「不存在」，不区分"存在但不可见"。本票（69）的用例把这个既有缺陷逮了出来，顺手在这里收口。
+     */
+    private Optional<Ticket> findOwnedTicket(String ticketId) {
+        return ticketRepository.findById(ticketId)
+                .filter(ticket -> TenantContextHolder.tenantId().equals(ticket.getTenantId()));
+    }
+
+    /** 租户隔离由仓储层的 @TenantId 谓词兜住，这里再按 id 取时走 {@link #findOwnedTicket}。 */
     @Transactional(readOnly = true)
     public Optional<TicketView> findTicket(String ticketId) {
-        return ticketRepository.findById(ticketId).map(this::toTicketView);
+        return findOwnedTicket(ticketId).map(this::toTicketView);
     }
 
     @Transactional
@@ -372,7 +396,7 @@ public class BizMockService {
         if (target == null) {
             throw new IllegalArgumentException("未知工单状态 " + status + "，可选 " + TicketStatus.names());
         }
-        return ticketRepository.findById(ticketId).map(ticket -> {
+        return findOwnedTicket(ticketId).map(ticket -> {
             TicketStatus current = TicketStatus.parse(ticket.getStatus());
             if (current == null || !current.canTransitionTo(target)) {
                 throw new IllegalStateException("工单不允许从 " + ticket.getStatus() + " 流转到 " + target);
@@ -423,7 +447,9 @@ public class BizMockService {
 
     private TicketView toTicketView(Ticket ticket) {
         return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
-                ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt());
+                ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt(),
+                ticket.getSource(), ticket.getQueue(), ticket.getAssignee(), ticket.getSlaDeadline(),
+                ticket.getPayload());
     }
 
     private ToolResponse<RefundView> replay(ToolName tool, Refund refund) {
