@@ -27,6 +27,18 @@ public final class TenantContextHolder {
         return tenantId;
     }
 
+    /**
+     * 当前租户，**没有上下文时返回 null 而不是抛**。
+     *
+     * <p>给平台级运维路径用：{@code /api/admin/stats} 是跨租户口径，它没有租户上下文，
+     * 而 {@link #tenantId()} 在那种上下文下会抛——于是「取个工单数」变成一次异常兜底返 0，
+     * 面板上永远显示 0（清场日实测到的数）。业务路径仍然用 {@link #tenantId()}，
+     * 那里的「没有上下文就抛」是防线。
+     */
+    public static String tenantIdOrNull() {
+        return TENANT.get();
+    }
+
     public static String customerId() {
         return CUSTOMER.get();
     }

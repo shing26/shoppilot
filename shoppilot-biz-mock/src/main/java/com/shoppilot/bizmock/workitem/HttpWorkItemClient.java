@@ -91,11 +91,16 @@ public class HttpWorkItemClient implements WorkItemClient {
     @Override
     public int count() {
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/tickets/count"))
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(baseUrl + "/api/tickets/count"))
                     .timeout(timeout)
-                    .header("X-Internal-Token", internalToken)
-                    .header("X-Tenant-Id", TenantContextHolder.tenantId())
-                    .GET().build();
+                    .header("X-Internal-Token", internalToken);
+            // 平台级路径没有租户上下文：**不带** X-Tenant-Id，让工单服务那边按平台口径处理。
+            // 这里调 tenantId() 会抛，抛了就被下面 catch 吞成 0——面板上就永远显示 0。
+            String tenantId = TenantContextHolder.tenantIdOrNull();
+            if (tenantId != null && !tenantId.isBlank()) {
+                builder.header("X-Tenant-Id", tenantId);
+            }
+            HttpRequest request = builder.GET().build();
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() / 100 != 2) {
                 log.warn("工单计数读取失败 status={}", response.statusCode());
