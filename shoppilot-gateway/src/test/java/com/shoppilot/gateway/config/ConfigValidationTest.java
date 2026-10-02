@@ -59,7 +59,10 @@ class ConfigValidationTest {
             "SHOPPILOT_REDIS_PORT",
             // round23 票 72：工单服务地址。加 env 覆盖是扩大可配置面，
             // 家法同 ADR 0012 的日预算——所以它登记进这份清单，而不是绕过门禁。
-            "SHOPPILOT_TICKET_URL");
+            "SHOPPILOT_TICKET_URL",
+            // round23 票 76：监听地址可配。容器内必须 0.0.0.0（Docker 端口发布的要求），
+            // 而非回环绑定会触发 ADR 0029 的守卫——所以这里**只**开一个面，安全判断仍在守卫里。
+            "SHOPPILOT_SERVER_ADDRESS");
 
     private ApplicationContextRunner runner() {
         return new ApplicationContextRunner()

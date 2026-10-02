@@ -6,7 +6,7 @@ server:
   # 回环绑定是「dev 默认凭证可以用」的唯一前提（ADR 0029）：改成别的地址，
   # 三处默认值任一没被环境变量覆盖就启动失败，mock 身份签发端点也不再注册。
   # 这只是必要条件，不是防线——反向代理打进来的同样是 127.0.0.1。
-  address: 127.0.0.1
+  address: ${SHOPPILOT_SERVER_ADDRESS:127.0.0.1}
 
 spring:
   application:

@@ -83,7 +83,22 @@ pwsh -NoProfile -File scripts/check-ps-syntax.ps1
 - ⚠️ `ingest` 第一次 exit 1：我在 command 里传了 `--server.port=0`，而网关有一条硬校验
   「port 必须在 1..65535」（本仓配置纪律）。**已去掉**——本机档的 `ingest.ps1` 同样不传端口，
   靠「入库跑在网关起来之前」避开冲突，容器档保持同一套假设。去掉后 ingest 正常退出。
-- 🛑 **网关起不来，卡在一个真实的设计冲突上（需要所有者裁决，本轮不自行改）**：
+- ✅ **所有者裁决后（方案 1：容器内可绑 0.0.0.0、宿主端口仍只发布到回环），容器档真起来了**：
+  网关 readiness `UP`、四个服务 + 中间件全部 running、`/workspace/` 返回 200。落地时踩到并修掉两处：
+  1. `server.address` 改成 `${SHOPPILOT_SERVER_ADDRESS:127.0.0.1}`（三个服务），
+     新占位符**显式登记**进 `ConfigValidationTest` 的钉住清单（round19 票 50 的先例，不绕过门禁）；
+  2. compose 的凭证透传按 ADR 0029 守卫的逻辑改：`SHOPPILOT_INTERNAL_TOKEN` **不再兜底仓库默认值**
+     （兜底等于「没覆盖」，守卫会拒启动），并补上之前压根没传进容器的 `SHOPPILOT_OPS_TOKEN` /
+     `SHOPPILOT_OPS_ENABLED`。守卫第一次真拦就是它干的：
+     「拒绝启动：当前监听 0.0.0.0……`SHOPPILOT_INTERNAL_TOKEN` 未覆盖；`SHOPPILOT_OPS_TOKEN` 未覆盖，
+     运维端点也没显式关闭」——**这正是那条防线该有的行为**。
+- 🛑 **仍未解决：容器档没有演示登录路径**（ADR 0029 的第三条后果）。`AuthController` 带
+  `@Conditional(MockIdentityCondition.class)`，**只在回环绑定上注册**；容器内必须绑 `0.0.0.0`，
+  于是 `/auth/mock-token` 返回「接口不存在」，实测拿不到令牌 → 整条链路在登录这一步断掉。
+  代价即方案 1 的第三项：**「干净克隆 + 一条命令 + 打开浏览器」不成立**，
+  除非补一个用共享密钥签 HS256 的令牌签发辅助（那正是真实 IdP 做的事，不削弱任何防线），
+  或者放弃端口发布。本轮未做，登记待裁决。
+- 🛑 **本轮第一次真跑前的旧结论**（已被上面推翻，保留作对照）：
   三个服务的 `server.address` 硬编码 `127.0.0.1`（ADR 0029 的回环绑定纪律），
   而 **Docker 端口发布要求容器内绑 `0.0.0.0`**——容器里的 Tomcat 只听自己的回环，
   `127.0.0.1:8082:8082` 这条映射因此打不通，`up.ps1` 等 300 s 就绪失败。

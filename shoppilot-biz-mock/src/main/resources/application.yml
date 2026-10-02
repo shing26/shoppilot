@@ -1,7 +1,7 @@
 server:
   port: 8091
   # 只监听本机：浏览器不得直连本服务（ticket 15），网关是唯一调用方
-  address: 127.0.0.1
+  address: ${SHOPPILOT_SERVER_ADDRESS:127.0.0.1}
 
 spring:
   application:

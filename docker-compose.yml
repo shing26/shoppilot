@@ -21,9 +21,19 @@
 #   3. **不进 CI**：round15 起 CI 八步就不依赖外部服务，runner 上跑不起来那条纪律不因本档放宽。
 
 x-service-env: &service-env
-  # 内部服务凭证与本机档同源；这里不写死真值——compose 读宿主环境或 .env，两条路径行为一致。
-  SHOPPILOT_INTERNAL_TOKEN: ${SHOPPILOT_INTERNAL_TOKEN:-dev-internal-token-change-me}
+  # 内部服务凭证与本机档同源。
+  #
+  # **故意不给仓库默认值**：ADR 0029 的守卫要求「非回环绑定时三处凭证都被环境变量覆盖」，
+  # 这里兜底成 `dev-internal-token-change-me` 就等于「没覆盖」，守卫会在启动前把服务拒掉——
+  # 那是正确的失败，但报错指向 compose 而不是指向「你该导出凭证」。留空让它响亮地拦。
+  #
+  # 于是容器档的用法是：**先导出凭证，再一条命令**：
+  #   $env:SHOPPILOT_INTERNAL_TOKEN / $env:SHOPPILOT_OPS_TOKEN（或 SHOPPILOT_OPS_ENABLED=false）
+  SHOPPILOT_INTERNAL_TOKEN: ${SHOPPILOT_INTERNAL_TOKEN:-}
   SHOPPILOT_JWT_SECRET: ${SHOPPILOT_JWT_SECRET:-}
+  # 运维面：守卫认这两处之一——给 token，或显式关掉运维端点（故障注入是改状态的动作）
+  SHOPPILOT_OPS_TOKEN: ${SHOPPILOT_OPS_TOKEN:-}
+  SHOPPILOT_OPS_ENABLED: ${SHOPPILOT_OPS_ENABLED:-true}
   # 中间件：容器内端口
   SHOPPILOT_REDIS_HOST: redis
   SHOPPILOT_REDIS_PORT: "6379"
@@ -126,7 +136,11 @@ services:
     profiles: ["full"]
     restart: unless-stopped
     mem_limit: 512m
-    environment: *service-env
+    environment:
+      <<: *service-env
+      # 容器内必须绑 0.0.0.0：Docker 的端口发布是宿主→容器的 NAT，容器只听自己回环就没人能连上。
+      # 对外暴露面没变——gateway 的端口仍然只发布到宿主回环（见下方 ports）。
+      SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
     depends_on:
       redis: { condition: service_healthy }
 
@@ -140,7 +154,9 @@ services:
     profiles: ["full"]
     restart: unless-stopped
     mem_limit: 512m
-    environment: *service-env
+    environment:
+      <<: *service-env
+      SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
     depends_on:
       redis: { condition: service_healthy }
 
@@ -159,6 +175,7 @@ services:
       - "127.0.0.1:8082:8082"
     environment:
       <<: *service-env
+      SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
       SHOPPILOT_BIZMOCK_URL: http://biz-mock:8091
       SHOPPILOT_TICKET_URL: http://ticket:8092
       SHOPPILOT_KNOWLEDGE_DIR: /workspace/knowledge

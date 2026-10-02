@@ -1,7 +1,7 @@
 server:
   port: 8092
   # 只监听本机：浏览器不得直连本服务（沿用 biz-mock 的纪律），网关是唯一调用方
-  address: 127.0.0.1
+  address: ${SHOPPILOT_SERVER_ADDRESS:127.0.0.1}
 
 spring:
   application:
