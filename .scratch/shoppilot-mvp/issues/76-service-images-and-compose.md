@@ -77,9 +77,17 @@ pwsh -NoProfile -File scripts/check-ps-syntax.ps1
 - `check-ps-syntax.ps1` 32 文件 0 错（`up.ps1` / `down.ps1` 的新开关在这条里）。
 
 **未达成（照登不摘红）**：
-- **四个镜像一个都没构建出来**：Docker Hub 从这台机器不通（`registry-1.docker.io:443` 超时，
-  与 GitHub 同时段同症状），本地也没有 builder 基础镜像（只有 `eclipse-temurin:21-jre`）。
-  票面「四个服务镜像都能构建」这一条**没有验证**。这不是 Dockerfile 的问题，但也**不等于它对**。
+- **四个镜像一个都没构建出来**，且阻塞点已定位到**宿主代理工具**，不是本仓配置：
+  - 现象：`docker pull` 报 `Proxy connect error ... dial tcp 100.49.158.130:443` 超时；
+    直连 `https://registry-1.docker.io/v2/` 与 `https://github.com` 都是 `000`；
+  - 但 `https://repo.maven.apache.org` 直连 `200` —— **网络整体没问题**，只有这两个域名不通；
+  - 宿主开着系统代理（`ProxyEnable=1`，`127.0.0.1:31180/31181`，PID 35920），
+    Docker 守护进程走 `http.docker.internal:3128` 转发到它；`100.49.158.130` 是那个代理给的
+    **fake-ip**，说明请求进了代理、代理没把它送出去；
+  - 结论：**代理工具对 `registry-1.docker.io` / `github.com` 的规则或上游节点当时不可用**。
+    这不是 Dockerfile 的问题，但也**不等于它是对的**。
+- 恢复后要重跑的只有一条命令：`docker compose --profile full build`。
+  本机**没有 builder 基础镜像**（只有 `eclipse-temurin:21-jre`），所以无法离线构建、先拉是必然的。
 - 因此**容器档从未被真起过**：`-Containerized` 的构建/启动/就绪等待/停栈四条路径都只有静态核对，
   没有一次实跑。干净克隆可复现性（票 77）依赖它，所以票 77 暂时无法开始。
 
