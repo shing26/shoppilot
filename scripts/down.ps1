@@ -5,6 +5,20 @@ $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
+param(
+    # 容器档（round23 票 76）：只停本项目的 compose 服务与一次性作业，**不碰别的项目的容器**，
+    # 也不删卷（语料与索引留在卷里，下次起还是热的）。
+    [switch]$Containerized
+)
+$ErrorActionPreference = 'Continue'
+Set-Location $root
+
+if ($Containerized) {
+    docker compose --profile full down | Out-Host
+    Write-Host '容器档已停（卷保留；不带 -Containerized 则停本机 JVM 那三个服务）'
+    exit 0
+}
+
 & (Join-Path $root 'scripts\stop.ps1') -Ports '8082,8091,8092'
 
 $watchdog = Join-Path $root 'logs\watchdog.pid'

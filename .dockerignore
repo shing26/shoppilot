@@ -1,0 +1,18 @@
+# 构建镜像的上下文里不要这些东西（round23 票 76）
+#
+# 两条硬要求：
+# 1. **`.env` 不进镜像**——里面有真凭证。构建上下��只要带进 `COPY . .` 就等于把凭证烤进层里。
+# 2. `target/` 与 `logs/` 不进——前者是本机构建产物（会让镜像里的 jar 来自另一台机器），
+#    后者是本机证据。
+.git
+.github
+.env
+.env.*
+logs
+target
+**/target
+node_modules
+**/node_modules
+docs/console*.png
+eval/results
+*.log

@@ -1,3 +1,38 @@
+# ShopPilot 的中间件 + **可选**容器档（round23 票 76 / ADR 0053）
+#
+# ============================================================================
+# 两种用法，边界在 profile 上
+# ============================================================================
+#   docker compose up -d                # 只有中间件（**默认，行为与本票之前逐字一致**）
+#   docker compose --profile full up -d --build    # 中间件 + 四个域服务（干净克隆一条命令）
+#
+# 日常开发仍然用 scripts/up.ps1（本机 JVM，改代码即重启）。容器档是并行的一条路，
+# 用途是「别人 clone 下来能起」以及本机内存紧张时**让 OOM 杀掉容器**而不是杀掉
+# 你另外三个项目的容器或桌面应用。
+#
+# 服务与中间件必须在**同一个 compose 网络**里按服务名互访（`biz-mock:8091` 而非
+# `127.0.0.1:8091`）。这正是最初把它拆成第二个文件时失败的地方：跨文件要声明
+# external network，而 external 网络在中间件还没起时不存在，`config` 直接报错。
+#
+# 缺一不可的三件事，缺了收益会悄悄丢掉：
+#   1. 每个服务都有 `mem_limit` + `restart`：没有内存上限，OOM 时死的是别人的进程；
+#   2. compose 网络内用**容器内端口**（redis:6379 / qdrant:6333 / es:9200），
+#      不是宿主映射的 16379/16333/19200 —— 用错端口会连上一个根本没起的东西；
+#   3. **不进 CI**：round15 起 CI 八步就不依赖外部服务，runner 上跑不起来那条纪律不因本档放宽。
+
+x-service-env: &service-env
+  # 内部服务凭证与本机档同源；这里不写死真值——compose 读宿主环境或 .env，两条路径行为一致。
+  SHOPPILOT_INTERNAL_TOKEN: ${SHOPPILOT_INTERNAL_TOKEN:-dev-internal-token-change-me}
+  SHOPPILOT_JWT_SECRET: ${SHOPPILOT_JWT_SECRET:-}
+  # 中间件：容器内端口
+  SHOPPILOT_REDIS_HOST: redis
+  SHOPPILOT_REDIS_PORT: "6379"
+  SHOPPILOT_QDRANT_URL: http://qdrant:6333
+  SHOPPILOT_ES_URL: http://elasticsearch:9200
+  # 模型走宿主 Ollama：容器化 Ollama 要处理 Windows + WSL2 + GPU 直通，那是另一个量级的坑，
+  # 而模型那 3.1 GB 本来就在宿主上——走这条路并不省这块内存。
+  SHOPPILOT_OLLAMA_URL: http://host.docker.internal:11434
+
 services:
   redis:
     image: redis:7-alpine
@@ -52,6 +87,84 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+
+  # ---- 可选容器档：四个域服务（profile full）---------------------------------
+  # 一次性作业：政策知识库入库。本机档是 scripts/ingest.ps1 用 maven 起一次网关 jar，
+  # 容器档用同一个镜像 + ingest profile，跑完退出（restart: "no"）。
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: shoppilot-gateway
+    image: shoppilot/gateway:local
+    profiles: ["full"]
+    restart: "no"
+    mem_limit: 640m
+    command: ["--spring.profiles.active=ingest", "--server.port=0"]
+    environment:
+      <<: *service-env
+      SHOPPILOT_KNOWLEDGE_DIR: /workspace/knowledge
+      LOG_APP: ingest
+    volumes:
+      # 语料只读挂载：它是这一档唯一需要读宿主磁盘的东西
+      - ./knowledge:/workspace/knowledge:ro
+    depends_on:
+      qdrant: { condition: service_healthy }
+      elasticsearch: { condition: service_healthy }
+
+  biz-mock:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: shoppilot-biz-mock
+    image: shoppilot/biz-mock:local
+    profiles: ["full"]
+    restart: unless-stopped
+    mem_limit: 512m
+    environment: *service-env
+    depends_on:
+      redis: { condition: service_healthy }
+
+  ticket:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: shoppilot-ticket
+    image: shoppilot/ticket:local
+    profiles: ["full"]
+    restart: unless-stopped
+    mem_limit: 512m
+    environment: *service-env
+    depends_on:
+      redis: { condition: service_healthy }
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: shoppilot-gateway
+    image: shoppilot/gateway:local
+    profiles: ["full"]
+    restart: unless-stopped
+    mem_limit: 768m
+    ports:
+      # 调试台与坐席工作台的唯一入口：浏览器只经网关访问内部服务（票 15 纪律）
+      - "127.0.0.1:8082:8082"
+    environment:
+      <<: *service-env
+      SHOPPILOT_BIZMOCK_URL: http://biz-mock:8091
+      SHOPPILOT_TICKET_URL: http://ticket:8092
+      SHOPPILOT_KNOWLEDGE_DIR: /workspace/knowledge
+    volumes:
+      - ./knowledge:/workspace/knowledge:ro
+    depends_on:
+      ingest: { condition: service_completed_successfully }
+      biz-mock: { condition: service_started }
+      ticket: { condition: service_started }
 
 volumes:
   qdrant-data:

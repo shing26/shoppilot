@@ -6,6 +6,9 @@ param(
     [ValidateSet('local', 'dev', 'perf')] [string]$Profile = 'local',
     [switch]$SkipBuild,
     [switch]$SkipIngest,
+    # 可选容器档（round23 票 76）：四个域服务跑在容器里，干净克隆一条命令起全栈。
+    # **默认路径不变**——不带这个开关时仍然起本机 JVM，改代码即重启是日常开发的形态。
+    [switch]$Containerized,
     [string]$MvnArgs = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -35,6 +38,34 @@ function Wait-For([scriptblock]$check, [string]$what, [int]$seconds) {
     }
     Write-Host "  !! 等不到 $what（$seconds s）" -ForegroundColor Yellow
     return $false
+}
+
+if ($Containerized) {
+    if ($SkipBuild) { throw '-Containerized 与 -SkipBuild 互斥：容器档自己构建镜像，没有「用现成 jar」这档' }
+    # 容器档不需要本机 JDK：镜像里那一份由 Dockerfile 的 build stage 提供。
+    Write-Host '档位：容器（--profile full）。默认路径仍是本机 JVM。' -ForegroundColor Cyan
+    docker compose up -d | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw '中间件启动失败' }
+    foreach ($triple in @(@(16379, 'Redis', 'shoppilot-redis'), @(16333, 'Qdrant', 'shoppilot-qdrant'), @(19200, 'Elasticsearch', 'shoppilot-es'))) {
+        if (-not (Wait-For { Test-Port $triple[0] } "$($triple[1]) :$($triple[0])" 180)) {
+            throw "$($triple[1]) 没起来，看 docker logs $($triple[2])"
+        }
+    }
+    Write-Host '  构建四个域服务的镜像（首次较慢：要下 Maven 依赖）' -ForegroundColor Cyan
+    docker compose --profile full build | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw '镜像构建失败' }
+    Write-Host '  起服务（含一次性 ingest 作业）' -ForegroundColor Cyan
+    docker compose --profile full up -d | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw '服务启动失败' }
+    if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8082/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } '网关 :8082' 300)) {
+        Write-Host '  !! 网关没就绪；看 docker compose logs gateway' -ForegroundColor Yellow
+    }
+    Write-Host ''
+    Write-Host '栈已就绪（容器档）：' -ForegroundColor Green
+    Write-Host '  调试台   http://127.0.0.1:8082/'
+    Write-Host '  坐席工作台 http://127.0.0.1:8082/workspace/'
+    Write-Host '  停    栈 pwsh -NoProfile -File scripts/down.ps1 -Containerized'
+    exit 0
 }
 
 Write-Host '[1/7] 中间件容器' -ForegroundColor Cyan
