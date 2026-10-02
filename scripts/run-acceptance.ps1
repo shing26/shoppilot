@@ -81,6 +81,10 @@ $steps = [ordered]@{
     task      = @{ Kind = 'py'; Cmd = 'scripts\eval_task.py'; Arg = @(); Need = $false; Skip = $false; Expect = @('TASK SELFCHECK') }
     funnel    = @{ Kind = 'py'; Cmd = 'scripts\retrieval_gate.py'; Arg = @(); Need = $false; Skip = $false; Expect = @('RETRIEVAL GATE ok') }
     console   = @{ Kind = 'node'; Cmd = 'scripts\verify-console.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('console checks passed') }
+    # round23 票 73：坐席工作台（队列/领取/处理/释放）。排在 console 之后——
+    # 它和 console 是同一类浏览器断言，而工单要等网关与工单服务都就绪才有东西可看。
+    # 本轮按裁定 A 未实跑（起栈要 ≈7 GB），落点是「脚本就位 + 语法核对」，不是读数。
+    workspace = @{ Kind = 'node'; Cmd = 'scriptserify-workspace.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('坐席工作台断言') }
     # round17 新增的五条（ADR 0034 / 0035 / 0038 / 0039 / 0036）：都排在 console 之后——
     # 情绪门与计划两步都要打模型，重负载压在浏览器形状断言之前会给门禁制造假红（同 eval 那条的理由）。
     # 五条各自的语义断言另有 0 token 的 JVM 用例兜底（SentimentGateTest / ChannelFlowJvmTest /

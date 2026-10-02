@@ -80,34 +80,43 @@ public class OpsController {
         this.errors = errors;
     }
 
-    /** 本店工单队列，按当前身份的租户隔离（工单数据在工单服务，票 72）。 */
+    /**
+     * 本店工单队列（工单数据在工单服务，票 72）。
+     *
+     * <p><b>要运维凭证</b>（票 73 补）：队列里是别人的会话原文与诉求，读队列和改队列一样要门。
+     * 此前它只过买家 JWT——那在本仓的口径下等于「任何登录用户都能翻人工队列」。
+     */
     @GetMapping("/tickets")
     public ResponseEntity<String> listTickets(
             @RequestParam(required = false) String queue,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
         String query = (queue == null || queue.isBlank()) ? "" : "?queue=" + queue
                 + (status == null || status.isBlank() ? "" : "&status=" + status);
-        return forwardToTicket("GET", "/api/tickets" + query, null);
+        return guardedTicket("GET", "/api/tickets" + query, null, opsToken, null);
     }
 
     /** 坐席领取：同一张单恰好一人领得到，领不到回 409（工单服务侧的条件更新保证）。 */
     @PostMapping("/tickets/{ticketId}/claim")
     public ResponseEntity<String> claimTicket(@PathVariable String ticketId,
-                                              @RequestHeader(value = "X-Agent", required = false) String agent) {
-        return forwardToTicket("POST", "/api/tickets/" + ticketId + "/claim", null, agent);
+                                              @RequestHeader(value = "X-Agent", required = false) String agent,
+                                              @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        return guardedTicket("POST", "/api/tickets/" + ticketId + "/claim", null, opsToken, agent);
     }
 
     @PostMapping("/tickets/{ticketId}/release")
     public ResponseEntity<String> releaseTicket(@PathVariable String ticketId,
-                                                @RequestHeader(value = "X-Agent", required = false) String agent) {
-        return forwardToTicket("POST", "/api/tickets/" + ticketId + "/release", null, agent);
+                                                @RequestHeader(value = "X-Agent", required = false) String agent,
+                                                @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        return guardedTicket("POST", "/api/tickets/" + ticketId + "/release", null, opsToken, agent);
     }
 
     @PostMapping("/tickets/{ticketId}/resolve")
     public ResponseEntity<String> resolveTicket(@PathVariable String ticketId,
                                                 @RequestBody Map<String, Object> body,
-                                                @RequestHeader(value = "X-Agent", required = false) String agent) {
-        return forwardToTicket("POST", "/api/tickets/" + ticketId + "/resolve", body, agent);
+                                                @RequestHeader(value = "X-Agent", required = false) String agent,
+                                                @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        return guardedTicket("POST", "/api/tickets/" + ticketId + "/resolve", body, opsToken, agent);
     }
 
     /** ingest 待复核队列（ADR 0039）：DOWN 且未复核的反馈，人工从这里认领。 */
@@ -150,8 +159,9 @@ public class OpsController {
      */
     @PatchMapping("/tickets/{ticketId}/status")
     public ResponseEntity<String> updateTicketStatus(@PathVariable String ticketId,
-                                                     @RequestBody Map<String, Object> body) {
-        return forwardToTicket("PATCH", "/api/tickets/" + ticketId + "/status", body);
+                                                     @RequestBody Map<String, Object> body,
+                                                     @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        return guardedTicket("PATCH", "/api/tickets/" + ticketId + "/status", body, opsToken, null);
     }
 
     @GetMapping("/fault")
@@ -372,6 +382,24 @@ public class OpsController {
             return denied(access);
         }
         return forward(method, path, body, false);
+    }
+
+    /**
+     * 工单动作端点的守卫：**先验运维凭证，再转给工单服务**。
+     *
+     * <p>票 73 建工作台时补上——票 72 新增的 claim/release/resolve 只过了买家 JWT，
+     * 而这三个动作会改工单状态与领取人。那不是「读队列」那种只读面。
+     *
+     * <p>凭证形态沿用既有运维口径（{@code X-Ops-Token}）：真身份域是下一轮（ADR 0056），
+     * 在那之前它是**自报**的，所以它守的是「不是随便一个人」，不是「是谁」。
+     */
+    private ResponseEntity<String> guardedTicket(String method, String path, Map<String, Object> body,
+                                                 String opsToken, String agent) {
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed()) {
+            return denied(access);
+        }
+        return forwardToTicket(method, path, body, agent);
     }
 
     /**

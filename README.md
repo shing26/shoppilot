@@ -25,6 +25,8 @@
 
 ![调试台](docs/console.png)
 
+> 坐席工作台（`/workspace/`，round23 票 73）：工单队列、领取、处理完成、释放。凭证是 `X-Ops-Token` + 自报坐席名（**真身份域是下一轮**，ADR 0056）。
+
 ## 接手导航
 
 按目的先读下面入口，再进入 ticket 和源码：
@@ -84,6 +86,7 @@ ollama pull qwen2.5:3b                            # local 模式的生成模型
 mvn -o -DskipTests package                        # 干净机器去掉 -o 联网取依赖；或用 .\mvnw.cmd
 pwsh -NoProfile -File scripts/start-bizmock.ps1   # :8091，seed 3 租户 / 200 买家 / 5 万订单
 pwsh -NoProfile -File scripts/start-ticket.ps1    # :8092，工单与坐席服务（round23 票 72）
+# 坐席工作台（round23 票 73）：http://127.0.0.1:8082/workspace/ （由网关同源提供，见 frontend-workspace/）
 # 验收矩阵分两档（round23 票 74）：档位切的是**步骤集合**，判据逐字相同
 pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier daily   # 日常档：不起栈，只跑 0 token 与 JVM 层（≈3.5 GB → 实际不到 1 GB）
 pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四服务 + 活体链路（≈7 GB，仅清场日）

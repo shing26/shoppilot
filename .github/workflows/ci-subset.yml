@@ -106,6 +106,33 @@ jobs:
           cd ops/alerts
           "$PROMTOOL" test rules shoppilot.rules.test.yml
 
+      # round23 票 73 / ADR 0057：坐席工作台的前端构建门禁。**产物入库**（所有者裁定 E），
+      # 所以这一步不只是「能构建」——它还要证明**构建结果与仓里那份逐字节一致**：
+      # 重新构建再 `git diff`，产物漂了就红。
+      #
+      # 代价照 ADR 0051 那一档写实：这是本仓 CI 子集里**第二个**需要下载外部东西的步骤
+      # （第一个是 promtool）。但它与 promtool 不同：node 来自 runner 自带的 setup-node，
+      # 依赖由 lockfile 钉死、下载量在几十 MB 量级，且**失败时不影响前面那些步骤的结论**——
+      # 排在 promtool 之后就是这个理由。
+      - name: Set up Node for the workspace build
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend-workspace/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend-workspace/package-lock.json
+
+      - name: Workspace build (frontend, 0-token)
+        run: |
+          set -euo pipefail
+          cd frontend-workspace
+          npm ci --no-fund --no-audit
+          npm run typecheck
+          npm run build
+          cd ..
+          # 产物入库，所以「构建成功」不够：它必须和仓里那份一样。
+          git diff --exit-code -- shoppilot-gateway/src/main/resources/static/workspace \
+            || (echo '::error::工作台构建产物与仓内不一致——改了源码请重新构建并提交产物' && exit 1)
+
       - name: Upload Surefire reports on failure
         if: failure()
         uses: actions/upload-artifact@v7
