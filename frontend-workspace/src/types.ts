@@ -26,6 +26,13 @@ export interface Ticket {
 
 export const QUEUES = ['ALL', 'ESCALATION', 'REFUND', 'REVIEW', 'REPLY', 'DEFAULT'] as const
 
+/** 优先级的可读名：领域名（TicketPriority）与存储字面量（high/money/normal）在页面上对齐成一处。 */
+export const PRIORITY_LABEL: Record<string, string> = {
+  high: '紧急',
+  money: '资金',
+  normal: '普通',
+}
+
 /** 优先级排序用的名次：越小越靠前。与后端 `TicketPriority.rank` 同一份口径。 */
 export function priorityRank(priority: string | null): number {
   if (priority === 'high') return 0

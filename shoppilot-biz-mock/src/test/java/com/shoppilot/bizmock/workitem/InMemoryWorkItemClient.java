@@ -50,6 +50,11 @@ public class InMemoryWorkItemClient implements WorkItemClient {
     }
 
     @Override
+    public int count() {
+        return created.size();
+    }
+
+    @Override
     public boolean available() {
         return !unavailable;
     }

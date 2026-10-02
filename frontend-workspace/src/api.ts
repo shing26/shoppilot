@@ -18,8 +18,12 @@ export interface ApiResult<T> {
 
 const BASE = '/api/v1/support/ops'
 
-export async function api<T>(method: string, path: string, opts: { opsToken?: string; agent?: string; body?: unknown } = {}): Promise<ApiResult<T>> {
+export async function api<T>(method: string, path: string, opts: { opsToken?: string; agent?: string; authToken?: string; body?: unknown } = {}): Promise<ApiResult<T>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  // **两个凭证都要**：ops 端点过两道路口——AuthFilter 要买家 JWT，OpsController 要运维令牌。
+  // 少带一个就是 401，而页面看起来只是「队列是空的」。第一版就漏了 JWT，
+  // 是清场日把「队列空必须判红」改成硬断言才把它逼出来的。
+  if (opts.authToken?.trim()) headers.Authorization = `Bearer ${opts.authToken.trim()}`
   if (opts.opsToken?.trim()) headers['X-Ops-Token'] = opts.opsToken.trim()
   if (opts.agent?.trim()) headers['X-Agent'] = opts.agent.trim()
   let res: Response
@@ -48,22 +52,49 @@ export async function api<T>(method: string, path: string, opts: { opsToken?: st
  * **401/403** 是「凭证不对」、**其余非 2xx** 是下游的问题。三者混成一句「加载失败」
  * 就是调试台那轮修掉的毛病。
  */
-export function listTickets(queue: string, opsToken: string): Promise<ApiResult<Ticket[]>> {
+export function listTickets(queue: string, creds: Creds): Promise<ApiResult<Ticket[]>> {
   const query = queue && queue !== 'ALL' ? `?queue=${encodeURIComponent(queue)}` : ''
-  return api<Ticket[]>('GET', `/tickets${query}`, { opsToken })
+  return api<Ticket[]>('GET', `/tickets${query}`, { ...creds })
+}
+
+/** 一次 ops 调用需要的两个凭证。 */
+export interface Creds {
+  opsToken: string
+  authToken: string
+  agent: string
+}
+
+/**
+ * 取演示用的买家 JWT（调试台同一套家法）。
+ *
+ * <p>`/auth/` 路径不在 AuthFilter 的拦截面上，所以这一调用不需要先有令牌——
+ * 这正是「演示入口」与「真身份」在本仓的区别（ADR 0014）。
+ */
+export async function fetchDemoToken(tenantId: string, customerId: string): Promise<string> {
+  try {
+    const res = await fetch('/auth/mock-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantId, customerId }),
+    })
+    const text = await res.text()
+    return text ? (JSON.parse(text).token ?? '') : ''
+  } catch (unreachable) {
+    return ''
+  }
 }
 
 /** 领取。204 领到、409 已被别人领走、404 不存在或不是本店的（工单服务侧保证）。 */
-export function claimTicket(id: string, agent: string, opsToken: string): Promise<ApiResult<unknown>> {
-  return api<unknown>('POST', `/tickets/${encodeURIComponent(id)}/claim`, { opsToken, agent })
+export function claimTicket(id: string, creds: Creds): Promise<ApiResult<unknown>> {
+  return api<unknown>('POST', `/tickets/${encodeURIComponent(id)}/claim`, { ...creds })
 }
 
-export function releaseTicket(id: string, agent: string, opsToken: string): Promise<ApiResult<unknown>> {
-  return api<unknown>('POST', `/tickets/${encodeURIComponent(id)}/release`, { opsToken, agent })
+export function releaseTicket(id: string, creds: Creds): Promise<ApiResult<unknown>> {
+  return api<unknown>('POST', `/tickets/${encodeURIComponent(id)}/release`, { ...creds })
 }
 
-export function resolveTicket(id: string, agent: string, opsToken: string, note: string): Promise<ApiResult<unknown>> {
-  return api<unknown>('POST', `/tickets/${encodeURIComponent(id)}/resolve`, { opsToken, agent, body: { note } })
+export function resolveTicket(id: string, creds: Creds, note: string): Promise<ApiResult<unknown>> {
+  return api<unknown>('POST', `/tickets/${encodeURIComponent(id)}/resolve`, { ...creds, body: { note } })
 }
 
 /**

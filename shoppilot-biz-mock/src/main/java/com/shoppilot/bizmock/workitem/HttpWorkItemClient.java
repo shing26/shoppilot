@@ -89,6 +89,26 @@ public class HttpWorkItemClient implements WorkItemClient {
     }
 
     @Override
+    public int count() {
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/tickets/count"))
+                    .timeout(timeout)
+                    .header("X-Internal-Token", internalToken)
+                    .header("X-Tenant-Id", TenantContextHolder.tenantId())
+                    .GET().build();
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() / 100 != 2) {
+                log.warn("工单计数读取失败 status={}", response.statusCode());
+                return 0;
+            }
+            return mapper.readTree(response.body()).path("count").asInt(0);
+        } catch (Exception unreachable) {
+            log.warn("工单服务不可达，计数按 0 计: {}", unreachable.getMessage());
+            return 0;
+        }
+    }
+
+    @Override
     public boolean available() {
         try {
             http.send(HttpRequest.newBuilder(URI.create(baseUrl + "/actuator/health"))

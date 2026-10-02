@@ -29,10 +29,13 @@ public class WorkItemService {
     private final TicketRepository ticketRepository;
     private final RoutingService routingService;
     private final AuditPublisher auditPublisher;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     public WorkItemService(TicketRepository ticketRepository, RoutingService routingService,
-                           AuditPublisher auditPublisher) {
+                           AuditPublisher auditPublisher,
+                           org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
         this.ticketRepository = ticketRepository;
+        this.jdbcTemplate = jdbcTemplate;
         this.routingService = routingService;
         this.auditPublisher = auditPublisher;
     }
@@ -63,6 +66,50 @@ public class WorkItemService {
     public TicketView createFromReason(String customerId, String reason, String userQuery, String transcript,
                                        String priority) {
         return create(TicketSource.ofReason(reason), customerId, reason, userQuery, transcript, priority, null);
+    }
+
+    /**
+     * 全平台工单总数（运维面板用）。
+     *
+     * <p>用原生 SQL 刻意绕开 {@code @TenantId}：平台侧运维要的是**跨租户总量**
+     * （与 biz-mock 的 {@code /api/admin/stats} 同一口径），而带 {@code @TenantId} 的仓储查询
+     * 在没有请求上下文时只会数到 PLATFORM 那一份，等于恒为 0。
+     *
+     * <p>这条路径按 ADR 0005 属于平台级读取，所以内部认证过滤器对它单独放行（不经租户上下文）。
+     */
+    @Transactional(readOnly = true)
+    public long countAll() {
+        Long total = jdbcTemplate.queryForObject("select count(*) from tickets", Long.class);
+        return total == null ? 0L : total;
+    }
+
+    /**
+     * 直接流转状态（运维调试台用，round23 票 75 补回）。
+     *
+     * <p><b>为什么补</b>：票 72 把工单表搬走时，运维页那张「状态流转」按钮跟到了新服务，
+     * 而新服务只实现了 claim/release/resolve 三个动作端点、没有 {@code /status}——
+     * 于是那条按钮 404，{@code verify-console.mjs} 的「工单状态流转」断言整条红。
+     *
+     * <p><b>它与三个动作端点的分工</b>：动作端点带审计与归属校验（谁领的、谁结的）；
+     * 这个是运维直改状态机，**同样走 {@link TicketStatus} 的流转校验**，不额外开口子。
+     */
+    @Transactional
+    public boolean transition(String ticketId, String rawStatus) {
+        TicketStatus target = TicketStatus.parse(rawStatus);
+        if (target == null) {
+            throw new IllegalArgumentException("未知工单状态 " + rawStatus + "，可选 " + TicketStatus.names());
+        }
+        return ticketRepository.findByIdAndTenantId(ticketId, TenantContextHolder.tenantId())
+                .map(ticket -> {
+                    TicketStatus current = TicketStatus.parse(ticket.getStatus());
+                    if (current == null || !current.canTransitionTo(target)) {
+                        throw new IllegalStateException("工单不允许从 " + ticket.getStatus() + " 流转到 " + target);
+                    }
+                    ticket.setStatus(target.name());
+                    ticketRepository.save(ticket);
+                    return true;
+                })
+                .orElse(false);
     }
 
     /** 按号取一张本店的工单；跨租户与不存在同答案（404）。 */

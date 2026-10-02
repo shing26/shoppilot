@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 工单与坐席端点（round23 票 72 / ADR 0053、0055）。
@@ -74,6 +76,34 @@ public class TicketController {
     }
 
     /**
+     * 本店工单总数。单独一个端点而不是让调用方拉全量自己数：
+     * 「数一下」这个需求不该变成一次全表传输。
+     */
+    @GetMapping("/count")
+    public Map<String, Long> count() {
+        return Map.of("count", service.countAll());
+    }
+
+    /**
+    /**
+     * 运维直改状态机（调试台的状态流转按钮）。走与动作端点同一套流转校验与租户口径；
+     * 非法流转回 409、未知状态值回 400。
+     */
+    @PatchMapping("/{ticketId}/status")
+    public ResponseEntity<Void> transition(@PathVariable String ticketId,
+                                           @RequestBody StatusRequest request) {
+        try {
+            return service.transition(ticketId, request.status())
+                    ? ResponseEntity.noContent().build()
+                    : ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException unknownStatus) {
+            return ResponseEntity.badRequest().build();
+        } catch (IllegalStateException illegalTransition) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+    }
+
+    /**
      * 按号取一张工单。跨租户与不存在同答案（404）——不区分「存在但不可见」。
      */
     @GetMapping("/{ticketId}")
@@ -121,5 +151,8 @@ public class TicketController {
     }
 
     public record ResolveRequest(String note) {
+    }
+
+    public record StatusRequest(String status) {
     }
 }

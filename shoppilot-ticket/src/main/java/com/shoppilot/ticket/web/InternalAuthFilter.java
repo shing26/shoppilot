@@ -42,6 +42,17 @@ public class InternalAuthFilter extends OncePerRequestFilter {
             reject(response, "missing or invalid internal token");
             return;
         }
+        // 平台级读取（跨租户总量，口径同 biz-mock 的 /api/admin/stats）：只要内部凭证，不要租户上下文。
+        // 之前没有这一条，运维面板上的工单数恒为 0——那是本次清场日实测读到的数。
+        if (isPlatformScoped(request)) {
+            try {
+                TenantContextHolder.setPlatform();
+                chain.doFilter(request, response);
+            } finally {
+                TenantContextHolder.clear();
+            }
+            return;
+        }
         String tenantId = blankToNull(request.getHeader("X-Tenant-Id"));
         if (tenantId == null) {
             reject(response, "missing tenant context");
@@ -54,6 +65,11 @@ public class InternalAuthFilter extends OncePerRequestFilter {
             // 虚拟线程下必须显式清理，否则线程复用时身份串号
             TenantContextHolder.clear();
         }
+    }
+
+    /** 平台级路径：只此一条，且写明理由——再多一条就要重新论证 ADR 0005 的边界。 */
+    private static boolean isPlatformScoped(HttpServletRequest request) {
+        return request.getRequestURI().startsWith("/api/tickets/count");
     }
 
     private static void reject(HttpServletResponse response, String message) throws IOException {

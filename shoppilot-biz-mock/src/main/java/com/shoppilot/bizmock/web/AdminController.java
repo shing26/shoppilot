@@ -2,6 +2,7 @@ package com.shoppilot.bizmock.web;
 
 import com.shoppilot.bizmock.fault.FaultInjector;
 import com.shoppilot.bizmock.seed.SeedRunner;
+import com.shoppilot.bizmock.workitem.WorkItemClient;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,11 +23,15 @@ public class AdminController {
     private final FaultInjector faultInjector;
     private final SeedRunner seedRunner;
     private final JdbcTemplate jdbcTemplate;
+    /** 工单数归工单服务管（ADR 0053「跨域只走 API」），所以这一个数要走 API 问它。 */
+    private final WorkItemClient workItemClient;
 
-    public AdminController(FaultInjector faultInjector, SeedRunner seedRunner, JdbcTemplate jdbcTemplate) {
+    public AdminController(FaultInjector faultInjector, SeedRunner seedRunner, JdbcTemplate jdbcTemplate,
+                           WorkItemClient workItemClient) {
         this.faultInjector = faultInjector;
         this.seedRunner = seedRunner;
         this.jdbcTemplate = jdbcTemplate;
+        this.workItemClient = workItemClient;
     }
 
     /**
@@ -41,7 +46,10 @@ public class AdminController {
         stats.put("orders", count("orders"));
         stats.put("logisticsNodes", count("logistics"));
         stats.put("refunds", count("refunds"));
-        stats.put("tickets", count("tickets"));
+        // 换代指针（round23 票 72）：tickets 表随工单数据搬去了 shoppilot-ticket，这边由 V6 删掉了。
+        // **清场日的活体验收抓到的**：这一行曾经还在查它，于是 /api/admin/stats 与
+        // /api/admin/demo/reset 一起 500，而 JVM 全绿——JVM 用例从不打这两个运维端点。
+        stats.put("tickets", workItemClient.count());
         return stats;
     }
 

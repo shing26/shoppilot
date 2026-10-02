@@ -37,10 +37,15 @@ spring:
 
 shoppilot:
   ticket:
+    # 内部服务凭证，与 biz-mock 同一个来源（ADR 0002 的服务间边界、ADR 0029 的密钥门控）。
+    # 这一格是**清场日活体验收抓出来的**：它曾经漏在这里，而所有测试都传了同名覆盖，
+    # 于是测试替生产配置打了掩护——服务带着默认配置启动会直接死在 bean 构造上。
+    # `ProductionConfigSelfCheckTest` 现在不带任何覆盖地起上下文，专门守这一类洞。
+    internal-token: ${SHOPPILOT_INTERNAL_TOKEN:dev-internal-token-change-me}
     # 审计流：发出去就行，落表由 biz-mock 的消费者做（ADR 0054）。
     redis:
-      host: 127.0.0.1
-      port: 16379
+      host: ${SHOPPILOT_REDIS_HOST:127.0.0.1}
+      port: ${SHOPPILOT_REDIS_PORT:16379}
     # 没有 seed 订单：工单不产生订单，数据全靠调用方落单（ADR 0053「跨域只走 API」）
     seed:
       enabled: false

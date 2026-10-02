@@ -15,6 +15,17 @@ public final class TenantContextHolder {
     private TenantContextHolder() {
     }
 
+    /**
+     * 平台级上下文：租户为 null（平台侧跨租户读取）。
+     *
+     * <p>{@link #tenantId()} 在这种上下文下仍然抛——业务代码不该在平台上下文里跑，
+     * 只有走原生 SQL 绕开 {@code @TenantId} 的运维统计才需要它。
+     */
+    public static void setPlatform() {
+        TENANT.remove();
+        CUSTOMER.remove();
+    }
+
     public static void set(String tenantId, String customerId) {
         TENANT.set(tenantId);
         CUSTOMER.set(customerId);

@@ -13,11 +13,13 @@
  * </ol>
  */
 import { computed, onMounted, ref } from 'vue'
-import { claimTicket, describe, listTickets, messageOf, releaseTicket, resolveTicket } from './api'
-import { QUEUES, minutesLeft, priorityRank, type Ticket } from './types'
+import { claimTicket, describe, fetchDemoToken, listTickets, messageOf, releaseTicket, resolveTicket, type Creds } from './api'
+import { PRIORITY_LABEL, QUEUES, minutesLeft, priorityRank, type Ticket } from './types'
 
 const opsToken = ref(localStorage.getItem('shoppilot.opsToken') ?? '')
 const agent = ref(localStorage.getItem('shoppilot.agent') ?? '')
+/** 买家 JWT：ops 端点要两道路口，这一半由 /auth/mock-token 现取（同调试台的家法，ADR 0014）。 */
+const authToken = ref(localStorage.getItem('shoppilot.authToken') ?? '')
 const queue = ref<string>('ALL')
 const tickets = ref<Ticket[]>([])
 const loadError = ref('')
@@ -26,6 +28,12 @@ const inFlight = ref<string>('')
 const now = ref(Date.now())
 
 let timer = 0
+
+const creds = computed<Creds>(() => ({
+  opsToken: opsToken.value,
+  authToken: authToken.value,
+  agent: agent.value,
+}))
 
 const sorted = computed(() =>
   [...tickets.value].sort((a, b) => {
@@ -42,14 +50,18 @@ async function refresh() {
     tickets.value = []
     return
   }
-  const result = await listTickets(queue.value, opsToken.value)
+  if (!authToken.value) {
+    authToken.value = await fetchDemoToken('T001', 'C001')
+    localStorage.setItem('shoppilot.authToken', authToken.value)
+  }
+  const result = await listTickets(queue.value, creds.value)
   if (result.status === 0) {
     loadError.value = messageOf(result.body) ?? '网关不可达'
     tickets.value = []
     return
   }
   if (result.status === 401 || result.status === 403) {
-    loadError.value = '运维凭证不对'
+    loadError.value = '凭证不对（要运维令牌 + 买家身份，两个都缺一不可）'
     tickets.value = []
     return
   }
@@ -71,10 +83,10 @@ async function run(ticket: Ticket, kind: 'claim' | 'release' | 'resolve') {
   actionNote.value = ''
   const result =
     kind === 'claim'
-      ? await claimTicket(ticket.id, agent.value, opsToken.value)
+      ? await claimTicket(ticket.id, creds.value)
       : kind === 'release'
-        ? await releaseTicket(ticket.id, agent.value, opsToken.value)
-        : await resolveTicket(ticket.id, agent.value, opsToken.value, '')
+        ? await releaseTicket(ticket.id, creds.value)
+        : await resolveTicket(ticket.id, creds.value, '')
   actionNote.value = describe(result, { claim: '已领取', release: '已释放', resolve: '已处理完成' }[kind])
   inFlight.value = ''
   await refresh()
@@ -126,13 +138,14 @@ function slaText(ticket: Ticket): string {
 
     <table v-if="sorted.length">
       <thead>
-        <tr><th>工单号</th><th>来源</th><th>队列</th><th>诉求</th><th>SLA</th><th>状态</th><th>操作</th></tr>
+        <tr><th>工单号</th><th>来源</th><th>队列</th><th>优先级</th><th>诉求</th><th>SLA</th><th>状态</th><th>操作</th></tr>
       </thead>
       <tbody>
         <tr v-for="t in sorted" :key="t.id">
           <td class="mono">{{ t.id }}</td>
           <td>{{ t.source }}</td>
           <td>{{ t.queue }}</td>
+          <td :class="{ urgent: t.priority === 'high' }">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</td>
           <td class="query">{{ t.userQuery }}</td>
           <td :class="{ overdue: !!t.escalatedAt }">{{ slaText(t) }}</td>
           <td>{{ t.status }}<span v-if="t.assignee"> / {{ t.assignee }}</span></td>
@@ -159,6 +172,7 @@ th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; v
 .mono { font-family: ui-monospace, monospace; }
 .query { max-width: 320px; }
 .overdue { color: #b42318; }
+.urgent { color: #b42318; font-weight: 600; }
 .err { color: #b42318; }
 .note { color: #146c2e; }
 .empty { color: #666; }
