@@ -57,8 +57,10 @@ if ($Containerized) {
     Write-Host '  起服务（含一次性 ingest 作业）' -ForegroundColor Cyan
     docker compose --profile full up -d | Out-Host
     if ($LASTEXITCODE -ne 0) { throw '服务启动失败' }
+    # 就绪失败必须**失败**，不能打一句「栈已就绪」就当成了——本机档那条路径是 throw，
+    # 容器档曾经只 warn 然后照样打印就绪横幅，那是一句假绿（本轮实测踩到）。
     if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8082/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } '网关 :8082' 300)) {
-        Write-Host '  !! 网关没就绪；看 docker compose logs gateway' -ForegroundColor Yellow
+        throw '网关未就绪，看 docker compose logs gateway'
     }
     Write-Host ''
     Write-Host '栈已就绪（容器档）：' -ForegroundColor Green

@@ -101,7 +101,10 @@ services:
     profiles: ["full"]
     restart: "no"
     mem_limit: 640m
-    command: ["--spring.profiles.active=ingest", "--server.port=0"]
+    # 不传 --server.port：网关有一条硬校验「port 必须在 1..65535」（本仓配置纪律），
+    # 而「用 0 表示随机端口」会被它当场拒绝。本机档的 scripts/ingest.ps1 同样不传端口——
+    # 它靠「入库跑在网关起来之前」来避开端口冲突，容器档保持同一套假设。
+    command: ["--spring.profiles.active=ingest"]
     environment:
       <<: *service-env
       SHOPPILOT_KNOWLEDGE_DIR: /workspace/knowledge

@@ -76,6 +76,24 @@ pwsh -NoProfile -File scripts/check-ps-syntax.ps1
   这一项票面要求「缺任一项即判红」，所以它是自检出来的，不是「写上就算」；
 - `check-ps-syntax.ps1` 32 文件 0 错（`up.ps1` / `down.ps1` 的新开关在这条里）。
 
+**第一次真跑（2026-10-02 晚）的结果**：
+- ✅ **四个镜像全部构建出来**（ticket 721MB / biz-mock 721MB / gateway 664MB）。**基础镜像本地化**绕过了
+  宿主代理对 Docker Hub 的封锁：`docker pull docker.m.daocloud.io/library/maven:3.9-eclipse-temurin-21` 再
+  `docker tag` 回原名，Dockerfile 的 `FROM` 就命中本地镜像、完全不碰 registry。这条路子不需改宿主任何配置。
+- ⚠️ `ingest` 第一次 exit 1：我在 command 里传了 `--server.port=0`，而网关有一条硬校验
+  「port 必须在 1..65535」（本仓配置纪律）。**已去掉**——本机档的 `ingest.ps1` 同样不传端口，
+  靠「入库跑在网关起来之前」避开冲突，容器档保持同一套假设。去掉后 ingest 正常退出。
+- 🛑 **网关起不来，卡在一个真实的设计冲突上（需要所有者裁决，本轮不自行改）**：
+  三个服务的 `server.address` 硬编码 `127.0.0.1`（ADR 0029 的回环绑定纪律），
+  而 **Docker 端口发布要求容器内绑 `0.0.0.0`**——容器里的 Tomcat 只听自己的回环，
+  `127.0.0.1:8082:8082` 这条映射因此打不通，`up.ps1` 等 300 s 就绪失败。
+  **这不是配置写错，是「一条命令起全栈」与 ADR 0029 在容器里正面冲突**：
+  非回环绑定时那条守卫会要求 JWT secret / internal token / ops token 三处都被环境变量覆盖，否则拒绝启动。
+  换句话说，容器档要么放弃回环纪律（并接受守卫要求显式配三处凭证），
+  要么放弃端口发布（那外部就访问不到）。**这是定位问题、不是我能替所有者做的取舍。**
+- 本轮顺手修掉**我自己写的一个假绿**：`up.ps1 -Containerized` 在就绪失败时只 warn，然后照样打印
+  「栈已就绪」横幅（本机档那条路径是 throw）。已改成 throw——与今天修的那三处门禁假绿同一类。
+
 **未达成（照登不摘红）**：
 - **四个镜像一个都没构建出来**，且阻塞点已定位到**宿主代理工具**，不是本仓配置：
   - 现象：`docker pull` 报 `Proxy connect error ... dial tcp 100.49.158.130:443` 超时；
