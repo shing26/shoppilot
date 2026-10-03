@@ -306,7 +306,39 @@ if ($WithRestarts) {
         Move-Item -LiteralPath $envFile -Destination $envBackup
     }
     try {
-        Set-Content -Path $envFile -Value 'SHOPPILOT_OLLAMA_URL=http://127.0.0.1:59999' -Encoding ascii
+        # 占位 .env **必须带上真 .env 里的三处凭证**（票 84）。
+        #
+        # 起因是一次归因更正：ticket 75 把这条记成「端口被占、旧网关带着空 internal token 继续服务」，
+        # 读代码站不住——`stop.ps1` 会等端口释放并警告（40 s 预算），而
+        # `DevDefaultsEnvironmentPostProcessor` 在回环绑定上**无条件**把 internal-token 兜成
+        # dev 默认值，所以「空 internal token」这件事在回环上根本产生不了。
+        #
+        # 真正的机制是：**占位 .env 里没有 SHOPPILOT_INTERNAL_TOKEN，于是网关退回 dev 默认值，
+        # 而仍在运行的 biz-mock 用的还是真 .env 里那个值——两端不一致**。
+        # 只有「填过 .env 的机器」（也就是设过自定义内部凭证的机器）才会不一致，
+        # 这正好解释了为什么它不是每次都出现。
+        $carriedOver = @(
+            'SHOPPILOT_INTERNAL_TOKEN',
+            'SHOPPILOT_JWT_SECRET',
+            'SHOPPILOT_OPS_TOKEN'
+        )
+        $placeholder = @('SHOPPILOT_OLLAMA_URL=http://127.0.0.1:59999')
+        if (Test-Path $envBackup) {
+            $real = @{}
+            foreach ($line in [IO.File]::ReadAllLines($envBackup)) {
+                $text = $line.Trim()
+                if (-not $text -or $text.StartsWith('#')) { continue }
+                $pos = $text.IndexOf('=')
+                if ($pos -lt 1) { continue }
+                $real[$text.Substring(0, $pos).Trim()] = $text.Substring($pos + 1).Trim().Trim('"', "'")
+            }
+            foreach ($key in $carriedOver) {
+                if ($real.ContainsKey($key) -and $real[$key]) {
+                    $placeholder += "$key=$($real[$key])"
+                }
+            }
+        }
+        Set-Content -Path $envFile -Value $placeholder -Encoding ascii
         & (Join-Path $root 'scripts\stop.ps1') -Ports '8082' | Out-Null
         Start-Sleep -Seconds 2
         & (Join-Path $root 'scripts\start-gateway.ps1') -Profile local | Out-Null

@@ -83,7 +83,9 @@
 | 业务租户隔离、幂等 | `shoppilot-biz-mock/src/test/java/...` |
 | 工单工作流、规则分流、坐席领取、SLA、慢查询证据 | `shoppilot-ticket/src/test/java/...`（round23 票 72 随数据搬走） |
 | **容器档**（干净克隆一条命令起全栈，round24） | `docker-compose.yml` 的 `full` profile + `Dockerfile`（`ARG MODULE`）+ `scripts/up.ps1 -Containerized` / `down.ps1 -Containerized`；偏移量与凭证走**每份克隆自己的 `.env`**；默认档（本机 JVM）不受影响 |
-| 坐席工作台页面（队列/领取/处理/释放） | `frontend-workspace/src/`，产物落 `shoppilot-gateway/src/main/resources/static/workspace/`（round23 票 73；浏览器只经网关，不直连内部服务） |
+| 坐席工作台页面（登录/队列/领取/处理/释放） | `frontend-workspace/src/`，产物落 `shoppilot-gateway/src/main/resources/static/workspace/`（round23 票 73；**登录面在 round25 票 83 换成坐席账号**；浏览器只经网关，不直连内部服务） |
+| **身份域**（账号 + 角色守卫，round25 票 80-82） | **落在 `shoppilot-biz-mock`**，不在网关、也不是第五个服务——ADR **0058** 有完整论证（0053 的资源账 + 网关没有数据源 + 账号主体是买家）。⚠️ **0053 给 biz-mock 的定义（订单/物流/退款/工具/审批）里没有身份**，按旧清单去找会找不到。入口：`bizmock/domain/UserAccount`（表 `users`，Flyway `V7`）、`bizmock/service/IdentityService`、`bizmock/web/IdentityController`（`/api/identity/*`，内部凭证之后）；登录面在网关 `identity/AccountController`（`/auth/login` `/auth/register` `/auth/me`）+ `identity/IdentityClient`；角色守卫在网关 `web/OpsController.guardedTicket`；契约在 `shoppilot-tool-api` 的 `tool/identity/` 与 `tool/audit/{Actor,ActorHeaders}` |
+| 自报身份的退役面（round25 票 82） | **下游不再读自报头**：biz-mock 与 ticket 服务只认 `X-Actor` + `X-Actor-Authenticated`，两者都由网关从已验签令牌解出（`grep -rn "X-Agent\|X-Reviewer"` 在两边只剩注释与测试）。网关**仍然接受**客户端的 `X-Agent` / `X-Reviewer`——但只在**没有账号身份**时作为自称来源（ops 运维面那条路径），**盖不过令牌**，且产出的 actor 一律标成未认证 |
 | 模式迁移与 schema 一致性 | `bizmock/SchemaMigrationTest`（迁移已应用、9 表齐备、`ddl-auto` 仍是 validate） |
 | 慢查询计划与索引守卫 | `bizmock/SlowQueryPlanTest`（含被否决的那笔优化，见 `docs/slow-query-optimization-2026-09-21.md`） |
 | 跨模块 schema | `shoppilot-tool-api/src/test/java/.../ToolSchemaGeneratorTest` |
