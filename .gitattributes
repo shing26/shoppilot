@@ -31,3 +31,11 @@ scripts/provenance.py whitespace=cr-at-eol
 # 同 loadtest 的理由：CR 是行终止符的一部分，不改存储只豁免检查。
 eval/results/*.csv whitespace=cr-at-eol
 eval/results/*.json whitespace=cr-at-eol
+
+# 干净克隆可复现（round23 票 77 实测踩到）：mvnw 必须在 checkout 时保持 LF。
+# 它是 `#!/bin/sh` 脚本，拿到 CRLF 行尾就变成 `#!/bin/sh\r`，容器里的构建直接 exit 127
+# （command not found），而**本机工作树是 LF、构建照过**——于是这个洞只会在别人克隆时现形。
+# .cmd 那一支反过来：它要 CRLF，否则在 Windows 上跑不动。
+mvnw text eol=lf
+mvnw.cmd text eol=crlf
+.mvn/wrapper/** text eol=lf
