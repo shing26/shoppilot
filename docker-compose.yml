@@ -50,11 +50,11 @@ services:
     # 结果中间件被宿主内存压杀之后就再没起来，而网关 restart 策略在它上面空转
     # （实测重启 72 次，日志里全是 Unable to connect to Redis）。
     restart: unless-stopped
-    container_name: shoppilot-redis
+    container_name: ${COMPOSE_PROJECT_NAME}-redis
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
       # 宿主端口用偏移值：这台机器上 Docker Desktop 的 wslrelay 已占住 6379/6333/9200
-      - "127.0.0.1:16379:6379"
+      - "127.0.0.1:${SHOPPIOT_REDIS_PORT:-16379}:6379"
     mem_limit: 192m
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -68,9 +68,9 @@ services:
     # 结果中间件被宿主内存压杀之后就再没起来，而网关 restart 策略在它上面空转
     # （实测重启 72 次，日志里全是 Unable to connect to Redis）。
     restart: unless-stopped
-    container_name: shoppilot-qdrant
+    container_name: ${COMPOSE_PROJECT_NAME}-qdrant
     ports:
-      - "127.0.0.1:16333:6333"
+      - "127.0.0.1:${SHOPPIOT_QDRANT_PORT:-16333}:6333"
     mem_limit: 512m
     volumes:
       - qdrant-data:/qdrant/storage
@@ -89,7 +89,7 @@ services:
     # 结果中间件被宿主内存压杀之后就再没起来，而网关 restart 策略在它上面空转
     # （实测重启 72 次，日志里全是 Unable to connect to Redis）。
     restart: unless-stopped
-    container_name: shoppilot-es
+    container_name: ${COMPOSE_PROJECT_NAME}-es
     environment:
       discovery.type: single-node
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
@@ -100,7 +100,7 @@ services:
         soft: -1
         hard: -1
     ports:
-      - "127.0.0.1:19200:9200"
+      - "127.0.0.1:${SHOPPIOT_ES_PORT:-19200}:9200"
     mem_limit: 1024m
     volumes:
       - es-data:/usr/share/elasticsearch/data
@@ -184,7 +184,7 @@ services:
     mem_limit: 768m
     ports:
       # 调试台与坐席工作台的唯一入口：浏览器只经网关访问内部服务（票 15 纪律）
-      - "127.0.0.1:8082:8082"
+      - "127.0.0.1:${SHOPPIOT_GATEWAY_PORT:-8082}:8082"
     environment:
       <<: *service-env
       SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
