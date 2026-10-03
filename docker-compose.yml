@@ -46,6 +46,10 @@ x-service-env: &service-env
 services:
   redis:
     image: redis:7-alpine
+    # 票 76 补：中间件也必须有 restart。原先只有 full 档的服务有，
+    # 结果中间件被宿主内存压杀之后就再没起来，而网关 restart 策略在它上面空转
+    # （实测重启 72 次，日志里全是 Unable to connect to Redis）。
+    restart: unless-stopped
     container_name: shoppilot-redis
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
@@ -60,6 +64,10 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.12.4
+    # 票 76 补：中间件也必须有 restart。原先只有 full 档的服务有，
+    # 结果中间件被宿主内存压杀之后就再没起来，而网关 restart 策略在它上面空转
+    # （实测重启 72 次，日志里全是 Unable to connect to Redis）。
+    restart: unless-stopped
     container_name: shoppilot-qdrant
     ports:
       - "127.0.0.1:16333:6333"
@@ -77,6 +85,10 @@ services:
 
   elasticsearch:
     image: elasticsearch:7.17.24
+    # 票 76 补：中间件也必须有 restart。原先只有 full 档的服务有，
+    # 结果中间件被宿主内存压杀之后就再没起来，而网关 restart 策略在它上面空转
+    # （实测重启 72 次，日志里全是 Unable to connect to Redis）。
+    restart: unless-stopped
     container_name: shoppilot-es
     environment:
       discovery.type: single-node

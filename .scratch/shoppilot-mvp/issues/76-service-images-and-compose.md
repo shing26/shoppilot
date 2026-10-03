@@ -92,7 +92,21 @@ pwsh -NoProfile -File scripts/check-ps-syntax.ps1
      `SHOPPILOT_OPS_ENABLED`。守卫第一次真拦就是它干的：
      「拒绝启动：当前监听 0.0.0.0……`SHOPPILOT_INTERNAL_TOKEN` 未覆盖；`SHOPPILOT_OPS_TOKEN` 未覆盖，
      运维端点也没显式关闭」——**这正是那条防线该有的行为**。
-- 🛑 **仍未解决：容器档没有演示登录路径**（ADR 0029 的第三条后果）。`AuthController` 带
+- ✅ **登录路径也通了（补了令牌签发辅助）**：`scripts/mint-demo-token.py`（纯 stdlib，HS256，
+  claim 形状逐项对齐 `JwtService.issue`：sub=cid / tid / cid / iat / exp，密钥不足 32 字节直接拒签）。
+  它替代的不是防线而是**演示入口**：密钥本来就在操作者手里，脚本只替他做 HMAC。
+  实测：自检通过、令牌被网关接受（不再 401）、`/api/v1/support/ops/tickets` 经网关打到工单服务
+  返回 `[]`（跨服务调用通了；`[]` 是因为那次聊天请求我没填对字段、没走到降级）。
+- ⚠️ **中间件缺 restart 导致网关空转（我自己的 compose 缺陷）**：只给 full 档服务加了
+  `restart: unless-stopped`，中间件那一段没有。结果中间件被宿主内存压杀后再没起来，
+  而网关的重启策略在它上面空转——**实测重启 72 次**，日志里全是 `Unable to connect to Redis`。
+  已给 redis/qdrant/elasticsearch 补上 `restart: unless-stopped`，起来后网关 readiness 200。
+- ⚠️ **冷启动首请求会打穿 3s 读超时**：容器内首次请求触发 Spring MVC `DispatcherServlet` 初始化，
+  网关 `read-timeout: 3s` 不够，报 `downstream_unreachable / request timed out`；服务热了之后同一调用正常。
+  **登记**：容器档要么给依赖服务加就绪探针+更长超时，要么在文档里写清「首请求可能慢一次」。
+
+- 🛑 **仍未解决（本轮未做）**：上面这条曾被记为「容器档没有演示登录路径」，**已由令牌签发辅助关闭**。
+- 🛑 **仍未解决**：`AuthController` 带
   `@Conditional(MockIdentityCondition.class)`，**只在回环绑定上注册**；容器内必须绑 `0.0.0.0`，
   于是 `/auth/mock-token` 返回「接口不存在」，实测拿不到令牌 → 整条链路在登录这一步断掉。
   代价即方案 1 的第三项：**「干净克隆 + 一条命令 + 打开浏览器」不成立**，
