@@ -101,9 +101,18 @@ pwsh -NoProfile -File scripts/check-ps-syntax.ps1
   `restart: unless-stopped`，中间件那一段没有。结果中间件被宿主内存压杀后再没起来，
   而网关的重启策略在它上面空转——**实测重启 72 次**，日志里全是 `Unable to connect to Redis`。
   已给 redis/qdrant/elasticsearch 补上 `restart: unless-stopped`，起来后网关 readiness 200。
-- ⚠️ **冷启动首请求会打穿 3s 读超时**：容器内首次请求触发 Spring MVC `DispatcherServlet` 初始化，
-  网关 `read-timeout: 3s` 不够，报 `downstream_unreachable / request timed out`；服务热了之后同一调用正常。
-  **登记**：容器档要么给依赖服务加就绪探针+更长超时，要么在文档里写清「首请求可能慢一次」。
+- ✅ **冷启动路径已加固**（`up.ps1 -Containerized` 预热 + 工单依赖的读超时独立可配）：
+  预热把容器里首次请求的 DispatcherServlet 初始化成本挪到启动期，不让第一个**用户**请求付账；
+  读超时从 biz-mock 那份里分出来单独给（`SHOPPILOT_TICKET_READ_TIMEOUT`，默认仍是 3s，本机档口径不动，
+  只有容器档放宽到 15s）。
+- 🔶 **一处归因更正（我先前写错了）**：早前记的「首请求打穿 3s 读超时」**不成立**。
+  实测复现：工单容器重启后、等它 actuator readiness 绿，再把网关工单端点当**第一个**请求打进去，
+  **HTTP 200、1.44s**——远小于旧的 3s，说明超时不是当时那个失败的约束。
+  真正的失败形态是**服务还没起来**（实测拿到 `HTTP 502 / 0.4s / downstream_unreachable`，
+  那是连接被拒，不是超时）。也就是说那次的成因是**启动顺序/就绪判据**，不是超时。
+  上面那两处改动方向仍然正确（预热与就绪等待本来就是该做的事），但**别把它们当成那次失败的修复**。
+  仍未做：compose 里 gateway 对 ticket/biz-mock 用的是 `service_started` 而不是健康条件，
+  真要根治该把依赖改成健康门——登记为下一张票。
 
 - 🛑 **仍未解决（本轮未做）**：上面这条曾被记为「容器档没有演示登录路径」，**已由令牌签发辅助关闭**。
 - 🛑 **仍未解决**：`AuthController` 带

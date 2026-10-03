@@ -62,7 +62,9 @@ class ConfigValidationTest {
             "SHOPPILOT_TICKET_URL",
             // round23 票 76：监听地址可配。容器内必须 0.0.0.0（Docker 端口发布的要求），
             // 而非回环绑定会触发 ADR 0029 的守卫——所以这里**只**开一个面，安全判断仍在守卫里。
-            "SHOPPILOT_SERVER_ADDRESS");
+            "SHOPPILOT_SERVER_ADDRESS",
+            // 票 76：工单依赖的读超时单独给（容器冷启动要初始化 DispatcherServlet）。
+            "SHOPPILOT_TICKET_READ_TIMEOUT");
 
     private ApplicationContextRunner runner() {
         return new ApplicationContextRunner()

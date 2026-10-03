@@ -188,6 +188,9 @@ services:
     environment:
       <<: *service-env
       SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
+      # 容器冷启动首请求要初始化 DispatcherServlet（实测 >3s），默认 3s 会把首个降级落单打超时。
+      # 只在容器档放宽——本机档仍是 3s，口径不动。
+      SHOPPILOT_TICKET_READ_TIMEOUT: "15s"
       SHOPPILOT_BIZMOCK_URL: http://biz-mock:8091
       SHOPPILOT_TICKET_URL: http://ticket:8092
       SHOPPILOT_KNOWLEDGE_DIR: /workspace/knowledge

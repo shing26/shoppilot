@@ -118,7 +118,10 @@ shoppilot:
     base-url: ${SHOPPILOT_TICKET_URL:http://127.0.0.1:8092}
     internal-token: ${SHOPPILOT_INTERNAL_TOKEN:}
     connect-timeout: 2s
-    read-timeout: 3s
+    # 工单服务是**新依赖**，所以它的读超时与 biz-mock 分开给。默认值仍是 3s（本机档口径不动），
+    # 但容器档冷启动时它得放宽：容器里第一个请求要初始化 Spring MVC 的 DispatcherServlet，
+    # 实测超过 3s，于是首个降级落单会打成 downstream_unreachable（票 76 实测）。
+    read-timeout: ${SHOPPILOT_TICKET_READ_TIMEOUT:3s}
   bizmock:
     base-url: ${SHOPPILOT_BIZMOCK_URL:http://127.0.0.1:8091}
     # 同上：默认值单一来源在 DevDefaultsPolicy。biz-mock 自己那份是接收端，保持原样。

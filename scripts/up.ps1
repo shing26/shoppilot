@@ -57,6 +57,19 @@ if ($Containerized) {
     Write-Host '  起服务（含一次性 ingest 作业）' -ForegroundColor Cyan
     docker compose --profile full up -d | Out-Host
     if ($LASTEXITCODE -ne 0) { throw '服务启动失败' }
+    # 预热跨服务链路：容器里工单服务的第一个请求要初始化 DispatcherServlet（实测 >3s），
+    # 不在这里付掉这笔账，第一个**用户**请求就会打成 downstream_unreachable（票 76 实测）。
+    # 顺带把 biz-mock 也碰一下——它同样是容器里的新进程。
+    foreach ($warm in @('http://127.0.0.1:8092/actuator/health/readiness',
+                        'http://127.0.0.1:8092/api/tickets/count',
+                        'http://127.0.0.1:8091/api/actuator/health/readiness')) {
+        try { Invoke-RestMethod $warm -TimeoutSec 30 -Headers @{
+                'X-Internal-Token' = $env:SHOPPILOT_INTERNAL_TOKEN
+                'X-Tenant-Id' = 'T001' } | Out-Null } catch {
+            Write-Host "  !! 预热 $warm 失败：$($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
     # 就绪失败必须**失败**，不能打一句「栈已就绪」就当成了——本机档那条路径是 throw，
     # 容器档曾经只 warn 然后照样打印就绪横幅，那是一句假绿（本轮实测踩到）。
     if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8082/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } '网关 :8082' 300)) {
