@@ -87,6 +87,12 @@ mvn -o -DskipTests package                        # 干净机器去掉 -o 联网
 pwsh -NoProfile -File scripts/start-bizmock.ps1   # :8091，seed 3 租户 / 200 买家 / 5 万订单
 pwsh -NoProfile -File scripts/start-ticket.ps1    # :8092，工单与坐席服务（round23 票 72）
 # 坐席工作台（round23 票 73）：http://127.0.0.1:8082/workspace/ （由网关同源提供，见 frontend-workspace/）
+# 可选容器档（round24）：四个域服务跑在容器里。**要导出/放置凭证**——ADR 0029 的守卫会在容器内
+# 绑定 0.0.0.0 时检查 SHOPPILOT_INTERNAL_TOKEN / SHOPPILOT_OPS_TOKEN / SHOPPILOT_JWT_SECRET 三处，
+# 缺任一（或运维端点没显式关闭）就拒绝启动。这是那条防线按设计工作，不是配置错误。
+pwsh -NoProfile -File scripts/up.ps1 -Containerized      # 首次要构建镜像（数分钟）
+pwsh -NoProfile -File scripts/down.ps1 -Containerized
+# 另一份克隆想并存：给它一份自己的 .env（端口整体右移 + 上面那三处凭证）即可
 # 验收矩阵分两档（round23 票 74）：档位切的是**步骤集合**，判据逐字相同
 pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier daily   # 日常档：不起栈，只跑 0 token 与 JVM 层（≈3.5 GB → 实际不到 1 GB）
 pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四服务 + 活体链路（≈7 GB，仅清场日）

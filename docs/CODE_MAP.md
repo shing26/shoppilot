@@ -82,6 +82,7 @@
 | 告警规则（round22 票 67） | `ops/alerts/shoppilot.rules.yml` + `ops/alerts/shoppilot.rules.test.yml`（`promtool test rules`，CI 的 `Alert rules unit test` 步） |
 | 业务租户隔离、幂等 | `shoppilot-biz-mock/src/test/java/...` |
 | 工单工作流、规则分流、坐席领取、SLA、慢查询证据 | `shoppilot-ticket/src/test/java/...`（round23 票 72 随数据搬走） |
+| **容器档**（干净克隆一条命令起全栈，round24） | `docker-compose.yml` 的 `full` profile + `Dockerfile`（`ARG MODULE`）+ `scripts/up.ps1 -Containerized` / `down.ps1 -Containerized`；偏移量与凭证走**每份克隆自己的 `.env`**；默认档（本机 JVM）不受影响 |
 | 坐席工作台页面（队列/领取/处理/释放） | `frontend-workspace/src/`，产物落 `shoppilot-gateway/src/main/resources/static/workspace/`（round23 票 73；浏览器只经网关，不直连内部服务） |
 | 模式迁移与 schema 一致性 | `bizmock/SchemaMigrationTest`（迁移已应用、9 表齐备、`ddl-auto` 仍是 validate） |
 | 慢查询计划与索引守卫 | `bizmock/SlowQueryPlanTest`（含被否决的那笔优化，见 `docs/slow-query-optimization-2026-09-21.md`） |
