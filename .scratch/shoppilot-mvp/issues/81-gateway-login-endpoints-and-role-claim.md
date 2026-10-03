@@ -1,6 +1,6 @@
 # 81 网关登录端点与角色 claim
 
-**Status:** ready-for-agent
+**Status:** implemented（2026-10-04）
 
 ## What to build
 
@@ -42,4 +42,51 @@
 
 ## Handoff notes
 
-（收口时补）
+### 落点
+
+- `TenantContext.Identity` 加 `role` 与 `accountId` 两个坐标，并**保留三参便利构造**——
+  「一个普通买家会话」是个明确概念，仓里 19 处测试与 mock 令牌都走它，不必逐个补 `UserRole.BUYER`。
+  另加 `actor()`：有账号 id 用账号 id，没有就退回 `customerId`（**不用空串**——空串会被当成一个叫空的账号）。
+- `JwtService`：新增 `issue(tenantId, customerId, role, accountId)`；角色与账号 id **只在真登录时写进 claim**，
+  老令牌没有这两个 claim。`verify` 按「没有就是 `BUYER`」解释——写成具名方法 `roleOf(...)` 而不是内联三元，
+  好让「这里的默认是 BUYER」被一眼看到。
+- 新增 `IdentityClient`（网关 → biz-mock）：**刻意不套 `BizMockClient` 的熔断与工具语义**——
+  那条路的失败会翻译成给模型看的 `ToolStatus`，而登录失败要回的是给人看的一句话。
+- 新增 `AccountController`：`/auth/login`、`/auth/register`、`/auth/me`。**刻意与 `AuthController` 分开**：
+  `/auth/mock-token` 是假身份领取口（回环才注册），这里是真身份入口，两者并存是有意的。
+- 配置面**零新增占位符**，所以 `ConfigValidationTest` 的钉住清单一个字没动（round19 那次撞车的处置是登记，
+  本轮干脆不制造这个需求）。
+
+### 一个必须说清的「看起来违反 ADR 0005」的地方
+
+登录请求体里有 `tenantId`，看起来就是「身份从 body 取」。实际分工是：
+**请求里的 tenantId 只是「去哪张表里找这个用户名」的线索**，令牌里的 `tid` 取自**库里那一行的 `tenant_id`**。
+用例 `tokenTenantComesFromTheStoredAccount` 钉的就是这一格：请求说 T001、库里那行属于 T002，签出来的令牌是 T002。
+理由写在 `IdentityClient.call` 的注释里，不靠记忆。
+
+### 读数
+
+| 项 | 值 |
+|---|---|
+| JVM 全仓 | `5 + 55 + 315 + 22 = 397`（gateway 308 → 315，+7） |
+| 覆盖率 | 四模块全过（gateway **62.67%**，门槛 54.00） |
+| 变异对照 | 角色 claim 不写进令牌 → **2 条红**（`loginIssuesRoleBearingToken`、`meEchoesTheTokenSubject`），还原即绿 |
+
+**一条判据都没动**；调试台与那批验收脚本**一行都不用改**（`/auth/mock-token` 与它们读的无 role 令牌行为不变）。
+
+### 实现坑（两条）
+
+1. **MockMvc 读中文会花屏**：响应字节按容器默认字符集解，写出去的是 UTF-8。
+   判据必须 `getContentAsString(StandardCharsets.UTF_8)` 读回来（`RestErrorEnvelopeTest` 踩过一次，
+   这里再踩一次并把读法收成一个具名方法）。
+2. **`switch` 的 case 标签要是编译期常量**：`case HttpStatus.UNAUTHORIZED.value()` 编译不过
+   （解构模式只能应用于 record）。写数字并在行尾点名 `HttpStatus.UNAUTHORIZED`。
+
+### 现场三问
+
+1. **为什么 `/auth/me` 不查身份域？** 它回答的是「我手里这张令牌是谁」，那只需要验签；
+   查账号状态（停用之类）是角色守卫（票 82）的读者，不是它的。
+2. **为什么老令牌按 BUYER 解释，而不是拒签？** `/auth/mock-token` 发的就是这种令牌，
+   拒签等于让调试台和那批验收脚本一起红。安全性靠「签发权只在回环 + 签名密钥」，不靠这一处兼容分支。
+3. **为什么角色进令牌而不是每次问身份域？** 网关自己就是验签方，令牌里带角色时判定是本地的；
+   代价是「停用账号」不会立刻生效——**这一格本轮不覆盖，已登记给票 82 之后**。
