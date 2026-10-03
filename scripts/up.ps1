@@ -46,7 +46,14 @@ if ($Containerized) {
     Write-Host '档位：容器（--profile full）。默认路径仍是本机 JVM。' -ForegroundColor Cyan
     docker compose up -d | Out-Host
     if ($LASTEXITCODE -ne 0) { throw '中间件启动失败' }
-    foreach ($triple in @(@(16379, 'Redis', 'shoppilot-redis'), @(16333, 'Qdrant', 'shoppilot-qdrant'), @(19200, 'Elasticsearch', 'shoppilot-es'))) {
+    # 端口与 compose 用同一批环境变量（票 79）：第二份克隆整体右移时，等就绪也得等在它自己的端口上。
+    # 容器名用 $env:COMPOSE_PROJECT_NAME 派生——compose 会把它设进环境。
+    $pRedis = if ($env:SHOPPIOT_REDIS_PORT) { [int]$env:SHOPPIOT_REDIS_PORT } else { 16379 }
+    $pQdrant = if ($env:SHOPPIOT_QDRANT_PORT) { [int]$env:SHOPPIOT_QDRANT_PORT } else { 16333 }
+    $pEs = if ($env:SHOPPIOT_ES_PORT) { [int]$env:SHOPPIOT_ES_PORT } else { 19200 }
+    $pGateway = if ($env:SHOPPIOT_GATEWAY_PORT) { [int]$env:SHOPPIOT_GATEWAY_PORT } else { 8082 }
+    $project = if ($env:COMPOSE_PROJECT_NAME) { $env:COMPOSE_PROJECT_NAME } else { 'shoppilot' }
+    foreach ($triple in @(@($pRedis, 'Redis', "$project-redis"), @($pQdrant, 'Qdrant', "$project-qdrant"), @($pEs, 'Elasticsearch', "$project-es"))) {
         if (-not (Wait-For { Test-Port $triple[0] } "$($triple[1]) :$($triple[0])" 180)) {
             throw "$($triple[1]) 没起来，看 docker logs $($triple[2])"
         }
@@ -60,6 +67,7 @@ if ($Containerized) {
     # 预热跨服务链路：容器里工单服务的第一个请求要初始化 DispatcherServlet（实测 >3s），
     # 不在这里付掉这笔账，第一个**用户**请求就会打成 downstream_unreachable（票 76 实测）。
     # 顺带把 biz-mock 也碰一下——它同样是容器里的新进程。
+    # 预热用的端口在**容器网络内**是固定的（服务自己的监听端口），不走宿主映射，所以不受偏移影响。
     foreach ($warm in @('http://127.0.0.1:8092/actuator/health/readiness',
                         'http://127.0.0.1:8092/api/tickets/count',
                         'http://127.0.0.1:8091/api/actuator/health/readiness')) {
@@ -72,13 +80,13 @@ if ($Containerized) {
 
     # 就绪失败必须**失败**，不能打一句「栈已就绪」就当成了——本机档那条路径是 throw，
     # 容器档曾经只 warn 然后照样打印就绪横幅，那是一句假绿（本轮实测踩到）。
-    if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8082/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } '网关 :8082' 300)) {
+    if (-not (Wait-For { (Invoke-RestMethod "http://127.0.0.1:$pGateway/actuator/health/readiness" -TimeoutSec 5).status -eq 'UP' } "网关 :$pGateway" 300)) {
         throw '网关未就绪，看 docker compose logs gateway'
     }
     Write-Host ''
     Write-Host '栈已就绪（容器档）：' -ForegroundColor Green
-    Write-Host '  调试台   http://127.0.0.1:8082/'
-    Write-Host '  坐席工作台 http://127.0.0.1:8082/workspace/'
+    Write-Host "  调试台   http://127.0.0.1:$pGateway/"
+    Write-Host "  坐席工作台 http://127.0.0.1:$pGateway/workspace/"
     Write-Host '  停    栈 pwsh -NoProfile -File scripts/down.ps1 -Containerized'
     exit 0
 }

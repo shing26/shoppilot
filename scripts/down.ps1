@@ -19,7 +19,11 @@ if ($Containerized) {
     exit 0
 }
 
-& (Join-Path $root 'scripts\stop.ps1') -Ports '8082,8091,8092'
+# 端口与 compose 同源（票 79）：第二份克隆整体右移时，停栈要停在它自己的端口上。
+$ports = @(
+    $(if ($env:SHOPPIOT_GATEWAY_PORT) { $env:SHOPPIOT_GATEWAY_PORT } else { '8082' }), '8091', '8092'
+) -join ','
+& (Join-Path $root 'scripts\stop.ps1') -Ports $ports
 
 $watchdog = Join-Path $root 'logs\watchdog.pid'
 if (Test-Path $watchdog) {
