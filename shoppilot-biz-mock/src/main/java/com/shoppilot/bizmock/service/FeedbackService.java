@@ -4,6 +4,7 @@ import com.shoppilot.bizmock.audit.AuditService;
 import com.shoppilot.bizmock.domain.Feedback;
 import com.shoppilot.bizmock.repo.FeedbackRepository;
 import com.shoppilot.bizmock.tenant.TenantContextHolder;
+import com.shoppilot.tool.audit.Actor;
 import com.shoppilot.tool.audit.AuditActions;
 import com.shoppilot.tool.workitem.TicketSource;
 import com.shoppilot.bizmock.workitem.WorkItemClient;
@@ -86,10 +87,11 @@ public class FeedbackService {
      * 人工复核完成：PENDING → REVIEWED。复核本身不触发任何自动改写（ADR 0039）。
      *
      * <p>但复核**是**一次人工动作，所以要留痕（ADR 0056）：谁复核了哪条反馈。
-     * {@code reviewer} 同样是调用方自报的（身份域是下一轮），进审计不进权限。
+     * {@code reviewer} 带「可不可信」一起进来（round25 票 82）：认证过的是账号 id，
+     * 没认证的会在审计里被明确标出来——自报的名字照样记，但不再与有据的名字长得一样。
      */
     @Transactional
-    public FeedbackView markReviewed(String id, String reviewer) {
+    public FeedbackView markReviewed(String id, Actor reviewer) {
         FeedbackView view = transition(id, feedback -> {
             if (!"PENDING".equals(feedback.getReviewStatus())) {
                 throw new IllegalStateException("feedback " + id + " 不在 PENDING 状态，不能标记复核完成");

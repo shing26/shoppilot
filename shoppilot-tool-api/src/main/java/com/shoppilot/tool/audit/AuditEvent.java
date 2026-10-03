@@ -21,13 +21,30 @@ public record AuditEvent(
         String objectType,
         String objectId,
         String tenantId,
-        /** 操作人：坐席 id、{@code system} 或运维账号。 */
+        /** 操作人：坐席账号 id、{@code system}，或（未认证时）调用方自报的名字。 */
         String actor,
         /** 一句话说明，不放结构化负载。 */
         String detail,
-        Instant occurredAt) {
+        Instant occurredAt,
+        /**
+         * {@code actor} 是否来自已验签的令牌（round25 票 82 / ADR 0058）。
+         *
+         * <p>加的是**可选标注**而不是新语义，所以 {@code CURRENT_SCHEMA} 不因它 +1。
+         */
+        boolean actorAuthenticated) {
 
     public static final int CURRENT_SCHEMA = 1;
+
+    /**
+     * 九参构造保留给「还没有认证与否之分」的旧调用点，落到 {@code actorAuthenticated=false}。
+     *
+     * <p>方向是往严的一边：默认不可信，所以忘了传这个参数的调用点会被查询面挑出来，
+     * 而不是静默地把自报身份当成认证过的。
+     */
+    public AuditEvent(String eventId, int schemaVersion, String action, String objectType, String objectId,
+                      String tenantId, String actor, String detail, Instant occurredAt) {
+        this(eventId, schemaVersion, action, objectType, objectId, tenantId, actor, detail, occurredAt, false);
+    }
 
     public AuditEvent {
         if (eventId == null || eventId.isBlank()) {

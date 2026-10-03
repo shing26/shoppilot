@@ -1,6 +1,7 @@
 package com.shoppilot.bizmock.web;
 
 import com.shoppilot.bizmock.service.FeedbackService;
+import com.shoppilot.tool.audit.ActorHeaders;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -39,14 +40,21 @@ public class FeedbackController {
         return service.reviewQueue();
     }
 
-    /** {@code X-Reviewer} 是调用方自报的复核人（身份域是下一轮，ADR 0056）：进审计，不进权限。 */
+    /**
+     * 复核完成。
+     *
+     * <p>{@code X-Reviewer} 已退役（round25 票 82 / ADR 0058）：它由调用方自报，带上内部 token
+     * 就能写成任何名字。现在只认 {@code X-Actor} 与 {@code X-Actor-Authenticated} 两个头，
+     * 都由网关从已验签的令牌解出来再下发。
+     */
     @PatchMapping("/{feedbackId}/review")
     public ResponseEntity<FeedbackService.FeedbackView> markReviewed(
             @PathVariable String feedbackId,
             @RequestBody Map<String, @NotBlank String> body,
-            @RequestHeader(value = "X-Reviewer", required = false) String reviewer) {
+            @RequestHeader(value = "X-Actor", required = false) String actor,
+            @RequestHeader(value = "X-Actor-Authenticated", required = false) String actorAuthenticated) {
         try {
-            return ResponseEntity.ok(service.markReviewed(feedbackId, reviewer));
+            return ResponseEntity.ok(service.markReviewed(feedbackId, ActorHeaders.of(actor, actorAuthenticated)));
         } catch (IllegalArgumentException notFound) {
             return ResponseEntity.notFound().build();
         } catch (IllegalStateException illegalTransition) {

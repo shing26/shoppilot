@@ -4,6 +4,7 @@ import com.shoppilot.ticket.domain.RoutingRule;
 import com.shoppilot.ticket.domain.TicketPriority;
 import com.shoppilot.ticket.repo.RoutingRuleRepository;
 import com.shoppilot.ticket.service.RoutingService;
+import com.shoppilot.tool.audit.ActorHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,12 +52,14 @@ public class RoutingRuleController {
     @PostMapping
     @Transactional
     public ResponseEntity<RuleView> create(@RequestBody RuleRequest request,
-                                            @RequestHeader(value = "X-Agent", required = false) String agent) {
+                                            @RequestHeader(value = ActorHeaders.ACTOR, required = false) String actor,
+                                            @RequestHeader(value = ActorHeaders.ACTOR_AUTHENTICATED,
+                                                    required = false) String authenticated) {
         try {
             RoutingRule saved = routingService.createRule(
                     request.tenantId(), request.source(), request.reason(), request.queue(),
                     TicketPriority.of(request.priority()), request.slaMinutes(),
-                    !Boolean.FALSE.equals(request.enabled()), agent);
+                    !Boolean.FALSE.equals(request.enabled()), ActorHeaders.of(actor, authenticated));
             return ResponseEntity.status(HttpStatus.CREATED).body(toView(saved));
         } catch (IllegalArgumentException badRequest) {
             return ResponseEntity.badRequest().build();
@@ -67,9 +70,12 @@ public class RoutingRuleController {
     @Transactional
     public ResponseEntity<RuleView> setEnabled(@PathVariable Long ruleId,
                                                @RequestBody EnableRequest request,
-                                               @RequestHeader(value = "X-Agent", required = false) String agent) {
+                                               @RequestHeader(value = ActorHeaders.ACTOR, required = false) String actor,
+                                               @RequestHeader(value = ActorHeaders.ACTOR_AUTHENTICATED,
+                                                       required = false) String authenticated) {
         try {
-            RoutingRule saved = routingService.setRuleEnabled(ruleId, Boolean.TRUE.equals(request.enabled()), agent);
+            RoutingRule saved = routingService.setRuleEnabled(ruleId, Boolean.TRUE.equals(request.enabled()),
+                    ActorHeaders.of(actor, authenticated));
             return ResponseEntity.ok(toView(saved));
         } catch (IllegalArgumentException notFound) {
             return ResponseEntity.notFound().build();

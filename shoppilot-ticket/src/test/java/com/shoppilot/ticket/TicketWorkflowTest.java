@@ -171,7 +171,10 @@ class TicketWorkflowTest {
             headers.set("X-Customer-Id", customerId);
         }
         if (agent != null) {
-            headers.set("X-Agent", agent);
+            // 票 82：自报式的 X-Agent 已退役，操作人只从 X-Actor / X-Actor-Authenticated 进来。
+            // 这里给 authenticated=true：本用例模拟的是「网关从已验签令牌解出来的坐席」。
+            headers.set("X-Actor", agent);
+            headers.set("X-Actor-Authenticated", "true");
         }
         return rest.exchange(path, org.springframework.http.HttpMethod.valueOf(method),
                 new HttpEntity<>(body == null ? "" : body, headers), String.class);

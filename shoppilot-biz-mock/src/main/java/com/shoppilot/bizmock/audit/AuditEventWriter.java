@@ -49,6 +49,6 @@ public class AuditEventWriter {
     public void write(AuditEvent event) {
         repository.saveAndFlush(new AuditEventRow(event.eventId(), event.schemaVersion(), event.action(),
                 event.objectType(), event.objectId(), event.tenantId(), event.actor(), event.detail(),
-                event.occurredAt(), Instant.now()));
+                event.occurredAt(), Instant.now(), event.actorAuthenticated()));
     }
 }

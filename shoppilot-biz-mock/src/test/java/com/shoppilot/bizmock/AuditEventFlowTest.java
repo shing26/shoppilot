@@ -102,6 +102,72 @@ class AuditEventFlowTest {
         assertThat(rejected.toString()).contains("bob").contains("凭证不符");
     }
 
+    /**
+     * 票 82 的兑现处：<b>认证过的 actor 与自报的 actor 在审计里长得不一样</b>。
+     *
+     * <p>光有真登录端点不算兑现——那句话正是 ADR 0056 否决「维持 mock JWT」时说的「交白卷」。
+     * 这一格证明的是「谁是操作人」这件事带依据，而不只是一个名字。
+     */
+    @Test
+    @DisplayName("审计能区分「认证过的操作人」与「自报的操作人」")
+    void auditDistinguishesAuthenticatedActorsFromSelfReportedOnes() throws Exception {
+        long verifiedRefund = applyRefund();
+        reviewWithActor(verifiedRefund, "APPROVE", null, "U0007", true);
+
+        long selfReportedRefund = applyRefund();
+        // actor 名用 ASCII：HTTP 头按 ISO-8859-1 编码，中文名字会在**发出去的那一步**就花掉，
+        // 届时断言读到的是乱码，而机制本身没问题——那种红会去追一个不存在的问题。
+        reviewWithActor(selfReportedRefund, "REJECT", null, "self-reported-name", false);
+
+        JsonNode events = auditQuery("REFUND_APPROVED");
+        assertThat(events.toString()).as("认证过的 actor 落到审计里").contains("U0007");
+        assertThat(lastEventFor(events, verifiedRefund).path("actorAuthenticated").asBoolean())
+                .as("来自已验签令牌的 actor 标成 true").isTrue();
+
+        JsonNode rejected = auditQuery("REFUND_REJECTED");
+        assertThat(rejected.toString()).as("自报的 actor 照样记下来").contains("self-reported-name");
+        assertThat(lastEventFor(rejected, selfReportedRefund).path("actorAuthenticated").asBoolean())
+                .as("自报的 actor 标成 false，不能与上面那条长得一样").isFalse();
+    }
+
+    /** 旧的自报头不再被读：带 X-Reviewer 的调用拿不到那个名字（票 82 的退役面）。 */
+    @Test
+    @DisplayName("X-Reviewer 已退役：只带旧头的调用留不下那个名字")
+    void retiredSelfReportedHeaderIsIgnored() throws Exception {
+        long refundId = applyRefund();
+        String body = "{\"decision\":\"APPROVE\"}";
+        HttpHeaders headers = headers("T001", null);
+        headers.set("X-Reviewer", "冒名审核人");
+        ResponseEntity<String> response = rest.exchange("/api/refunds/" + refundId + "/review", HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+
+        assertThat(auditQuery("REFUND_APPROVED").toString())
+                .as("旧头里的名字不进审计，否则退役就是一句空话").doesNotContain("冒名审核人");
+    }
+
+    private JsonNode lastEventFor(JsonNode events, long objectId) {
+        String target = String.valueOf(objectId);
+        JsonNode found = null;
+        for (JsonNode event : events) {
+            if (target.equals(event.path("objectId").asText())) {
+                found = event;
+            }
+        }
+        assertThat(found).as("审计里应有 objectId=" + target + " 的事件").isNotNull();
+        return found;
+    }
+
+    private void reviewWithActor(long refundId, String decision, String note, String actor, boolean authenticated)
+            throws Exception {
+        String body = "{\"decision\":\"" + decision + "\""
+                + (note == null ? "" : ",\"note\":\"" + note + "\"") + "}";
+        ResponseEntity<String> response = rest.exchange("/api/refunds/" + refundId + "/review", HttpMethod.POST,
+                new HttpEntity<>(body, headersWithActor("T001", actor, authenticated)), String.class);
+        assertThat(response.getStatusCode().is2xxSuccessful())
+                .as("审核应成功，实际 %s", response.getStatusCode()).isTrue();
+    }
+
     @Test
     @DisplayName("反馈复核完成留痕")
     void feedbackReviewIsAudited() throws Exception {
@@ -231,7 +297,8 @@ class AuditEventFlowTest {
                 .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
                 .header("X-Internal-Token", TOKEN)
                 .header("X-Tenant-Id", "T001")
-                .header("X-Reviewer", reviewer)
+                .header("X-Actor", reviewer)
+                .header("X-Actor-Authenticated", "false")
                 .method("PATCH", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
         return HTTP.send(request, HttpResponse.BodyHandlers.ofString()).statusCode();
@@ -268,8 +335,18 @@ class AuditEventFlowTest {
     }
 
     private HttpHeaders headersWithReviewer(String tenantId, String reviewer) {
+        return headersWithActor(tenantId, reviewer, false);
+    }
+
+    /**
+     * 票 82：审核人只从 {@code X-Actor} / {@code X-Actor-Authenticated} 两个头进来，
+     * 自报式的 {@code X-Reviewer} 已退役。{@code authenticated=false} 就是「只有运维凭证、
+     * 操作人靠自称」的那条路径。
+     */
+    private HttpHeaders headersWithActor(String tenantId, String actor, boolean authenticated) {
         HttpHeaders headers = headers(tenantId, null);
-        headers.set("X-Reviewer", reviewer);
+        headers.set("X-Actor", actor);
+        headers.set("X-Actor-Authenticated", String.valueOf(authenticated));
         return headers;
     }
 

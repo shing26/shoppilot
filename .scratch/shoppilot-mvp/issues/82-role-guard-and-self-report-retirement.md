@@ -1,6 +1,6 @@
 # 82 角色守卫与自报身份退役
 
-**Status:** ready-for-agent
+**Status:** implemented（2026-10-04）
 
 ## What to build
 
@@ -46,4 +46,69 @@
 
 ## Handoff notes
 
-（收口时补）
+### 落点
+
+- **契约**：`tool.audit.Actor`（名字 + 可不可信）、`tool.audit.ActorHeaders`（两个头与解析）、
+  `AuditEvent` / `AuditView` 各加一个可选标注并**保留旧构造**（默认落到「未认证」，方向往严）。
+- **biz-mock**：Flyway `V8` 加 `audit_event.actor_authenticated`（默认 false）；
+  `AuditEventRow` / `AuditEventWriter` / `AuditService.publish` / `AuditController` 逐层带上；
+  `RefundReviewController` 与 `FeedbackController` 只读 `X-Actor` + `X-Actor-Authenticated`。
+- **ticket 服务**：`TicketController`（claim/release/resolve）、`RoutingRuleController` 同样只读新头；
+  `AuditPublisher` 往流里多写一个 `actorAuthenticated` 字段；`WorkItemService` 与 `RoutingService`
+  的签名从 `String` 改成 `Actor`（**刻意不留 String 重载**：两条写法会让「这个名字可不可信」再次变成调用点的事）。
+- **网关**：`OpsController` 的 `guardedTicket(...)` 与退款审核共用一条守卫；
+  `X-Actor` / `X-Actor-Authenticated` 由 `forward` / `forwardToTicket` 统一补。
+
+### 守卫的语义（这一格最需要说清楚）
+
+**两条准入线，取或**：坐席/管理员账号 **或** 运维凭证。
+
+- 不是「放水」：ops token 本来就是平台级凭证（故障注入、清缓存、演示复位都在它后面），
+  拿到它的人就是这套栈的运维者，让他以兜底坐席身份干活是合理的。
+- 真正的变化是**另一条**：持有坐席账号的人**不必再持平台凭证**就能处理工单与审核退款——
+  在那之前只有 ops token 能碰这些端点。买家账号仍然不行。
+- 两条都不满足时：运维面被显式关掉仍然报 `ops.disabled`（那是运维自己做的选择，不该被说成角色不对），
+  否则报 `role.denied`。用例同时断言「403 且请求没出网关」——只断言状态码的话，把守卫挪到转发之后也能绿。
+
+### 操作人的规则
+
+**有账号 id 就用它并标成已认证；没有账号 id（mock 令牌与老令牌）才回落到请求头里的自称，并标成未认证。**
+自称**永远盖不过**令牌——否则任何登录用户都能替别人署名。
+变异对照就是把这条反过来（优先用自称），`forgedSelfReportedAgentIsIgnored` 当场变红。
+
+### 读数
+
+| 项 | 值 |
+|---|---|
+| JVM 全仓 | `5 + 10 + 57 + 321 + 22` 中 tool-api **5 → 10**、biz-mock 55 → **57**、gateway 315 → **321**；合计 **410** |
+| 覆盖率 | 四模块全过；tool-api **37.63% → 46.81%**（门槛 40.00，**中间一度跌破过**，见下） |
+| 变异对照 | 自称优先于令牌 → 1 条红；还原即绿 |
+| 收口审计 | `PASS 85 / FAIL 2 / SKIP 9`（`A2` 工作树未提交、`F1c` 那笔老账） |
+
+**一条判据都没动**：`verify-console.mjs` / `verify-refund-approval.ps1` 走的仍是 ops token 那条线，
+行为与断言逐字不变——用例 `opsTokenPathStillWorksButIsMarkedUnauthenticated` 就是钉这一格的。
+
+### 实现坑（四条）
+
+1. **HTTP 头按 ISO-8859-1 编码**：中文 actor 名在**发出去那一步**就花掉，
+   断言读到乱码而机制本身没问题——那种红会去追一个不存在的问题。
+   新用例的 actor 名一律用 ASCII，并把这个理由写在用例里。
+2. **覆盖率棘轮是真会拦人的**：加了 `Actor` / `ActorHeaders` / 三个请求响应记录之后，
+   tool-api 从 40.0% 掉到 **37.63%**，CI 的棘轮直接红。处置是**补该补的用例**
+   （`ActorAndActorHeadersTest` 五条，量的是「缺失即未认证」这条安全默认取向），不是调门槛。
+3. **`ActorHeaders.of(null, null)` 的两种合理读法**：我第一版把空 actor 也按未认证处理，
+   用例立刻红——因为 `Actor.of` 的文档说 system 是可信的。改成**只对有名字的 actor 应用那个默认**：
+   两个头都没带时根本没有操作人可言，标成「不可信的操作人」只会让真自报的那些更难被挑出来。
+4. **既有测试要跟着改，不是跟着绕过**：`AuditEventFlowTest` / `TicketWorkflowTest` /
+   `WorkItemSourceTest` / `RestErrorEnvelopeTest` 原本发的是 `X-Agent` / `X-Reviewer`。
+   改的是它们发的新头，**断言一字未动**——其中 `RestErrorEnvelopeTest` 那条还顺带补上了运维凭证
+   （它原先是一个「买家令牌 + 无 ops token 也过」的调用，那在票 82 之后本就该红）。
+
+### 现场三问
+
+1. **为什么 ops token 不退役？** 它守的是运维面（改状态的动作），不是「谁」。那批验收脚本与调试台全靠它，
+   动它们的认证方式就是改判据。两条线的分工写死在 ADR 0058 第 5 条。
+2. **为什么不留 `String` 重载？** 留了就等于把「这个名字可不可信」交还给每个调用点判断一次。
+   签名从 `String` 换成 `Actor`，让编译器来问这件事。
+3. **审计里的 `actorAuthenticated` 为什么默认 false？** 往严的一边倒：老事件与任何忘了传标注的写入
+   都会出现在「可挑出来」的那一侧。往松的一边倒，那些遗漏会变成查不出来的假账。

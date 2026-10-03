@@ -1,6 +1,7 @@
 package com.shoppilot.bizmock.web;
 
 import com.shoppilot.bizmock.service.BizMockService;
+import com.shoppilot.tool.audit.ActorHeaders;
 import com.shoppilot.tool.view.RefundView;
 import com.shoppilot.tool.view.ToolResponse;
 import com.shoppilot.tool.view.ToolStatus;
@@ -42,18 +43,21 @@ public class RefundReviewController {
      * 放行或驳回。{@code note} 接受但不落业务表（审查人自用的理由在 v1 没有消费者，见 ADR 0047 决策四）；
      * 但它会进审计事件的 detail——放行是不可逆的资金动作，理由得跟着留痕一起走。
      *
-     * <p>{@code X-Reviewer} 是**调用方自报的**审核人，**不是认证过的身份**（身份域是下一轮，ADR 0056）。
-     * 所以它进的是审计而不是权限——带上内部 token 就能写这个头。**这条缺口照登**：补上真身份之前，
-     * 审计只能证明「有人做了什么」，不能证明「是谁」。
+     * <p><b>{@code X-Reviewer} 已退役</b>（round25 票 82 / ADR 0058 第 4 条）：那个头是调用方自报的，
+     * 带上内部 token 就能写成任何名字，于是「谁放了这笔款」一度没有任何根据。
+     * 现在只有 {@code X-Actor}（名字）与 {@code X-Actor-Authenticated}（这个名字是否来自已验签令牌），
+     * 两个都由网关从令牌解出来再下发，本服务自己不接受任何来自客户端的身份声明。
      */
     @PostMapping("/{refundId}/review")
     public ResponseEntity<ToolResponse<RefundView>> review(@PathVariable String refundId,
                                                            @RequestBody ReviewRequest request,
-                                                           @RequestHeader(value = "X-Reviewer", required = false)
-                                                           String reviewer) {
+                                                           @RequestHeader(value = "X-Actor", required = false)
+                                                           String actor,
+                                                           @RequestHeader(value = "X-Actor-Authenticated",
+                                                                   required = false) String actorAuthenticated) {
         try {
             ToolResponse<RefundView> response = service.reviewRefund(refundId, request.decision(), request.note(),
-                    reviewer);
+                    ActorHeaders.of(actor, actorAuthenticated));
             if (response.status() == ToolStatus.NOT_FOUND) {
                 return ResponseEntity.notFound().build();
             }

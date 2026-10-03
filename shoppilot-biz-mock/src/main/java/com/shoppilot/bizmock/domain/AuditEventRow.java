@@ -48,6 +48,10 @@ public class AuditEventRow {
     @Column(name = "actor", nullable = false, length = 32)
     private String actor;
 
+    /** actor 是否来自已验签的令牌（round25 票 82）。默认 false：往严的一边倒。 */
+    @Column(name = "actor_authenticated", nullable = false)
+    private boolean actorAuthenticated;
+
     @Column(name = "detail", length = 255)
     private String detail;
 
@@ -62,6 +66,13 @@ public class AuditEventRow {
 
     public AuditEventRow(String eventId, int schemaVersion, String action, String objectType, String objectId,
                          String tenantId, String actor, String detail, Instant occurredAt, Instant consumedAt) {
+        this(eventId, schemaVersion, action, objectType, objectId, tenantId, actor, detail, occurredAt, consumedAt,
+                false);
+    }
+
+    public AuditEventRow(String eventId, int schemaVersion, String action, String objectType, String objectId,
+                         String tenantId, String actor, String detail, Instant occurredAt, Instant consumedAt,
+                         boolean actorAuthenticated) {
         this.eventId = eventId;
         this.schemaVersion = schemaVersion;
         this.action = action;
@@ -72,6 +83,7 @@ public class AuditEventRow {
         this.detail = detail;
         this.occurredAt = occurredAt;
         this.consumedAt = consumedAt;
+        this.actorAuthenticated = actorAuthenticated;
     }
 
     public Long getId() {
@@ -104,6 +116,10 @@ public class AuditEventRow {
 
     public String getActor() {
         return actor;
+    }
+
+    public boolean isActorAuthenticated() {
+        return actorAuthenticated;
     }
 
     public String getDetail() {

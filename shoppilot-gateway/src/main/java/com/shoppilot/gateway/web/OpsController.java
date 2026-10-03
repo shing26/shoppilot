@@ -13,6 +13,9 @@ import com.shoppilot.gateway.llm.TokenBudget;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.tool.Intent;
+import com.shoppilot.tool.audit.Actor;
+import com.shoppilot.tool.audit.ActorHeaders;
+import com.shoppilot.tool.identity.UserRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -136,11 +139,23 @@ public class OpsController {
         return forward("GET", "/api/refunds/pending", null, true);
     }
 
-    /** 放行或驳回一笔退款申请（ADR 0047）：走 biz-mock 的状态迁移门，网关只做代理与身份补全。 */
+    /**
+     * 放行或驳回一笔退款申请（ADR 0047）：走 biz-mock 的状态迁移门，网关只做代理与身份补全。
+     *
+     * <p>票 82 起它与工单动作走**同一条守卫**：坐席/管理员账号，或运维凭证。
+     * 放行是不可逆的资金动作，它的准入标准不该比「领一张工单」更松。
+     */
     @PostMapping("/refunds/{refundId}/review")
     public ResponseEntity<String> reviewRefund(@PathVariable String refundId,
-                                               @RequestBody Map<String, Object> body) {
-        return forward("POST", "/api/refunds/" + refundId + "/review", body, true);
+                                               @RequestBody Map<String, Object> body,
+                                               @RequestHeader(value = "X-Ops-Token", required = false) String opsToken,
+                                               @RequestHeader(value = "X-Reviewer", required = false) String reviewer) {
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed() && !staff()) {
+            return access == OpsAccess.DISABLED ? denied(access)
+                    : errors.entity(HttpStatus.FORBIDDEN.value(), "role.denied", "退款审核需要坐席或管理员账号");
+        }
+        return forward("POST", "/api/refunds/" + refundId + "/review", body, true, selfReported(reviewer));
     }
 
     /**
@@ -395,16 +410,51 @@ public class OpsController {
      */
     private ResponseEntity<String> guardedTicket(String method, String path, Map<String, Object> body,
                                                  String opsToken, String agent) {
+        return guardedTicket(method, path, body, opsToken, agent, selfReported(agent));
+    }
+
+    /**
+     * 工单动作端点的守卫（round25 票 82 / ADR 0058 第 3、4 条）。
+     *
+     * <p><b>两条准入线，取或</b>：坐席/管理员账号，或者运维凭证。理由不是「放水」——
+     * 运维凭证本来就是平台级凭证（故障注入、清缓存、演示复位都在它后面），而拿到它的人就是
+     * 这套栈的运维者，让他以兜底坐席的身份干活是合理的。真正的变化是<b>另一条</b>：
+     * 持有坐席账号的人不必再持平台凭证就能处理工单，而在那之前只有运维凭证能碰这些端点。
+     *
+     * <p>两条都不满足时：运维面被显式关掉就仍然报 {@code ops.disabled}（那是运维自己做的选择，
+     * 不该被说成「你的角色不对」）；否则报 {@code role.denied}，因为缺的是角色。
+     *
+     * <p><b>操作人一律从令牌解</b>：有账号 id 就用它（{@code authenticated=true}），
+     * 只有运维凭证时才回落到请求头里的自称，并明确标成未认证。
+     * 自称永远不能盖过令牌——否则任何登录用户都能替别人署名。
+     */
+    private ResponseEntity<String> guardedTicket(String method, String path, Map<String, Object> body,
+                                                 String opsToken, String agent, Actor actor) {
         OpsAccess access = opsAccess(opsToken);
-        if (!access.allowed()) {
-            return denied(access);
+        if (!access.allowed() && !staff()) {
+            return access == OpsAccess.DISABLED ? denied(access)
+                    : errors.entity(HttpStatus.FORBIDDEN.value(), "role.denied", "工单动作需要坐席或管理员账号");
         }
-        return forwardToTicket(method, path, body, agent);
+        return forwardToTicket(method, path, body, actor);
+    }
+
+    /** 已验签身份是不是坐席或管理员。角色不是权限等级，这一句就是全部的动作级判定。 */
+    private boolean staff() {
+        UserRole role = TenantContext.current().role();
+        return role == UserRole.AGENT || role == UserRole.ADMIN;
+    }
+
+    /** 从令牌解出操作人；没有账号 id（mock 令牌与老令牌）才回落到自称，并标成未认证。 */
+    private static Actor selfReported(String claimed) {
+        TenantContext.Identity identity = TenantContext.current();
+        return identity.accountId() == null || identity.accountId().isBlank()
+                ? Actor.of(claimed)
+                : Actor.authenticated(identity.accountId());
     }
 
     /**
      * 转发到工单服务（round23 票 72）。与 {@link #forward} 的区别只有目标服务与
-     * {@code X-Agent} 头——两条转发刻意分开写，不做成「目标可选」参数：
+     * {@code X-Actor} 头——两条转发刻意分开写，不做成「目标可选」参数：
      * 那种写法会让「这个端点到底打向谁」变成每次读都要确认的事。
      */
     private ResponseEntity<String> forwardToTicket(String method, String path, Map<String, Object> body) {
@@ -412,7 +462,7 @@ public class OpsController {
     }
 
     private ResponseEntity<String> forwardToTicket(String method, String path, Map<String, Object> body,
-                                                   String agent) {
+                                                   Actor actor) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder(
                     URI.create(properties.ticket().baseUrl() + path))
@@ -422,8 +472,9 @@ public class OpsController {
             TenantContext.Identity identity = TenantContext.current();
             builder.header("X-Tenant-Id", identity.tenantId());
             builder.header("X-Customer-Id", identity.customerId() == null ? "" : identity.customerId());
-            if (agent != null && !agent.isBlank()) {
-                builder.header("X-Agent", agent);
+            if (actor != null) {
+                builder.header(ActorHeaders.ACTOR, actor.name());
+                builder.header(ActorHeaders.ACTOR_AUTHENTICATED, String.valueOf(actor.authenticated()));
             }
             HttpRequest.BodyPublisher publisher = body == null
                     ? HttpRequest.BodyPublishers.noBody()
@@ -441,6 +492,11 @@ public class OpsController {
 
     private ResponseEntity<String> forward(String method, String path, Map<String, Object> body,
                                            boolean tenantScoped) {
+        return forward(method, path, body, tenantScoped, null);
+    }
+
+    private ResponseEntity<String> forward(String method, String path, Map<String, Object> body,
+                                           boolean tenantScoped, Actor actor) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(properties.bizmock().baseUrl() + path))
                     .timeout(properties.bizmock().readTimeout())
@@ -450,6 +506,10 @@ public class OpsController {
                 TenantContext.Identity identity = TenantContext.current();
                 builder.header("X-Tenant-Id", identity.tenantId());
                 builder.header("X-Customer-Id", identity.customerId() == null ? "" : identity.customerId());
+            }
+            if (actor != null) {
+                builder.header(ActorHeaders.ACTOR, actor.name());
+                builder.header(ActorHeaders.ACTOR_AUTHENTICATED, String.valueOf(actor.authenticated()));
             }
             HttpRequest.BodyPublisher publisher = body == null
                     ? HttpRequest.BodyPublishers.noBody()

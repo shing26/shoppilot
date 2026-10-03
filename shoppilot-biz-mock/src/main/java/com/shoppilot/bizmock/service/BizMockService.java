@@ -12,6 +12,7 @@ import com.shoppilot.bizmock.repo.OrderRepository;
 import com.shoppilot.bizmock.repo.RefundRepository;
 import com.shoppilot.bizmock.tenant.TenantContextHolder;
 import com.shoppilot.tool.ToolName;
+import com.shoppilot.tool.audit.Actor;
 import com.shoppilot.tool.audit.AuditActions;
 import com.shoppilot.tool.workitem.TicketSource;
 import com.shoppilot.bizmock.workitem.WorkItemClient;
@@ -273,7 +274,7 @@ public class BizMockService {
      */
     @Transactional
     public ToolResponse<RefundView> reviewRefund(String refundId, String decision, String note,
-                                              String reviewer) {
+                                              Actor reviewer) {
         Long id = parseRefundId(refundId);
         if (id == null) {
             return ToolResponse.failure(ToolName.APPLY_REFUND.apiName(), ToolStatus.NOT_FOUND,

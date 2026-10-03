@@ -7,6 +7,7 @@ import com.shoppilot.ticket.domain.TicketPriority;
 import com.shoppilot.ticket.domain.TicketStatus;
 import com.shoppilot.ticket.repo.RoutingRuleRepository;
 import com.shoppilot.ticket.repo.TicketRepository;
+import com.shoppilot.tool.audit.Actor;
 import com.shoppilot.tool.audit.AuditActions;
 import com.shoppilot.tool.workitem.TicketSource;
 import java.time.Duration;
@@ -122,9 +123,9 @@ public class RoutingService {
     /** 新增一条规则。每次写都发审计事件——票 71 之前规则只能走迁移变更。 */
     @Transactional
     public RoutingRule createRule(String tenantId, String source, String reason, String queue,
-                                  TicketPriority priority, int slaMinutes, boolean enabled, String reviewer) {
+                                  TicketPriority priority, int slaMinutes, boolean enabled, Actor reviewer) {
         RoutingRule rule = ruleRepository.save(new RoutingRule(tenantId, source, reason, queue, priority, slaMinutes,
-                enabled, Instant.now(), reviewer));
+                enabled, Instant.now(), reviewer.name()));
         auditPublisher.publish(AuditActions.ROUTING_RULE_CREATED, "ROUTING_RULE", String.valueOf(rule.getId()), reviewer,
                 "新增规则 " + tenantId + "/" + source + "/" + reason + " → " + queue
                         + "（SLA " + slaMinutes + " 分钟，优先级 " + priority.name() + "）");
@@ -133,11 +134,11 @@ public class RoutingService {
 
     /** 启停一条规则。 */
     @Transactional
-    public RoutingRule setRuleEnabled(Long id, boolean enabled, String reviewer) {
+    public RoutingRule setRuleEnabled(Long id, boolean enabled, Actor reviewer) {
         RoutingRule rule = ruleRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("规则 " + id + " 不存在"));
         rule.setEnabled(enabled);
-        rule.markUpdated(Instant.now(), reviewer);
+        rule.markUpdated(Instant.now(), reviewer.name());
         RoutingRule saved = ruleRepository.save(rule);
         auditPublisher.publish(AuditActions.ROUTING_RULE_TOGGLED, "ROUTING_RULE", String.valueOf(id), reviewer,
                 (enabled ? "启用" : "停用") + " 规则 " + rule.getTenantId() + "/" + rule.getSource() + "/"

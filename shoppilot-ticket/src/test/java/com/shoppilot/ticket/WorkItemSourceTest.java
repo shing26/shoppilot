@@ -183,7 +183,9 @@ class WorkItemSourceTest {
             headers.set("X-Customer-Id", customerId);
         }
         if (agent != null) {
-            headers.set("X-Agent", agent);
+            // 票 82：X-Agent 已退役，改发 X-Actor + X-Actor-Authenticated（见 ActorHeaders）
+            headers.set("X-Actor", agent);
+            headers.set("X-Actor-Authenticated", "true");
         }
         ResponseEntity<String> response = rest.exchange(path, HttpMethod.valueOf(method),
                 new HttpEntity<>(body == null ? "" : body, headers), String.class);

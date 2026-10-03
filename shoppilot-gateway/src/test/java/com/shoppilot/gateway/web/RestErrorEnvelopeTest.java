@@ -41,6 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -275,12 +276,14 @@ class RestErrorEnvelopeTest {
     @Test
     @DisplayName("退款审核经代理转发：路径、内部凭证与租户上下文都由网关补，浏览器只发 decision（票 61）")
     void refundReviewProxiesWithTenantContext() throws Exception {
+        // 票 82：退款审核现在与工单动作走同一条守卫，这里用**运维凭证**那条线（调试台与那批验收脚本走的就是它）。
         TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-ops-review"));
         try {
             stubDownstream(200, "{\"status\":\"OK\"}");
             ArgumentCaptor<HttpRequest> captured = ArgumentCaptor.forClass(HttpRequest.class);
 
             MvcResult posted = mvc().perform(post("/api/v1/support/ops/refunds/12/review")
+                            .header("X-Ops-Token", OPS_TOKEN)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"decision\":\"APPROVE\"}"))
                     .andReturn();
@@ -293,6 +296,31 @@ class RestErrorEnvelopeTest {
             assertThat(sent.headers().firstValue("X-Internal-Token")).contains("internal");
             assertThat(sent.headers().firstValue("X-Tenant-Id")).contains("T001");
             assertThat(sent.headers().firstValue("X-Customer-Id")).contains("C001");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * 票 82 的新闸门：**既不是坐席账号、又没带运维凭证 → 403**，而且这个 403 不该打到下游。
+     *
+     * <p>断言「没打到下游」而不只是断言 403：否则把守卫挪到转发之后也能让它绿，
+     * 而那时候网关已经替放行打了个响。
+     */
+    @Test
+    @DisplayName("买家身份既无运维凭证也无坐席角色：退款审核 403，且请求没出网关")
+    void refundReviewNeedsStaffRoleOrOpsToken() throws Exception {
+        TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-buyer-review",
+                com.shoppilot.tool.identity.UserRole.BUYER, null));
+        try {
+            MvcResult posted = mvc().perform(post("/api/v1/support/ops/refunds/12/review")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"decision\":\"APPROVE\"}"))
+                    .andReturn();
+
+            assertThat(posted.getResponse().getStatus()).isEqualTo(403);
+            assertThat(envelope(posted).get("code").asText()).isEqualTo("role.denied");
+            verify(http, never()).send(any(), any());
         } finally {
             TenantContext.clear();
         }

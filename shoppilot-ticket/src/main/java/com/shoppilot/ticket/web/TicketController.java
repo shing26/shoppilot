@@ -1,6 +1,7 @@
 package com.shoppilot.ticket.web;
 
 import com.shoppilot.ticket.domain.TicketStatus;
+import com.shoppilot.tool.audit.ActorHeaders;
 import com.shoppilot.tool.workitem.TicketSource;
 import com.shoppilot.ticket.service.WorkItemService;
 import com.shoppilot.tool.view.TicketView;
@@ -24,8 +25,10 @@ import java.util.Map;
  *
  * <p>浏览器不直连本服务，一律经网关代理；调用方必须带内部 token 与租户上下文（{@link InternalAuthFilter}）。
  *
- * <p>{@code X-Agent} 是**坐席自报**的身份，**不是认证过的身份**（身份域是下一轮，ADR 0056）：
- * 它进的是审计不是权限。带上内部 token 就能写这个头——这条缺口照登。
+ * <p><b>{@code X-Agent} 已退役</b>（round25 票 82 / ADR 0058）：它由调用方自报，带上内部 token
+ * 就能写成任何名字，于是「谁领了这张单」一度没有根据。现在只认 {@code X-Actor} 与
+ * {@code X-Actor-Authenticated}，都由网关从已验签的令牌解出来再下发；
+ * 后者缺失即按未认证处理，本服务不接受任何来自客户端的身份声明。
  */
 @RestController
 @RequestMapping("/api/tickets")
@@ -119,8 +122,10 @@ public class TicketController {
      */
     @PostMapping("/{ticketId}/claim")
     public ResponseEntity<Void> claim(@PathVariable String ticketId,
-                                      @RequestHeader(value = "X-Agent", required = false) String agent) {
-        return switch (service.claim(ticketId, agent)) {
+                                      @RequestHeader(value = ActorHeaders.ACTOR, required = false) String actor,
+                                      @RequestHeader(value = ActorHeaders.ACTOR_AUTHENTICATED,
+                                              required = false) String authenticated) {
+        return switch (service.claim(ticketId, ActorHeaders.of(actor, authenticated))) {
             case CLAIMED -> ResponseEntity.noContent().build();
             case TAKEN -> ResponseEntity.status(HttpStatus.CONFLICT).build();
             case NOT_FOUND -> ResponseEntity.notFound().build();
@@ -129,8 +134,10 @@ public class TicketController {
 
     @PostMapping("/{ticketId}/release")
     public ResponseEntity<Void> release(@PathVariable String ticketId,
-                                        @RequestHeader(value = "X-Agent", required = false) String agent) {
-        return switch (service.release(ticketId, agent)) {
+                                        @RequestHeader(value = ActorHeaders.ACTOR, required = false) String actor,
+                                        @RequestHeader(value = ActorHeaders.ACTOR_AUTHENTICATED,
+                                                required = false) String authenticated) {
+        return switch (service.release(ticketId, ActorHeaders.of(actor, authenticated))) {
             case CLAIMED -> ResponseEntity.noContent().build();
             case TAKEN -> ResponseEntity.status(HttpStatus.CONFLICT).build();
             case NOT_FOUND -> ResponseEntity.notFound().build();
@@ -140,8 +147,11 @@ public class TicketController {
     @PostMapping("/{ticketId}/resolve")
     public ResponseEntity<Void> resolve(@PathVariable String ticketId,
                                         @RequestBody ResolveRequest request,
-                                        @RequestHeader(value = "X-Agent", required = false) String agent) {
-        return service.resolve(ticketId, agent, request.note()) ? ResponseEntity.noContent().build()
+                                        @RequestHeader(value = ActorHeaders.ACTOR, required = false) String actor,
+                                        @RequestHeader(value = ActorHeaders.ACTOR_AUTHENTICATED,
+                                                required = false) String authenticated) {
+        return service.resolve(ticketId, ActorHeaders.of(actor, authenticated), request.note())
+                ? ResponseEntity.noContent().build()
                 : ResponseEntity.status(HttpStatus.CONFLICT).build();
     }
 

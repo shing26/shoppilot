@@ -41,6 +41,6 @@ public class AuditController {
 
     private static AuditView toView(AuditEventRow row) {
         return new AuditView(row.getEventId(), row.getAction(), row.getObjectType(), row.getObjectId(),
-                row.getActor(), row.getDetail(), row.getOccurredAt());
+                row.getActor(), row.getDetail(), row.getOccurredAt(), row.isActorAuthenticated());
     }
 }

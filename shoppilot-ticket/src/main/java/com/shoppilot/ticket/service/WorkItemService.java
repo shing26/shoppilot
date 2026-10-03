@@ -5,6 +5,7 @@ import com.shoppilot.ticket.domain.Ticket;
 import com.shoppilot.ticket.domain.TicketStatus;
 import com.shoppilot.ticket.repo.TicketRepository;
 import com.shoppilot.ticket.tenant.TenantContextHolder;
+import com.shoppilot.tool.audit.Actor;
 import com.shoppilot.tool.audit.AuditActions;
 import com.shoppilot.tool.view.TicketView;
 import com.shoppilot.tool.workitem.TicketSource;
@@ -142,17 +143,17 @@ public class WorkItemService {
      * <p>刻意用条件更新而不是「查出来再改再存」：后者在并发下两个坐席都会看到 assignee 为空。
      */
     @Transactional
-    public ClaimOutcome claim(String ticketId, String assignee) {
+    public ClaimOutcome claim(String ticketId, Actor actor) {
         String tenantId = TenantContextHolder.tenantId();
         // 先判存在性：**跨租户一律 404**，不与「已被领走」共用一个答案——
         // 混成一个答案就等于告诉别人「这张单存在只是你领不到」。
         if (ticketRepository.findByIdAndTenantId(ticketId, tenantId).isEmpty()) {
             return ClaimOutcome.NOT_FOUND;
         }
-        if (ticketRepository.claim(ticketId, tenantId, assignee) == 0) {
+        if (ticketRepository.claim(ticketId, tenantId, actor.name()) == 0) {
             return ClaimOutcome.TAKEN;
         }
-        auditPublisher.publish(AuditActions.TICKET_CLAIMED, "TICKET", ticketId, assignee, "领取工单");
+        auditPublisher.publish(AuditActions.TICKET_CLAIMED, "TICKET", ticketId, actor, "领取工单");
         return ClaimOutcome.CLAIMED;
     }
 
@@ -163,15 +164,15 @@ public class WorkItemService {
 
     /** 释放：只允许释放自己领的那张。 */
     @Transactional
-    public ClaimOutcome release(String ticketId, String assignee) {
+    public ClaimOutcome release(String ticketId, Actor actor) {
         String tenantId = TenantContextHolder.tenantId();
         if (ticketRepository.findByIdAndTenantId(ticketId, tenantId).isEmpty()) {
             return ClaimOutcome.NOT_FOUND;
         }
-        if (ticketRepository.release(ticketId, tenantId, assignee) == 0) {
+        if (ticketRepository.release(ticketId, tenantId, actor.name()) == 0) {
             return ClaimOutcome.TAKEN;
         }
-        auditPublisher.publish(AuditActions.TICKET_RELEASED, "TICKET", ticketId, assignee, "释放工单");
+        auditPublisher.publish(AuditActions.TICKET_RELEASED, "TICKET", ticketId, actor, "释放工单");
         return ClaimOutcome.CLAIMED;
     }
 
@@ -182,7 +183,7 @@ public class WorkItemService {
      * 状态流转仍走 {@link TicketStatus} 的状态机，不在这里另发明一套。
      */
     @Transactional
-    public boolean resolve(String ticketId, String assignee, String note) {
+    public boolean resolve(String ticketId, Actor actor, String note) {
         Optional<Ticket> found =
                 ticketRepository.findByIdAndTenantId(ticketId, TenantContextHolder.tenantId());
         if (found.isEmpty()) {
@@ -193,12 +194,12 @@ public class WorkItemService {
         if (current == null || !current.canTransitionTo(TicketStatus.RESOLVED)) {
             return false;
         }
-        if (ticket.getAssignee() != null && !ticket.getAssignee().equals(assignee)) {
+        if (ticket.getAssignee() != null && !ticket.getAssignee().equals(actor.name())) {
             return false;
         }
         ticket.setStatus(TicketStatus.RESOLVED.name());
         ticketRepository.save(ticket);
-        auditPublisher.publish(AuditActions.TICKET_RESOLVED, "TICKET", ticketId, assignee,
+        auditPublisher.publish(AuditActions.TICKET_RESOLVED, "TICKET", ticketId, actor,
                 note == null || note.isBlank() ? "处理完成，未填说明" : "处理完成：" + truncate(note, 200));
         return true;
     }

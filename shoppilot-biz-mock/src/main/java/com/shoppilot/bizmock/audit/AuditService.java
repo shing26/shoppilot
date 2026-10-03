@@ -3,7 +3,7 @@ package com.shoppilot.bizmock.audit;
 import com.shoppilot.bizmock.domain.AuditEventRow;
 import com.shoppilot.bizmock.repo.AuditEventRowRepository;
 import com.shoppilot.bizmock.tenant.TenantContextHolder;
-import com.shoppilot.tool.audit.AuditActions;
+import com.shoppilot.tool.audit.Actor;
 import com.shoppilot.tool.audit.AuditEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,11 +47,10 @@ public class AuditService {
 
     /** 发布一条审计事件；通道不可用时直写落表，保证「有没有审计」不取决于 Redis 在不在。 */
     @Transactional
-    public void publish(String action, String objectType, String objectId, String actor, String detail) {
+    public void publish(String action, String objectType, String objectId, Actor actor, String detail) {
         AuditEvent event = new AuditEvent(UUID.randomUUID().toString(), AuditEvent.CURRENT_SCHEMA, action,
                 objectType, objectId, TenantContextHolder.tenantId(),
-                actor == null || actor.isBlank() ? AuditActions.SYSTEM_ACTOR : actor,
-                detail, Instant.now());
+                actor.name(), detail, Instant.now(), actor.authenticated());
         if (channel.available()) {
             channel.publish(event);
         } else {

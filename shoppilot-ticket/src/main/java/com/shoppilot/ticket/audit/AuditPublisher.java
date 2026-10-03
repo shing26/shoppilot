@@ -1,5 +1,6 @@
 package com.shoppilot.ticket.audit;
 
+import com.shoppilot.tool.audit.Actor;
 import com.shoppilot.tool.audit.AuditActions;
 import com.shoppilot.tool.audit.AuditEvent;
 import com.shoppilot.tool.audit.AuditTopics;
@@ -38,10 +39,10 @@ public class AuditPublisher {
         this.redis = redis;
     }
 
-    public void publish(String action, String objectType, String objectId, String actor, String detail) {
+    public void publish(String action, String objectType, String objectId, Actor actor, String detail) {
         AuditEvent event = new AuditEvent(UUID.randomUUID().toString(), AuditEvent.CURRENT_SCHEMA, action,
                 objectType, objectId, TenantContextHolder.tenantId(),
-                actor == null || actor.isBlank() ? AuditActions.SYSTEM_ACTOR : actor, detail, Instant.now());
+                actor.name(), detail, Instant.now(), actor.authenticated());
         Map<String, String> fields = new HashMap<>();
         fields.put("eventId", event.eventId());
         fields.put("schemaVersion", String.valueOf(event.schemaVersion()));
@@ -50,6 +51,9 @@ public class AuditPublisher {
         fields.put("objectId", event.objectId());
         fields.put("tenantId", event.tenantId());
         fields.put("actor", event.actor());
+        // 票 82：actor 是否来自已验签令牌。流里必须有这一项——消费端（biz-mock）据此落表，
+        // 缺了它就只能在落库那一刻一律按未认证处理，那正好是最需要它的那一类动作。
+        fields.put("actorAuthenticated", String.valueOf(event.actorAuthenticated()));
         fields.put("detail", event.detail() == null ? "" : event.detail());
         fields.put("occurredAt", event.occurredAt().toString());
         try {

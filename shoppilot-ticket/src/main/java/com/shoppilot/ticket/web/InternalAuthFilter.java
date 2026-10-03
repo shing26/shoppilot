@@ -17,8 +17,9 @@ import java.io.IOException;
  *
  * <p>身份从网关已验签的上下文头里取，本服务不自行签发身份（ADR 0014）。
  *
- * <p>另外：坐席身份与审核人身份（{@code X-Reviewer}）都还是**调用方自报**的，
- * 身份域是下一轮（ADR 0056）。所以它们进的是审计不是权限。
+ * <p>另外：坐席与审核人的名字现在只来自 {@code X-Actor} / {@code X-Actor-Authenticated}
+ * 两个头，由网关从已验签的令牌解出来再下发（round25 票 82 / ADR 0058）。
+ * 自报式的 {@code X-Agent} / {@code X-Reviewer} 已退役——留着它们就是留着一条绕过的路。
  */
 @Component
 public class InternalAuthFilter extends OncePerRequestFilter {
