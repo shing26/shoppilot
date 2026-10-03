@@ -153,6 +153,9 @@ services:
       # 容器内必须绑 0.0.0.0：Docker 的端口发布是宿主→容器的 NAT，容器只听自己回环就没人能连上。
       # 对外暴露面没变——gateway 的端口仍然只发布到宿主回环（见下方 ports）。
       SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
+      # 演示账号口令（round25 票 80）：同样**不给仓库默认值**，留空即不建演示账号。
+      # 要演示账号就在 .env 里给一个 SHOPPILOT_IDENTITY_DEMO_PASSWORD。
+      SHOPPILOT_IDENTITY_DEMO_PASSWORD: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:-}
     depends_on:
       redis: { condition: service_healthy }
 

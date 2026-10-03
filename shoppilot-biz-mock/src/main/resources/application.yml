@@ -67,6 +67,12 @@ shoppilot:
     # 短超时是刻意的：调用方在用户的对话回合里，多等一秒就是一次可感知的卡顿。
     ticket-base-url: ${SHOPPILOT_TICKET_URL:http://127.0.0.1:8092}
     ticket-timeout: 2s
+    identity:
+      # round25 票 80 / ADR 0056：演示账号的口令。**默认值是空串，不是某个口令**——
+      # 空串的语义是「一条演示账号都不建」。仓库里放一个默认口令，就等于把一把没换过的锁
+      # 写进代码（ADR 0029 对三处服务凭证是同一条家法），所以这里刻意不给默认值：
+      # 要演示账号就在 .env / 容器档的 .env 里显式给一个 SHOPPILOT_IDENTITY_DEMO_PASSWORD。
+      demo-password: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:}
     seed:
       enabled: true
       tenants: 3

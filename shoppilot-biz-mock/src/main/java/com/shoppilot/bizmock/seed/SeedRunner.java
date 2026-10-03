@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.Ordered;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -36,9 +37,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>实体带 {@code @TenantId}，插入时的归属列取自当前租户上下文，
  * 因此必须按租户分批、每批切换上下文，不能在一个事务里混写多个租户。
+ *
+ * <p>{@link #getOrder()}：{@link IdentitySeedRunner} 要遍历本播种出来的租户表，所以它排在本类之后。
+ * 这里实现 {@link Ordered} 而不是打 {@code @Order} 注解——本包的 {@code domain.Order}（订单）
+ * 与 {@code org.springframework.core.annotation.Order} 简名相同，注解会把引用变成二义的。
  */
 @Component
-public class SeedRunner implements ApplicationRunner {
+public class SeedRunner implements ApplicationRunner, Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(SeedRunner.class);
 
@@ -99,6 +104,11 @@ public class SeedRunner implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         seedIfEmpty();
+    }
+
+    @Override
+    public int getOrder() {
+        return 10;
     }
 
     public void seedIfEmpty() {

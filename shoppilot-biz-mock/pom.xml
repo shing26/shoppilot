@@ -61,6 +61,14 @@
       <scope>runtime</scope>
     </dependency>
     <dependency>
+      <!-- round25 票 80 / ADR 0056、0058：BCrypt 口令哈希。**只引这一个 artifact**，
+           不引 spring-boot-starter-security——那会把一条完整的过滤链与「默认登录页」
+           带进来，而本仓的身份入口是网关的 /auth/login，不是 Spring Security 的表单登录。
+           版本由 spring-boot-dependencies 管，本仓不写死。 -->
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-crypto</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
