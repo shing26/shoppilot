@@ -444,12 +444,12 @@ public class OpsController {
         return role == UserRole.AGENT || role == UserRole.ADMIN;
     }
 
-    /** 从令牌解出操作人；没有账号 id（mock 令牌与老令牌）才回落到自称，并标成未认证。 */
+    /** 从令牌解出操作人；没有账号（mock 令牌与老令牌）才回落到自称，并标成未认证。 */
     private static Actor selfReported(String claimed) {
         TenantContext.Identity identity = TenantContext.current();
         return identity.accountId() == null || identity.accountId().isBlank()
                 ? Actor.of(claimed)
-                : Actor.authenticated(identity.accountId());
+                : Actor.authenticated(identity.actor());
     }
 
     /**

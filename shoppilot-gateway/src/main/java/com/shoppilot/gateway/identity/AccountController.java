@@ -89,7 +89,8 @@ public class AccountController {
         }
         AccountView account = attempt.account();
         // 租户取自**库里那一行**而不是请求里的 tenantId：请求里的值只是「去哪张表里找这个用户名」的线索。
-        String token = jwtService.issue(account.tenantId(), account.subjectRef(), account.role(), account.accountId());
+        String token = jwtService.issue(account.tenantId(), account.subjectRef(), account.role(), account.accountId(),
+                account.username());
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("token", token);
         body.put("accountId", account.accountId());

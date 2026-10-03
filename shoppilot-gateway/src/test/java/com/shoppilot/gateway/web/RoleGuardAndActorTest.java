@@ -142,6 +142,19 @@ class RoleGuardAndActorTest {
         assertThat(envelope(response).path("code").asText()).isEqualTo("ops.disabled");
     }
 
+    @Test
+    @DisplayName("署名用登录账号名而不是账号 id——工单 assignee 与审计 actor 都是人读的")
+    void actorPrefersTheUsernameOverTheAccountId() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-6", UserRole.AGENT, "U0a1b2c3d4e5", "agent"));
+        stubTicketService(204, "");
+        ArgumentCaptor<HttpRequest> captured = ArgumentCaptor.forClass(HttpRequest.class);
+
+        claim(null, null);
+
+        verify(http).send(captured.capture(), any());
+        assertThat(captured.getValue().headers().firstValue("X-Actor")).contains("agent");
+    }
+
     private MockHttpServletResponse claim(String opsToken, String selfReported) throws Exception {
         MockHttpServletRequestBuilder request = post("/api/v1/support/ops/tickets/T-1/claim")
                 .contentType(MediaType.APPLICATION_JSON);

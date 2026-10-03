@@ -11,8 +11,20 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 
 const BASE = process.env.SHOPPILOT_WORKSPACE_BASE || 'http://127.0.0.1:8082';
 const PAGE = `${BASE}/workspace/`;
-const OPS_TOKEN = process.env.SHOPPILOT_OPS_TOKEN || 'dev-ops-token';
-const AGENT = process.env.SHOPPILOT_AGENT || 'verify-agent';
+
+// 票 83：工作台改成**坐席账号登录**，凭证形态从「ops token + 自报坐席名」换成真登录。
+// 口令来自环境变量而不是仓库默认值（ADR 0029 的同一条家法）；没给就明说别跑，别退回去
+// 用 ops token——那正是本票要退役的东西，退回去等于这个门禁在验一个已经不存在的产品形态。
+const TENANT = process.env.SHOPPILOT_IDENTITY_TENANT || 'T001';
+const USERNAME = process.env.SHOPPILOT_IDENTITY_AGENT || 'agent';
+const PASSWORD = process.env.SHOPPILOT_IDENTITY_DEMO_PASSWORD;
+if (!PASSWORD) {
+  console.error(
+    '缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：票 83 起工作台用坐席账号登录，' +
+      '演示账号的口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。',
+  );
+  process.exit(2);
+}
 
 const results = [];
 const check = (name, ok, detail = '') => {
@@ -35,29 +47,30 @@ await page.goto(PAGE, { waitUntil: 'networkidle' });
 check('工作台页面可加载（/workspace/ 由网关同源提供）', (await page.title()).length > 0, await page.title());
 check('页面标题是坐席工作台', (await page.locator('h1').innerText()).includes('坐席'));
 
-// 凭证形态：本轮只有 ops token + 自报坐席名，真身份域是下一轮（ADR 0056）。
+// **走页面上的登录表单**，而不是直接往 localStorage/sessionStorage 里塞令牌：
+// 直接塞跳过了「登录面真的能用」这件事，而那正是票 83 的交付内容。
+// （早先那版是塞 ops token + 自报坐席名；票 83 起那条路已经不存在了。）
 //
-// **直接写 localStorage 再重载**，而不是 fill + 点刷新：fill 只触发 input、不触发 @change，
-// 于是凭证存不进 localStorage、后续刷新全 401——第一版就是这么写的，结果队列 0 行、
-// 三条交互断言「未触发」却整体 PASS。那是假绿（本仓的门禁不许自己跳过触发条件）。
-await page.evaluate(([token, agent]) => {
-  localStorage.setItem('shoppilot.opsToken', token);
-  localStorage.setItem('shoppilot.agent', agent);
-}, [OPS_TOKEN, AGENT]);
+// 未登录时先断一格：没有身份时必须给出可读原因，而不是冻在空态——那是票 61 修过的坑。
 await page.reload({ waitUntil: 'networkidle' });
-await page.locator('button:has-text("刷新")').click();
-await page.waitForLoadState('networkidle');
-
-// 无凭证时不许冻在空态——那是票 61 修过的坑（读数格停在「-」、抽屉停在「尚未拉取」）。
-await page.fill('input[placeholder="ops token"]', '');
-await page.locator('button:has-text("刷新")').click();
+await page.locator('button:has-text("刷新"), button:has-text("登录")').first().click().catch(() => {});
 await page.waitForTimeout(300);
 check(
-  '没有运维令牌时给出可读原因，而不是空态',
-  (await page.locator('.err').innerText().catch(() => '')).includes('运维令牌'),
+  '未登录时给出可读原因，而不是空态',
+  (await page.locator('.err').innerText().catch(() => '')).includes('登录'),
+  await page.locator('.err').innerText().catch(() => '(没有 .err)'),
 );
 
-await page.fill('input[placeholder="ops token"]', OPS_TOKEN);
+await page.fill('input[placeholder="店铺编号，如 T001"]', TENANT);
+await page.fill('input[placeholder="坐席账号"]', USERNAME);
+await page.fill('input[placeholder="口令"]', PASSWORD);
+await page.locator('button:has-text("登录")').click();
+await page.waitForTimeout(600);
+check(
+  '登录后页面显示当前身份（署名取自令牌，页面上不能改）',
+  (await page.locator('.who').innerText().catch(() => '')).includes(USERNAME),
+  await page.locator('.who').innerText().catch(() => '(没有 .who)'),
+);
 await page.locator('button:has-text("刷新")').click();
 await page.waitForLoadState('networkidle');
 
@@ -127,12 +140,13 @@ await firstClaim.click({ noWaitAfter: true }).catch(() => {});
 // **轮询**而不是固定等 600 ms：领取要穿过网关再到工单服务（两跳），
 // 固定等待在慢一点的机器上就是间歇红——本仓吃过「间歇红被当成偶发」的亏。
 await page
-  .waitForFunction((agent) => document.querySelector('tbody tr')?.innerText.includes(agent), AGENT, { timeout: 15000 })
+  .waitForFunction((agent) => document.querySelector('tbody tr')?.innerText.includes(agent), USERNAME, { timeout: 15000 })
   .catch(() => {});
 const firstRowText = await page.locator('tbody tr').first().innerText();
 check(
   '领取后该行出现领取人（动作真的打到了工单服务）',
-  firstRowText.includes(AGENT),
+  // 票 83 起领取人取自登录令牌里的账号，不是页面上自报的名字，所以断言的是登录用的那个账号名
+  firstRowText.includes(USERNAME),
   firstRowText.replace(/\s+/g, ' ').slice(0, 80),
 );
 

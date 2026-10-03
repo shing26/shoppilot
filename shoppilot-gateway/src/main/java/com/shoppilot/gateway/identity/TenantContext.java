@@ -30,15 +30,34 @@ public final class TenantContext {
      * 本身就该是一个明确写出来的概念，而不是让人在每个测试里补一个 `UserRole.BUYER`。
      */
     public record Identity(String tenantId, String customerId, String conversationId,
-                           UserRole role, String accountId) {
+                           UserRole role, String accountId, String username) {
 
         public Identity(String tenantId, String customerId, String conversationId) {
-            this(tenantId, customerId, conversationId, UserRole.BUYER, null);
+            this(tenantId, customerId, conversationId, UserRole.BUYER, null, null);
         }
 
-        /** 账号 id；mock 令牌与历史令牌没有账号，返回 null（**不是**空串——空串会被当成一个叫空的账号）。 */
+        public Identity(String tenantId, String customerId, String conversationId,
+                        UserRole role, String accountId) {
+            this(tenantId, customerId, conversationId, role, accountId, null);
+        }
+
+        /**
+         * 操作人署名，优先级 <b>用户名 → 账号 id → 买家 id</b>。
+         *
+         * <p>用户名排第一不是为了好看：工单的 {@code assignee} 栏与审计的 {@code actor} 栏是人读的，
+         * 一串 {@code U0a1b2c3d} 记在那儿既没人认得，也无法在验收脚本里当断言用。
+         * 用户名在租户内唯一，而审计行本来就带租户，所以它不会把两个身份混成一条。
+         *
+         * <p>mock 令牌与老令牌没有 username 也没有账号 id，退回买家 id —— 那正是它们本来的形状。
+         */
         public String actor() {
-            return accountId != null && !accountId.isBlank() ? accountId : customerId;
+            if (username != null && !username.isBlank()) {
+                return username;
+            }
+            if (accountId != null && !accountId.isBlank()) {
+                return accountId;
+            }
+            return customerId;
         }
     }
 

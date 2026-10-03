@@ -42,7 +42,7 @@ public class JwtService {
 
     /** 测试缝：签发一个指定有效期的 token，用于验证过期即拒。生产路径只用无参版本。 */
     public String issue(String tenantId, String customerId, Duration ttl) {
-        return build(tenantId, customerId, null, null, ttl);
+        return build(tenantId, customerId, null, null, null, ttl);
     }
 
     /**
@@ -52,10 +52,16 @@ public class JwtService {
      * 「一个没有角色的买家」，那正好是 mock 令牌的老形状，于是调试台与那批验收脚本一行都不用改。
      */
     public String issue(String tenantId, String customerId, UserRole role, String accountId) {
-        return build(tenantId, customerId, role, accountId, TTL);
+        return build(tenantId, customerId, role, accountId, null, TTL);
     }
 
-    private String build(String tenantId, String customerId, UserRole role, String accountId, Duration ttl) {
+    /** 真登录用这一支：额外带上用户名，供工单 assignee 与审计 actor 署名（票 83）。 */
+    public String issue(String tenantId, String customerId, UserRole role, String accountId, String username) {
+        return build(tenantId, customerId, role, accountId, username, TTL);
+    }
+
+    private String build(String tenantId, String customerId, UserRole role, String accountId, String username,
+                         Duration ttl) {
         Instant now = Instant.now();
         var builder = Jwts.builder()
                 .subject(customerId)
@@ -72,6 +78,9 @@ public class JwtService {
         if (accountId != null && !accountId.isBlank()) {
             builder.claim("aid", accountId);
         }
+        if (username != null && !username.isBlank()) {
+            builder.claim("usr", username);
+        }
         return builder.compact();
     }
 
@@ -84,7 +93,8 @@ public class JwtService {
                 return Optional.empty();
             }
             return Optional.of(new TenantContext.Identity(tenantId, customerId, conversationId,
-                    roleOf(claims.get("role", String.class)), claims.get("aid", String.class)));
+                    roleOf(claims.get("role", String.class)), claims.get("aid", String.class),
+                    claims.get("usr", String.class)));
         } catch (JwtException | IllegalArgumentException malformedOrExpired) {
             return Optional.empty();
         }
