@@ -42,13 +42,17 @@ public class AuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        // 静态入口放行：调试台在 `/`、坐席工作台在 `/workspace/`（round23 票 73）。
-        // **目录路径要单独放行**——下面按扩展名那几条只认 `/workspace/index.html`，
+        // 静态入口放行：调试台在 `/`、坐席工作台在 `/workspace/`（round23 票 73）、
+        // 买家中心在 `/buyer/`（round27 票 93）。
+        // **目录路径要单独放行**——下面按扩展名那几条只认 `<入口>/index.html`，
         // 浏览器首次访问打的是 `/workspace/`（无扩展名），不写这一条它就 401，而
         // 「打开页面先要 token」这件事正是清场日的活体验收抓出来的。
+        // **三个入口写在一起**：那次的教训正是「加了一个新入口却忘了在别处放行」，
+        // 列在一起的话，改一处就想得到另外两处。
         // 放行范围只到静态资源：ops 面在 `/api/v1/support/ops` 下，不受这里影响。
         return uri.startsWith("/actuator/") || uri.startsWith("/auth/") || uri.equals("/")
                 || uri.equals("/workspace/") || uri.startsWith("/workspace/")
+                || uri.equals("/buyer/") || uri.startsWith("/buyer/")
                 || uri.endsWith(".html") || uri.endsWith(".js") || uri.endsWith(".css") || uri.endsWith(".ico");
     }
 

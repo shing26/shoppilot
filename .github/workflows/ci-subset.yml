@@ -114,24 +114,35 @@ jobs:
       # （第一个是 promtool）。但它与 promtool 不同：node 来自 runner 自带的 setup-node，
       # 依赖由 lockfile 钉死、下载量在几十 MB 量级，且**失败时不影响前面那些步骤的结论**——
       # 排在 promtool 之后就是这个理由。
-      - name: Set up Node for the workspace build
+      - name: Set up Node for the frontend builds
         uses: actions/setup-node@v4
         with:
           node-version-file: frontend-workspace/.nvmrc
           cache: npm
-          cache-dependency-path: frontend-workspace/package-lock.json
+          cache-dependency-path: |
+            frontend-workspace/package-lock.json
+            frontend-buyer/package-lock.json
 
-      - name: Workspace build (frontend, 0-token)
+      # round27 票 94：从「只构建工作台」扩到「两个前端都构建」。
+      # **仍是九步**——一步里做两件事，不是加一步：步数是 CI 成本口径，不该顺手变。
+      # 两个前端各自 npm ci 而不是复用一份 node_modules：它们的依赖树不同，
+      # 合并会让「装了 A 却没装 B」这件事在别处才暴露。
+      - name: Frontend builds (workspace + buyer, 0-token)
         run: |
           set -euo pipefail
-          cd frontend-workspace
-          npm ci --no-fund --no-audit
-          npm run typecheck
-          npm run build
-          cd ..
+          for app in frontend-workspace frontend-buyer; do
+            cd "$app"
+            npm ci --no-fund --no-audit
+            npm run typecheck
+            npm run build
+            cd ..
+          done
           # 产物入库，所以「构建成功」不够：它必须和仓里那份一样。
+          # **两个产物目录都要断**——只断一个的话，另一个漂了没人知道，
+          # 而「产物入库」这个决定依赖的是这条断言（票 73 的裁定 E）。
           git diff --exit-code -- shoppilot-gateway/src/main/resources/static/workspace \
-            || (echo '::error::工作台构建产物与仓内不一致——改了源码请重新构建并提交产物' && exit 1)
+            shoppilot-gateway/src/main/resources/static/buyer \
+            || (echo '::error::前端构建产物与仓内不一致——改了源码请重新构建并提交产物' && exit 1)
 
       - name: Upload Surefire reports on failure
         if: failure()

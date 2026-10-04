@@ -1,0 +1,25 @@
+{
+  "name": "shoppilot-buyer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "买家端（round27 票 93 / ADR 0057）：登录、会话、我的工单",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vue-tsc": "^2.2.0"
+  }
+}

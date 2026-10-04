@@ -89,6 +89,10 @@ $steps = [ordered]@{
     # 所以它要的**不是**计数变大，而是投递真的发生过——计数那三格在它后面单独断。
     # 排在 workspace 之后：两条都是浏览器/端口形状类，互不依赖，而 workspace 更贵。
     outbound  = @{ Kind = 'node'; Cmd = 'scripts/verify-outbound.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('结果回流断言') }
+    # round27 票 94：买家中心。承重的一格是跨买家隔离——**另一个买家的工单必须真的落过库**，
+    # 否则「这个页面上没有那串单号」是一条恒成立的断言。
+    # 排在 outbound 之后：两条都要起浏览器，排在后面就不用为它多等一次栈。
+    buyer     = @{ Kind = 'node'; Cmd = 'scripts/verify-buyer.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('买家中心断言') }
     # round17 新增的五条（ADR 0034 / 0035 / 0038 / 0039 / 0036）：都排在 console 之后——
     # 情绪门与计划两步都要打模型，重负载压在浏览器形状断言之前会给门禁制造假红（同 eval 那条的理由）。
     # 五条各自的语义断言另有 0 token 的 JVM 用例兜底（SentimentGateTest / ChannelFlowJvmTest /
