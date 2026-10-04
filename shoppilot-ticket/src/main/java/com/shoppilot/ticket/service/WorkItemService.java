@@ -1,6 +1,7 @@
 package com.shoppilot.ticket.service;
 
 import com.shoppilot.ticket.audit.AuditPublisher;
+import com.shoppilot.ticket.audit.OutboundPublisher;
 import com.shoppilot.ticket.domain.Ticket;
 import com.shoppilot.ticket.domain.TicketStatus;
 import com.shoppilot.ticket.repo.TicketRepository;
@@ -30,15 +31,17 @@ public class WorkItemService {
     private final TicketRepository ticketRepository;
     private final RoutingService routingService;
     private final AuditPublisher auditPublisher;
+    private final OutboundPublisher outboundPublisher;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     public WorkItemService(TicketRepository ticketRepository, RoutingService routingService,
-                           AuditPublisher auditPublisher,
+                           AuditPublisher auditPublisher, OutboundPublisher outboundPublisher,
                            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
         this.ticketRepository = ticketRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.routingService = routingService;
         this.auditPublisher = auditPublisher;
+        this.outboundPublisher = outboundPublisher;
     }
 
     /**
@@ -222,6 +225,11 @@ public class WorkItemService {
         ticketRepository.save(ticket);
         auditPublisher.publish(AuditActions.TICKET_RESOLVED, "TICKET", ticketId, actor,
                 note == null || note.isBlank() ? "处理完成，未填说明" : "处理完成：" + truncate(note, 200));
+        // 结果回流（round26 票 87 / ADR 0059）：**结单成功之后**才发，顺序不能反——
+        // 先发事件再落状态的话，消费者可能拿到一条「结论已送达」而工单其实没结成。
+        // 没有投递目标（web 渠道、复核单、退款审批单）时 publisher 自己按规则不发，只计数。
+        outboundPublisher.publish(ticket.getChannel(), ticket.getContact(), ticketId,
+                note == null || note.isBlank() ? "已处理完成" : truncate(note, 200));
         return true;
     }
 
