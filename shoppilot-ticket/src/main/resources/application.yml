@@ -29,8 +29,12 @@ spring:
     locations: classpath:db/migration
   data:
     redis:
-      host: 127.0.0.1
-      port: 16379
+      # 占位符与另两个服务同一组（round26 清场日 2026-10-05 补）。原先这里是**写死的**
+      # `127.0.0.1:16379`，于是容器档下 compose 注入的 `SHOPPILOT_REDIS_HOST=redis` /
+      # `SHOPPILOT_REDIS_PORT=6379` 对本服务无效——**它一直在连容器自己的 localhost**。
+      # 由 `RedisConfigConsistencyTest` 钉住（它第一次运行就抓到了这一处）。
+      host: ${SHOPPILOT_REDIS_HOST:127.0.0.1}
+      port: ${SHOPPILOT_REDIS_PORT:16379}
       timeout: 2s
   jackson:
     default-property-inclusion: non_null

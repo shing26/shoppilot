@@ -6,6 +6,21 @@ server:
 spring:
   application:
     name: shoppilot-biz-mock
+  # round26 清场日补（2026-10-05）：**这一段原本根本不存在**，于是本服务用 Spring Boot 默认的
+  # `localhost:6379` 去连 Redis，而本机的 Redis 在 16379（compose 里刻意偏移过，避开 wslrelay
+  # 已占用的标准端口）。后果是**全程静默**：`available()` 探不通 → publish 走直写兜底，
+  # consume 抛错被 catch 掉，`/api/audit` 永远返回 `[]`，而 JVM 层测试用的是内存通道，
+  # 于是「审计事件在真 Redis 上收发」这件事从来没人验过（round23 登记的「真实 Redis 行为零验证」）。
+  #
+  # **为什么它能潜伏这么久**：Redis 在本服务里是**软依赖**（票 71 的既定取舍——退款放行不能因为
+  # 审计发不出去而失败），于是「连错一个端口」不会让服务起不来，只会让它安静地退化成单机模式。
+  # 少一段配置、多个服务默认值不一致，这正是本仓最该用机器守住的那一类形状：
+  # 现在由 `RedisConfigConsistencyTest` 在三个服务的 yml 之间比对（ticket 模块的 JVM 用例，0 token）。
+  data:
+    redis:
+      host: ${SHOPPILOT_REDIS_HOST:127.0.0.1}
+      port: ${SHOPPILOT_REDIS_PORT:16379}
+      timeout: 2s
   datasource:
     url: jdbc:h2:mem:shoppilot;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     driver-class-name: org.h2.Driver

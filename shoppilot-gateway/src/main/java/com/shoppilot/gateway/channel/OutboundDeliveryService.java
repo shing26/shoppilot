@@ -51,7 +51,22 @@ public class OutboundDeliveryService {
 
     private static final Logger log = LoggerFactory.getLogger(OutboundDeliveryService.class);
     private static final int BATCH = 64;
-    private static final String CONSUMER = "gateway-outbound";
+
+    /**
+     * 消费组名与消费者名**各是一个常量，且下面三处（建组 / 读 / ack）必须用同一个**。
+     *
+     * <p>第一版把「消费者名」当成了组名，于是三处各写各的：{@code createGroup} 建的是
+     * {@code gateway-outbound}，而 {@code read} 里的组名却是流名——{@code Consumer.from(a, b)} 的
+     * <b>第一个参数是组名</b>，第二个是消费者名（biz-mock 侧的 {@code RedisAuditChannel} 本来就是对的，
+     * 是这里照着写反了）。于是 XREADGROUP 永远在找一个不存在的组，每 5 秒一次 NOGROUP，
+     * 而事件就静静地堆在流里。
+     *
+     * <p>**为什么 mock 测试抓不到**：JVM 用例把整条通道换成了内存实现，
+     * {@code Consumer.from(...)} 这类「参数顺序」的错误在那一层根本不存在。
+     * 它是被清场日的 Redis {@code MONITOR} 抓出来的——MONITOR 会把客户端真正发出的命令原样打出来。
+     */
+    private static final String GROUP = "shoppilot-outbound";
+    private static final String CONSUMER = "gateway";
 
     /** 去重集合的容量上限。它是缓存不是账本——超出就丢最旧的。 */
     private static final int DEDUPE_CAPACITY = 1000;
@@ -100,7 +115,7 @@ public class OutboundDeliveryService {
         List<MapRecord<String, Object, Object>> records;
         try {
             records = redis.opsForStream().read(
-                    Consumer.from(AuditTopics.CHANNEL_OUTBOUND, CONSUMER),
+                    Consumer.from(GROUP, CONSUMER),
                     StreamReadOptions.empty().count(BATCH),
                     StreamOffset.create(AuditTopics.CHANNEL_OUTBOUND, ReadOffset.lastConsumed()));
         } catch (RuntimeException nothingYet) {
@@ -110,9 +125,11 @@ public class OutboundDeliveryService {
                 // 「组已存在」吞掉并按 WARN 打出去，于是日志里每 5 秒一条「出站流读取失败」
                 // （清场日实测 90 秒 18 条）——那不是故障，那是**还没有事件**。
                 //
-                // 顺带记一笔：`StreamOperations.createGroup` 在本仓用的这两个 Spring Data
-                // 版本里都**没有** mkStream 重载，所以「一次把组与流建好」这条路在此走不通，
-                // 只能等第一条事件发出后自然建组（下一轮 ensureGroup 就成功）。
+                // 顺带更正一条我自己写错的判断：清场日当天我以为 `StreamOperations.createGroup`
+                // 没有 MKSTREAM 重载（「javap 只看到三参抽象方法」），于是记下「一次把组与流建好
+                // 这条路走不通」。**那是错的**：Redis MONITOR 显示它发出去的就是
+                // `XGROUP CREATE <key> <group> <id> MKSTREAM`——三参默认实现自带 MKSTREAM。
+                // javap 只列了签名，没列实现里加的那个参数。
                 //
                 // **异常原文必须带上**：清场日实测发现「组已存在 + 流里已有 1 条」时也会走进这一支，
                 // 于是这句「还没有第一条事件」是**误导**——而当时正是缺了它才只能靠猜。
@@ -135,7 +152,7 @@ public class OutboundDeliveryService {
         }
         if (!acked.isEmpty()) {
             try {
-                redis.opsForStream().acknowledge(AuditTopics.CHANNEL_OUTBOUND, CONSUMER,
+                redis.opsForStream().acknowledge(AuditTopics.CHANNEL_OUTBOUND, GROUP,
                         acked.toArray(new RecordId[0]));
             } catch (RuntimeException unreachable) {
                 log.warn("出站流 ack 失败，下一轮会重投（幂等保证不会重复投递）: {}", unreachable.getMessage());
@@ -249,7 +266,7 @@ public class OutboundDeliveryService {
 
     private void ensureGroup() {
         try {
-            redis.opsForStream().createGroup(AuditTopics.CHANNEL_OUTBOUND, ReadOffset.from("0-0"), CONSUMER);
+            redis.opsForStream().createGroup(AuditTopics.CHANNEL_OUTBOUND, ReadOffset.from("0-0"), GROUP);
         } catch (RuntimeException alreadyThere) {
             // **BUSYGROUP 与 NOGROUP 是两件事**：前者是「组已存在，正常」，
             // 后者是「流还不存在，也就是还没有任何出站事件」。第一版把两者当成一件，

@@ -135,17 +135,26 @@ if (received.length > 0) {
 
 // --- 计数那三格 ---------------------------------------------------------------------------
 
-const prometheus = await (await fetch(`${BASE}/actuator/prometheus`)).text();
-const counterOf = (name) =>
-  prometheus
+// --- 计数那两格（**分别在两个进程上**，第一版在这里写错过） ---------------------------------
+//
+// `published_total` 长在**工单服务**（它才是生产端），`delivered_total` 长在**网关**（消费端）。
+// 第一版两个都去网关读，于是「发布计数」那条**结构上恒为 0**——清场日 2026-10-04 实跑才发现。
+// 「读错进程」的断言不是偶尔失灵，它只是**从来没被真正执行过**。
+
+const TICKET_BASE = process.env.SHOPPILOT_TICKET_BASE || 'http://127.0.0.1:8092';
+
+const counterOf = async (base, name) => {
+  const text = await (await fetch(`${base}/actuator/prometheus`)).text();
+  return text
     .split('\n')
     .filter((line) => line.startsWith(name) && !line.startsWith('#'))
     .reduce((sum, line) => sum + Number(line.split(' ')[1] || 0), 0);
+};
 
-check('发布计数可见（工单服务侧）', counterOf('shoppilot_outbound_published_total') >= 1,
-  `${counterOf('shoppilot_outbound_published_total')}`);
-check('送达计数可见（网关侧）', counterOf('shoppilot_outbound_delivered_total') >= 1,
-  `${counterOf('shoppilot_outbound_delivered_total')}`);
+const published = await counterOf(TICKET_BASE, 'shoppilot_outbound_published_total');
+const delivered = await counterOf(BASE, 'shoppilot_outbound_delivered_total');
+check('发布计数可见（工单服务侧 :8092）', published >= 1, `${published}`);
+check('送达计数可见（网关侧 :8082）', delivered >= 1, `${delivered}`);
 
 await new Promise((resolve) => echo.close(resolve));
 

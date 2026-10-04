@@ -122,3 +122,48 @@ ADR 0059 第 4 条那个「可选 `callbackUrl`」我此前一直没做。
 （javap 看过签名，Redis 报错里点名的组名与手工命令一致）。
 
 **档位**：perf 档。
+
+### 2026-10-05 补记：三个缺陷全部定位并修掉，门禁 10/10
+
+**取证的关键一步是 Redis `MONITOR`**——它把客户端真正发出的命令原样打出来。
+在此之前我做的全是排除性证据（javap 看签名、INFO server 比对、手工 XREADGROUP），
+它们只能缩小范围，最后是 MONITOR 一击定案。
+
+**抓到的原文（修前）**：
+
+```
+"XGROUP"     "CREATE" "shoppilot:channel-outbound" "gateway-outbound" "0-0" "MKSTREAM"
+"XREADGROUP" "GROUP"  "shoppilot:channel-outbound" "gateway-outbound" ...
+                         ↑ 这是「组名」的位置
+```
+
+`XREADGROUP GROUP <组名> <消费者名>`：代码里 `createGroup` 建的是名叫 `gateway-outbound` 的组，
+而 `read` 去找一个叫 `shoppilot:channel-outbound` 的组——**永远不存在**。
+根因是 `Consumer.from(a, b)` 的**第一个参数是组名**，我当成流名了。
+
+### 三个缺陷
+
+| # | 缺陷 | 藏在哪儿 | 为什么没人发现 |
+|---|---|---|---|
+| 1 | 出站消费端把流名当组名 | round26 我自己引入 | JVM 用例把整条通道换成内存实现，**参数顺序错误在那一层根本不存在** |
+| 2 | **`shoppilot-biz-mock` 根本没有 `spring.data.redis`** | round23 起就缺 | 它用默认 `localhost:6379`，而 Redis 在 16379；**全程静默**——软依赖的代价是「连错地方」不会让服务起不来，只会让它安静地退化成单机模式 |
+| 3 | **`shoppilot-ticket` 把 Redis 写死不认占位符** | 容器档下一直连 localhost | compose 注入的 `SHOPPILOT_REDIS_HOST=redis` 对它无效 |
+
+**②③ 由新判据 `RedisConfigConsistencyTest` 第一次运行就抓到 ③**——它比对三个服务的 yml，
+并单独断「端口默认值必须是 16379 而不是被别的项目占着的 6379」。变异对照实测：把 biz-mock 的配置删回事故形态 → **2 条红**。
+
+### 一条我自己的错误更正
+
+昨天我在这份文件里写下「`StreamOperations.createGroup` 没有 mkStream 重载，所以「一次把组与流建好」走不通」——
+**那是错的**。MONITOR 显示它发出去的就是 `XGROUP CREATE ... MKSTREAM`：**三参默认实现自带 MKSTREAM**，
+javap 只列了签名，没列实现里加的那个参数。已在代码注释里更正。
+
+### 修后读数
+
+- **`verify-outbound` 10/10**：真发 webhook POST 1 次、内容指回工单号、重投不产生第二次、
+  两个计数分别在**正确的进程**上读到（第一版两个都去网关读，结构上恒为 0）。
+- **审计骨干**：真 Redis 上 `/api/audit` 返回真实事件（`TICKET_RESOLVED` / actor `outbound-gate` /
+  `actorAuthenticated: false`），消费组 `shoppilot-audit` 存在且 **pending=0**。
+- JVM **`5 + 10 + 57 + 342 + 39 = 454`**（+2 新判据），覆盖率四模块全过。
+
+**round23 登记的「真实 Redis 行为零验证」今天验到了，结果是修完之后通过。**
