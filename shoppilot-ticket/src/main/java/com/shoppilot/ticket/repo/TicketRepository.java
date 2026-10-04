@@ -24,6 +24,17 @@ public interface TicketRepository extends JpaRepository<Ticket, String> {
     List<Ticket> findByQueueAndStatusNotOrderByPriorityAscCreatedAtAsc(String queue, String resolvedStatus);
 
     /**
+     * 买家自己的工单（round27 票 92）。
+     *
+     * <p>{@code customerId} 是**方法参数**而不是从上下文取，因为这一列的来源正是已验签的身份——
+     * 调用方（网关）已经验过签，把它原样传下来，仓储这一层再加一次租户谓词。
+     *
+     * <p>排序用 {@code createdAt} 倒序：买家看的是「我最近问过什么、现在到哪一步了」，
+     * 时间序比坐席台那个「先处理紧急」序更贴近他要找的东西。
+     */
+    List<Ticket> findByTenantIdAndCustomerIdOrderByCreatedAtDesc(String tenantId, String customerId);
+
+    /**
      * 按来源计数。分流的分母是这张表，所以「降级工单有多少」必须能单独数出来——
      * 否则新增三种来源后，「降级 9 种」那个公开口径就分母不保了。
      */

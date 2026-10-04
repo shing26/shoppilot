@@ -1,6 +1,7 @@
 package com.shoppilot.ticket.web;
 
 import com.shoppilot.ticket.domain.TicketStatus;
+import com.shoppilot.ticket.tenant.TenantContextHolder;
 import com.shoppilot.tool.audit.ActorHeaders;
 import com.shoppilot.tool.workitem.TicketSource;
 import com.shoppilot.ticket.service.WorkItemService;
@@ -85,6 +86,19 @@ public class TicketController {
     @GetMapping("/count")
     public Map<String, Long> count() {
         return Map.of("count", service.countAll());
+    }
+
+    /**
+     * **这个买家自己的**工单（round27 票 92）。
+     *
+     * <p>买家号取自 {@code X-Customer-Id}（网关从已验签身份补上），**不从查询参数读**：
+     * 那样就等于让任何人传一个别人的买家号来读别人的单（ADR 0005 防线一）。
+     * 这个头在本服务里已由 {@link InternalAuthFilter} 校验过内部凭证后才落进租户上下文，
+     * 所以它可信——能打到这里的调用方本来就是网关。
+     */
+    @GetMapping("/mine")
+    public List<TicketView> mine() {
+        return service.listOwn(TenantContextHolder.customerId());
     }
 
     /**

@@ -162,6 +162,33 @@ public class WorkItemService {
     }
 
     /**
+     * **某个买家自己的**工单（round27 票 92，买家端页面唯一的新依赖）。
+     *
+     * <p>{@code customerId} 由调用方给，而调用方（网关）传的是**已验签身份里的买家号**——
+     * 本服务不再从任何请求参数里读它（ADR 0005 防线一）。租户由 {@link TenantContextHolder} 给，
+     * 与本类其余查询同一口径。
+     *
+     * <p><b>买家这一侧刻意少一格</b>：{@link TicketView} 带 transcript（坐席看的会话原文），
+     * 而 {@link #toBuyerView} 不带。买家看自己的诉求、状态、优先级与处理结论就够了，
+     * 坐席与买家之间那些来回不是给他看的。
+     */
+    @Transactional(readOnly = true)
+    public List<TicketView> listOwn(String customerId) {
+        String tenantId = TenantContextHolder.tenantId();
+        return ticketRepository.findByTenantIdAndCustomerIdOrderByCreatedAtDesc(tenantId, customerId).stream()
+                .map(WorkItemService::toBuyerView)
+                .toList();
+    }
+
+    /** 买家视角的视图：与坐席同一形状，只少 {@code transcript} 一格。 */
+    private static TicketView toBuyerView(Ticket ticket) {
+        return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
+                ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt(),
+                ticket.getSource(), ticket.getQueue(), ticket.getAssignee(), ticket.getSlaDeadline(),
+                ticket.getPayload(), ticket.getEscalatedAt(), ticket.getChannel(), null);
+    }
+
+    /**
      * 领取。返回 false 表示「已被别人领走 / 已结单 / 不存在」，调用方回 409。
      *
      * <p>刻意用条件更新而不是「查出来再改再存」：后者在并发下两个坐席都会看到 assignee 为空。

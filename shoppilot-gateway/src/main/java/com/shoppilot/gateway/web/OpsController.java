@@ -201,6 +201,21 @@ public class OpsController {
         return guarded("POST", "/api/admin/demo/reset", null, opsToken);
     }
 
+    /**
+     * **买家自己的**工单（round27 票 92，买家端页面唯一的新依赖）。
+     *
+     * <p>它挂在 ops 命名空间下是**有意的**：运维面与买家面共用一条 URL 前缀，
+     * 但这一条**只过买家 JWT、不需要 ops 凭证**——买家不该有运维凭证，
+     * 而「我的工单」是买家自己的数据（ADR 0005 说的会话归属：按店铺 + 买家）。
+     *
+     * <p><b>不接受任何买家号参数</b>：买家号一律取自已验签的 {@link TenantContext}。
+     * 就算调用方传了 {@code customerId=别人的}，下游看的也还是令牌里的那个。
+     */
+    @GetMapping("/tickets/mine")
+    public ResponseEntity<String> myTickets() {
+        return forwardToTicket("GET", "/api/tickets/mine", null, null);
+    }
+
     /** 熔断器状态来自网关进程自己，不需要代理。 */
     @GetMapping("/circuit")
     public Map<String, Object> circuit() {
