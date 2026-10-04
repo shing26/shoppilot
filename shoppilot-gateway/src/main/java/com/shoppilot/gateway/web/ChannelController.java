@@ -83,6 +83,9 @@ public class ChannelController {
             } catch (IllegalArgumentException malformed) {
                 return ResponseEntity.badRequest().body(ChannelResponse.rejected(tag.label(), malformed.getMessage()));
             }
+            // 归一之后才知道「回我哪儿」，所以渠道上下文要**再设一次**把 contact 补上（round26 票 86）。
+            // 这一次必须排在 admission.check 之前：限流那条路也会落工单，它同样要带上目标。
+            ChannelContext.set(tag, inbound.contact());
             ChatAdmission.Guard guard = admission.check(request, inbound.query());
             if (!guard.allowed()) {
                 // 与同步端点同语义的 429，回包体带渠道与工单号；Retry-After 供调用方退避

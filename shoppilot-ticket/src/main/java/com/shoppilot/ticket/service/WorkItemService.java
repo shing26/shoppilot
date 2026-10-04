@@ -49,12 +49,25 @@ public class WorkItemService {
     @Transactional
     public TicketView create(TicketSource source, String customerId, String reason, String userQuery,
                               String transcript, String priority, String payload) {
+        return create(source, customerId, reason, userQuery, transcript, priority, payload, null, null);
+    }
+
+    /**
+     * 落单并挂上渠道与投递目标（round26 票 86 / ADR 0059）。
+     *
+     * <p>两格都可选：复核单与退款审批单没有渠道，网关的 web 降级单有渠道但没有目标
+     * （买家在自己浏览器里等，不存在「送回去」这件事）。
+     */
+    @Transactional
+    public TicketView create(TicketSource source, String customerId, String reason, String userQuery,
+                              String transcript, String priority, String payload, String channel, String contact) {
         Instant now = Instant.now();
         RoutingService.Assignment assignment =
                 routingService.assign(TenantContextHolder.tenantId(), source, reason, priority);
         Ticket ticket = new Ticket(Ticket.nextId(now), TenantContextHolder.tenantId(), customerId, reason,
                 truncate(userQuery, 512), transcript == null ? "" : transcript, TicketStatus.OPEN.name(), now,
                 assignment.priority().literal(), source, assignment.queue(), null, assignment.slaDeadline(), payload);
+        ticket.attachDelivery(channel, contact);
         return toView(ticketRepository.save(ticket));
     }
 
@@ -66,7 +79,15 @@ public class WorkItemService {
     @Transactional
     public TicketView createFromReason(String customerId, String reason, String userQuery, String transcript,
                                        String priority) {
-        return create(TicketSource.ofReason(reason), customerId, reason, userQuery, transcript, priority, null);
+        return createFromReason(customerId, reason, userQuery, transcript, priority, null, null);
+    }
+
+    /** 同上，但带上渠道与投递目标（网关的降级单与邮件回执单走这条，ADR 0059）。 */
+    @Transactional
+    public TicketView createFromReason(String customerId, String reason, String userQuery, String transcript,
+                                       String priority, String channel, String contact) {
+        return create(TicketSource.ofReason(reason), customerId, reason, userQuery, transcript, priority, null,
+                channel, contact);
     }
 
     /**
@@ -215,6 +236,6 @@ public class WorkItemService {
         return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
                 ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt(),
                 ticket.getSource(), ticket.getQueue(), ticket.getAssignee(), ticket.getSlaDeadline(),
-                ticket.getPayload(), ticket.getEscalatedAt());
+                ticket.getPayload(), ticket.getEscalatedAt(), ticket.getChannel(), ticket.getContact());
     }
 }

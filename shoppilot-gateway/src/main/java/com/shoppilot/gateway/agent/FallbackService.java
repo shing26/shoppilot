@@ -98,6 +98,13 @@ public class FallbackService {
         if (priority != null) {
             payload.put("priority", priority);
         }
+        // 结果回流的前置（round26 票 86 / ADR 0059）：这张单是从哪个渠道来的、回我地址是什么。
+        // 两格都允许为空——web 渠道就是「没有目标」，因为买家就在浏览器里等。
+        payload.put("channel", com.shoppilot.gateway.channel.ChannelContext.current().label());
+        String contact = com.shoppilot.gateway.channel.ChannelContext.contact();
+        if (contact != null) {
+            payload.put("contact", contact);
+        }
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(config.baseUrl() + "/api/tickets"))
                     .timeout(config.readTimeout())

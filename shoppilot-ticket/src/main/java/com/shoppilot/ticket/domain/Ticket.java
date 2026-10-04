@@ -80,6 +80,24 @@ public class Ticket {
     @Column(name = "payload", length = 2000)
     private String payload;
 
+    /**
+     * 买家当初问的渠道（round26 票 86 / ADR 0059）。
+     *
+     * <p>与 {@link #queue} 是两件事：队列是**系统内**分派到哪个技能组（买家看不见），
+     * 渠道是**买家从哪儿进来**（决定结论送回哪儿）。null = 这张单没有渠道（复核单、退款审批单）。
+     */
+    @Column(name = "channel", length = 16)
+    private String channel;
+
+    /**
+     * 投递目标：邮箱地址或 webhook 回调地址（round26 票 86 / ADR 0059）。
+     *
+     * <p><b>它是投递提示，不是隔离依据、更不是身份</b>：ADR 0005 的三条防线一条都不看它，
+     * 它也不进缓存键、不参与会话归属。它只是「结论要送到哪儿去」。
+     */
+    @Column(name = "contact", length = 255)
+    private String contact;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -184,7 +202,30 @@ public class Ticket {
         this.escalatedAt = escalatedAt;
     }
 
+    /**
+     * 挂上渠道与投递目标，返回本对象（round26 票 86）。
+     *
+     * <p><b>为什么是方法而不是构造器的两个参数</b>：构造器已经有 13 个位置参数，
+     * 再加两个都是 {@code String} 的相邻参数时，{@code channel} 与 {@code contact} 传反
+     * **编译器不会报错**，而那等于把结论发到错误的地址去。命名方法让这个错误在读代码时就能看见。
+     *
+     * <p>两格都允许 null——没有渠道的工单（复核单、退款审批单）不填就是了。
+     */
+    public Ticket attachDelivery(String channel, String contact) {
+        this.channel = channel == null || channel.isBlank() ? null : channel.trim();
+        this.contact = contact == null || contact.isBlank() ? null : contact.trim();
+        return this;
+    }
+
     public String getPayload() {
         return payload;
+    }
+
+    public String getChannel() {
+        return channel;
+    }
+
+    public String getContact() {
+        return contact;
     }
 }

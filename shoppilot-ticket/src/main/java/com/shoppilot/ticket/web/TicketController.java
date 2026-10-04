@@ -56,14 +56,14 @@ public class TicketController {
         TicketView created;
         if (request.source() == null || request.source().isBlank()) {
             created = service.createFromReason(request.customerId(), request.reason(), request.userQuery(),
-                    request.transcript(), request.priority());
+                    request.transcript(), request.priority(), request.channel(), request.contact());
         } else {
             TicketSource source = TicketSource.parse(request.source());
             if (source == null) {
                 throw new IllegalArgumentException("未知工单来源 " + request.source() + "，可选 " + TicketSource.names());
             }
             created = service.create(source, request.customerId(), request.reason(), request.userQuery(),
-                    request.transcript(), request.priority(), request.payload());
+                    request.transcript(), request.priority(), request.payload(), request.channel(), request.contact());
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
@@ -155,9 +155,15 @@ public class TicketController {
                 : ResponseEntity.status(HttpStatus.CONFLICT).build();
     }
 
-    /** {@code source} 与 {@code payload} 是票 72 为跨进程调用方加的可选字段，老契约不传它们。 */
+    /**
+     * {@code source} 与 {@code payload} 是票 72 为跨进程调用方加的可选字段，老契约不传它们；
+     * {@code channel} 与 {@code contact} 是票 86 加的**结果回流前置**，同样可选（ADR 0059）。
+     *
+     * <p>两格都空是最常见的形态——复核单、退款审批单、以及 web 渠道的降级单都不填。
+     */
     public record CreateTicketRequest(String source, String customerId, String reason, String userQuery,
-                                      String transcript, String priority, String payload) {
+                                      String transcript, String priority, String payload,
+                                      String channel, String contact) {
     }
 
     public record ResolveRequest(String note) {

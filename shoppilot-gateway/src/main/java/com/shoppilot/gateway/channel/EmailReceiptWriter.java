@@ -44,6 +44,12 @@ public class EmailReceiptWriter {
         payload.put("reason", RECEIPT_REASON);
         payload.put("userQuery", query);
         payload.put("transcript", answer + (contact == null ? "" : "\n【回执渠道】" + contact));
+        // 结果回流的前置（round26 票 86）：email 是唯一天然带「回我哪儿」的渠道，所以两格必然有值。
+        // transcript 里那一句**保留**——那是人类可读的历史文本，为加一列而删它是改既有内容。
+        payload.put("channel", Channel.EMAIL.label());
+        if (contact != null && !contact.isBlank()) {
+            payload.put("contact", contact);
+        }
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(config.baseUrl() + "/api/tickets"))
                     .timeout(config.readTimeout())
