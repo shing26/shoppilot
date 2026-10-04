@@ -60,16 +60,23 @@ const postChat = async (token, query) => {
 
 const buyerToken = await tokenOf('C001');
 const escalated = await postChat(buyerToken, `我要转人工（买家端门禁 ${Date.now()}）`);
-check('买家会话能走到显式转人工并落单', Boolean(escalated.body.ticketId), `ticketId=${escalated.body.ticketId || '(无)'}`);
+check(
+  '买家会话能走到显式转人工并落单',
+  Boolean(escalated.body.ticketId),
+  `HTTP ${escalated.status} ticketId=${escalated.body.ticketId || '(无)'}`,
+);
 const myTicketId = escalated.body.ticketId;
 
+// 第二个买家的种子问句**必须含 T0 升级词**。第一版写的是「这条属于另一个买家」——
+// 那句话里没有「转人工」，于是它压根不会落单，第二条断言拿着一个 null 去判「页面看不到它」，
+// 而它本来就是不存在的。判红的是门禁自己，产品行为是对的（清场日 2026-10-04 实测）。
 const otherToken = await tokenOf('C155');
-const otherEscalated = await postChat(otherToken, `这条属于另一个买家（买家端门禁 ${Date.now()}）`);
+const otherEscalated = await postChat(otherToken, `我也要转人工（另一个买家 买家端门禁 ${Date.now()}）`);
 const otherTicketId = otherEscalated.body.ticketId;
 check(
   '另一个买家的工单真的落库了（否则「A 页面没有 B 的单」是一条恒成立的断言）',
   Boolean(otherTicketId),
-  `ticketId=${otherTicketId || '(无)'}`,
+  `HTTP ${otherEscalated.status} ticketId=${otherTicketId || '(无)'}`,
 );
 
 // --- 页面 ------------------------------------------------------------------------------
@@ -83,12 +90,15 @@ await page.goto(PAGE, { waitUntil: 'networkidle' });
 check('买家中心页面可加载（/buyer/ 由网关同源提供）', (await page.title()).includes('买家'), await page.title());
 
 // 未登录时必须给出可读原因，而不是冻在空态。
-await page.locator('button:has-text("登录")').click().catch(() => {});
-await page.waitForTimeout(300);
+// **断言写在任何登录动作之前**：第一版先点了「登录」（空表单），于是 `.err` 里是
+// 「用户名或口令不对」——那断的是登录失败，不是未登录时的工单列表（清场日 2026-10-04 实测）。
+// `networkidle` 在 Vue 挂载之前就会 fire，所以先等这句提示出现再读它的文字。
+// 不等就判，读到的是「DOM 还没画」，那是一条关于时序的断言，不是关于产品的（清场日实测）。
+await page.waitForSelector('.notice', { timeout: 5000 }).catch(() => {});
 check(
-  '未登录时「我的工单」给出可读原因，而不是空态',
-  (await page.locator('.err').innerText().catch(() => '')).includes('登录'),
-  await page.locator('.err').innerText().catch(() => '(没有 .err)'),
+  '未登录时说清「登录后才看得到工单」，而不是留一段空白',
+  (await page.locator('.notice').innerText().catch(() => '')).includes('工单'),
+  await page.locator('.notice').innerText().catch(() => '(等 5 s 也没有那句提示)'),
 );
 
 // 真走一遍登录表单：直接往 sessionStorage 塞令牌会跳过「登录面能用」这件事。

@@ -156,6 +156,13 @@ function clearStoredSession() {
       <button type="button" @click="doLogin">登录</button>
     </section>
 
+    <!--
+      未登录时「我的工单」整段不渲染（没有身份就没有「我的」），但**必须说清为什么**，
+      否则页面看上去像坏了。工作台那页的同类提示写在登录守卫**之外**，这里第一版写在守卫
+      **之内**，于是两页行为不一致——清场日实跑门禁时才发现「等 5 秒也等不到那句话」。
+    -->
+    <p v-if="!session" class="notice">登录后这里会显示你的工单与售后进度</p>
+
     <section v-else class="ctl">
       <span class="who">当前身份：{{ who }}<span class="hint">（@ {{ session.tenantId }}）</span></span>
       <button type="button" @click="signOut">退出登录</button>
@@ -237,4 +244,5 @@ th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; v
 .done { color: #146c2e; }
 .err { color: #b42318; }
 .empty { color: #666; }
+.notice { color: #666; margin: 4px 0 0; }
 </style>

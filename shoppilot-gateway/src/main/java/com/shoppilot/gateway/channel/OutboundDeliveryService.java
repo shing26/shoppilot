@@ -103,8 +103,23 @@ public class OutboundDeliveryService {
                     Consumer.from(AuditTopics.CHANNEL_OUTBOUND, CONSUMER),
                     StreamReadOptions.empty().count(BATCH),
                     StreamOffset.create(AuditTopics.CHANNEL_OUTBOUND, ReadOffset.lastConsumed()));
-        } catch (RuntimeException unreachable) {
-            log.warn("出站流读取失败，本轮跳过: {}", unreachable.getMessage());
+        } catch (RuntimeException nothingYet) {
+            if (isNoGroup(nothingYet)) {
+                // **第一张工单结单之前这就是正常状态**：流不存在、消费组也不存在，
+                // 于是 ensureGroup 抛 NOGROUP、read 跟着抛 NOGROUP。第一版把它当
+                // 「组已存在」吞掉并按 WARN 打出去，于是日志里每 5 秒一条「出站流读取失败」
+                // （清场日实测 90 秒 18 条）——那不是故障，那是**还没有事件**。
+                //
+                // 顺带记一笔：`StreamOperations.createGroup` 在本仓用的这两个 Spring Data
+                // 版本里都**没有** mkStream 重载，所以「一次把组与流建好」这条路在此走不通，
+                // 只能等第一条事件发出后自然建组（下一轮 ensureGroup 就成功）。
+                //
+                // **异常原文必须带上**：清场日实测发现「组已存在 + 流里已有 1 条」时也会走进这一支，
+                // 于是这句「还没有第一条事件」是**误导**——而当时正是缺了它才只能靠猜。
+                log.debug("出站流读不到事件（NOGROUP），本轮跳过", nothingYet);
+            } else {
+                log.warn("出站流读取失败，本轮跳过: {}", nothingYet.getMessage());
+            }
             return 0;
         }
         List<RecordId> acked = new ArrayList<>();
@@ -236,9 +251,27 @@ public class OutboundDeliveryService {
         try {
             redis.opsForStream().createGroup(AuditTopics.CHANNEL_OUTBOUND, ReadOffset.from("0-0"), CONSUMER);
         } catch (RuntimeException alreadyThere) {
-            // BUSYGROUP：组已存在，是正常路径不是错误
-            log.debug("出站消费组已存在");
+            // **BUSYGROUP 与 NOGROUP 是两件事**：前者是「组已存在，正常」，
+            // 后者是「流还不存在，也就是还没有任何出站事件」。第一版把两者当成一件，
+            // 结果后者被记成「组已存在」还打了 WARN（见 drain 里的注释）。
+            if (isNoGroup(alreadyThere)) {
+                log.debug("出站流与消费组都还没建立（还没有事件），跳过建组");
+            } else {
+                log.debug("出站消费组已存在");
+            }
         }
+    }
+
+    /** Redis 的 NOGROUP：流或消费组不存在。Spring 把它包成 {@code RedisSystemException}，只能按消息判。 */
+    private static boolean isNoGroup(RuntimeException failure) {
+        Throwable cursor = failure;
+        while (cursor != null) {
+            if (cursor.getMessage() != null && cursor.getMessage().contains("NOGROUP")) {
+                return true;
+            }
+            cursor = cursor.getCause();
+        }
+        return false;
     }
 
     @PreDestroy
