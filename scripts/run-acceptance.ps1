@@ -85,6 +85,10 @@ $steps = [ordered]@{
     # 它和 console 是同一类浏览器断言，而工单要等网关与工单服务都就绪才有东西可看。
     # 本轮按裁定 A 未实跑（起栈要 ≈7 GB），落点是「脚本就位 + 语法核对」，不是读数。
     workspace = @{ Kind = 'node'; Cmd = 'scripts/verify-workspace.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('坐席工作台断言') }
+    # round26 票 89：结果回流。它自己起一个本地回声端点并断言「对端真的收到了那一次 POST」，
+    # 所以它要的**不是**计数变大，而是投递真的发生过——计数那三格在它后面单独断。
+    # 排在 workspace 之后：两条都是浏览器/端口形状类，互不依赖，而 workspace 更贵。
+    outbound  = @{ Kind = 'node'; Cmd = 'scripts/verify-outbound.mjs'; Arg = @(); Need = $true; Skip = $false; Expect = @('结果回流断言') }
     # round17 新增的五条（ADR 0034 / 0035 / 0038 / 0039 / 0036）：都排在 console 之后——
     # 情绪门与计划两步都要打模型，重负载压在浏览器形状断言之前会给门禁制造假红（同 eval 那条的理由）。
     # 五条各自的语义断言另有 0 token 的 JVM 用例兜底（SentimentGateTest / ChannelFlowJvmTest /

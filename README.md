@@ -211,10 +211,13 @@ slot_ask | fallback | duplicate_submit | rate_limited
 **这张表逐条写"怎么量的"，未达成的照写未达成。**所有数字来自 `loadtest/results/` 下的产物，
 表格由 `python scripts/build_loadtest_report.py` 生成，本文不誊写第二个数字。
 吞吐与延迟类指标衡量的是**网关编排层**，生成侧是固定延迟的 Mock，不含模型推理（ADR 0001）。
-当前 **53 个唯一 `shoppilot_*` 指标名**。数法：对 `shoppilot-gateway`、`shoppilot-biz-mock`、`shoppilot-tool-api` 的 `src/main` 做
-`rg -o 'shoppilot_[A-Za-z0-9_]+'`，再按字面值去重；带 tag 的同一指标仍只算一个名字。
+当前 **55 个唯一 `shoppilot_*` 指标名**。数法：对 `shoppilot-gateway`、`shoppilot-biz-mock`、`shoppilot-tool-api` 的 `src/main` 做
+`rg -o 'shoppilot_[A-Za-z0-9_]+'，再按字面值去重；带 tag 的同一指标仍只算一个名字。
 **这是源码口径，不要拿运行期的 `/actuator/metrics` 去数**：那一侧列的是 meter（带 tag 的每个组合各算一条，冷启动时还有懒注册的指标缺席），两个数不可能相等。
-（换代指针：round19 时点为 52，round21 票 59 加 `shoppilot_refund_pending_total` 后为 53；数法一字未改，见下文「round14 落点」段的历史读数处置。）
+（换代指针：round19 时点为 52，round21 票 59 加 `shoppilot_refund_pending_total` 后为 53，round26 票 87/88 加两个出站计数后为 55；数法一字未改，见下文「round14 落点」段的历史读数处置。）
+**一个已登记的口径盲点**：上面这套数法**只覆盖三个模块**，而 `shoppilot-ticket` 从 round23 起就不在其中。
+它现在有两个 `shoppilot_outbound_*`，所以**四模块口径是 57**。两个数一起摆着而不是挑一个——数法本身没改，
+改它属于另一张票（触发 = 要把「这个数涵盖全仓」写成对外承诺）。
 
 | 指标 | 判据 | 实测 | 口径 | 证据 |
 | --- | --- | --- | --- | --- |
