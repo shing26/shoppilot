@@ -1,0 +1,30 @@
+{
+  "_note": [
+    "检索质量对比的标注集（round26 收尾，2026-10-05）。",
+    "标注来源：docs/retrieval-comparison.md 那 16 条查询里的 10 条——它们与",
+    "eval/retrieval-fixture-20260928.json 的 case 一一对应，所以**不需要重新跑检索**就能离线算指标**。",
+    "",
+    "判据口径沿用那份文档：一条查询的「相关」= 期望语料文件的**任一规则块**。",
+    "块粒度不是本项要考的东西（同原文），所以不按块标注、按文件标注。",
+    "",
+    "**为什么标签按文件而不是按块**：按块标注要人工读过 90 个块的相关性，成本高且主观；",
+    "而按文件标注与既有那份对比同口径，可以直接对照历史读数。",
+    "**它测不出什么**：一句话里需要跨文档综合才能回答的问题（这正是 round19 QA 记的那条缺陷），",
+    "本口径会判成不命中。所以下表的数字是「查得到 / 查不到」，不是「答得对 / 答错」。",
+    "",
+    "标注由作者本人读语料标题拟定，**未对排序盲化**；这会在「同义但不同词」的查询上略微偏向稠密召回。",
+    "偏差方向与量级写在 docs/retrieval-quality-metrics.md 的末尾，不藏在脚注里。"
+  ],
+  "cases": [
+    { "fixture": "RET-7DAY", "query": "七天无理由怎么算", "intent": "POLICY_RETURN", "expect_doc": "return-01-7day-basic" },
+    { "fixture": "RET-SHIPCOST", "query": "退回去的邮费谁出", "intent": "POLICY_RETURN", "expect_doc": "return-03-shipping-cost" },
+    { "fixture": "RET-REFUND-TL", "query": "退款到账要几个工作日", "intent": "POLICY_RETURN", "expect_doc": "return-04-refund-timeline" },
+    { "fixture": "RET-REMOTE", "query": "偏远地区包邮吗", "intent": "POLICY_SHIPPING", "expect_doc": "shipping-03-remote" },
+    { "fixture": "RET-CARRIER", "query": "可以指定发顺丰吗", "intent": "POLICY_SHIPPING", "expect_doc": "shipping-01-carrier-scope" },
+    { "fixture": "RET-ADDR", "query": "收货地址填错了还能改吗", "intent": "POLICY_SHIPPING", "expect_doc": "shipping-05-address-change" },
+    { "fixture": "RET-FRESH-WINDOW", "query": "生鲜签收后多久之内可以申请理赔", "intent": "POLICY_FRESH", "expect_doc": "fresh-01-claim-window" },
+    { "fixture": "RET-FRESH-DEAD", "query": "螃蟹到货是死的能赔吗", "intent": "POLICY_FRESH", "expect_doc": "fresh-06-seafood-dead" },
+    { "fixture": "RET-PROMO-STACK", "query": "店铺券和满减可以叠加不", "intent": "POLICY_PROMO", "expect_doc": "promo-03-coupon-stack" },
+    { "fixture": "RET-PROMO-CROSS", "query": "跨店满减是怎么凑的", "intent": "POLICY_PROMO", "expect_doc": "promo-01-cross-shop" }
+  ]
+}
