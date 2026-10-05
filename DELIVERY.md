@@ -10,7 +10,7 @@
 
 | # | 回答的问题 | 本仓落在哪 | 状态 |
 | --- | --- | --- | --- |
-| ① | 为什么做它？解决什么？放弃过什么？ | [`CHARTER.md`](CHARTER.md)（业务背景与痛点、架构指标、里程碑）<br>[`PLAN.md`](PLAN.md)（架构形态、主链路、排期）<br>[`docs/adr/`](docs/adr/)（**51 编号 / 50 篇**，0022 有意预留） | 具备 |
+| ① | 为什么做它？解决什么？放弃过什么？ | [`CHARTER.md`](CHARTER.md)（业务背景与痛点、架构指标、里程碑）<br>[`PLAN.md`](PLAN.md)（架构形态、主链路、排期）<br>[`docs/adr/`](docs/adr/)（**60 编号 / 59 篇**，0022 有意预留） | 具备 |
 | ② | 凭什么说它 work？ | [`docs/EVIDENCE.md`](docs/EVIDENCE.md)（证据分层 + 指标入账规则）<br>[`docs/loadtest-report.md`](docs/loadtest-report.md)<br>[`docs/threshold-calibration.md`](docs/threshold-calibration.md) | 具备 |
 | ③ | 怎么一步步变成现在这样？ | [`CHANGELOG.md`](CHANGELOG.md)（按**轮**而非 semver 组织） | 具备 |
 | ④ | 什么算完成？现在到哪？什么不做？ | [`RELEASE.md`](RELEASE.md)（发布声明、达标项、**三条未达标红线**、Freeze policy） | 具备 |
@@ -35,16 +35,20 @@ start http://127.0.0.1:8082
 
 ---
 
-## 当前状态（2026-09-28）
+## 当前状态（2026-10-05）
 
 - **发布**：`v1.0.0` 已冻结（tag → `7f4334c`，CI run `35104751284` 验证）
-- **未发布**：`v1.0.0` 之后 **86 个提交**，属 round15 – round22 八轮
-- **功能面：没有待办**。票 01-39 / 41 / 风格票 / 有意不做成文票 / 42-68 全部 `implemented`，tracker 里 `ready-for-agent` 开放票为**零**；round17 – round22 六轮均已收口，一个进行中的轮次都没有
-- **测试与门禁在干净 runner 上正常**：GitHub Actions `ci-subset` 在推上去的 HEAD 上 **success**，八个门禁步全绿（构建与 **342 条** JVM 测试、判据自检 40/40、离线 rescore 差异恰 4 条、套件夹具 24 条、task 判据 14 条、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`）。本机 25 步全量矩阵最近一次 **839 s、22 绿 / 3 红**（`feedback`/`plansteps` 登记项 + `console` 的模型方差），调试台单独跑 **43/43**
+- **未发布**：`v1.0.0` 之后 **141 个提交**，属 round15 – round27 十三轮
+- **功能面：没有待办**。票 01-95 全部 `implemented`（票 01-39 / 41 / 风格票 / 有意不做成文票 / 42-68 / 69-95），**一个进行中的轮次都没有**。剩下的 `ready-for-agent` 是**有意留在台面上的**：票 91（知识服务化的裁定）、96-99（IM 主线，ADR 0060 的契约先行段）——它们各自的触发条件写在 [`.scratch/shoppilot-mvp/registered-debt.md`](.scratch/shoppilot-mvp/registered-debt.md) 第二、三节，不是遗漏
+- **测试与门禁在干净 runner 上正常**：GitHub Actions `ci-subset` 在推上去的 HEAD 上 **success**（run `37258754305`），**九个**门禁步全绿（构建与 **451 条** JVM 测试 = tool-api 10 + biz-mock 57 + ticket 39 + gateway 345、判据自检 40/40、离线 rescore 差异恰 4 条、套件夹具 24 条、task 判据 14 条、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`、**两个前端产物的逐字节校验**）。本机活体矩阵分三档，**最近落点各不相同，逐档照登**：
+  - **full 档（local 真模型，≈6.6 GB）最近一次是 2026-10-02 的清场日**（`logs/acceptance-run-20261002-144837.log`，**930 s、24 绿 / 3 红**，26 步）。**矩阵此后从 26 步加到 28 步**（round26 加 `outbound`、round27 加 `buyer`），**这两步至今没有在 full 档实跑过**——本机可用内存不够（R4 已登记）。
+  - **live 档（perf / MockLLM，≈2.6 GB，`scripts/cleanout-live.ps1`）2026-10-05 最近一次**：三条浏览器/出站门禁里 **`outbound` 绿**，`buyer` 与 `workspace` **各红**（U1/U2：live 档的 `up.ps1` 链路拿不到演示口令，故登录后的两格跑不到）。
+  - **两档都跑不到真实模型**：`live` 档用 MockLLM，只量编排层；`full` 档要 local 真模型（≈6.6 GB）而本机跑不起。**所以「真实模型下的三个浏览器门禁」这一格至今空着**，不假装有读数（R4 已登记）。
 - **两条活体红是登记项、不是产品缺陷**：`feedback` 的 `implied_retry` 间歇（local 3B 在含上一轮成功答复的会话里不再发工具调用）、`plansteps`（local 3B 不产生两步链）。**第三条 `console` 是模型方差**：`miss path renders as typewriter` 含「正文 > 60 字」的下界，本地 3B 对同一问句的输出在 60–156 字之间波动（同脚本单独跑两次均 **43/43**）。判定口径是「**不改判据去适配实现**」（ADR 0043），三条各自留归因与放开条件
-- **round17 起的六轮重开都是[显式的政策覆盖](docs/adr/0046-round21-reopen-for-the-last-mile.md)**（依次为 [0033](docs/adr/0033-round17-reopen-for-architecture-completeness.md) / [0041](docs/adr/0041-round18-reopen-for-scoring-dimension-completeness.md) / 0044 / 0045 / 0046 / 0048），**不满足 ADR 0031 的触发条件**，均已诚实记录为覆盖、**不自动续期**；其中 round20 分两种依据（三条事实性修正 + 一条政策覆盖）、round22 分两类（65/67 记为「触发已到」、64/66 记为「政策越过」）
+- **重开依据分两段，别混着说**：round17 – round22 六轮是[显式的政策覆盖](docs/adr/0046-round21-reopen-for-the-last-mile.md)（依次为 [0033](docs/adr/0033-round17-reopen-for-architecture-completeness.md) / [0041](docs/adr/0041-round18-reopen-for-scoring-dimension-completeness.md) / 0044 / 0045 / 0046 / 0048），**不满足 ADR 0031 的触发条件**，均已诚实记录为覆盖、**不自动续期**；round23 – round27 五轮的依据换成 **[ADR 0052](docs/adr/0052-reposition-as-runnable-service-system-prototype.md) 的定位改写**——所有者授权的 program（"客服系统化演进"，七决策 2026-10-01 确认），所以那一段不是政策越过而是**换了一个被授权的 source of truth**
 - **三条未达标红线**（缓存拦截率、吞吐峰值、未命中 TTFT）**照挂不摘**，判据与归因见 `RELEASE.md`。**不通过改口径、阈值或 Mock 参数刷绿**
-- **未覆盖项同样照登**：**gold 180 条活体重跑仍未做**，且真因是**条件不成立**——`.env` 有云端 key 但日预算 `260000` < 180 条所需约 40-60 万，不越 ADR 0012 的预算闸门（放开 = 抬到 ≥60 万或分两天跑）；**round22 票 64 不闭合 round19 登记第 5 项**（录放门只守排序确定性与四个常数，不覆盖活体 hit@5）；收口审计唯一一红 `F1c` 是 round20 那次被误删的本机日志（不可逆，判据未动未豁免）
+- **未覆盖项同样照登**：**gold 180 条活体重跑仍未做**，且真因是**条件不成立**——`.env` 有云端 key 但日预算 `260000` < 180 条所需约 40-60 万，不越 ADR 0012 的预算闸门（放开 = 抬到 ≥60 万或分两天跑）；**round22 票 64 不闭合 round19 登记第 5 项**（录放门只守排序确定性与四个常数，不覆盖活体 hit@5——`docs/retrieval-quality-metrics.md` 那张表走的是录制夹具，仍不是活体）；收口审计唯一一红 `F1c` 是 round20 那次被误删的本机日志（不可逆，判据未动未豁免）
+- **欠账有一张总账**：`.scratch/shoppilot-mvp/registered-debt.md`（已关闭 3 / 登记项 R1-R4 / 未达成 U1-U5），每笔要么有触发条件、要么有「永不做」的裁决——**没有第三种状态**
 
 ---
 
@@ -65,7 +69,7 @@ start http://127.0.0.1:8082
 
 | 项 | 现状 | 选项 |
 | --- | --- | --- |
-| `pom.xml` 版本 | `0.1.0-SNAPSHOT` | **A** 改 `1.0.0` —— 与 tag 对齐，声明"仓内即已发布版本"<br>**B** 改 `1.1.0-SNAPSHOT` —— 承认 `v1.0.0` 之后有 86 个未发布提交，正在走向下一个版本<br><span class="st">脚本已全部用通配符（`shoppilot-gateway-*.jar`），两条路都不会打断启动链</span> |
+| `pom.xml` 版本 | `0.1.0-SNAPSHOT` | **A** 改 `1.0.0` —— 与 tag 对齐，声明"仓内即已发布版本"<br>**B** 改 `1.1.0-SNAPSHOT` —— 承认 `v1.0.0` 之后有 **141** 个未发布提交，正在走向下一个版本<br><span class="st">脚本已全部用通配符（`shoppilot-gateway-*.jar`），两条路都不会打断启动链</span> |
 
 ### 已登记的口径说明（非缺陷）
 
@@ -74,10 +78,13 @@ start http://127.0.0.1:8082
 | **黑盒 QA 的两项登记（2026-09-28）** | ① **「退款到哪了」这类措辞的读回**：放行态会给出与事实相反的结论（登记级别已上调，附证据）；② **追问中途换话题/取消没有出口**。两者都要动 triage/prompt，会碰 180 条 gold 的面，故登记不执行——触发条件见 `.scratch/shoppilot-mvp/README.md` 的 2026-09-28 登记段 |
 | 正式 tracker 位于 `.scratch/shoppilot-mvp/` | README 第 839 行明确了这是**有意为之**（「不是临时草稿目录」），`.gitignore` 也已为 `.scratch/**/*.md` 开白名单。<br>保留记录的原因：任何**按目录名扫仓库**的自动工具都会漏掉它——`sk` 类工具与外部审计脚本尤甚。若要保持，建议在 tracker 自身 README 顶部再加一行说明。 |
 
-### 已修正（2026-09-20）
+### 已修正
 
-| 项 | 原值 | 现值 |
-| --- | --- | --- |
-| README 的 ADR 范围陈述（第 835 行） | 「ADR 0001-0030」 | 「ADR 0001-0040（0022 未占用）」 |
-| README 的票号范围（第 38、839 行） | 「票 01-32」 | 「票 01-41」 |
-| 入口层 | 无 | 本文件 |
+| 日期 | 项 | 原值 | 现值 |
+| --- | --- | --- | --- |
+| 2026-09-20 | README 的 ADR 范围陈述 | 「ADR 0001-0030」 | 「ADR 0001-0040（0022 未占用）」 |
+| 2026-09-20 | README 的票号范围 | 「票 01-32」 | 「票 01-41」 |
+| 2026-09-20 | 入口层 | 无 | 本文件 |
+| **2026-10-05** | **本文件的状态段（停在 2026-09-28，round23-28 的七轮没进来）** | ADR 51 篇 / 86 个提交 / 342 条测试 / 八个门禁步 / 「开放票为零」 | **ADR 59 篇（60 编号，0022 预留）/ 141 个提交 round15-27 / 451 条测试（10+57+39+345）/ 九个门禁步**；活体矩阵按三档分列各自落点；`ready-for-agent` 从「零」改为**「五张，全部有触发条件」** |
+| **2026-10-05** | README 的票号范围（第 41、960 行） | 「票 01-56」 | 「票 01-99（01-95 implemented；96-99 与 91 有意留在台面上）」 |
+| **2026-10-05** | README 复现段的 JVM 测试数（第 573、625 行） | 「3 + 21 + 276 = 300」「338 条」 | **「10 + 57 + 39 + 345 = 451」**（四模块，surefire 汇总） |

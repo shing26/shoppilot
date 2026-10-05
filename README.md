@@ -38,7 +38,7 @@
 - 想核对全部证据：[`docs/EVIDENCE.md`](docs/EVIDENCE.md)：数字对应的报告、原始产物与复现命令。
 - [`AGENTS.md`](AGENTS.md)：接手顺序、source of truth、修改禁令、验证与 Handoff 流程。
 - [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)：按项目定位制定的 v1.0 收口、作品集与冻结路线。
-- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-56 的当前状态。
+- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-99 的当前状态；[`registered-debt.md`](.scratch/shoppilot-mvp/registered-debt.md)：欠账总账（每笔要么有触发条件、要么有「永不做」的裁决）。
 - [`docs/CODE_MAP.md`](docs/CODE_MAP.md)：模块所有权、请求链路源码落点和已知代码债候选。
 
 ## 快速开始（一条命令）
@@ -364,10 +364,12 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 - **自报身份只是被标注，不是被消灭**：只有运维凭证在场时，操作人仍取自请求头，
   它照样落审计，只是 `actor_authenticated=false`。要彻底没有它，得先废掉运维凭证那条路——
   而那批验收脚本与调试台全靠它（ADR 0058 第 5 条）。
-- **验收矩阵分两档，而 full 档本轮一次没跑成**：`run-acceptance.ps1 -Tier daily|full`（round23 票 74）。
-  档位切的是**步骤集合**、判据两档逐字相同——daily 只跑不起栈的那些（语法、构建与单测、负载报告、task 判据、检索门禁），
-  实测 4 步 2 秒；full 要起四服务栈（≈7 GB），**本机只剩 0.5 GB 可用内存，只能在清场日跑**。
-  未跑的红**不得冒充**日常档信号。收口审计本轮实跑 **96 项机器断言**（round23 票 74 新增 G8 事件对账门禁）。
+- **验收矩阵分三档，而 local 真模型档在本机跑不成**：`run-acceptance.ps1 -Tier daily|live|full`（round23 票 74 定 daily/full，2026-10-05 加 live）。
+  档位切的是**步骤集合**、判据逐字相同——daily 只跑不起栈的那些（语法、构建与单测、负载报告、task 判据、检索门禁），
+  实测 4 步 2 秒；**live 档（perf / MockLLM，≈2.6 GB）**由 `scripts/cleanout-live.ps1` 执行，它要停掉另外三套项目的容器，
+  所以**自带保证恢复**（`finally` 按开头记下的清单逐个 start 并轮询确认，中断路径已实测有效）；**full 档（local 真模型，≈6.6 GB）**
+  **本机跑不起来**，最近一次落点是 2026-10-02 的清场日。
+  **live 档不覆盖真实模型路径**——它在 MockLLM 上量编排层，未跑的红**不得冒充**任何一档的信号。收口审计本轮实跑 **96 项机器断言**（round23 票 74 新增 G8 事件对账门禁）。
 - **H2 内嵌库在写密集路径上是瓶颈**；50 并发同 token 的退款实测 1 行 + 49 个重放，但换 MySQL 才是生产形态。
 - **表结构由 Flyway 版本化迁移产生，不是 Hibernate 自动建表**：`ddl-auto` 已是 `validate`，模式的唯一产生源是
   `shoppilot-biz-mock/src/main/resources/db/migration/`（V1 基线由 Hibernate 导出后固化）。**迁移只管表结构怎么产生，
@@ -570,7 +572,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 ## 复现
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（3 + 21 + 276 = 300 项）
+# 单元、架构与主链路 JVM 集成测试（四模块 10 + 57 + 39 + 345 = 451 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -601,8 +603,11 @@ node scripts/verify-console.mjs                         # 调试台 40 项（Pla
 #   round19 起点重建后同样红」的对照实验定位为**先前就存在的问题、不是 round19 引入**，
 #   机制见 docs/EVIDENCE.md 的矩阵行）
 #   **步数换代指针**：round21 加 `refund` → 23 步（606s、21 绿 / 2 红）；round22 加
-#   `task`/`funnel` 两条 0 token 步 → **25 步**（786s、23 绿 / 2 红），落点与逐轮读数见
-#   docs/EVIDENCE.md 的「22 步全量活体验收」行（行标题保留旧数，换代指针写在同一行里）
+#   `task`/`funnel` 两条 0 token 步 → **25 步**（786s、23 绿 / 2 红），round23 加 `workspace`
+#   → 26 步（清场日 2026-10-02：**930s、24 绿 / 3 红**），round26 加 `outbound`、round27 加 `buyer`
+#   → **28 步**。**最后这两步至今没在 full 档实跑过**（本机内存不够）；live 档（perf，≈2.6 GB）
+#   2026-10-05 跑过 `outbound`/`buyer`/`workspace` 三条，`outbound` 绿、另两条红（欠账 U1/U2）。
+#   逐轮落点见 docs/EVIDENCE.md 的「22 步全量活体验收」行（行标题保留旧数，换代指针写在同一行里）
 pwsh -NoProfile -File scripts/verify-emotion.ps1        # 8 条情绪升级（priority=high 工单反查）+ 1 条显式转人工（USER_REQUESTED，不带 high）+ 12 条不误升级 = 30 条断言
 pwsh -NoProfile -File scripts/verify-channel.ps1        # 三渠道同答 / 跨渠道会话不互串 / email 回执单 / 渠道计数
 pwsh -NoProfile -File scripts/verify-style.ps1          # SSE meta 档位矩阵（完整矩阵见 StyleServiceTest 6 项）
@@ -622,7 +627,7 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七�
 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
 Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
-这条门禁覆盖干净 runner 上的构建与 338 条 JVM 测试：round16 的三条网关主链路 JVM
+这条门禁覆盖干净 runner 上的构建与 **451 条** JVM 测试（tool-api 10 + biz-mock 57 + ticket 39 + gateway 345）：round16 的三条网关主链路 JVM
 集成 smoke（缓存命中、工具循环、fallback），票 41 的四条工具循环语义用例（超限 FALLBACK、
 预算检查出答案、写动作守卫、多 toolCalls 防御），票 35 的五条 Prompt 版本化用例
 （生产资源加载与三种 fail-fast 形态），票 36 的六条情绪门用例（词典层 0 token 定案、
@@ -646,8 +651,10 @@ round17 新增套件判分器的 24 条夹具（`python scripts/eval_suites.py`�
 覆盖率棘轮（`python scripts/check_coverage.py`，读各模块 JaCoCo 产物按模块比 LINE 门槛）、
 round22 的 task 判据夹具（`python scripts/eval_task.py`，14 条）、检索融合录放门的
 只校验那一层（`python scripts/retrieval_gate.py` + 夹具哈希钉）与告警规则单元测试
-（`promtool test rules`，4 条规则 × 两侧断言）——
-judge()、gold、新增套件判据或覆盖率的静默漂移都会让 CI 变红。它仍不替代本机 25 步全量验收，后者包含活体中间件、
+（`promtool test rules`，4 条规则 × 两侧断言），以及 round23 / round27 的**前端构建门禁**
+（`npm ci` + typecheck + build + `git diff --exit-code` 校验**两个**前端的入库产物逐字节一致，
+一步里做两件事所以仍是九步）——
+judge()、gold、新增套件判据或覆盖率的静默漂移都会让 CI 变红。它仍不替代本机 28 步全量验收，后者包含活体中间件、
 浏览器、评测与一键演示。CI 报红先修真实失败，不通过加跳过、改期望数或取消测试来换绿。
 
 ### 逐 ticket 验收动作 → 覆盖命令
@@ -953,11 +960,11 @@ shoppilot-biz-mock/    业务中台：orders / logistics / coupons / refunds / t
 shoppilot-tool-api/    纯契约 jar：10 意图枚举 + Function Schema + 工具 DTO（网关与 biz-mock 共用）
 loadtest/              locustfile（四种流量模型）与 results/（保留 ladder-*.csv 与 env-*.json）
 eval/results/         工具调用评测 CSV/meta（入库的评测证据）
-docs/adr/              ADR 0001-0051（0022 未占用），正文里每处 ADR 编号都能点进去
+docs/adr/              ADR 0001-0060（0022 未占用），正文里每处 ADR 编号都能点进去
 docs/                  阈值标定、意图标定、检索对比、压测报告、证据地图、代码地图、面试问答清单
 knowledge/             30 篇政策语料
 scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、TTFT 扫描与归因、报告生成
-.scratch/shoppilot-mvp/ 正式 tracker、round spec、票 01-56、收口审计；不是临时草稿目录
+.scratch/shoppilot-mvp/ 正式 tracker、round spec、票 01-99、收口审计、欠账总账；不是临时草稿目录
 AGENTS.md  CHARTER.md  PLAN.md  CONTEXT.md
 ```
 

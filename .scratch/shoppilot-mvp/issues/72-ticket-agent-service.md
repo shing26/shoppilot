@@ -1,6 +1,9 @@
 # 72 工单与坐席服务：独立成第四个服务
 
-**Status:** ready-for-agent
+**Status:** implemented（2026-10-05 校正状态位：本票早已收口——tracker 索引与本 Handoff 的验证落点都写着
+「首次四模块 `5 + 59 + 308 + 17 = 389` 绿」，只是票面漏改状态位，于是 frontier 一直把它摆在可领取。
+**这与票 21 是同一个毛病复发**：票 21 当时也是「只落了审账没改状态位」，被记进它自己的 Handoff 一次。
+判定依据统一成一条：Handoff 有完整验证落点、且 tracker 索引写 `implemented`，票面就该是 `implemented`。）
 
 ## What to build
 

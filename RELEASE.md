@@ -33,6 +33,12 @@ pwsh -NoProfile -File scripts/demo.ps1
 
 完整入口见 [README.md](README.md) 的快速开始、三条演示和复现段。CI 子集在干净 Ubuntu runner 上执行**构建与全部 JVM 测试（338 条）**加**七道 0 token 门禁**（判据自检 / 离线 rescore / 套件夹具 / task 判据夹具 / 检索融合录放门 / 覆盖率棘轮 / 告警规则 `promtool test rules`），**不替代**本机 25 步活体验收。
 
+> **2026-10-05 换代指针（本段数字是 `v1.0.0` 发布时点的历史读数，不改）**：CI 已从
+> **八步 → 九步**（round23 加前端构建门禁，round27 扩到两个前端但仍占一步）、JVM 测试
+> **338 → 451 条**（四模块 10 + 57 + 39 + 345）、本机矩阵 **25 → 28 步**（round23 加 `workspace`、
+> round26 加 `outbound`、round27 加 `buyer`）。**本文件是冻结的发布声明，所以只加指针、不重算数字**——
+> 抹掉发布当时的读数，读者就没法核对「发布到现在长了多少」。当前读数见 [README.md](README.md)。
+
 ## Known limits
 
 - 业务系统是 `biz-mock`：H2 内嵌库、生成数据，不承诺生产规模。
@@ -56,5 +62,11 @@ pwsh -NoProfile -File scripts/demo.ps1
 > 前三轮当时只在 tracker 与各轮 ADR 里记录，**本文件漏列了这一条**。补记不改变任何既往事实——
 > 每一轮都已在自己的 ADR 里诚实标注了依据（例如 round20 内部还分了「三条事实性修正 + 一条政策覆盖」、
 > round22 分了「65/67 触发已到、64/66 政策越过」），这里只是把那条一直在用的路径正式并入冻结策略。
+>
+> **2026-10-05 再补一笔**：round23 – round27 **五轮走的是另一条依据**——[ADR 0052](docs/adr/0052-reposition-as-runnable-service-system-prototype.md)
+> 的定位改写（"客服系统化演进" program，所有者 2026-10-01 授权，七决策）。
+> 那一段不是政策越权，而是**换了一个被授权的 source of truth**：定位从「v1.0.0 发布件」改为
+> 「可运行的多租户客服系统雏形」这件事本身就是所有者的决定，由 ADR 0052 承载。
+> 所以上面第 4 条的适用范围是 round17 – round22，不是「v1.0.0 之后的所有轮次」。
 
 未触发的工作只登记到 [docs/interview-feedback.md](docs/interview-feedback.md)，不直接进入实现队列。
