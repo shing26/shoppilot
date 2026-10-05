@@ -54,6 +54,10 @@ class AccountControllerTest {
 
         assertThat(body.path("role").asText()).isEqualTo("AGENT");
         assertThat(body.path("accountId").asText()).isEqualTo("U0001");
+        // username 这一格是清场日补的：登录响应原本**不发**它，而两个前端的 Session 都声明了它，
+        // 于是工作台把 `{{ username }}` 渲染成 undefined（买家端因为写了 `displayName ?? username`
+        // 才侥幸没露）。钉住它，免得再被删一次。
+        assertThat(body.path("username").asText()).isEqualTo("agent1");
         assertThat(jwtService.verify(body.path("token").asText(), "c").orElseThrow().role())
                 .isEqualTo(UserRole.AGENT);
     }

@@ -24,8 +24,12 @@ param(
     # round23 票 74：档位切的是**步骤集合**，不是判据——每一步的判据在两档里逐字相同。
     #   daily = 0 token 与 JVM 层那几步（不起栈）：任意机器可跑，不吃内存；
     #   full  = 全部步骤（起四服务栈 + 活体），约 7 GB，仅清场日。
-    # 默认 full：分档是为了让日常可跑，不���为了改变既有行为。
-    [ValidateSet('daily', 'full')] [string]$Tier = 'full',
+    #   live  = **perf 档的活体门禁**（约 2.6 GB，不吃模型内存）：本机实测这一档在停掉另外三套
+    #           项目的容器之后跑得动，所以它是**能定期跑**的那一档（清场日实测 2026-10-05：
+    #           停 → 起栈 28 s → 三个浏览器门禁 → 恢复，全程约 1 分钟）。
+    #           它由 scripts/cleanout-live.ps1 执行——因为它要停别人的容器，所以必须自带保证恢复。
+    # 默认 full：分档是为了让日常可跑，不是为了改变既有行为。
+    [ValidateSet('daily', 'live', 'full')] [string]$Tier = 'full',
     [string[]]$Only = @(),
     # 默认让 up.ps1 连知识库入库一起跑：ticket 04 的「重跑不增长」要有 logs\ingest.out 才判得成，
     # 干净机器少了这一步，ES/Qdrant 里根本没有语料。
@@ -118,6 +122,16 @@ $steps = [ordered]@{
 # daily 档的步骤集合：不起栈、不打模型，判据与 full 档逐字相同，只是选了一组不依赖活体栈的步骤。
 # 列名写死而不是从 Need 反推——反推会把「某一步今天临时不依赖栈」悄悄变成口径变更，而这里要的是常量的意图。
 $DailySteps = @('syntax', 'stop', 'build', 'unit', 'report', 'task', 'funnel')
+
+# live 档：**交给另一个脚本执行**，不并入上面的步骤表。
+# 理由是它要停掉另外三套项目的容器——那件事必须自带「保证恢复」（finally 块），
+# 而 run-acceptance 的步骤模型是「逐步记录 + 任何一步失败也跑完剩下的」，它没有 finally 语义。
+# 把两件事塞进一个脚本，就会出现「门禁跑到一半、别人的项目留在停机状态」的那种收尾。
+if ($Tier -eq 'live') {
+    Write-Host "档位：live（perf 档活体门禁，约 2.6 GB；要停掉另外三套项目的容器，脚本自带保证恢复）" -ForegroundColor Cyan
+    & $pwsh -NoProfile -File (Join-Path $root 'scripts\cleanout-live.ps1')
+    exit $LASTEXITCODE
+}
 
 if ($Tier -eq 'daily') {
     $unknown = @($DailySteps | Where-Object { -not $steps.Contains($_) })

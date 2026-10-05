@@ -172,6 +172,13 @@ function clearStoredSession() {
       <button type="button" @click="doLogin">登录</button>
     </section>
 
+    <!--
+      未登录时队列整段不渲染（没有身份就没有「本店的队列」），但**必须说清为什么**，
+      否则页面看上去像坏了。买家端那页的同一句提示是清场日当天补的（票 94），
+      这里当时漏了——两页由同一轮写成，行为却不一致，这正是那句话存在的理由。
+    -->
+    <p v-if="!session" class="notice">登录坐席账号后才能看到队列</p>
+
     <section v-else class="ctl">
       <span class="who">当前身份：{{ who }}<span class="hint">（署名取自登录令牌，页面上不能改）</span></span>
       <label>队列
@@ -229,5 +236,6 @@ th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; v
 .err { color: #b42318; }
 .note { color: #146c2e; }
 .empty { color: #666; }
+.notice { color: #666; margin: 4px 0 0; }
 .ops button { margin-right: 6px; }
 </style>

@@ -111,7 +111,13 @@ function Get-ShoppilotDotEnv {
         if ($pos -lt 1) { continue }
         $key = $text.Substring(0, $pos).Trim()
         $value = $text.Substring($pos + 1).Trim().Trim('"', "'")
-        if ($key -and -not (Test-Path "Env:\$key")) { $values[$key] = $value }
+        # 「进程环境里已有的值优先」这条规矩是对的——它让命令行覆盖 .env。
+        # 但**空串不算已有**（2026-10-05 补）：上游任何一环把变量设成空串时，
+        # `Test-Path Env:` 会为真，于是 .env 里的真值被跳过，一路传下去就是空值。
+        # 后果非常难认：biz-mock 拿不到 SHOPPILOT_IDENTITY_DEMO_PASSWORD 就**不播种演示账号**
+        # （那是个「不给就不做」的软开关，不报错、不失败），于是登录 401，而 readiness 全绿。
+        $existing = [Environment]::GetEnvironmentVariable($key)
+        if ($key -and [string]::IsNullOrEmpty($existing)) { $values[$key] = $value }
     }
     return $values
 }

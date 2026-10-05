@@ -94,6 +94,10 @@ public class AccountController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("token", token);
         body.put("accountId", account.accountId());
+        // **username 不能少**（round25 写漏了，清场日被工作台门禁抓到）：两个前端的 Session
+        // 都声明了它，而登录响应里没有这一格，于是页面上 `{{ username }}` 直接渲染成 undefined。
+        // 买家端因为写的是 `displayName ?? username` 才没露出来——**那是一个巧合，不是设计**。
+        body.put("username", account.username());
         body.put("tenantId", account.tenantId());
         body.put("customerId", account.subjectRef());
         body.put("role", account.role().name());

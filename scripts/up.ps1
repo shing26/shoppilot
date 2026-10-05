@@ -127,6 +127,17 @@ foreach ($model in @('bge-m3', 'qwen2.5:3b')) {
 }
 
 Write-Host '[3/7] 构建' -ForegroundColor Cyan
+# **先停三个服务再打包**（2026-10-05 补，一天才栽进去两次）。
+#
+# 原因：fat jar 被**正在运行的进程**锁住时，`spring-boot:repackage` 会在「把 jar 改名成 .original」
+# 那一步失败，于是 `mvn package` 退出非零、**而 jar 已经被换成了没有依赖的瘦包**。
+# 随后 `start-*.ps1` 挑中的正是那个瘦包 → 服务起来却 `NoClassDefFoundError: ch/qos/logback/...`，
+# 于是**页面类请求全挂、而 readiness 仍然是 200**（health 走的是已加载的类，不碰静态资源）。
+# 这个形状很难认：端口在听、健康是绿的、日志里只有一条 ClassNotFound。
+if (-not $SkipBuild) {
+    Write-Host '  先停 8082/8091/8092（fat jar 被运行中的进程锁住时会把产物换成瘦包）' -ForegroundColor DarkGray
+    & (Join-Path $root 'scripts\stop.ps1') -Ports '8082,8091,8092' | Out-Null
+}
 function Find-FatJars {
     @('shoppilot-gateway', 'shoppilot-biz-mock', 'shoppilot-ticket') | ForEach-Object {
         Get-ChildItem (Join-Path $root "$_\target") -Filter ($_ + '-*.jar') -ErrorAction SilentlyContinue |
