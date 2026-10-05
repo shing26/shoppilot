@@ -84,7 +84,7 @@ ADR 0059 第 4 条那个「可选 `callbackUrl`」我此前一直没做。
 
 | 项 | 值 |
 |---|---|
-| JVM 全仓 | `5 + 10 + 57 + 336 + 32 = 440`（gateway 331 → **336**，+5 `callbackUrl`） |
+| JVM 全仓 | `10 + 57 + 336 + 32 = 435`（gateway 331 → **336**，+5 `callbackUrl`） |
 | 覆盖率 | 四模块全过（`COVERAGE OK modules=4`） |
 | 矩阵 | full 档 **26 步 → 27 步**（add-only；daily 档不变） |
 | 脚本语法 | `verify-outbound.mjs` `node --check` 绿；`check-ps-syntax.ps1` **32 文件 0 错** |
@@ -164,6 +164,6 @@ javap 只列了签名，没列实现里加的那个参数。已在代码注释�
   两个计数分别在**正确的进程**上读到（第一版两个都去网关读，结构上恒为 0）。
 - **审计骨干**：真 Redis 上 `/api/audit` 返回真实事件（`TICKET_RESOLVED` / actor `outbound-gate` /
   `actorAuthenticated: false`），消费组 `shoppilot-audit` 存在且 **pending=0**。
-- JVM **`5 + 10 + 57 + 342 + 39 = 454`**（+2 新判据），覆盖率四模块全过。
+- JVM **`10 + 57 + 342 + 39 = 448`**（+2 新判据），覆盖率四模块全过。
 
 **round23 登记的「真实 Redis 行为零验证」今天验到了，结果是修完之后通过。**

@@ -66,7 +66,7 @@ cd .. && git diff --exit-code
 
 | 项 | 值 |
 |---|---|
-| JVM 全仓 | `5 + 10 + 57 + 342 + 37 = 452`（gateway 338 → **342**，+4 放行面用例） |
+| JVM 全仓 | `10 + 57 + 342 + 37 = 446`（gateway 338 → **342**，+4 放行面用例） |
 | 前端 | `npm ci` + `typecheck` + `build` 全绿，产物入库（index.html + 2 asset ≈75 kB） |
 | 覆盖率 | 四模块全过（`COVERAGE OK modules=4`） |
 

@@ -51,7 +51,7 @@ gh run list --workflow ci-subset.yml --limit 1
 
 | 项 | 值 |
 |---|---|
-| JVM 四模块 | **`5 + 10 + 57 + 342 + 37 = 452`** 绿（round26 收口 440） |
+| JVM 四模块 | **`10 + 57 + 342 + 37 = 446`** 绿（round26 收口 440） |
 | 覆盖率 | gateway 64.79% / biz-mock 76.92% / ticket 76.03% / tool-api 45.83%，`COVERAGE OK modules=4` |
 | 矩阵 | full 档 **27 → 28 步**（add-only）；**CI 九步未动**，run `37179113368` 绿 |
 | 指标名 | **仍 55**（本轮不新增 `shoppilot_*`） |

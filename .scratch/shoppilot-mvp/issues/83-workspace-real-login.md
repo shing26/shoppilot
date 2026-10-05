@@ -73,7 +73,7 @@ cd .. && git diff --exit-code
 
 | 项 | 值 |
 |---|---|
-| JVM 全仓 | `5 + 10 + 57 + 322 + 22 = 416`（gateway 321 → 322，新增署名优先级那条） |
+| JVM 全仓 | `10 + 57 + 322 + 22 = 411`（gateway 321 → 322，新增署名优先级那条） |
 | 覆盖率 | 四模块全过（`COVERAGE OK modules=4`） |
 | 前端 | `npm run typecheck` 绿、`npm run build` 绿、产物入库 |
 | 脚本语法 | `verify-workspace.mjs` `node --check` 绿；`check-ps-syntax.ps1` **0 错**（**要用 pwsh 7 跑**：Windows PowerShell 5.1 把无 BOM 的 UTF-8 当 ANSI 读，会报出 66 个不存在的语法错） |

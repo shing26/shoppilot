@@ -53,7 +53,7 @@ gh run list --workflow ci-subset.yml --limit 1
 
 | 项 | 值 |
 |---|---|
-| JVM 四模块 | **`5 + 10 + 57 + 336 + 32 = 440`** 绿（round25 收口 416） |
+| JVM 四模块 | **`10 + 57 + 336 + 32 = 435`** 绿（round25 收口 416） |
 | 覆盖率 | gateway 64.79% / biz-mock 76.92% / ticket 76.03% / tool-api 45.83%，`COVERAGE OK modules=4` |
 | 矩阵 | full 档 **26 → 27 步**（add-only）；**CI 九步未动** |
 | 指标名 | **53 → 55**（数法一字未改；四模块口径是 57，两个数一起摆着） |

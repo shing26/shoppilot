@@ -105,7 +105,15 @@ _DEF_LANDED = 0
 # 换代（round23 收口，2026-10-02 清场日）：四模块 `5 + 45 + 308 + 22 = 383`。
 # 这一格读的是 logs/acceptance/{build,unit}.log —— **每跑一次矩阵就被覆盖**，所以它只在
 # 「本轮跑过带 build/unit 的矩阵」时才是准的；中途加票时不要动它，跑了再换。
-G6_EXPECT = [5, 45, 308, 22]
+# 换代（2026-10-05 收尾，daily 档 `logs/acceptance-run-20261005-093540.log`，250 s）：
+# 四模块 `10 + 57 + 342 + 39 = 448`。相对上一格 `[5, 45, 308, 22] = 380` 的三处来源：
+# tool-api 5 → 10（票 82 的 Actor/ActorHeaders 用例 + 票 88/89 的门禁脚本文档）、biz-mock 45 → 57
+# （票 80 身份域 + 票 82 审计 actor + 票 86/87 工单）、ticket 22 → 39（票 86-89 的出站用例 + 收尾当天
+# 新增的 `RedisConfigConsistencyTest` 2 条）、gateway 308 → 342（票 86-95 全部）。
+# 注意这一格的四个数是 [tool-api, biz-mock, gateway, ticket]，**不要在它前面再多写一个 5**——
+# 本仓在 2026-10-05 收尾时确实把读数写成过 `5 + 10 + 57 + ... `，那个多出来的 5 是笔误，
+# 已在 EVIDENCE 与 tracker 里更正。
+G6_EXPECT = [10, 57, 342, 39]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 

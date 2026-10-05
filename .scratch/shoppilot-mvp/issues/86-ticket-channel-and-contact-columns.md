@@ -85,7 +85,7 @@ H2 拿它去满足无上界的 `where tenant_id = ?`，于是「无上界就是�
 
 | 项 | 值 |
 |---|---|
-| JVM 全仓 | `5 + 10 + 57 + 325 + 26 = 423`（gateway 322 → **325**，ticket 22 → **26**） |
+| JVM 全仓 | `10 + 57 + 325 + 26 = 418`（gateway 322 → **325**，ticket 22 → **26**） |
 | 覆盖率 | gateway **64.16%** / ticket **73.65%** / biz-mock 76.92% / tool-api 46.32%，`COVERAGE OK modules=4` |
 | 变异对照 | 回执单的 `channel` 置空 → `emailReceiptCarriesBothColumnsAndKeepsTheTranscriptLine` 当场红，还原即绿 |
 

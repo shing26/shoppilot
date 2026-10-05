@@ -87,7 +87,7 @@
 
 | 项 | 值 |
 |---|---|
-| JVM 全仓 | `5 + 10 + 57 + 331 + 32 = 435`（gateway 325 → **331**） |
+| JVM 全仓 | `10 + 57 + 331 + 32 = 430`（gateway 325 → **331**） |
 | 覆盖率 | 四模块全过（`COVERAGE OK modules=4`） |
 | 三个计数 | `shoppilot_outbound_delivered_total{channel}` / `failed_total{channel}` /（生产端的）`published_total` 与 `no_target_total` |
 

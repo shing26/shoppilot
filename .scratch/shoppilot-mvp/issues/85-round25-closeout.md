@@ -54,7 +54,7 @@ gh run list --workflow ci-subset.yml --limit 1
 
 | 项 | 值 |
 |---|---|
-| JVM 四模块 | **`5 + 10 + 57 + 322 + 22 = 416`** 绿（round24 收口 `5 + 45 + 308 + 22 = 380`） |
+| JVM 四模块 | **`10 + 57 + 322 + 22 = 411`** 绿（round24 收口 `5 + 45 + 308 + 22 = 380`） |
 | 覆盖率 | gateway **63.40%** / biz-mock **76.92%** / ticket **73.62%** / tool-api **46.81%**，`COVERAGE OK modules=4` |
 | 收口审计 | `PASS 85 / FAIL 2 / SKIP 9 / 共 96 项`（`A2` 工作树未提交、`F1c` round20 那笔老账） |
 | 变异对照 | 三条全部实测为真（BCrypt 恒真 2 红 / 角色 claim 不写 2 红 / 自称优先于令牌 1 红） |
