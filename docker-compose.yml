@@ -128,10 +128,12 @@ services:
     restart: unless-stopped
     container_name: ${COMPOSE_PROJECT_NAME}-postgres
     environment:
-      POSTGRES_USER: ${SHOPPILOT_DB_USERNAME:-shoppilot}
+      POSTGRES_USER: shoppilot
       # 必需语法（:?）：不给密码 compose 直接拒，不兜底——凭据不进仓库（ADR 0029），
-      # 而这个端口发布在宿主回环上，默认口令就是一把没换过的锁
+      # 而这个端口发布在宿主回环上，默认口令就是一把没换过的锁。
+      # 同一口令也传给 init 脚本建两个应用角色（round29 票 105 / ADR 0062）。
       POSTGRES_PASSWORD: ${SHOPPILOT_DB_PASSWORD:?set SHOPPILOT_DB_PASSWORD in .env}
+      SHOPPILOT_DB_PASSWORD: ${SHOPPILOT_DB_PASSWORD:?set SHOPPILOT_DB_PASSWORD in .env}
       POSTGRES_DB: bizmock
     ports:
       # 宿主端口偏移 15432：5432/5433 一带已有别的项目（与 16379/16333/19200 同一纪律）
@@ -139,7 +141,8 @@ services:
     mem_limit: 256m
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./deploy/postgres-init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+      # init 脚本只在数据目录为空的首次初始化执行；既有卷的升级 runbook 在脚本头注释
+      - ./deploy/postgres-init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${SHOPPILOT_DB_USERNAME:-shoppilot} -d bizmock"]
       interval: 5s
@@ -193,7 +196,9 @@ services:
       SPRING_PROFILES_ACTIVE: postgres
       SHOPPILOT_DB_HOST: postgres
       SHOPPILOT_DB_PORT: "5432"
-      SHOPPILOT_DB_USERNAME: ${SHOPPILOT_DB_USERNAME:-shoppilot}
+      # 按库用户隔离（round29 票 105 / ADR 0062）：每服务一个专属角色、只连自己的库——
+      # 用户名不是机密，写死在这里比共享一个变量清楚；口令仍来自 .env
+      SHOPPILOT_DB_USERNAME: bizmock_app
       SHOPPILOT_DB_PASSWORD: ${SHOPPILOT_DB_PASSWORD:?set SHOPPILOT_DB_PASSWORD in .env}
       # 演示账号口令（round25 票 80）：同样**不给仓库默认值**，留空即不建演示账号。
       # 要演示账号就在 .env 里给一个 SHOPPILOT_IDENTITY_DEMO_PASSWORD。
@@ -219,7 +224,8 @@ services:
       SPRING_PROFILES_ACTIVE: postgres
       SHOPPILOT_DB_HOST: postgres
       SHOPPILOT_DB_PORT: "5432"
-      SHOPPILOT_DB_USERNAME: ${SHOPPILOT_DB_USERNAME:-shoppilot}
+      # 按库用户隔离（round29 票 105 / ADR 0062）：本服务只连自己的 ticket 库
+      SHOPPILOT_DB_USERNAME: ticket_app
       SHOPPILOT_DB_PASSWORD: ${SHOPPILOT_DB_PASSWORD:?set SHOPPILOT_DB_PASSWORD in .env}
     depends_on:
       redis: { condition: service_healthy }

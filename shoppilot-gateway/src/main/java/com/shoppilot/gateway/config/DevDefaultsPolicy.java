@@ -1,9 +1,10 @@
 package com.shoppilot.gateway.config;
 
+import com.shoppilot.tool.config.PostureGuard;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * dev 默认凭证的合法性由绑定地址决定（ADR 0029）。
@@ -14,12 +15,16 @@ import java.util.Objects;
  * <p>默认值只在本类写一份。{@code application.yml} 里那三处留空，由
  * {@link DevDefaultsEnvironmentPostProcessor} 在回环时填进来——两处各写一份迟早会悄悄分家，
  * 届时守护判的就不是真正在用的那个值了。
+ *
+ * <p>**换代（round29 票 104 / ADR 0062）**：姿势原语（{@link #isLoopback}、stillDefault、三个仓库默认值）
+ * 下沉到共享库 {@link PostureGuard}——biz-mock / ticket 要在同一套语义上接入守卫，各进程抄一份迟早分家。
+ * 本类的公开 API 与行为逐字节不变（三份既有测试类一字未改）。
  */
 public final class DevDefaultsPolicy {
 
-    public static final String JWT_SECRET = "dev-jwt-secret-change-me-please-0123456789";
-    public static final String INTERNAL_TOKEN = "dev-internal-token-change-me";
-    public static final String OPS_TOKEN = "dev-ops-token";
+    public static final String JWT_SECRET = PostureGuard.JWT_SECRET;
+    public static final String INTERNAL_TOKEN = PostureGuard.INTERNAL_TOKEN;
+    public static final String OPS_TOKEN = PostureGuard.OPS_TOKEN;
 
     private final boolean loopback;
     private final String bindAddress;
@@ -43,11 +48,7 @@ public final class DevDefaultsPolicy {
      * 这条判据必须 fail-closed，不能把「没填」当成「填了回环」。
      */
     public static boolean isLoopback(String bindAddress) {
-        if (bindAddress == null || bindAddress.isBlank()) {
-            return false;
-        }
-        String a = bindAddress.trim().toLowerCase();
-        return a.equals("localhost") || a.equals("::1") || a.equals("[::1]") || a.startsWith("127.");
+        return PostureGuard.isLoopback(bindAddress);
     }
 
     public boolean loopback() {
@@ -108,6 +109,6 @@ public final class DevDefaultsPolicy {
 
     /** 未设置、空串、等于仓库默认值，三者都算「仍在吃默认值」。 */
     private static boolean stillDefault(String actual, String repoDefault) {
-        return actual == null || actual.isBlank() || Objects.equals(actual.trim(), repoDefault);
+        return PostureGuard.stillDefault(actual, repoDefault);
     }
 }

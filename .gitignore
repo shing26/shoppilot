@@ -39,3 +39,6 @@ loadtest/results/tmp-multi/
 
 # 本机的日期刻项目梳理快照，只作历史参照，不是仓库事实或提交物
 ShopPilot-项目梳理-*.md
+
+# B2 备份产物（pg_dump 二进制），永不入库（ADR 0062）
+backups/

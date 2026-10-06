@@ -382,6 +382,10 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 - **工单的持久性作用域按档区分（round28 换代）**：默认档仍是「进程生命周期内可查」（重启即清，演示可复现）；
   **持久档上工单与账号活过重启**（2026-10-06 活体验证：建号/建单/规则 → 杀进程重启 → 三样逐项核销，见 EVIDENCE B1 节）。
   RESOLVED 后买家回流已在（round26 起的 `channel.outbound`）；「真工单系统替换业务 Mock」的投产前置口径不变（ADR 0030 第 2 条）。
+- **备份是演练过的脚本，不是自动排程**（round29 / ADR 0062）：`scripts/backup-postgres.ps1`（pg_dump -Fc，
+  TOC 断言含 BLOBS——大对象真进备份）与 `scripts/verify-backup-restore.ps1`（DROP FORCE → pg_restore →
+  重授权 → API/LOB/授权三层验证，14 项断言）即 runbook；定时排程与异机存放未做（R5 同批登记）。
+  凭据姿势守卫已覆盖到数据侧：非回环 + 仓库默认内部令牌 / 空数据库口令 = 拒绝启动（网关与两个数据服务同一家法）。
 - **跨实例 singleflight 只在单实例环境验证过**。Redis `SETNX` 那层写了、测了，但没有两个网关实例跑真实流量。
 - **身份提供方是 mock 的**：验签逻辑真（HS256、过期、错签名都拒），发 token 的接口是演示入口（ADR 0014）。
 - **四个请求坐标直接进日志是合成数据下的取巧**：`traceId / tenantId / customerId / conversationId` 一行日志一个不落，

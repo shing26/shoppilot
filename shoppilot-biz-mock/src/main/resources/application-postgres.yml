@@ -9,7 +9,9 @@ spring:
   datasource:
     url: jdbc:postgresql://${SHOPPILOT_DB_HOST:127.0.0.1}:${SHOPPILOT_DB_PORT:15432}/bizmock
     driver-class-name: org.postgresql.Driver
-    username: ${SHOPPILOT_DB_USERNAME:shoppilot}
+    # 按库用户隔离（round29 票 105 / ADR 0062）：默认用自己的角色 bizmock_app（它拥有本库、跑 Flyway）。
+    # 超级用户 shoppilot 只属于运维面（备份/恢复），业务连接不该用它。
+    username: ${SHOPPILOT_DB_USERNAME:bizmock_app}
     password: ${SHOPPILOT_DB_PASSWORD:}
   flyway:
     # PG 方言迁移集（V1 = 现状全量基线，版本钟与 H2 侧同步，见该目录 V1 文件头）。

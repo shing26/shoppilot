@@ -6,7 +6,7 @@
 
 | 模块 | 职责 | 依赖方向 |
 | --- | --- | --- |
-| `shoppilot-tool-api` | 跨进程工具契约：意图、工具名、请求/响应 DTO、OpenAPI/Function Schema 生成 | 不依赖 gateway 或 biz-mock |
+| `shoppilot-tool-api` | 跨进程工具契约：意图、工具名、请求/响应 DTO、OpenAPI/Function Schema 生成。**换代（round29 / ADR 0062）**：新增 `tool/config/PostureGuard`——凭据姿势原语（`isLoopback` fail-closed / `stillDefault` / 仓库默认值常量），网关的 `DevDefaultsPolicy` 委托它，biz-mock 与 ticket 的 `PostureGuardConfiguration` 用它做非回环启动阻断 | 不依赖 gateway 或 biz-mock |
 | `shoppilot-biz-mock` | 业务系统替身：订单、物流、优惠券、退款、种子数据、租户隔离和故障注入 | 依赖 `shoppilot-tool-api` |
 | `shoppilot-gateway` | 买家入口：鉴权、限流、意图、缓存、检索、Agent 编排、SSE、降级、运维指标 | 依赖 `shoppilot-tool-api`，经 HTTP 调 biz-mock 与 ticket |
 | `shoppilot-ticket` | 工单与坐席服务（round23 票 72 / ADR 0053）：统一工单实体、规则分流、坐席领取、SLA、规则表 | 依赖 `shoppilot-tool-api`，**工单数据随服务走**；业务侧与网关经 HTTP 调它 |

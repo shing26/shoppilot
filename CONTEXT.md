@@ -43,6 +43,10 @@ _Avoid_: 把默认档当成「没做完持久化」、把它写成 dev 档（dev
 `postgres` profile（round28 票 100 / ADR 0061）：PostgreSQL + Redis AOF，**数据活过一次重启**——B1 的内容本身。容器档 full 默认走这里；本机 JVM 用 `SPRING_PROFILES_ACTIVE=postgres` + `SHOPPILOT_DB_*` 显式激活。演示种子在此档默认关闭（`SHOPPILOT_BIZMOCK_DEMO_SEED`）。
 _Avoid_: 称它「生产档」（B1 只到投用形态的第一格，B2-B5 未动）、宣称「已上线」
 
+**姿势守卫 (Posture Guard)**:
+「dev 默认凭证是否合法」由绑定地址决定的启动阻断（ADR 0029 定语义，round29 票 104 / ADR 0062 起原语在 `tool/config/PostureGuard`、三个进程同一家法）：绑回环时默认值合法（干净克隆判据靠它），非回环时任一处仍是仓库默认值即拒绝启动。账本随进程不同：网关是 JWT / 内部令牌 / 运维令牌三格，biz-mock 与 ticket 是内部令牌 + 持久档数据库口令两格。
+_Avoid_: 叫它「prod 档」（本仓没有 prod profile）、把回环合法说成「不安全」——回环默认值是 ADR 0029 的裁定不是疏漏
+
 **精确缓存 (L1)**:
 按归一化文本的哈希取答案，只拦字面重复，成本近乎为零。`L1` / `L2` 这两个序号在本项目只指缓存两级。
 

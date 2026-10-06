@@ -44,6 +44,11 @@
 
 ### B2 · 凭据与部署
 
+> **换代指针（2026-10-06）：B2 已收口**——round29（票 104-107，[ADR 0062](../../docs/adr/0062-b2-credential-posture-and-backup-restore.md)）。
+> 落点：姿势守卫下沉共享库并接入数据侧（内部令牌 + 持久档 DB 口令，非回环拒启）、按库用户隔离
+> （bizmock_app / ticket_app，PUBLIC 收 CONNECT）、备份恢复演练 14/14（pg_dump -Fc 含大对象 →
+> DROP FORCE → restore → API/LOB/授权三层验证）；Redis 不备份、监控 R5、TLS 三项带触发条件登记。
+
 - 真库连接串、`SHOPPILOT_INTERNAL_TOKEN` / `JWT_SECRET` 的**生产态管理**（现在只有回环下的默认兜底，ADR 0029）；
   部署形态（容器档已存在，但它是**自用档**，没有备份/监控/回滚）；
   备份与恢复演练。
