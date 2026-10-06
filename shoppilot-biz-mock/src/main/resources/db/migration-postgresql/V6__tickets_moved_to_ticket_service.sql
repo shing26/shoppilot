@@ -1,0 +1,5 @@
+-- 版本占位（PostgreSQL 侧，round28 票 100 / ADR 0061）。
+--
+-- H2 侧 V6 删掉的是「V1/V3/V4 建出过、随后搬到 shoppilot-ticket」的 tickets 与 routing_rules；
+-- PG 侧从未有过这两张表（V1 就是票 72 之后的现状），无事可做。
+-- 保留占位是为了两侧迁移版本钟同步（PostgresMigrationParityTest）。

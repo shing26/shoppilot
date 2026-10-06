@@ -1,0 +1,5 @@
+-- 版本占位（PostgreSQL 侧，round28 票 100 / ADR 0061）。
+--
+-- H2 侧 V3 的增量（tickets 扩列 + refunds.ticket_id）在现状全量里的体现：refunds.ticket_id
+-- 随 PG V1 建出；tickets 表本身已随票 72 搬到 shoppilot-ticket（H2 V6 删除，PG 从未有过）。
+-- 保留占位是为了两侧迁移版本钟同步（PostgresMigrationParityTest）。

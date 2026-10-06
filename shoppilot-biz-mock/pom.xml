@@ -56,8 +56,23 @@
       <artifactId>flyway-core</artifactId>
     </dependency>
     <dependency>
+      <!-- round28 票 100 / ADR 0061：Flyway 10 起数据库支持拆成独立模块，PG 的在这里；
+           缺它就是「Unsupported Database: PostgreSQL 16.15」当场拒启（活体实测）。
+           版本随 flyway-core 由 spring-boot-dependencies 管。 -->
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
       <groupId>com.h2database</groupId>
       <artifactId>h2</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <!-- round28 票 100 / ADR 0061：持久档（postgres profile）的驱动。默认档仍用 H2 内存库，
+           版本由 spring-boot-dependencies 管。 -->
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
     </dependency>
     <dependency>

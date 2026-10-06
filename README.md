@@ -370,14 +370,18 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
   所以**自带保证恢复**（`finally` 按开头记下的清单逐个 start 并轮询确认，中断路径已实测有效）；**full 档（local 真模型，≈6.6 GB）**
   **本机跑不起来**，最近一次落点是 2026-10-02 的清场日。
   **live 档不覆盖真实模型路径**——它在 MockLLM 上量编排层，未跑的红**不得冒充**任何一档的信号。收口审计本轮实跑 **96 项机器断言**（round23 票 74 新增 G8 事件对账门禁）。
-- **H2 内嵌库在写密集路径上是瓶颈**；50 并发同 token 的退款实测 1 行 + 49 个重放，但换 MySQL 才是生产形态。
+- **H2 内嵌库在写密集路径上是瓶颈**；50 并发同 token 的退款实测 1 行 + 49 个重放。**换代（round28 / ADR 0061）**：
+  仓里现在有 PostgreSQL 持久档（容器档 full 默认走它），本机 JVM 演示仍走 H2 内存默认档——两条路并存是**有意设计**（演示可复现性，ADR 0061 §1），不是没做完。
 - **表结构由 Flyway 版本化迁移产生，不是 Hibernate 自动建表**：`ddl-auto` 已是 `validate`，模式的唯一产生源是
-  `shoppilot-biz-mock/src/main/resources/db/migration/`（V1 基线由 Hibernate 导出后固化）。**迁移只管表结构怎么产生，
-  不改变数据的持久性作用域**——库仍是内存库、每次起栈 reseed，上面那条工单口径不因引入迁移而变。
+  `shoppilot-biz-mock/src/main/resources/db/migration/`（H2，V1 基线由 Hibernate 导出后固化）与
+  `db/migration-postgresql/`（PG，round28 起，现状全量基线；两侧版本钟逐字对齐由 `PostgresMigrationParityTest` 钉住）。
+  **换代（round28）**：「迁移不改变数据的持久性作用域」只在默认档成立——持久档上数据活过重启（活体读数见 EVIDENCE 的 B1 节）。
   Flyway 社区版没有 `undo`，回滚的两条路径（整库 `clean` 重放 / 手工单版回退）写在
-  `db/rollback/U1__baseline_down.sql` 的文件头。索引的真相源同样是迁移文件，实体上的 `@Index` 注解在 `validate`
+  `db/rollback/U1__baseline_down.sql` 的文件头（PG 侧回滚演练登记给 B2）。索引的真相源同样是迁移文件，实体上的 `@Index` 注解在 `validate`
   下不再被校验、只作文档。
-- **工单只在业务 Mock 进程生命周期内可查**：看门狗失联重启会全量 reseed 并抹掉已落库工单；跨重启持久化、RESOLVED 后买家回流都不在现状内。它们不是本轮遗漏，而是等真工单系统替换业务 Mock 时一起做的两条投产前置（ADR 0030 第 2 条）。
+- **工单的持久性作用域按档区分（round28 换代）**：默认档仍是「进程生命周期内可查」（重启即清，演示可复现）；
+  **持久档上工单与账号活过重启**（2026-10-06 活体验证：建号/建单/规则 → 杀进程重启 → 三样逐项核销，见 EVIDENCE B1 节）。
+  RESOLVED 后买家回流已在（round26 起的 `channel.outbound`）；「真工单系统替换业务 Mock」的投产前置口径不变（ADR 0030 第 2 条）。
 - **跨实例 singleflight 只在单实例环境验证过**。Redis `SETNX` 那层写了、测了，但没有两个网关实例跑真实流量。
 - **身份提供方是 mock 的**：验签逻辑真（HS256、过期、错签名都拒），发 token 的接口是演示入口（ADR 0014）。
 - **四个请求坐标直接进日志是合成数据下的取巧**：`traceId / tenantId / customerId / conversationId` 一行日志一个不落，

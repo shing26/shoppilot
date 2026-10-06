@@ -1,0 +1,26 @@
+# PostgreSQL 持久档（round28 票 100 / ADR 0061 / program B1「数据活过一次重启」）。
+#
+# 激活方式：SPRING_PROFILES_ACTIVE=postgres。默认档（application.yml，H2 内存库）的行为
+# 逐字不变——演示可复现性与全部活体判据的运行前提都在默认档上。
+#
+# 凭据家法（ADR 0029）：口令**没有仓库默认值**——SHOPPILOT_DB_PASSWORD 不给，连接就响亮失败。
+# 宿主端口默认 15432 是偏移值（5432/5433 一带已有别的项目在用，与 16379/16333/19200 同一纪律）。
+spring:
+  datasource:
+    url: jdbc:postgresql://${SHOPPILOT_DB_HOST:127.0.0.1}:${SHOPPILOT_DB_PORT:15432}/bizmock
+    driver-class-name: org.postgresql.Driver
+    username: ${SHOPPILOT_DB_USERNAME:shoppilot}
+    password: ${SHOPPILOT_DB_PASSWORD:}
+  flyway:
+    # PG 方言迁移集（V1 = 现状全量基线，版本钟与 H2 侧同步，见该目录 V1 文件头）。
+    # 刻意用平级目录而不是 db/migration 的子目录：Flyway 对 classpath:db/migration 是
+    # **递归扫描**，子目录里的 V1 会被当成同版本迁移当场撞车（verify 实测）。
+    locations: classpath:db/migration-postgresql
+
+shoppilot:
+  bizmock:
+    seed:
+      # 演示数据段默认关闭：5 万条压测订单与 200 个假买家不进真库。
+      # 要在持久档上演示就显式给 SHOPPILOT_BIZMOCK_DEMO_SEED=true；
+      # SeedRunner 的「orders 非空即跳过」保证重启不翻倍。
+      demo-data: ${SHOPPILOT_BIZMOCK_DEMO_SEED:false}

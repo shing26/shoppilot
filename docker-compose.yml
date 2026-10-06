@@ -1,10 +1,11 @@
-# ShopPilot 的中间件 + **可选**容器档（round23 票 76 / ADR 0053）
+# ShopPilot 的中间件 + **可选**容器档（round23 票 76 / ADR 0053；round28 B1 / ADR 0061 起容器档默认持久化）
 #
 # ============================================================================
 # 两种用法，边界在 profile 上
 # ============================================================================
-#   docker compose up -d                # 只有中间件（**默认，行为与本票之前逐字一致**）
-#   docker compose --profile full up -d --build    # 中间件 + 四个域服务（干净克隆一条命令）
+#   docker compose up -d                # 只有中间件（**默认，redis 现在挂卷+AOF，其余与本票之前逐字一致**）
+#   docker compose --profile full up -d --build    # Postgres + 四个域服务（干净克隆一条命令；
+#                                       # B1 起服务默认连 Postgres 持久档，需在 .env 给 SHOPPILOT_DB_PASSWORD）
 #
 # 日常开发仍然用 scripts/up.ps1（本机 JVM，改代码即重启）。容器档是并行的一条路，
 # 用途是「别人 clone 下来能起」以及本机内存紧张时**让 OOM 杀掉容器**而不是杀掉
@@ -51,11 +52,17 @@ services:
     # （实测重启 72 次，日志里全是 Unable to connect to Redis）。
     restart: unless-stopped
     container_name: ${COMPOSE_PROJECT_NAME}-redis
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    # B1（round28 / ADR 0061）：挂卷 + AOF——事件流（audit / channel.outbound）的内容
+    # 不再随容器重建丢失。「丢得起」的语义界定写进淘汰策略：
+    # allkeys-lru → **volatile-lru**——有 TTL 的键（缓存/会话/幂等）压力下可被逐出
+    # （可重建、幂等层可重放），无 TTL 的键（事件流，靠 MAXLEN 截断）不参与逐出。
+    command: ["redis-server", "--save", "", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "volatile-lru"]
     ports:
       # 宿主端口用偏移值：这台机器上 Docker Desktop 的 wslrelay 已占住 6379/6333/9200
       - "127.0.0.1:${SHOPPIOT_REDIS_PORT:-16379}:6379"
     mem_limit: 192m
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -110,7 +117,35 @@ services:
       timeout: 5s
       retries: 30
 
-  # ---- 可选容器档：四个域服务（profile full）---------------------------------
+  # ---- 可选容器档：状态层 + 四个域服务（profile full）-------------------------
+  # B1（round28 / ADR 0061）：Postgres 进 full 档而不是默认中间件——
+  # 默认中间件的用法（本地 JVM + H2 默认档）不该被一张 DB 密码逼着配 .env。
+  # 一个实例两个库（bizmock / ticket，第二个由 init 脚本建），两服务继续物理上不共库
+  # （票 72 裁定 B 不变：跨服务只走 API）。
+  postgres:
+    # 镜像用本机已本地化的 pgvector/pg16（round76 的 Docker Hub 封锁绕行先例；pgvector 扩展不用也无害）
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    container_name: ${COMPOSE_PROJECT_NAME}-postgres
+    environment:
+      POSTGRES_USER: ${SHOPPILOT_DB_USERNAME:-shoppilot}
+      # 必需语法（:?）：不给密码 compose 直接拒，不兜底——凭据不进仓库（ADR 0029），
+      # 而这个端口发布在宿主回环上，默认口令就是一把没换过的锁
+      POSTGRES_PASSWORD: ${SHOPPILOT_DB_PASSWORD:?set SHOPPILOT_DB_PASSWORD in .env}
+      POSTGRES_DB: bizmock
+    ports:
+      # 宿主端口偏移 15432：5432/5433 一带已有别的项目（与 16379/16333/19200 同一纪律）
+      - "127.0.0.1:${SHOPPILOT_DB_PORT:-15432}:5432"
+    mem_limit: 256m
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres-init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SHOPPILOT_DB_USERNAME:-shoppilot} -d bizmock"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   # 一次性作业：政策知识库入库。本机档是 scripts/ingest.ps1 用 maven 起一次网关 jar，
   # 容器档用同一个镜像 + ingest profile，跑完退出（restart: "no"）。
   ingest:
@@ -153,11 +188,19 @@ services:
       # 容器内必须绑 0.0.0.0：Docker 的端口发布是宿主→容器的 NAT，容器只听自己回环就没人能连上。
       # 对外暴露面没变——gateway 的端口仍然只发布到宿主回环（见下方 ports）。
       SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
+      # B1（round28 / ADR 0061）：容器档默认走持久档——「数据活过一次重启」是投用形态的默认值。
+      # 本机 JVM 演示仍走默认档（H2 内存），见 application.yml。
+      SPRING_PROFILES_ACTIVE: postgres
+      SHOPPILOT_DB_HOST: postgres
+      SHOPPILOT_DB_PORT: "5432"
+      SHOPPILOT_DB_USERNAME: ${SHOPPILOT_DB_USERNAME:-shoppilot}
+      SHOPPILOT_DB_PASSWORD: ${SHOPPILOT_DB_PASSWORD:?set SHOPPILOT_DB_PASSWORD in .env}
       # 演示账号口令（round25 票 80）：同样**不给仓库默认值**，留空即不建演示账号。
       # 要演示账号就在 .env 里给一个 SHOPPILOT_IDENTITY_DEMO_PASSWORD。
       SHOPPILOT_IDENTITY_DEMO_PASSWORD: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:-}
     depends_on:
       redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
 
   ticket:
     build:
@@ -172,8 +215,15 @@ services:
     environment:
       <<: *service-env
       SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
+      # B1（round28 / ADR 0061）：同 biz-mock，容器档默认走持久档
+      SPRING_PROFILES_ACTIVE: postgres
+      SHOPPILOT_DB_HOST: postgres
+      SHOPPILOT_DB_PORT: "5432"
+      SHOPPILOT_DB_USERNAME: ${SHOPPILOT_DB_USERNAME:-shoppilot}
+      SHOPPILOT_DB_PASSWORD: ${SHOPPILOT_DB_PASSWORD:?set SHOPPILOT_DB_PASSWORD in .env}
     depends_on:
       redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
 
   gateway:
     build:
@@ -207,3 +257,5 @@ services:
 volumes:
   qdrant-data:
   es-data:
+  redis-data:
+  postgres-data:

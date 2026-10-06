@@ -49,6 +49,10 @@ public class Feedback {
     private String signals;
 
     /** 关联的检索引用块，逗号分隔；点踩归因到知识条目靠它。 */
+    // 维持 @Lob（B1 / ADR 0061 的取舍）：三种映射各瘸一条腿——@Lob 在 H2 validate 绿、PG 落 oid
+    // 且绑定与列型一致；LONGVARCHAR(-1) 过不了 H2 validate（found clob / expecting text）；
+    // LONG32VARCHAR(4001) 过 H2 但 PG 驱动对 setNull(4001) 抛 Unknown Types value。
+    // 「PG 落 text」连同完整实验矩阵登记在 ADR 0061，不在 B1 强行换。
     @Lob
     @Column(name = "rule_ids", length = 512)
     private String ruleIds;

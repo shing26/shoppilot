@@ -1,0 +1,4 @@
+-- 版本占位（PostgreSQL 侧，round28 票 100 / ADR 0061）。
+--
+-- H2 侧 V8 的 actor_authenticated 列已随 PG V1 现状基线建出（带 default false，见 V1 文件头）。
+-- 保留占位是为了两侧迁移版本钟同步（PostgresMigrationParityTest）。

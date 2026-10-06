@@ -26,6 +26,11 @@
 
 ### B1 · 数据活过一次重启 ⛔ 阻塞其余全部
 
+> **换代指针（2026-10-06）：B1 已收口**——round28（票 100-103，[ADR 0061](../../docs/adr/0061-b1-persistence-postgres-profile.md)）。
+> 落点与原文的一处刻意偏差：没有「把默认档换掉」，而是**双档并存**（默认档 H2 内存不动保演示可复现，
+> 新增 `postgres` 持久档 + Redis AOF，容器档 full 默认走持久档）；活体重启验证与 LOB 取舍（`@Lob`/oid）
+> 见该 ADR 与 EVIDENCE 的 B1 节。**B2 起照原文继续。**
+
 - **要做**：`biz-mock` 与 `ticket` 的 H2 换真实库（Postgres/MySQL）；
   Flyway 迁移改写成真实方言；seed 拆成「初始化」与「演示数据」两段（现在是一次全量）；
   Redis 挂卷。

@@ -1,0 +1,20 @@
+# PostgreSQL 持久档（round28 票 100 / ADR 0061 / program B1「数据活过一次重启」）。
+#
+# 激活方式：SPRING_PROFILES_ACTIVE=postgres。默认档（application.yml，H2 内存库）的行为
+# 逐字不变。工单是审计资产（application.yml 原注释），持久档正是把这句话变成真的那一档。
+spring:
+  datasource:
+    url: jdbc:postgresql://${SHOPPILOT_DB_HOST:127.0.0.1}:${SHOPPILOT_DB_PORT:15432}/ticket
+    driver-class-name: org.postgresql.Driver
+    username: ${SHOPPILOT_DB_USERNAME:shoppilot}
+    password: ${SHOPPILOT_DB_PASSWORD:}
+  jpa:
+    properties:
+      hibernate:
+        # 默认档的 PUBLIC 是 H2 的默认模式名；PG 上对齐成小写 public
+        default_schema: public
+  flyway:
+    # PG 方言迁移集（V1 = 现状全量基线，版本钟与 H2 侧同步，见该目录 V1 文件头）。
+    # 刻意用平级目录而不是 db/migration 的子目录：Flyway 对 classpath:db/migration 是
+    # **递归扫描**，子目录里的 V1 会被当成同版本迁移当场撞车（verify 实测）。
+    locations: classpath:db/migration-postgresql

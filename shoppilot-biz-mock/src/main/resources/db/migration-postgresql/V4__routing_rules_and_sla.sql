@@ -1,0 +1,5 @@
+-- 版本占位（PostgreSQL 侧，round28 票 100 / ADR 0061）。
+--
+-- H2 侧 V4 的 routing_rules 表与其六条种子规则随票 72 搬到 shoppilot-ticket
+-- （那边 V6 会删、本侧从未有过），PG 侧没有对应物。保留占位是为了两侧迁移版本钟同步
+-- （PostgresMigrationParityTest）。

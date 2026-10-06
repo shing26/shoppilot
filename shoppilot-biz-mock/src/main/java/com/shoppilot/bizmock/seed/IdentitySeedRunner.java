@@ -28,8 +28,9 @@ import java.util.List;
  * {@code SHOPPILOT_*} 占位符集合里——不需要为了它开口子。
  *
  * <p>{@code @Order(20)} 让它排在 {@link SeedRunner}（{@code @Order(10)}）之后：它要遍历租户表。
- * 买家账号的 {@code subjectRef} 直接写 {@code C001}——那是 {@link SeedRunner} 保证存在的演示买家，
- * 而且它只是字符串引用不是外键，租户还没 seed 出来时也不会失败。
+ * 买家账号的 {@code subjectRef} 直接写 {@code C001}——那是演示段（{@code seed.demo-data}）播种的
+ * 演示买家；持久档默认不播演示段，但 {@code subjectRef} 只是字符串引用不是外键，
+ * C001 不存在时建号照常成立（它只是个标注）。
  */
 @Component
 @Order(20)

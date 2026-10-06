@@ -38,6 +38,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>实体带 {@code @TenantId}，插入时的归属列取自当前租户上下文，
  * 因此必须按租户分批、每批切换上下文，不能在一个事务里混写多个租户。
  *
+ * <p>B1（round28 / ADR 0061）起拆成两段，各自独立幂等、独立开关：
+ * <b>初始化段</b>（租户结构，{@code seed.enabled}）与<b>演示段</b>（买家 / 压测订单 /
+ * 优惠券 / 演示固定单，{@code seed.demo-data}，env {@code SHOPPILOT_BIZMOCK_DEMO_SEED}）。
+ * 持久档（postgres profile）默认关闭演示段——5 万条假订单落进真库是污染；
+ * 默认档行为不变（两段全开）。
+ *
  * <p>{@link #getOrder()}：{@link IdentitySeedRunner} 要遍历本播种出来的租户表，所以它排在本类之后。
  * 这里实现 {@link Ordered} 而不是打 {@code @Order} 注解——本包的 {@code domain.Order}（订单）
  * 与 {@code org.springframework.core.annotation.Order} 简名相同，注解会把引用变成二义的。
@@ -82,6 +88,10 @@ public class SeedRunner implements ApplicationRunner, Ordered {
     @Value("${shoppilot.bizmock.seed.orders:50000}")
     private int orderCount;
 
+    /** 演示数据段开关（round28 票 101 / ADR 0061）。持久档在 application-postgres.yml 里默认 false。 */
+    @Value("${shoppilot.bizmock.seed.demo-data:true}")
+    private boolean demoData;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -116,35 +126,57 @@ public class SeedRunner implements ApplicationRunner, Ordered {
             return;
         }
         try {
-            Long existing = jdbcTemplate.queryForObject("select count(*) from orders", Long.class);
-            if (existing != null && existing > 0) {
-                log.info("seed 跳过：orders 已有 {} 行", existing);
-                return;
+            seedTenantsIfEmpty();
+            if (demoData) {
+                seedDemoDataIfEmpty();
+            } else {
+                log.info("演示数据段关闭（shoppilot.bizmock.seed.demo-data=false）：只保证租户结构，不播买家与订单");
             }
-            long started = System.nanoTime();
-            seedMasterData();
-            int base = orderCount / TENANTS.size();
-            int offset = 0;
-            for (int seq = 0; seq < TENANTS.size(); seq++) {
-                // 余数摊给前面的租户，保证总数精确等于配置值
-                int size = base + (seq < orderCount % TENANTS.size() ? 1 : 0);
-                seedTenantOrders(TENANTS.get(seq)[0], seq, offset, size);
-                offset += size;
-            }
-            log.info("seed 完成：{} 租户 / {} 买家 / {} 订单，耗时 {} ms",
-                    TENANTS.size(), customerCount, orderCount, Duration.ofNanos(System.nanoTime() - started).toMillis());
-            seedDemoFixtures();
         } finally {
             TenantContextHolder.clear();
             running.set(false);
         }
     }
 
-    private void seedMasterData() {
+    /** 初始化段：租户结构是系统运作的最小前提，持久档也照常播种。 */
+    private void seedTenantsIfEmpty() {
+        Long existing = jdbcTemplate.queryForObject("select count(*) from tenants", Long.class);
+        if (existing != null && existing > 0) {
+            log.info("初始化段跳过：tenants 已有 {} 行", existing);
+            return;
+        }
         transactionTemplate.executeWithoutResult(status -> {
             for (String[] tenant : TENANTS) {
                 tenantRepository.save(new Tenant(tenant[0], tenant[1], Integer.parseInt(tenant[2])));
             }
+        });
+        log.info("初始化段完成：{} 租户", TENANTS.size());
+    }
+
+    /** 演示段：买家、压测订单、优惠券与演示固定单。重启不翻倍的保证沿用 orders 非空即跳过。 */
+    private void seedDemoDataIfEmpty() {
+        Long existing = jdbcTemplate.queryForObject("select count(*) from orders", Long.class);
+        if (existing != null && existing > 0) {
+            log.info("seed 跳过：orders 已有 {} 行", existing);
+            return;
+        }
+        long started = System.nanoTime();
+        seedCustomers();
+        int base = orderCount / TENANTS.size();
+        int offset = 0;
+        for (int seq = 0; seq < TENANTS.size(); seq++) {
+            // 余数摊给前面的租户，保证总数精确等于配置值
+            int size = base + (seq < orderCount % TENANTS.size() ? 1 : 0);
+            seedTenantOrders(TENANTS.get(seq)[0], seq, offset, size);
+            offset += size;
+        }
+        log.info("seed 完成：{} 租户 / {} 买家 / {} 订单，耗时 {} ms",
+                TENANTS.size(), customerCount, orderCount, Duration.ofNanos(System.nanoTime() - started).toMillis());
+        seedDemoFixtures();
+    }
+
+    private void seedCustomers() {
+        transactionTemplate.executeWithoutResult(status -> {
             for (int i = 1; i <= customerCount; i++) {
                 String id = String.format("C%03d", i);
                 customerRepository.save(new Customer(id, "买家" + i, "138" + String.format("%08d", i)));

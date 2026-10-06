@@ -1,0 +1,4 @@
+-- 版本占位（PostgreSQL 侧，round28 票 100 / ADR 0061）。
+--
+-- H2 侧 V7 的 users 表已随 PG V1 现状基线建出（含 uk_users_tenant_username 唯一约束）。
+-- 保留占位是为了两侧迁移版本钟同步（PostgresMigrationParityTest）。

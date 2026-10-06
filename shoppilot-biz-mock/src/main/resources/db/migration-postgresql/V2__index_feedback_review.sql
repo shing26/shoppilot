@@ -1,0 +1,5 @@
+-- 版本占位（PostgreSQL 侧，round28 票 100 / ADR 0061）。
+--
+-- H2 侧 V2 的增量（idx_feedback_review）在导出产物里已由实体注解带出，随 PG V1 基线建出。
+-- 本文件存在的唯一目的是让两侧迁移版本钟同步：下一个真实增量（V9 起）必须 H2 与 PG 各落一份，
+-- 由 PostgresMigrationParityTest 钉住文件集一致。

@@ -1,0 +1,5 @@
+-- 版本占位（PostgreSQL 侧，round28 票 100 / ADR 0061）。
+--
+-- H2 侧 V2 的增量（tickets 加 channel/contact 两列）在现状全量里已随 PG V1 建出。
+-- 保留占位是为了两侧迁移版本钟同步：下一个真实增量（V3 起）必须 H2 与 PG 各落一份，
+-- 由 PostgresMigrationParityTest 钉住文件集一致。

@@ -1,0 +1,5 @@
+-- 版本占位（PostgreSQL 侧，round28 票 100 / ADR 0061）。
+--
+-- H2 侧 V5 的增量（audit_event 表 + idx_audit_tenant_time）已随 PG V1 现状基线建出
+-- （索引是手工补齐进 V1 的，导出产物没有它——理由见 V1 文件头）。
+-- 保留占位是为了两侧迁移版本钟同步（PostgresMigrationParityTest）。

@@ -44,6 +44,9 @@ public class Ticket {
     @Column(name = "user_query", nullable = false, length = 512)
     private String userQuery;
 
+    // 维持 @Lob（B1 / ADR 0061 的取舍）：三种映射各瘸一条腿——@Lob 在 H2 validate 绿、PG 落 oid
+    // 且绑定与列型一致；LONGVARCHAR(-1) 过不了 H2 validate；LONG32VARCHAR(4001) 过 H2 但
+    // PG 驱动对 setNull(4001) 抛 Unknown Types value。「PG 落 text」登记在 ADR 0061，不在 B1 强行换。
     @Lob
     @Column(name = "transcript", nullable = false, length = 8000)
     private String transcript;
@@ -76,6 +79,7 @@ public class Ticket {
     private Instant escalatedAt;
 
     /** 有上游记录时（退款审批）指回上游 id 的 JSON；自包含来源为 null。 */
+    // @Lob 的取舍理由见 transcript 字段的注释（B1 / ADR 0061）。
     @Lob
     @Column(name = "payload", length = 2000)
     private String payload;
