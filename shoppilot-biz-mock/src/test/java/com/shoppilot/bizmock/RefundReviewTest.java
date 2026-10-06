@@ -122,6 +122,36 @@ class RefundReviewTest {
     }
 
     @Test
+    @DisplayName("B3：X-Actor-Authenticated 不为 true → 403（资金动作责任人必须是已验签账号）")
+    void reviewRejectsUnauthenticatedActor() throws Exception {
+        RefundTarget target = findRefundableOrder();
+        long refundId = applyRefund(target, "review-unauth-" + System.nanoTime()).path("payload").path("refundId").asLong();
+
+        HttpHeaders unauthHeaders = headers(target.tenantId());
+        unauthHeaders.set("X-Actor-Authenticated", "false");
+
+        ResponseEntity<String> response = rest.exchange(reviewUrl(refundId), HttpMethod.POST,
+                new HttpEntity<>("{\"decision\":\"APPROVE\"}", unauthHeaders), String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
+    }
+
+    @Test
+    @DisplayName("B3：X-Actor-Authenticated 为 true → 200（已验签账号可以审核）")
+    void reviewAllowsAuthenticatedActor() throws Exception {
+        RefundTarget target = findRefundableOrder();
+        long refundId = applyRefund(target, "review-auth-" + System.nanoTime()).path("payload").path("refundId").asLong();
+
+        HttpHeaders authHeaders = headers(target.tenantId());
+        authHeaders.set("X-Actor-Authenticated", "true");
+
+        ResponseEntity<String> response = rest.exchange(reviewUrl(refundId), HttpMethod.POST,
+                new HttpEntity<>("{\"decision\":\"APPROVE\"}", authHeaders), String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+    }
+
+    @Test
     @DisplayName("不存在的申请号 404；未知审核决定 400")
     void unknownRefundAndDecision() throws Exception {
         ResponseEntity<String> missing = rest.exchange(reviewUrl(999_999_999L), HttpMethod.POST,
@@ -217,6 +247,10 @@ class RefundReviewTest {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-Internal-Token", TOKEN);
         headers.set("X-Tenant-Id", tenantId);
+        // B3 起（ADR 0063）：网关总是从令牌解出 X-Actor 与 X-Actor-Authenticated 再下发。
+        // 这里模拟坐席账号（已验签），所以两个头都带。
+        headers.set("X-Actor", "agent-001");
+        headers.set("X-Actor-Authenticated", "true");
         if (customerId != null) {
             headers.set("X-Customer-Id", customerId);
         }

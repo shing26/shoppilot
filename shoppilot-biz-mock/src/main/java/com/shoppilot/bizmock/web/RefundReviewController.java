@@ -47,6 +47,10 @@ public class RefundReviewController {
      * 带上内部 token 就能写成任何名字，于是「谁放了这笔款」一度没有任何根据。
      * 现在只有 {@code X-Actor}（名字）与 {@code X-Actor-Authenticated}（这个名字是否来自已验签令牌），
      * 两个都由网关从令牌解出来再下发，本服务自己不接受任何来自客户端的身份声明。
+     *
+     * <p><b>B3 起加硬线</b>（ADR 0063）：资金动作的责任人必须是已验签的账号。
+     * 即使网关被绕过（如直连 biz-mock），未认证的审核也不能落库——403 空体，
+     * 与 {@code badRequest().build()} 同风格（错误信息由网关层 {@code role.denied} 承担）。
      */
     @PostMapping("/{refundId}/review")
     public ResponseEntity<ToolResponse<RefundView>> review(@PathVariable String refundId,
@@ -55,6 +59,9 @@ public class RefundReviewController {
                                                            String actor,
                                                            @RequestHeader(value = "X-Actor-Authenticated",
                                                                    required = false) String actorAuthenticated) {
+        if (!"true".equalsIgnoreCase(actorAuthenticated == null ? null : actorAuthenticated.trim())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         try {
             ToolResponse<RefundView> response = service.reviewRefund(refundId, request.decision(), request.note(),
                     ActorHeaders.of(actor, actorAuthenticated));

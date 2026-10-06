@@ -127,3 +127,44 @@ export function describe(result: ApiResult<unknown>, done: string): string {
   if (result.status >= 200 && result.status < 300) return done
   return messageOf(result.body) ?? `动作失败（HTTP ${result.status}）`
 }
+
+// ── 退款审核（B3 / ADR 0063）────────────────────────────────────────────────
+
+/** 退款审核队列里的一项。 */
+export interface RefundItem {
+  refundId: number
+  orderNo: string
+  tenantId: string
+  customerId: string
+  amountFen: number
+  reason: string
+  status: string
+}
+
+/** 退款审核结果。 */
+export interface RefundReviewResult {
+  status: string
+  payload?: {
+    refundId: number
+    status: string
+    orderNo: string
+  }
+}
+
+/** 读退款审核队列。B3 起只允许坐席/管理员账号。 */
+export function listPendingRefunds(session: Session): Promise<ApiResult<RefundItem[]>> {
+  return api<RefundItem[]>('GET', '/refunds/pending', { token: session.token })
+}
+
+/** 审核退款。B3 起只允许坐席/管理员账号，且责任人必须是已验签账号。 */
+export function reviewRefund(
+  refundId: number,
+  decision: 'APPROVE' | 'REJECT',
+  note: string,
+  session: Session,
+): Promise<ApiResult<RefundReviewResult>> {
+  return api<RefundReviewResult>('POST', `/refunds/${refundId}/review`, {
+    token: session.token,
+    body: { decision, note },
+  })
+}

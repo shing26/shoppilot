@@ -658,45 +658,17 @@ async function loadRefunds() {
     return;
   }
   if (!res.body.length) { $('refundQueue').innerHTML = '<div class="empty">当前店铺暂无待审核退款</div>'; return; }
+  // B3 起（ADR 0063）：资金动作的责任人必须是已验签账号。调试台用 ops token，
+  // 不能用于退款审核，所以这里只读展示，审核去坐席工作台操作。
   $('refundQueue').innerHTML = res.body.map((f) => `
     <div class="tk">
       <div><div class="id">申请 ${esc(f.refundId)} · 订单 ${esc(f.orderNo)} · ${esc(fmtTime(f.createdAt))}</div>
         <div class="q">退款金额 ¥${(Number(f.amountFen) / 100).toFixed(2)}</div>
         <div class="q dim">退款原因：${esc(f.reason || '（买家未填）')}</div>
-        <div class="row" style="margin-top:6px">
-          <button class="sm" data-rf="${esc(f.refundId)}" data-decision="APPROVE">放行</button>
-          <button class="sm" data-rf="${esc(f.refundId)}" data-decision="REJECT">驳回</button>
-        </div></div>
+        <div class="q dim" style="margin-top:4px">审核请去坐席工作台（B3 / ADR 0063）</div>
+      </div>
       <span class="badge ${esc(f.status)}">${esc(f.status)}</span>
     </div>`).join('');
-  $('refundQueue').querySelectorAll('button[data-decision]').forEach((btn) => {
-    btn.onclick = async () => {
-      const approve = btn.dataset.decision === 'APPROVE';
-      // 「放行」是**不可逆**的资金动作（ADR 0047）：点错就回不来了，所以先确认。
-      // 驳回可逆（订单会按时间戳推导回滚），不拦。
-      if (approve) {
-        const row = btn.closest('.tk');
-        const grip = row ? row.querySelector('.id').textContent.trim() : ('申请 ' + btn.dataset.rf);
-        const amount = row ? row.querySelector('.q').textContent.trim() : '';
-        if (!window.confirm('确认为这笔退款放行资金？\n\n' + grip + '\n' + amount
-            + '\n\n放行不可撤销，驳回可以回滚。')) return;
-      }
-      // 连点防护：请求在飞的时候禁用这一组按钮，否则三连点会打出三条相同的 POST
-      // （第二条起会被服务端 409 挡下，但回执会刷成三条噪音）。
-      const group = Array.from(btn.parentElement.querySelectorAll('button[data-decision]'));
-      group.forEach((b) => { b.disabled = true; });
-      try {
-        const r = await api('POST', '/api/v1/support/ops/refunds/' + btn.dataset.rf + '/review',
-          { decision: btn.dataset.decision });
-        // 非 200 时优先用下游报文里的原因（它是人话，例如「该退款申请已审核过，当前状态为 PROCESSING」），
-        // 拿不到才退回状态码。以前只拼 res.status，把下游已有的可读文案丢了。
-        report(r.status === 200, r.status === 200 ? `退款 ${btn.dataset.rf} ${approve ? '已放行' : '已驳回'}`
-          : `审核被拒（${esc(failureReason(r))}）：${esc((r.body && r.body.message) || btn.dataset.rf)}`);
-      } finally {
-        loadRefunds();
-      }
-    };
-  });
 }
 
 function syncSliders() {  $('delayV').textContent = $('delay').value + ' ms';

@@ -133,27 +133,30 @@ public class OpsController {
      *
      * <p>名字与 {@code /feedback/review-queue} 的区别必须能被读出来：那条是**反馈点踩**的复核队列
      * （对象是答案），这条是**退款申请**的审核队列（对象是资金动作）；`CONTEXT.md` 把两者钉成两件事。
+     *
+     * <p><b>B3 起加守卫</b>（ADR 0063）：资金动作的队列只允许坐席/管理员账号读，
+     * 不允许 ops token——买家不能读退款审核队列（信息泄露），ops token 不能用于资金动作（不可抵赖）。
      */
     @GetMapping("/refunds/pending")
     public ResponseEntity<String> refundReviewQueue() {
+        if (!staff()) {
+            return errors.entity(HttpStatus.FORBIDDEN.value(), "role.denied", "退款审核需要坐席或管理员账号");
+        }
         return forward("GET", "/api/refunds/pending", null, true);
     }
 
     /**
      * 放行或驳回一笔退款申请（ADR 0047）：走 biz-mock 的状态迁移门，网关只做代理与身份补全。
      *
-     * <p>票 82 起它与工单动作走**同一条守卫**：坐席/管理员账号，或运维凭证。
-     * 放行是不可逆的资金动作，它的准入标准不该比「领一张工单」更松。
+     * <p><b>B3 起改为只允许 staff()</b>（ADR 0063）：资金动作的责任人必须是已验签的账号，
+     * ops token 不能用于退款审核（不可抵赖）。放行是不可逆的资金动作，它的责任人必须可抵赖。
      */
     @PostMapping("/refunds/{refundId}/review")
     public ResponseEntity<String> reviewRefund(@PathVariable String refundId,
                                                @RequestBody Map<String, Object> body,
-                                               @RequestHeader(value = "X-Ops-Token", required = false) String opsToken,
                                                @RequestHeader(value = "X-Reviewer", required = false) String reviewer) {
-        OpsAccess access = opsAccess(opsToken);
-        if (!access.allowed() && !staff()) {
-            return access == OpsAccess.DISABLED ? denied(access)
-                    : errors.entity(HttpStatus.FORBIDDEN.value(), "role.denied", "退款审核需要坐席或管理员账号");
+        if (!staff()) {
+            return errors.entity(HttpStatus.FORBIDDEN.value(), "role.denied", "退款审核需要坐席或管理员账号");
         }
         return forward("POST", "/api/refunds/" + refundId + "/review", body, true, selfReported(reviewer));
     }

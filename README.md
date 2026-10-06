@@ -364,6 +364,11 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 - **自报身份只是被标注，不是被消灭**：只有运维凭证在场时，操作人仍取自请求头，
   它照样落审计，只是 `actor_authenticated=false`。要彻底没有它，得先废掉运维凭证那条路——
   而那批验收脚本与调试台全靠它（ADR 0058 第 5 条）。
+  **B3 起（ADR 0063）资金动作不再接受自报身份**：退款放行/驳回必须由已验签的坐席账号执行——
+  网关 `reviewRefund` 从 `opsAccess(opsToken).allowed() || staff()` 改为 `staff()` only，
+  biz-mock `RefundReviewController.review` 要求 `X-Actor-Authenticated: true` 否则 403 空响应体。
+  运维凭证仍可用于非资金动作（故障注入、工单队列、演示重置），但不能用于退款审核。
+  退款审核队列 `refundReviewQueue()` 同批补上 `staff()` 守卫（此前无任何守卫，任何登录用户可读）。
 - **验收矩阵分三档，而 local 真模型档在本机跑不成**：`run-acceptance.ps1 -Tier daily|live|full`（round23 票 74 定 daily/full，2026-10-05 加 live）。
   档位切的是**步骤集合**、判据逐字相同——daily 只跑不起栈的那些（语法、构建与单测、负载报告、task 判据、检索门禁），
   实测 4 步 2 秒；**live 档（perf / MockLLM，≈2.6 GB）**由 `scripts/cleanout-live.ps1` 执行，它要停掉另外三套项目的容器，
@@ -635,7 +640,7 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七�
 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`。它不要求任何 secret、模型额度、
 Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告。
 
-这条门禁覆盖干净 runner 上的构建与 **451 条** JVM 测试（tool-api 10 + biz-mock 57 + ticket 39 + gateway 345）：round16 的三条网关主链路 JVM
+这条门禁覆盖干净 runner 上的构建与 **466 条** JVM 测试（tool-api 10 + biz-mock 66 + ticket 39 + gateway 345）：round16 的三条网关主链路 JVM
 集成 smoke（缓存命中、工具循环、fallback），票 41 的四条工具循环语义用例（超限 FALLBACK、
 预算检查出答案、写动作守卫、多 toolCalls 防御），票 35 的五条 Prompt 版本化用例
 （生产资源加载与三种 fail-fast 形态），票 36 的六条情绪门用例（词典层 0 token 定案、

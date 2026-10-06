@@ -107,6 +107,9 @@ class AuditEventFlowTest {
      *
      * <p>光有真登录端点不算兑现——那句话正是 ADR 0056 否决「维持 mock JWT」时说的「交白卷」。
      * 这一格证明的是「谁是操作人」这件事带依据，而不只是一个名字。
+     *
+     * <p>B3 起（ADR 0063）：自报的 actor（authenticated=false）被硬线拒绝（403），
+     * 所以这里只验证 authenticated=true 的 actor 在审计里标成 true。
      */
     @Test
     @DisplayName("审计能区分「认证过的操作人」与「自报的操作人」")
@@ -114,20 +117,24 @@ class AuditEventFlowTest {
         long verifiedRefund = applyRefund();
         reviewWithActor(verifiedRefund, "APPROVE", null, "U0007", true);
 
-        long selfReportedRefund = applyRefund();
-        // actor 名用 ASCII：HTTP 头按 ISO-8859-1 编码，中文名字会在**发出去的那一步**就花掉，
-        // 届时断言读到的是乱码，而机制本身没问题——那种红会去追一个不存在的问题。
-        reviewWithActor(selfReportedRefund, "REJECT", null, "self-reported-name", false);
-
         JsonNode events = auditQuery("REFUND_APPROVED");
         assertThat(events.toString()).as("认证过的 actor 落到审计里").contains("U0007");
         assertThat(lastEventFor(events, verifiedRefund).path("actorAuthenticated").asBoolean())
                 .as("来自已验签令牌的 actor 标成 true").isTrue();
+    }
 
-        JsonNode rejected = auditQuery("REFUND_REJECTED");
-        assertThat(rejected.toString()).as("自报的 actor 照样记下来").contains("self-reported-name");
-        assertThat(lastEventFor(rejected, selfReportedRefund).path("actorAuthenticated").asBoolean())
-                .as("自报的 actor 标成 false，不能与上面那条长得一样").isFalse();
+    /**
+     * B3 起（ADR 0063）：自报的 actor（authenticated=false）被硬线拒绝（403）。
+     */
+    @Test
+    @DisplayName("B3：自报的 actor（authenticated=false）被拒绝（403）")
+    void reviewRejectsSelfReportedActor() throws Exception {
+        long refundId = applyRefund();
+        String body = "{\"decision\":\"APPROVE\"}";
+        HttpHeaders headers = headersWithActor("T001", "self-reported-name", false);
+        ResponseEntity<String> response = rest.exchange("/api/refunds/" + refundId + "/review", HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
     }
 
     /** 旧的自报头不再被读：带 X-Reviewer 的调用拿不到那个名字（票 82 的退役面）。 */
@@ -136,7 +143,9 @@ class AuditEventFlowTest {
     void retiredSelfReportedHeaderIsIgnored() throws Exception {
         long refundId = applyRefund();
         String body = "{\"decision\":\"APPROVE\"}";
-        HttpHeaders headers = headers("T001", null);
+        // B3 起（ADR 0063）：审核需要 authenticated=true，所以这里带上 X-Actor-Authenticated: true
+        // 和 X-Actor，但 X-Reviewer 仍然不被读取。
+        HttpHeaders headers = headersWithActor("T001", "real-actor", true);
         headers.set("X-Reviewer", "冒名审核人");
         ResponseEntity<String> response = rest.exchange("/api/refunds/" + refundId + "/review", HttpMethod.POST,
                 new HttpEntity<>(body, headers), String.class);
@@ -277,8 +286,9 @@ class AuditEventFlowTest {
     private void review(long refundId, String decision, String note, String reviewer) throws Exception {
         String body = "{\"decision\":\"" + decision + "\""
                 + (note == null ? "" : ",\"note\":\"" + note + "\"") + "}";
+        // B3 起（ADR 0063）：资金动作的责任人必须是已验签账号，所以 authenticated=true。
         ResponseEntity<String> response = rest.exchange("/api/refunds/" + refundId + "/review", HttpMethod.POST,
-                new HttpEntity<>(body, headersWithReviewer("T001", reviewer)), String.class);
+                new HttpEntity<>(body, headersWithActor("T001", reviewer, true)), String.class);
         assertThat(response.getStatusCode().is2xxSuccessful())
                 .as("审核应成功，实际 %s", response.getStatusCode()).isTrue();
     }

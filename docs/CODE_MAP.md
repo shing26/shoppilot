@@ -34,7 +34,7 @@
 | `bizmock/repo` | tenant-aware repository 与唯一约束 | `OrderRepository`、`RefundRepository`、`TicketRepository` |
 | `bizmock/db/migration`（资源） | **模式的唯一产生源（H2，默认档）**：Flyway 版本化迁移（`ddl-auto` 已是 `validate`）。索引的真相源在这里，实体上的 `@Index` 注解在 `validate` 下不再被校验、只作文档。**换代（round28 / ADR 0061）**：`bizmock/db/migration-postgresql/`（**平级目录，不是子目录**——Flyway 对 `classpath:db/migration` 递归扫描，子目录会同版本撞车）是持久档的 PG 方言产生源，两侧版本钟由 `PostgresMigrationParityTest` 钉住；持久档配置在 `application-postgres.yml` | `V1__baseline.sql`、`V2__index_feedback_review.sql`；回滚约定在 `db/rollback/U1__baseline_down.sql`（PG 回滚演练登记给 B2） |
 | `bizmock/service` | 查询、改地址、退款、**退款审核（受理/放行/驳回 + 推导回滚）**、工单、归属和状态前置校验 | `BizMockService` |
-| `bizmock/web` | 内部工具接口、工单接口、**退款审核端点**、内部 token 校验、故障注入 | `ToolController`、`TicketController`、`RefundReviewController`、`InternalAuthFilter` |
+| `bizmock/web` | 内部工具接口、工单接口、**退款审核端点**（B3 起 `review` 要求 `X-Actor-Authenticated: true`，未认证 → 403）、内部 token 校验、故障注入 | `ToolController`、`TicketController`、`RefundReviewController`、`InternalAuthFilter` |
 | `tool/request` / `tool/view` | 跨模块请求和响应 DTO | `QueryOrderDetailRequest`、`ToolResponse`（`ToolStatus.PENDING_APPROVAL`）、`OrderView`（`RefundReviewState`）、`TicketView` |
 | `tool/schema` | 工具 JSON schema 生成 | `ToolSchemaGenerator` |
 
@@ -54,7 +54,7 @@
 | 模型计划 | `llm/LlmGateway`、`llm/LlmClient`、`llm/LlmTypes` |
 | 状态机与工具循环 | `agent/AgentStateMachine`、`agent/AgentState`、`agent/ToolDispatcher` |
 | 业务调用 | `agent/BizMockClient` -> `bizmock/web/ToolController` -> `bizmock/service/BizMockService` |
-| 退款审核（人工闸门） | `bizmock/web/RefundReviewController` -> `bizmock/service/BizMockService.reviewRefund`；网关代理 `web/OpsController`（`/ops/refunds/*`）；调试台面板 `static/index.html` |
+| 退款审核（人工闸门） | `bizmock/web/RefundReviewController` -> `bizmock/service/BizMockService.reviewRefund`；网关代理 `web/OpsController`（`/ops/refunds/*`，B3 起 `reviewRefund` 与 `refundReviewQueue()` 均为 `staff()`-only）；调试台面板 `static/index.html`（B3 起只读）；坐席工作台 `static/workspace/`（B3 起可审核） |
 | SSE 事件 | `agent/EventSink`、`web/SseEventSink` |
 | 降级与工单 | `agent/FallbackService`、`agent/FallbackReason` |
 | 缓存写回 | `cache/WriteBackPolicy`、`cache/WriteBackPool` |

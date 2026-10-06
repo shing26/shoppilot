@@ -59,6 +59,10 @@
 - 现在审计事件的 actor 可能是「未认证」（ADR 0058 决策 4 的照登：只有 ops 凭证在场时）。
   面向真实客户时，**退款放行的责任人不可抵赖**是产品底线，不是可选项。
 - **触发**：B1 完成 + 有真实资金动作之前。
+- **换代（2026-10-06，round30 收口）**：B3 已收口（票 108-112，ADR 0063）。资金动作的责任人必须是已验签账号；
+  网关层 `refundReviewQueue()` 加守卫、`reviewRefund` 只允许 staff()；biz-mock 层 `review` 要求
+  `X-Actor-Authenticated: true`；前端 workspace 加退款审核面板、console 改只读；判据面脚本切换坐席登录。
+  JVM `10 + 66 + 345 + 45 = 466`，CI 九步未动，判据面零改动。
 
 ### B4 · IM 真连（[ADR 0060](im-platform-line-spec.md) 的 B 段）
 

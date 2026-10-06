@@ -274,16 +274,16 @@ class RestErrorEnvelopeTest {
     }
 
     @Test
-    @DisplayName("退款审核经代理转发：路径、内部凭证与租户上下文都由网关补，浏览器只发 decision（票 61）")
+    @DisplayName("退款审核经代理转发：路径、内部凭证与租户上下文都由网关补，浏览器只发 decision（票 61；B3 起用坐席角色）")
     void refundReviewProxiesWithTenantContext() throws Exception {
-        // 票 82：退款审核现在与工单动作走同一条守卫，这里用**运维凭证**那条线（调试台与那批验收脚本走的就是它）。
-        TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-ops-review"));
+        // B3 起改为只允许 staff()（ADR 0063）：资金动作的责任人必须是已验签的账号。
+        TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-ops-review",
+                com.shoppilot.tool.identity.UserRole.AGENT, "U001"));
         try {
             stubDownstream(200, "{\"status\":\"OK\"}");
             ArgumentCaptor<HttpRequest> captured = ArgumentCaptor.forClass(HttpRequest.class);
 
             MvcResult posted = mvc().perform(post("/api/v1/support/ops/refunds/12/review")
-                            .header("X-Ops-Token", OPS_TOKEN)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"decision\":\"APPROVE\"}"))
                     .andReturn();
@@ -302,18 +302,18 @@ class RestErrorEnvelopeTest {
     }
 
     /**
-     * 票 82 的新闸门：**既不是坐席账号、又没带运维凭证 → 403**，而且这个 403 不该打到下游。
+     * B3 起（ADR 0063）：ops token 不能用于资金动作——退款审核 403，且请求没出网关。
      *
      * <p>断言「没打到下游」而不只是断言 403：否则把守卫挪到转发之后也能让它绿，
      * 而那时候网关已经替放行打了个响。
      */
     @Test
-    @DisplayName("买家身份既无运维凭证也无坐席角色：退款审核 403，且请求没出网关")
-    void refundReviewNeedsStaffRoleOrOpsToken() throws Exception {
-        TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-buyer-review",
-                com.shoppilot.tool.identity.UserRole.BUYER, null));
+    @DisplayName("ops token 不能用于退款审核（B3）：403，且请求没出网关")
+    void refundReviewRejectsOpsToken() throws Exception {
+        TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-ops-review"));
         try {
             MvcResult posted = mvc().perform(post("/api/v1/support/ops/refunds/12/review")
+                            .header("X-Ops-Token", OPS_TOKEN)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"decision\":\"APPROVE\"}"))
                     .andReturn();
@@ -321,6 +321,43 @@ class RestErrorEnvelopeTest {
             assertThat(posted.getResponse().getStatus()).isEqualTo(403);
             assertThat(envelope(posted).get("code").asText()).isEqualTo("role.denied");
             verify(http, never()).send(any(), any());
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * B3 起（ADR 0063）：退款审核队列只允许坐席/管理员账号读，买家 → 403。
+     */
+    @Test
+    @DisplayName("买家不能读退款审核队列（B3）：403")
+    void refundReviewQueueRejectsBuyer() throws Exception {
+        TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-buyer-queue",
+                com.shoppilot.tool.identity.UserRole.BUYER, null));
+        try {
+            MvcResult result = mvc().perform(get("/api/v1/support/ops/refunds/pending"))
+                    .andReturn();
+            assertThat(result.getResponse().getStatus()).isEqualTo(403);
+            assertThat(envelope(result).get("code").asText()).isEqualTo("role.denied");
+            verify(http, never()).send(any(), any());
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * B3 起（ADR 0063）：坐席可以读退款审核队列。
+     */
+    @Test
+    @DisplayName("坐席可以读退款审核队列（B3）：200")
+    void refundReviewQueueAllowsStaff() throws Exception {
+        TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-staff-queue",
+                com.shoppilot.tool.identity.UserRole.AGENT, "U001"));
+        try {
+            stubDownstream(200, "[]");
+            MvcResult result = mvc().perform(get("/api/v1/support/ops/refunds/pending"))
+                    .andReturn();
+            assertThat(result.getResponse().getStatus()).isEqualTo(200);
         } finally {
             TenantContext.clear();
         }

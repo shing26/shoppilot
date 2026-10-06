@@ -14,7 +14,19 @@
  * </ol>
  */
 import { computed, onMounted, ref } from 'vue'
-import { claimTicket, describe, listTickets, login, messageOf, releaseTicket, resolveTicket, type Session } from './api'
+import {
+  claimTicket,
+  describe,
+  listPendingRefunds,
+  listTickets,
+  login,
+  messageOf,
+  releaseTicket,
+  resolveTicket,
+  reviewRefund,
+  type RefundItem,
+  type Session,
+} from './api'
 import { PRIORITY_LABEL, QUEUES, minutesLeft, priorityRank, type Ticket } from './types'
 
 /**
@@ -37,6 +49,12 @@ const loadError = ref('')
 const actionNote = ref('')
 const inFlight = ref<string>('')
 const now = ref(Date.now())
+
+// ── 退款审核（B3 / ADR 0063）────────────────────────────────────────────────
+const refunds = ref<RefundItem[]>([])
+const refundError = ref('')
+const refundNote = ref('')
+const refundInFlight = ref<number>(0)
 
 let timer = 0
 
@@ -69,6 +87,7 @@ async function doLogin() {
   password.value = ''
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(logged))
   await refresh()
+  await refreshRefunds()
 }
 
 function signOut() {
@@ -77,6 +96,9 @@ function signOut() {
   tickets.value = []
   loadError.value = ''
   actionNote.value = ''
+  refunds.value = []
+  refundError.value = ''
+  refundNote.value = ''
 }
 
 /** 三种失败各有各的说法——混成一句「加载失败」正是调试台修掉的那个毛病。 */
@@ -125,8 +147,56 @@ async function run(ticket: Ticket, kind: 'claim' | 'release' | 'resolve') {
   await refresh()
 }
 
+// ── 退款审核（B3 / ADR 0063）────────────────────────────────────────────────
+
+async function refreshRefunds() {
+  refundError.value = ''
+  if (!session.value) {
+    refunds.value = []
+    return
+  }
+  const result = await listPendingRefunds(session.value)
+  if (result.status === 0) {
+    refundError.value = messageOf(result.body) ?? '网关不可达'
+    refunds.value = []
+    return
+  }
+  if (result.status === 401 || result.status === 403) {
+    refundError.value = result.status === 401 ? '登录已失效，请重新登录' : '这个账号没有坐席权限'
+    refunds.value = []
+    return
+  }
+  if (!Array.isArray(result.body)) {
+    refundError.value = messageOf(result.body) ?? `队列读取失败（HTTP ${result.status}）`
+    refunds.value = []
+    return
+  }
+  refunds.value = result.body
+}
+
+async function runRefundReview(refund: RefundItem, decision: 'APPROVE' | 'REJECT') {
+  if (!session.value || refundInFlight.value) return
+  // 资金放行是不可逆的，且责任人必须是已验签账号（ADR 0063）。
+  if (
+    !window.confirm(
+      `确认${decision === 'APPROVE' ? '放行' : '驳回'}退款 #${refund.refundId}？\n` +
+        `订单 ${refund.orderNo}，金额 ${(refund.amountFen / 100).toFixed(2)} 元。\n` +
+        `此操作会记进审计，责任人是当前登录账号。`,
+    )
+  ) {
+    return
+  }
+  refundInFlight.value = refund.refundId
+  refundNote.value = ''
+  const result = await reviewRefund(refund.refundId, decision, '', session.value)
+  refundNote.value = describe(result, decision === 'APPROVE' ? '已放行' : '已驳回')
+  refundInFlight.value = 0
+  await refreshRefunds()
+}
+
 onMounted(() => {
   void refresh()
+  void refreshRefunds()
   // SLA 倒计时只需要分钟粒度，10 秒一跳足够；不跳得更勤是为了不给浏览器白烧 CPU。
   timer = window.setInterval(() => {
     now.value = Date.now()
@@ -216,6 +286,34 @@ function clearStoredSession() {
       </tbody>
     </table>
     <p v-else-if="!loadError" class="empty">这一档队列里没有待处理工单</p>
+
+    <!-- 退款审核面板（B3 / ADR 0063） -->
+    <section v-if="session" class="refund-panel">
+      <h2>退款审核</h2>
+      <p class="hint">资金动作的责任人必须是已验签账号（ADR 0063）。放行/驳回都会记进审计。</p>
+      <p v-if="refundError" class="err">{{ refundError }}</p>
+      <p v-if="refundNote" class="note">{{ refundNote }}</p>
+      <table v-if="refunds.length">
+        <thead>
+          <tr><th>退款号</th><th>订单号</th><th>店铺</th><th>金额</th><th>理由</th><th>状态</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in refunds" :key="r.refundId">
+            <td class="mono">{{ r.refundId }}</td>
+            <td class="mono">{{ r.orderNo }}</td>
+            <td>{{ r.tenantId }}</td>
+            <td>{{ (r.amountFen / 100).toFixed(2) }} 元</td>
+            <td class="query">{{ r.reason }}</td>
+            <td>{{ r.status }}</td>
+            <td class="ops">
+              <button type="button" :disabled="!!refundInFlight" @click="runRefundReview(r, 'APPROVE')">放行</button>
+              <button type="button" :disabled="!!refundInFlight" @click="runRefundReview(r, 'REJECT')">驳回</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else-if="!refundError" class="empty">当前没有待审核的退款申请</p>
+    </section>
   </main>
 </template>
 
@@ -238,4 +336,7 @@ th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; v
 .empty { color: #666; }
 .notice { color: #666; margin: 4px 0 0; }
 .ops button { margin-right: 6px; }
+.refund-panel { margin-top: 32px; }
+.refund-panel h2 { font-size: 16px; margin: 0 0 4px; }
+.refund-panel .hint { color: #666; margin: 0 0 12px; }
 </style>
