@@ -1,0 +1,33 @@
+{
+  "schema": "2.0",
+  "header": {
+    "event_id": "evt-feishu-0003",
+    "event_type": "im.message.receive_v1",
+    "create_time": "1728000120000",
+    "token": "REDACTED-PLACEHOLDER-NOT-A-CREDENTIAL",
+    "app_id": "cli_a000000000000001",
+    "tenant_key": "tenantkey00001"
+  },
+  "event": {
+    "sender": {
+      "sender_id": {
+        "union_id": "on_unionuser02",
+        "user_id": "usr_buyer02",
+        "open_id": "ou_buyer02"
+      },
+      "sender_type": "user",
+      "tenant_key": "tenantkey00001"
+    },
+    "message": {
+      "message_id": "om_case000003",
+      "root_id": "",
+      "parent_id": "",
+      "create_time": "1728000120000",
+      "chat_id": "oc_chat0002",
+      "chat_type": "p2p",
+      "message_type": "text",
+      "content": "{\"text\":\"生鲜破损怎么理赔\"}",
+      "mentions": []
+    }
+  }
+}

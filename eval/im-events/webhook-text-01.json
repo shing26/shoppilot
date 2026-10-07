@@ -1,0 +1,6 @@
+{
+  "query": "七天无理由退货怎么操作",
+  "messageId": "msg-webhook-01",
+  "sessionId": "sess-webhook-01",
+  "callbackUrl": "http://127.0.0.1:9999/hook"
+}

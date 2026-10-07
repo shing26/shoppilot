@@ -1,0 +1,33 @@
+{
+  "schema": "2.0",
+  "header": {
+    "event_id": "evt-feishu-0001",
+    "event_type": "im.message.receive_v1",
+    "create_time": "1728000000000",
+    "token": "REDACTED-PLACEHOLDER-NOT-A-CREDENTIAL",
+    "app_id": "cli_a000000000000001",
+    "tenant_key": "tenantkey00001"
+  },
+  "event": {
+    "sender": {
+      "sender_id": {
+        "union_id": "on_unionuser01",
+        "user_id": "usr_buyer01",
+        "open_id": "ou_buyer01"
+      },
+      "sender_type": "user",
+      "tenant_key": "tenantkey00001"
+    },
+    "message": {
+      "message_id": "om_case000001",
+      "root_id": "",
+      "parent_id": "",
+      "create_time": "1728000000000",
+      "chat_id": "oc_chat0001",
+      "chat_type": "p2p",
+      "message_type": "text",
+      "content": "{\"text\":\"七天无理由退货怎么操作\"}",
+      "mentions": []
+    }
+  }
+}
