@@ -86,6 +86,16 @@ public class ChannelController {
             // 归一之后才知道「回我哪儿」，所以渠道上下文要**再设一次**把 contact 补上（round26 票 86）。
             // 这一次必须排在 admission.check 之前：限流那条路也会落工单，它同样要带上目标。
             ChannelContext.set(tag, inbound.contact());
+            // 票 96：会话 id 两格派生。请求头显式给出的优先（与幂等 token 同一哲学：显式 > 派生）；
+            // 没有头时用适配器派生的会话 id——没有派生时保持 AuthFilter 的现状（随机 UUID）。
+            // 只换会话坐标，不碰身份：tenantId/customerId 原样保留（ADR 0025 渠道不参与身份）。
+            String headerConversation = request.getHeader("X-Conversation-Id");
+            if ((headerConversation == null || headerConversation.isBlank())
+                    && inbound.conversationId() != null && !inbound.conversationId().isBlank()) {
+                TenantContext.Identity current = TenantContext.current();
+                TenantContext.set(new TenantContext.Identity(current.tenantId(), current.customerId(),
+                        inbound.conversationId()));
+            }
             ChatAdmission.Guard guard = admission.check(request, inbound.query());
             if (!guard.allowed()) {
                 // 与同步端点同语义的 429，回包体带渠道与工单号；Retry-After 供调用方退避
@@ -93,7 +103,11 @@ public class ChannelController {
                         .header(HttpHeaders.RETRY_AFTER, String.valueOf(Math.max(1, guard.retryAfterMs() / 1000)))
                         .body(ChannelResponse.rateLimited(tag.label(), guard.ticketId()));
             }
-            AgentResult result = agent.run(inbound.query(), inbound.idempotencyToken(), EventSink.NOOP);
+            // 幂等 token：客户端显式给的优先；没有就从平台 message id 派生的 clientToken 补上（票 96），
+            // 让幂等走 clientToken 那条路而不是「不含渠道、靠参数猜」的派生路径。
+            String idempotencyToken = (inbound.idempotencyToken() != null && !inbound.idempotencyToken().isBlank())
+                    ? inbound.idempotencyToken() : inbound.clientToken();
+            AgentResult result = agent.run(inbound.query(), idempotencyToken, EventSink.NOOP);
             TenantContext.Identity identity = TenantContext.current();
             feedbackService.noteAnswer(identity.conversationId(),
                     result.intent() == null ? null : result.intent().name(),
@@ -106,7 +120,7 @@ public class ChannelController {
                         : receiptWriter.writeReceipt(inbound.query(), result.answer(), inbound.contact()).orElse(null);
             }
             return ResponseEntity.ok(new ChannelResponse(tag.label(), adapter.streaming(), adapter.canFollowUp(),
-                    RequestTrace.traceId(), result.answer(),
+                    RequestTrace.traceId(), TenantContext.current().conversationId(), result.answer(),
                     result.intent() == null ? null : result.intent().name(), result.citations(),
                     result.fallbackReason() == null ? null : result.fallbackReason().name(),
                     result.ticketId(), receiptTicketId, result.promptVersion(), result.trace()));
@@ -116,20 +130,21 @@ public class ChannelController {
     }
 
     /**
-     * 整段 JSON 回包（webhook/email 无流式）。@param receiptTicketId 邮件渠道的交付工单号
+     * 整段 JSON 回包（webhook/email 无流式）。@param conversationId 本条消息实际落进的会话
+     * （票 96：调用方不传会话头时这里是适配器派生的值）；@param receiptTicketId 邮件渠道的交付工单号
      */
     public record ChannelResponse(String channel, boolean streaming, boolean canFollowUp, String answerId,
-                                  String answer, String intent, List<String> citations, String fallbackReason,
-                                  String ticketId, String receiptTicketId, String promptVersion,
-                                  List<AgentResult.TraceStep> trace) {
+                                  String conversationId, String answer, String intent, List<String> citations,
+                                  String fallbackReason, String ticketId, String receiptTicketId,
+                                  String promptVersion, List<AgentResult.TraceStep> trace) {
 
         static ChannelResponse rejected(String channel, String message) {
-            return new ChannelResponse(channel, false, false, null, message, null, List.of(), null, null, null, null,
-                    List.of());
+            return new ChannelResponse(channel, false, false, null, null, message, null, List.of(), null, null, null,
+                    null, List.of());
         }
 
         static ChannelResponse rateLimited(String channel, String ticketId) {
-            return new ChannelResponse(channel, false, false, null, "当前咨询人数较多，请稍后再试。", null, List.of(),
+            return new ChannelResponse(channel, false, false, null, null, "当前咨询人数较多，请稍后再试。", null, List.of(),
                     "RATE_LIMITED", ticketId, null, null, List.of());
         }
     }

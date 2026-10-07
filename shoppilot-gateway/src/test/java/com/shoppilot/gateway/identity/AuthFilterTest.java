@@ -94,6 +94,24 @@ class AuthFilterTest {
     }
 
     @Test
+    @DisplayName("不传 X-Conversation-Id → 现生成会话 id，两次请求是两段会话（票 96 现状锚）")
+    void generatesDistinctConversationIdsWhenHeaderMissing() throws Exception {
+        AtomicReference<String> first = new AtomicReference<>();
+        AtomicReference<String> second = new AtomicReference<>();
+
+        MockHttpServletRequest requestA = authorized(jwtService.issue("T001", "C155"));
+        assertThat(doFilter(requestA, (req, res) -> first.set(TenantContext.current().conversationId())))
+                .isEqualTo(200);
+        MockHttpServletRequest requestB = authorized(jwtService.issue("T001", "C155"));
+        assertThat(doFilter(requestB, (req, res) -> second.set(TenantContext.current().conversationId())))
+                .isEqualTo(200);
+
+        assertThat(first.get()).isNotBlank();
+        assertThat(second.get()).isNotBlank();
+        assertThat(first.get()).isNotEqualTo(second.get());
+    }
+
+    @Test
     @DisplayName("四个坐标在鉴权入口一次装填：进到业务链里 MDC 已经齐了")
     void fillsFourCoordinatesAtTheEntry() throws Exception {
         MockHttpServletRequest request = authorized(jwtService.issue("T001", "C155"));

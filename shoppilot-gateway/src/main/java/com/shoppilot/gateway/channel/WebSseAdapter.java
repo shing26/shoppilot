@@ -32,7 +32,9 @@ public class WebSseAdapter implements ChannelAdapter {
         if (query == null || query.isBlank()) {
             throw new IllegalArgumentException("query 不能为空");
         }
-        return new NormalizedChat(query, stringOrNull(payload.get("idempotencyToken")), null);
+        // web 渠道不派生两格（票 96）：会话 id 走自己的 X-Conversation-Id 头机制，
+        // 幂等 token 由调用方显式给——派生是平台事件形态的事，web 保持行为零变更。
+        return NormalizedChat.of(query, stringOrNull(payload.get("idempotencyToken")), null);
     }
 
     static String stringOrNull(Object value) {

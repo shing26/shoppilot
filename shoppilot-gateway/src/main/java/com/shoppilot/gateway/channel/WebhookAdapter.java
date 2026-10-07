@@ -1,5 +1,6 @@
 package com.shoppilot.gateway.channel;
 
+import com.shoppilot.gateway.identity.TenantContext;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -54,7 +55,23 @@ public class WebhookAdapter implements ChannelAdapter {
         if (callbackUrl != null && !callbackUrl.isBlank()) {
             contact = requireDeliverable(callbackUrl.trim());
         }
-        return new NormalizedChat(query, WebSseAdapter.stringOrNull(payload.get("idempotencyToken")), contact);
+        // 票 96：两格派生。渠道标签取自 ChannelContext（handle 在 normalize 前已按路径设好）——
+        // 不进 NormalizedChat，那是两处真相。会话的聊天维度：显式 sessionId 优先，缺省按买家一人一段。
+        String messageId = bounded(payload, "messageId");
+        String sessionId = bounded(payload, "sessionId");
+        String chatKey = sessionId != null ? sessionId : TenantContext.current().customerId();
+        return new NormalizedChat(query, WebSseAdapter.stringOrNull(payload.get("idempotencyToken")), contact,
+                ChannelAdapter.deriveConversationId(ChannelContext.current(), chatKey),
+                messageId == null ? null : ChannelAdapter.deriveClientToken(ChannelContext.current(), messageId));
+    }
+
+    /** 平台事件标识的上限 255，与 contact 同一家法：超长的键进不了下游，早点拒比落库时截断好。 */
+    private static String bounded(Map<String, Object> payload, String field) {
+        String value = WebSseAdapter.stringOrNull(payload.get(field));
+        if (value != null && value.length() > MAX_TARGET_LENGTH) {
+            throw new IllegalArgumentException(field + " 过长（上限 " + MAX_TARGET_LENGTH + "）");
+        }
+        return value;
     }
 
     /**

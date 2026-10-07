@@ -1,5 +1,6 @@
 package com.shoppilot.gateway.channel;
 
+import com.shoppilot.gateway.identity.TenantContext;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -34,7 +35,22 @@ public class EmailAdapter implements ChannelAdapter {
         }
         String subject = WebSseAdapter.stringOrNull(payload.get("subject"));
         String query = subject == null || subject.isBlank() ? body : "【主题】" + subject + "\n" + body;
+        // 票 96：与 webhook 同一派生规则（渠道标签进键；聊天维度显式 sessionId 优先、缺省按买家）。
+        String messageId = bounded(payload, "messageId");
+        String sessionId = bounded(payload, "sessionId");
+        String chatKey = sessionId != null ? sessionId : TenantContext.current().customerId();
         return new NormalizedChat(query, WebSseAdapter.stringOrNull(payload.get("idempotencyToken")),
-                WebSseAdapter.stringOrNull(payload.get("from")));
+                WebSseAdapter.stringOrNull(payload.get("from")),
+                ChannelAdapter.deriveConversationId(ChannelContext.current(), chatKey),
+                messageId == null ? null : ChannelAdapter.deriveClientToken(ChannelContext.current(), messageId));
+    }
+
+    /** 平台事件标识的上限 255，与 webhook 适配器同一家法。 */
+    private static String bounded(Map<String, Object> payload, String field) {
+        String value = WebSseAdapter.stringOrNull(payload.get(field));
+        if (value != null && value.length() > 255) {
+            throw new IllegalArgumentException(field + " 过长（上限 255）");
+        }
+        return value;
     }
 }

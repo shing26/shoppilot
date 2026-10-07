@@ -1,5 +1,8 @@
 package com.shoppilot.gateway.channel;
 
+import com.shoppilot.gateway.identity.TenantContext;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -19,6 +22,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class WebhookCallbackUrlTest {
 
     private final WebhookAdapter adapter = new WebhookAdapter();
+
+    @BeforeEach
+    void setUp() {
+        // 票 96 起归一要派生会话 id（聊天维度缺省取买家 id）——真实链路里 AuthFilter 恒先于此，
+        // 单元测试补上同一形态：normalize 永远发生在已验签身份之后
+        TenantContext.set(new TenantContext.Identity("T001", "C155", "conv-callback"));
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+        ChannelContext.clear();
+    }
 
     @Test
     @DisplayName("给了 callbackUrl 就当投递目标带走")
