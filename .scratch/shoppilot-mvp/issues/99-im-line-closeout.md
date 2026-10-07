@@ -2,6 +2,11 @@
 
 **Status:** ready-for-agent
 
+> **所有者裁定已下（2026-10-07）：B 段开，第一平台 = 飞书**（长连接形态）。
+> 裁定记录见 [ADR 0065](../../../docs/adr/0065-b4-im-feishu-longconnection.md)，
+> 执行票见 [round31 spec](../round31-spec-b4-feishu-live.md)（96、97、113-116）。
+> 本票的剩余工作（主线收口 + 对外措辞定死）仍等 96/97 收口后执行。
+
 ## What to build
 
 按票 98 的结论**裁定 B 段开不开**，并收口本主线。
