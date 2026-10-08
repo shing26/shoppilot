@@ -7,10 +7,12 @@ import com.shoppilot.gateway.agent.AgentStateMachine;
 import com.shoppilot.gateway.agent.EventSink;
 import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.identity.TenantContext;
+import com.shoppilot.tool.config.PostureGuard;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -52,31 +54,51 @@ public class FeishuLongConnectionClient {
     private final AgentStateMachine agentStateMachine;
     private final FeishuReplySender replySender;
     private final GatewayProperties properties;
+    private final String bindAddress;
 
     /** SDK 长连接客户端，未启用时为 null。 */
     private volatile Client wsClient;
 
     public FeishuLongConnectionClient(FeishuAdapter adapter, AgentStateMachine agentStateMachine,
-                                       FeishuReplySender replySender, GatewayProperties properties) {
+                                       FeishuReplySender replySender, GatewayProperties properties,
+                                       @Value("${server.address:}") String bindAddress) {
         this.adapter = adapter;
         this.agentStateMachine = agentStateMachine;
         this.replySender = replySender;
         this.properties = properties;
+        this.bindAddress = bindAddress;
     }
 
     /**
      * 启动飞书长连接（如果已启用）。
      *
-     * <p>凭据家法（PostureGuard 集成）在票 114 落地；本票先用占位配置打通解析层。
-     * {@code enabled=true} 且凭据非空时才会注册到 SDK。
+     * <p>凭据家法（PostureGuard 集成，票 114 / ADR 0065）：
+     * <ul>
+     *   <li>非回环绑定 + 启用 + 空凭据 → 拒启（{@link IllegalStateException}）</li>
+     *   <li>回环绑定 + 空凭据 → WARN + 不注册长连接</li>
+     *   <li>凭据非空 → 正常启动 SDK 长连接</li>
+     * </ul>
      */
     @PostConstruct
     void start() {
         GatewayProperties.Feishu feishu = properties.feishu();
-        if (feishu == null || !feishu.enabled() || isBlank(feishu.appId()) || isBlank(feishu.appSecret())) {
-            log.info("飞书长连接未启用（enabled=false 或凭据为空）");
+        if (feishu == null || !feishu.enabled()) {
+            log.info("飞书长连接未启用（enabled=false）");
             return;
         }
+
+        boolean appIdBlank = isBlank(feishu.appId());
+        boolean appSecretBlank = isBlank(feishu.appSecret());
+
+        if (appIdBlank || appSecretBlank) {
+            if (PostureGuard.isLoopback(bindAddress)) {
+                log.warn("飞书长连接启用但凭据为空，回环绑定下不注册长连接；"
+                        + "请在 .env 中配置 SHOPPILOT_IM_FEISHU_APP_ID 和 SHOPPILOT_IM_FEISHU_APP_SECRET");
+                return;
+            }
+            throw new IllegalStateException(feishuStartupBlockerMessage(feishu, bindAddress));
+        }
+
         try {
             EventDispatcher eventDispatcher = EventDispatcher.newBuilder(feishu.appId(), feishu.appSecret()).build();
             Client client = new Client.Builder(feishu.appId(), feishu.appSecret())
@@ -153,6 +175,28 @@ public class FeishuLongConnectionClient {
             return conversationId.substring(prefix.length());
         }
         return conversationId;
+    }
+
+    /**
+     * 拒启消息三要素：哪个凭据缺、为什么危险、怎么配（同 B2 拒启消息的家法）。
+     */
+    private static String feishuStartupBlockerMessage(GatewayProperties.Feishu feishu, String bindAddress) {
+        StringBuilder sb = new StringBuilder("拒绝启动飞书长连接：");
+        boolean appIdBlank = isBlank(feishu.appId());
+        boolean appSecretBlank = isBlank(feishu.appSecret());
+        if (appIdBlank) {
+            sb.append("SHOPPILOT_IM_FEISHU_APP_ID 未设置");
+        }
+        if (appIdBlank && appSecretBlank) {
+            sb.append("、");
+        }
+        if (appSecretBlank) {
+            sb.append("SHOPPILOT_IM_FEISHU_APP_SECRET 未设置");
+        }
+        sb.append("。非回环绑定（").append(bindAddress).append("）下空凭据不能启动长连接")
+                .append("——飞书 SDK 需要有效凭据才能建立 WebSocket 连接。")
+                .append("请在 .env 中配置这两个环境变量。");
+        return sb.toString();
     }
 
     private static boolean isBlank(String value) {

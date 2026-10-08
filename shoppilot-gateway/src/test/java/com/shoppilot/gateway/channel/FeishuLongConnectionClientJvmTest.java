@@ -49,7 +49,7 @@ class FeishuLongConnectionClientJvmTest {
         agentStateMachine = mock(AgentStateMachine.class);
         replySender = mock(FeishuReplySender.class);
         properties = mock(GatewayProperties.class);
-        client = new FeishuLongConnectionClient(adapter, agentStateMachine, replySender, properties);
+        client = new FeishuLongConnectionClient(adapter, agentStateMachine, replySender, properties, "127.0.0.1");
     }
 
     @AfterEach
@@ -274,5 +274,117 @@ class FeishuLongConnectionClientJvmTest {
         ArgumentCaptor<EventSink> sinkCaptor = ArgumentCaptor.forClass(EventSink.class);
         verify(agentStateMachine).run(anyString(), anyString(), sinkCaptor.capture());
         assertThat(sinkCaptor.getValue()).isSameAs(EventSink.NOOP);
+    }
+
+    // ========== 票 114：PostureGuard 凭据家法 ==========
+
+    @Test
+    @DisplayName("非回环 + 启用 + 空 APP_ID → 拒启")
+    void startRejectsNonLoopbackWithBlankAppId() {
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "some-secret");
+        when(properties.feishu()).thenReturn(feishu);
+
+        FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
+                adapter, agentStateMachine, replySender, properties, "0.0.0.0");
+
+        assertThatThrownBy(nonLoopbackClient::start)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SHOPPILOT_IM_FEISHU_APP_ID")
+                .hasMessageContaining("非回环");
+    }
+
+    @Test
+    @DisplayName("非回环 + 启用 + 空 APP_SECRET → 拒启")
+    void startRejectsNonLoopbackWithBlankAppSecret() {
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "some-app-id", "");
+        when(properties.feishu()).thenReturn(feishu);
+
+        FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
+                adapter, agentStateMachine, replySender, properties, "0.0.0.0");
+
+        assertThatThrownBy(nonLoopbackClient::start)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SHOPPILOT_IM_FEISHU_APP_SECRET")
+                .hasMessageContaining("非回环");
+    }
+
+    @Test
+    @DisplayName("非回环 + 启用 + 两个凭据都空 → 拒启，消息含两个凭据名")
+    void startRejectsNonLoopbackWithBothBlank() {
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "");
+        when(properties.feishu()).thenReturn(feishu);
+
+        FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
+                adapter, agentStateMachine, replySender, properties, "0.0.0.0");
+
+        assertThatThrownBy(nonLoopbackClient::start)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SHOPPILOT_IM_FEISHU_APP_ID")
+                .hasMessageContaining("SHOPPILOT_IM_FEISHU_APP_SECRET");
+    }
+
+    @Test
+    @DisplayName("回环 + 启用 + 空凭据 → WARN + 不注册长连接（不抛异常）")
+    void startWarnsOnLoopbackWithBlankCredentials() {
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "");
+        when(properties.feishu()).thenReturn(feishu);
+
+        FeishuLongConnectionClient loopbackClient = new FeishuLongConnectionClient(
+                adapter, agentStateMachine, replySender, properties, "127.0.0.1");
+
+        // 不抛异常，正常返回
+        loopbackClient.start();
+
+        // wsClient 仍为 null（未注册长连接）
+        try {
+            java.lang.reflect.Field field = FeishuLongConnectionClient.class.getDeclaredField("wsClient");
+            field.setAccessible(true);
+            assertThat(field.get(loopbackClient)).isNull();
+        } catch (Exception e) {
+            throw new RuntimeException("反射操作失败", e);
+        }
+    }
+
+    @Test
+    @DisplayName("回环 + 启用 + 凭据非空 → 正常启动（不拒启）")
+    void startAllowsLoopbackWithValidCredentials() {
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "test-app-id", "test-secret");
+        when(properties.feishu()).thenReturn(feishu);
+
+        FeishuLongConnectionClient loopbackClient = new FeishuLongConnectionClient(
+                adapter, agentStateMachine, replySender, properties, "127.0.0.1");
+
+        // 不抛异常（SDK 启动可能失败，但不会抛 IllegalStateException）
+        loopbackClient.start();
+    }
+
+    @Test
+    @DisplayName("非回环 + 未启用 → 跳过（不检查凭据）")
+    void startSkipsWhenDisabled() {
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(false, "", "");
+        when(properties.feishu()).thenReturn(feishu);
+
+        FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
+                adapter, agentStateMachine, replySender, properties, "0.0.0.0");
+
+        // 不抛异常，直接返回
+        nonLoopbackClient.start();
+    }
+
+    @Test
+    @DisplayName("变异对照：非回环 + 空凭据 + 拒启条件改成非空才拒 → 空凭据漏进来")
+    void mutationNonLoopbackEmptyCredentialsShouldNotLeak() {
+        // 这个测试验证：如果 start() 里的拒启条件被改成「凭据非空才拒」，
+        // 那么空凭据就会漏进来（不会抛异常），测试就会红。
+        // 当前实现：空凭据 + 非回环 → 必抛 IllegalStateException
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "");
+        when(properties.feishu()).thenReturn(feishu);
+
+        FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
+                adapter, agentStateMachine, replySender, properties, "0.0.0.0");
+
+        // 如果拒启条件被破坏（改成 isNotBlank），这里不会抛异常，assertThatThrownBy 会红
+        assertThatThrownBy(nonLoopbackClient::start)
+                .isInstanceOf(IllegalStateException.class);
     }
 }

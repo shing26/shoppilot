@@ -64,7 +64,11 @@ class ConfigValidationTest {
             // 而非回环绑定会触发 ADR 0029 的守卫——所以这里**只**开一个面，安全判断仍在守卫里。
             "SHOPPILOT_SERVER_ADDRESS",
             // 票 76：工单依赖的读超时单独给（容器冷启动要初始化 DispatcherServlet）。
-            "SHOPPILOT_TICKET_READ_TIMEOUT");
+            "SHOPPILOT_TICKET_READ_TIMEOUT",
+            // round31 票 114：飞书长连接凭据走 .env，不入库。
+            "SHOPPILOT_IM_FEISHU_ENABLED",
+            "SHOPPILOT_IM_FEISHU_APP_ID",
+            "SHOPPILOT_IM_FEISHU_APP_SECRET");
 
     private ApplicationContextRunner runner() {
         return new ApplicationContextRunner()

@@ -154,6 +154,12 @@ shoppilot:
     enabled: ${SHOPPILOT_OPS_ENABLED:true}
     # 同上。非回环绑定时「仍用默认令牌且没关掉运维端点」是启动阻断项（ADR 0029）。
     token: ${SHOPPILOT_OPS_TOKEN:}
+  feishu:
+    # 飞书长连接（round31 票 113/114 / ADR 0065）。
+    # 凭据走 .env，不入库；非回环绑定 + 空凭据 → 拒启（PostureGuard 家法）。
+    enabled: ${SHOPPILOT_IM_FEISHU_ENABLED:false}
+    app-id: ${SHOPPILOT_IM_FEISHU_APP_ID:}
+    app-secret: ${SHOPPILOT_IM_FEISHU_APP_SECRET:}
 
 ---
 spring:
