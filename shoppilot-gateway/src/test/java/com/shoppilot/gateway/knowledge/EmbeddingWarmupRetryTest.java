@@ -107,7 +107,7 @@ class EmbeddingWarmupRetryTest {
                 new GatewayProperties.Embedding(baseUrl, "bge-m3", DIM,
                         Duration.ofSeconds(5), Duration.ofSeconds(30), true),
                 null, null,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         return new EmbeddingClient(HttpClient.newHttpClient(), new ObjectMapper(), properties, registry);
     }
 }

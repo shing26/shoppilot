@@ -79,7 +79,7 @@ class FallbackReasonTest {
         GatewayProperties properties = new GatewayProperties(null, null, null, null,
                 new GatewayProperties.Ticket(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
                 new GatewayProperties.BizMock(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         service = new FallbackService(HttpClient.newHttpClient(), mapper, properties, new SimpleMeterRegistry(),
                 mock(StringRedisTemplate.class));
         TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-1"));
@@ -141,7 +141,7 @@ class FallbackReasonTest {
         GatewayProperties properties = new GatewayProperties(null, null, null, null,
                 new GatewayProperties.Ticket(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
                 new GatewayProperties.BizMock(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         FallbackService deduping = new FallbackService(HttpClient.newHttpClient(), mapper, properties,
                 new SimpleMeterRegistry(), redis);
 
@@ -161,7 +161,7 @@ class FallbackReasonTest {
         GatewayProperties properties = new GatewayProperties(null, null, null, null,
                 new GatewayProperties.Ticket(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
                 new GatewayProperties.BizMock(baseUrl, "t", Duration.ofSeconds(1), Duration.ofSeconds(2)),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         FallbackService service = new FallbackService(HttpClient.newHttpClient(), mapper, properties,
                 new SimpleMeterRegistry(), redis);
 

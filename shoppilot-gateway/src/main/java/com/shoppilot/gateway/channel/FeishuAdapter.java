@@ -68,6 +68,9 @@ public class FeishuAdapter implements ChannelAdapter {
         // 聊天维度 = chat_id（单聊里与该联系人一一对应，群聊将来也是它，形状不变）
         String messageId = message.path("message_id").asText();
         String chatId = message.path("chat_id").asText();
+        if (chatId == null || chatId.isBlank()) {
+            throw new IllegalArgumentException("飞书事件缺少 chat_id");
+        }
         return new NormalizedChat(text, null, null,
                 ChannelAdapter.deriveConversationId(channel(), chatId),
                 ChannelAdapter.deriveClientToken(channel(), messageId));

@@ -170,7 +170,7 @@ class EmbeddingSingleFlightTest {
                 new GatewayProperties.Embedding(baseUrl, "bge-m3", DIM,
                         Duration.ofSeconds(5), Duration.ofSeconds(60), inProcessCache),
                 null, null,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         return new EmbeddingClient(java.net.http.HttpClient.newHttpClient(), new ObjectMapper(), properties, registry);
     }
 }

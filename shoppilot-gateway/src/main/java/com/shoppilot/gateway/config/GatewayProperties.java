@@ -24,7 +24,8 @@ public record GatewayProperties(
         @Valid RateLimit ratelimit,
         @Valid Ingest ingest,
         @Valid Triage triage,
-        @Valid Ops ops) {
+        @Valid Ops ops,
+        @Valid Feishu feishu) {
 
     public record Llm(String mode, String baseUrl, String apiKey, String model,
                       @DecimalMin("0.0") @DecimalMax("2.0") double temperature,
@@ -145,5 +146,14 @@ public record GatewayProperties(
      * 故障注入与复位是平台级动作，额外要求一个运维凭证；生产把 {@code enabled=false} 整条关掉。
      */
     public record Ops(boolean enabled, String token) {
+    }
+
+    /**
+     * 飞书长连接配置（round31 票 113 / ADR 0065）。
+     *
+     * <p>凭据家法（PostureGuard 集成）在票 114 落地；本票先用占位配置打通解析层。
+     * {@code enabled=true} 且凭据非空时长连接客户端才会注册到 SDK。
+     */
+    public record Feishu(boolean enabled, String appId, String appSecret) {
     }
 }
