@@ -1,6 +1,6 @@
 # 115 wss 应用层握手活体验证（真凭据）
 
-**Status:** ready-for-agent
+**Status:** implemented
 
 ## What to build
 
@@ -38,4 +38,12 @@ git diff --check; git status --short
 
 ## Handoff notes
 
-（收口时补）
+- **关键决策**：wss 握手实测通过，证据为网关日志 `connected to wss://msg-frontier.feishu.cn/ws/v2?...`（时间戳 2026-10-09 13:24:35）。飞书开发者后台「验证连接状态」按钮在网关运行 + 凭据正确时通过。
+- **验证落点**：
+  - 长连接建立：SDK 日志 `connected to wss://msg-frontier.feishu.cn/ws/v2?fpid=493&aid=552564&device_id=7694534711544384707&...` [conn_id=7694534711544384707]
+  - 凭据注入方式：`java -jar` 直接启动时 `.env` 不被读取，需手动 `$env:SHOPPILOT_IM_FEISHU_ENABLED=true` + `$env:SHOPPILOT_IM_FEISHU_APP_ID` + `$env:SHOPPILOT_IM_FEISHU_APP_SECRET`
+  - 回环绑定下空凭据 WARN + 不注册长连接（PostureGuard 家法，票 114 实现）
+- **三个现场追问**：
+  1. 飞书单聊发文本 → 网关处理 → 飞书侧收到回复：是否需要在真机上完整走通一轮？（当前只验证了 wss 建立，未验证事件收发全链路）
+  2. 网关重启 → 长连接自动重连：是否需要实测 SDK autoReconnect？
+  3. 重复 message id 幂等（clientToken 派生）：是否需要构造重复消息实测？

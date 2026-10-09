@@ -1,6 +1,6 @@
 # 116 round31 收口
 
-**Status:** ready-for-agent
+**Status:** implemented
 
 ## What to build
 
@@ -37,4 +37,14 @@ git diff --check; git status --short
 
 ## Handoff notes
 
-（收口时补）
+- **关键决策**：B4「飞书长连接真连」全部落地。wss 应用层握手实测通过（2026-10-09 13:24:35），证据为网关日志 `connected to wss://msg-frontier.feishu.cn/ws/v2?...`。按票 99 口径，对外只能说「飞书真连已验证」，不说「已接入飞书」。
+- **验证落点**：
+  - wss 握手：`logs/gateway.log` 13:24:35 行，`conn_id=7694534711544384707`
+  - 凭据治理：PostureGuard 家法落地（票 114），回环空凭据 WARN + 不注册，非回环空凭据拒启
+  - 凭据注入：`java -jar` 直接启动时 `.env` 不被读取，需手动 `$env:` 设置三个飞书环境变量
+  - 飞书开发者后台「验证连接状态」按钮在网关运行 + 凭据正确时通过
+- **读数**：JVM 5+10+57+342+39=453（票 114 新增 7 个 PostureGuard 测试，票 113 新增 10 个，共 17 个新测试）
+- **三个现场追问**：
+  1. 事件收发全链路（飞书单聊发文本 → 网关处理 → 飞书侧收到回复）是否需要在真机上完整走通？
+  2. 网关重启 → 长连接自动重连（SDK autoReconnect）是否需要实测？
+  3. 重复 message id 幂等（clientToken 派生）是否需要构造重复消息实测？

@@ -369,6 +369,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
   biz-mock `RefundReviewController.review` 要求 `X-Actor-Authenticated: true` 否则 403 空响应体。
   运维凭证仍可用于非资金动作（故障注入、工单队列、演示重置），但不能用于退款审核。
   退款审核队列 `refundReviewQueue()` 同批补上 `staff()` 守卫（此前无任何守卫，任何登录用户可读）。
+- **飞书真连的覆盖面与边界**（round31 / B4）：wss 应用层握手实测通过（2026-10-09，网关日志 `connected to wss://msg-frontier.feishu.cn/ws/v2?...`），飞书开发者后台「验证连接状态」按钮通过。**凭据走 `.env`，不入库**；PostureGuard 家法落地（回环空凭据 WARN + 不注册，非回环空凭据拒启）。**边界照登**：事件收发全链路（飞书单聊发文本 → 网关处理 → 飞书侧收到回复）未实测；网关重启自动重连未实测；重复 message id 幂等未实测。按票 99 口径，对外只能说「飞书真连已验证」，不说「已接入飞书」。
 - **验收矩阵分三档，而 local 真模型档在本机跑不成**：`run-acceptance.ps1 -Tier daily|live|full`（round23 票 74 定 daily/full，2026-10-05 加 live）。
   档位切的是**步骤集合**、判据逐字相同——daily 只跑不起栈的那些（语法、构建与单测、负载报告、task 判据、检索门禁），
   实测 4 步 2 秒；**live 档（perf / MockLLM，≈2.6 GB）**由 `scripts/cleanout-live.ps1` 执行，它要停掉另外三套项目的容器，
