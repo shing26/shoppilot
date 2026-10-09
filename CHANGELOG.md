@@ -18,7 +18,23 @@
 
 ## [Unreleased]
 
-`v1.0.0` 之后的工作，共 **86 个提交**，尚未打新 tag。其中 round16 – round22 都是 `RELEASE.md` 冻结策略下的重开（round17 起由所有者政策覆盖，不再伪装成触发式重开）。
+`v1.0.0` 之后的工作，共 **158 个提交**，尚未打新 tag。**round15 – round22 逐轮记在下面；round23 – round31 九轮在这个文件里还没有按轮补录**（逐轮读数以 [`docs/EVIDENCE.md`](docs/EVIDENCE.md) 与 tracker 为准，本文件的轮次小节只到 round22）。round16 – round22 都是 `RELEASE.md` 冻结策略下的重开（round17 起由所有者政策覆盖，不再伪装成触发式重开）。
+
+### 展示面与 CI 产物修复 · 2026-10-10
+
+不是功能轮：改的是「别人第一眼看到什么」，外加一条从 round30 起就一直红着的 CI。README 首屏原先只有文字墙；两条最该拿出来的链路（语义缓存的极性守卫、涉资动作的人机协同）此前没有任何现场证据；而 `main` 上的 `ci-subset` 自 round30 起每次推送都失败。
+
+| 项 | 内容 |
+| --- | --- |
+| README 首屏 | 「三十秒：一次请求怎么流过这座网关」——入站 → INTAKE 情绪门 → TRIAGE 三级级联 → CACHE_READ / RETRIEVE → PLAN → TOOL_EXEC（2 轮硬上限、涉资只出草案）→ SLOT_ASK → REPLY → CACHE_WRITE → FALLBACK，逐格在 `docs/CODE_MAP.md` 有源码落点；「数字看板：防线开 vs 关」是同机同计数器口径下逐档关防线的对照 |
+| 两段现场录像 | [`docs/refund-hitl-demo.gif`](docs/refund-hitl-demo.gif)（涉资动作的人机协同，6 帧、328 KB）与 [`docs/polarity-guard-demo.gif`](docs/polarity-guard-demo.gif)（极性守卫，5 帧、308 KB）。帧全部来自浏览器截图 + `logs/gateway.log` 原始行 + `/actuator` 计数器读数，**没有一帧是画出来的**；四个采集/合成脚本全在仓，且自带断错（SSE 一帧没抓到、日志里没有极性守卫行 → 抛错不产出） |
+| CI 修复 | 重建 `shoppilot-gateway/src/main/resources/static/workspace/` 构建产物并连同 `index.html` 提交，新哈希与 CI 自己产出的一致 |
+
+**读数**：复跑 `.\mvnw.cmd -B -ntp verify` 四模块 **`10 + 67 + 383 + 45 = 505`** 全绿；连续两次 `npm run build` 输出逐字节相同（产物确定）；`git diff --check` 干净。**一处记账更正**：round30 记的 biz-mock **66** 实为 **67**（源码一个字节没动，重跑仍是 67），历史读数不动、更正登记在 `docs/EVIDENCE.md`。
+
+**未达成照登**（三条都写进了 README 的对应段落）：① 坐席点「放行」之后系统里**没有任何链路**把结果推回买家浏览器（出站投递只认 webhook / email / 回执工单三类，退款审核只发审计事件），录像因此停在放行那一刻，没有编「买家收到通知」那一帧；② 系统**没有** `[PolarityGuard] Antonym polarity detected, bypass L2 cache.` 这行日志，真实打印的是 `L2 语义命中被极性守卫拒绝: polarity-conflict (cached=… incoming=…)`；③ 最初想演示的「我想要申请换货 / 我不想换货了」实测余弦只有 **0.8851**，够不到 L2 命中、守卫不会被触发，改用项目自己标定过的那一对（同极性 0.9980 命中 / 反义 0.9799 被拒）。
+
+**采录像时踩到的一条链**（根因与修复都登记在 `docs/EVIDENCE.md`）：Redis 丢了 `shoppilot:kb:epoch` → 纪元回退成 1 而 Qdrant/ES 里的 chunk 是纪元 2/5 → 检索恒空 → 写回资格不满足 → L2 从不写入 → 极性守卫一次都不触发。连跑两次 `--spring.profiles.active=ingest` 把纪元对齐到 3 后复现成功。**这一步红不代表防线失效**，但它照出一个可观测缺口：「检索为空」与「真的没查到」在指标上分不开。
 
 ### round22 — RAG 的机器背书 · 2026-09-28
 
