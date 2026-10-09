@@ -127,6 +127,12 @@ public class FeishuLongConnectionClient {
                             log.debug("用户进入飞书单聊，无需处理");
                         }
                     })
+                    .onP2MessageReadV1(new com.lark.oapi.service.im.ImService.P2MessageReadV1Handler() {
+                        @Override
+                        public void handle(com.lark.oapi.service.im.v1.model.P2MessageReadV1 event) {
+                            log.debug("消息已读回执，无需处理");
+                        }
+                    })
                     .build();
             Client client = new Client.Builder(feishu.appId(), feishu.appSecret())
                     .eventHandler(eventDispatcher)
