@@ -1,6 +1,7 @@
 package com.shoppilot.gateway.channel;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.lark.oapi.event.EventDispatcher;
 import com.lark.oapi.ws.Client;
 import com.shoppilot.gateway.agent.AgentResult;
@@ -50,6 +51,14 @@ import java.util.Map;
 public class FeishuLongConnectionClient {
 
     private static final Logger log = LoggerFactory.getLogger(FeishuLongConnectionClient.class);
+
+    /**
+     * 蛇形命名 ObjectMapper：飞书 SDK 的 Java 字段是驼峰（messageId），
+     * 但 FeishuAdapter.normalize() 期望飞书 JSON 蛇形格式（message_id）。
+     * 用 SNAKE_CASE 策略做 convertValue 转换。
+     */
+    private static final ObjectMapper SNAKE_MAPPER = new ObjectMapper()
+            .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
 
     private final FeishuAdapter adapter;
     private final AgentStateMachine agentStateMachine;
@@ -108,8 +117,14 @@ public class FeishuLongConnectionClient {
                     .onP2MessageReceiveV1(new com.lark.oapi.service.im.ImService.P2MessageReceiveV1Handler() {
                         @Override
                         public void handle(com.lark.oapi.service.im.v1.model.P2MessageReceiveV1 event) {
-                            Map<String, Object> payload = objectMapper.convertValue(event, Map.class);
+                            Map<String, Object> payload = SNAKE_MAPPER.convertValue(event, Map.class);
                             FeishuLongConnectionClient.this.handleEvent(payload);
+                        }
+                    })
+                    .onP2ChatAccessEventBotP2pChatEnteredV1(new com.lark.oapi.service.im.ImService.P2ChatAccessEventBotP2pChatEnteredV1Handler() {
+                        @Override
+                        public void handle(com.lark.oapi.service.im.v1.model.P2ChatAccessEventBotP2pChatEnteredV1 event) {
+                            log.debug("用户进入飞书单聊，无需处理");
                         }
                     })
                     .build();
