@@ -39,13 +39,14 @@ git diff --check; git status --short
 ## Handoff notes
 
 - **关键决策**：wss 握手实测通过，证据为网关日志 `connected to wss://msg-frontier.feishu.cn/ws/v2?...`（时间戳 2026-10-09 13:24:35）。飞书开发者后台「验证连接状态」按钮在网关运行 + 凭据正确时通过。
-- **事件处理器修复（2026-10-09 补测）**：补测发现飞书侧发消息后网关无响应。根因：`FeishuLongConnectionClient.start()` 构建 `EventDispatcher` 时未注册 `im.message.receive_v1` handler，SDK 收到事件后抛 `HandlerNotFoundException`。修复：在 `start()` 中通过 `.onP2MessageReceiveV1()` 注册 `P2MessageReceiveV1Handler` 匿名内部类（非函数接口，不能用 lambda），回调 `handleEvent(Map)`。`FeishuLongConnectionClientJvmTest` 新增 2 条（`startRegistersMessageHandler` + `handleEventCleansThreadLocalOnSuccess`）。JVM 四模块 `10 + 66 + 383 + 45 = 504` 绿。
+- **事件处理器修复 + 蛇形命名修复（2026-10-09 补测）**：补测发现飞书侧发消息后网关无响应。根因 1：`FeishuLongConnectionClient.start()` 构建 `EventDispatcher` 时未注册 `im.message.receive_v1` handler。根因 2：`ObjectMapper.convertValue(event, Map.class)` 默认按 JavaBean 驼峰序列化（`messageId`），但 `FeishuAdapter.normalize()` 期望飞书 JSON 蛇形格式（`message_id`）。修复：用 `SNAKE_CASE` 命名策略的专用 `ObjectMapper` 做转换。`FeishuLongConnectionClientJvmTest` 新增 2 条（`startRegistersMessageHandler` + `handleEventCleansThreadLocalOnSuccess`）。JVM 四模块 `10 + 66 + 383 + 45 = 504` 绿。
 - **验证落点**：
   - 长连接建立：SDK 日志 `connected to wss://msg-frontier.feishu.cn/ws/v2?fpid=493&aid=552564&device_id=7694534711544384707&...` [conn_id=7694534711544384707]
   - 凭据注入方式：`java -jar` 直接启动时 `.env` 不被读取，需手动 `$env:SHOPPILOT_IM_FEISHU_ENABLED=true` + `$env:SHOPPILOT_IM_FEISHU_APP_ID` + `$env:SHOPPILOT_IM_FEISHU_APP_SECRET`
   - 回环绑定下空凭据 WARN + 不注册长连接（PostureGuard 家法，票 114 实现）
   - 事件处理器注册：`EventDispatcher.newBuilder().onP2MessageReceiveV1(handler).build()`，handler 为匿名内部类
+  - 蛇形命名修复：`SNAKE_MAPPER.convertValue(event, Map.class)` 将 `messageId` → `message_id`
 - **三个现场追问**：
-  1. 飞书单聊发文本 → 网关处理 → 飞书侧收到回复：**事件处理器缺失已修复**（见上），待网关重启后活体验证全链路。
-  2. 网关重启 → 长连接自动重连：是否需要实测 SDK autoReconnect？
-  3. 重复 message id 幂等（clientToken 派生）：是否需要构造重复消息实测？
+  1. 飞书单聊发文本 → 网关处理 → 飞书侧收到回复：**已实测通过**（2026-10-09 21:12，飞书客户端收到回复「已为您转接人工客服」）。
+  2. 网关重启 → 长连接自动重连：**已实测通过**（2026-10-09 21:53，网关杀掉后重启，飞书长连接重新建立，新 conn_id=7694665806546111425）。验证的是应用层重启后 `@PostConstruct` 重新建立连接；SDK `autoReconnect`（同一 JVM 进程内 WebSocket 断开后自动重连）未实测。
+  3. 重复 message id 幂等（clientToken 派生）：**活体不可行**——飞书事件 message id 由飞书生成，用户无法手动构造重复消息。JVM 层已有充分覆盖（`IdempotencyServiceRequestReplayTest` + `ChannelDerivedSessionJvmTest` 的 clientToken 派生规则）。
