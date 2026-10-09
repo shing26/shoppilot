@@ -1,5 +1,6 @@
 package com.shoppilot.gateway.channel;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lark.oapi.event.EventDispatcher;
 import com.lark.oapi.ws.Client;
 import com.shoppilot.gateway.agent.AgentResult;
@@ -55,18 +56,21 @@ public class FeishuLongConnectionClient {
     private final FeishuReplySender replySender;
     private final GatewayProperties properties;
     private final String bindAddress;
+    private final ObjectMapper objectMapper;
 
     /** SDK 长连接客户端，未启用时为 null。 */
     private volatile Client wsClient;
 
     public FeishuLongConnectionClient(FeishuAdapter adapter, AgentStateMachine agentStateMachine,
                                        FeishuReplySender replySender, GatewayProperties properties,
-                                       @Value("${server.address:}") String bindAddress) {
+                                       @Value("${server.address:}") String bindAddress,
+                                       ObjectMapper objectMapper) {
         this.adapter = adapter;
         this.agentStateMachine = agentStateMachine;
         this.replySender = replySender;
         this.properties = properties;
         this.bindAddress = bindAddress;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -100,7 +104,15 @@ public class FeishuLongConnectionClient {
         }
 
         try {
-            EventDispatcher eventDispatcher = EventDispatcher.newBuilder(feishu.appId(), feishu.appSecret()).build();
+            EventDispatcher eventDispatcher = EventDispatcher.newBuilder(feishu.appId(), feishu.appSecret())
+                    .onP2MessageReceiveV1(new com.lark.oapi.service.im.ImService.P2MessageReceiveV1Handler() {
+                        @Override
+                        public void handle(com.lark.oapi.service.im.v1.model.P2MessageReceiveV1 event) {
+                            Map<String, Object> payload = objectMapper.convertValue(event, Map.class);
+                            FeishuLongConnectionClient.this.handleEvent(payload);
+                        }
+                    })
+                    .build();
             Client client = new Client.Builder(feishu.appId(), feishu.appSecret())
                     .eventHandler(eventDispatcher)
                     .autoReconnect(true)

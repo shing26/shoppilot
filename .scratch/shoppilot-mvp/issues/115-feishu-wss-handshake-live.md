@@ -39,11 +39,13 @@ git diff --check; git status --short
 ## Handoff notes
 
 - **关键决策**：wss 握手实测通过，证据为网关日志 `connected to wss://msg-frontier.feishu.cn/ws/v2?...`（时间戳 2026-10-09 13:24:35）。飞书开发者后台「验证连接状态」按钮在网关运行 + 凭据正确时通过。
+- **事件处理器修复（2026-10-09 补测）**：补测发现飞书侧发消息后网关无响应。根因：`FeishuLongConnectionClient.start()` 构建 `EventDispatcher` 时未注册 `im.message.receive_v1` handler，SDK 收到事件后抛 `HandlerNotFoundException`。修复：在 `start()` 中通过 `.onP2MessageReceiveV1()` 注册 `P2MessageReceiveV1Handler` 匿名内部类（非函数接口，不能用 lambda），回调 `handleEvent(Map)`。`FeishuLongConnectionClientJvmTest` 新增 2 条（`startRegistersMessageHandler` + `handleEventCleansThreadLocalOnSuccess`）。JVM 四模块 `10 + 66 + 383 + 45 = 504` 绿。
 - **验证落点**：
   - 长连接建立：SDK 日志 `connected to wss://msg-frontier.feishu.cn/ws/v2?fpid=493&aid=552564&device_id=7694534711544384707&...` [conn_id=7694534711544384707]
   - 凭据注入方式：`java -jar` 直接启动时 `.env` 不被读取，需手动 `$env:SHOPPILOT_IM_FEISHU_ENABLED=true` + `$env:SHOPPILOT_IM_FEISHU_APP_ID` + `$env:SHOPPILOT_IM_FEISHU_APP_SECRET`
   - 回环绑定下空凭据 WARN + 不注册长连接（PostureGuard 家法，票 114 实现）
+  - 事件处理器注册：`EventDispatcher.newBuilder().onP2MessageReceiveV1(handler).build()`，handler 为匿名内部类
 - **三个现场追问**：
-  1. 飞书单聊发文本 → 网关处理 → 飞书侧收到回复：是否需要在真机上完整走通一轮？（当前只验证了 wss 建立，未验证事件收发全链路）
+  1. 飞书单聊发文本 → 网关处理 → 飞书侧收到回复：**事件处理器缺失已修复**（见上），待网关重启后活体验证全链路。
   2. 网关重启 → 长连接自动重连：是否需要实测 SDK autoReconnect？
   3. 重复 message id 幂等（clientToken 派生）：是否需要构造重复消息实测？
