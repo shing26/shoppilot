@@ -1,6 +1,6 @@
 # round31 spec —— B4「飞书长连接真连：适配器契约吃上真网络」
 
-> 状态：执行中（2026-10-07 开轮）。
+> 状态：**已收口**（2026-10-07 开轮，2026-10-09 收口；票 96/97/113-116 全部 implemented）。
 > 依据：[program-a-to-b-upgrade.md](program-a-to-b-upgrade.md) B4 入口（触发 = R2 触发条件满足：
 > 票 98 考察可开 + B1 完成；**所有者 2026-10-07 裁定**「开，第一平台选飞书」）；
 > [ADR 0064](../../docs/adr/0064-im-live-feasibility-conclusion.md)（考察结论）、

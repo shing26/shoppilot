@@ -148,7 +148,7 @@ python scripts/compose-polarity-gif.py    # 合成 docs/polarity-guard-demo.gif
 - 想核对全部证据：[`docs/EVIDENCE.md`](docs/EVIDENCE.md)：数字对应的报告、原始产物与复现命令。
 - [`AGENTS.md`](AGENTS.md)：接手顺序、source of truth、修改禁令、验证与 Handoff 流程。
 - [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)：按项目定位制定的 v1.0 收口、作品集与冻结路线。
-- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-99 的当前状态；[`registered-debt.md`](.scratch/shoppilot-mvp/registered-debt.md)：欠账总账（每笔要么有触发条件、要么有「永不做」的裁决）。
+- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-116 的当前状态；[`registered-debt.md`](.scratch/shoppilot-mvp/registered-debt.md)：欠账总账（每笔要么有触发条件、要么有「永不做」的裁决）。
 - [`docs/CODE_MAP.md`](docs/CODE_MAP.md)：模块所有权、请求链路源码落点和已知代码债候选。
 
 ## 快速开始（一条命令）

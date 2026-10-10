@@ -73,6 +73,13 @@
   免公网长连接、Slack Socket Mode 本机连通、Telegram 不通）；同日**所有者裁定 B4 开线、
   第一平台飞书**（ADR 0065）→ **round31 执行中**（票 96、97、113-116；飞书长连接形态下
   零暴露，红线升级为「不得以任何理由暴露网关端口」）。
+- **换代（2026-10-09）**：**B4 已收口**。round31 六票全部 implemented；wss 应用层握手、
+  事件收发全链路、网关重启后自动重连三项活体通过（落点 `docs/EVIDENCE.md`）；JVM 四模块
+  `10 + 67 + 383 + 45 = 505`。**收口期修掉两个「SDK 装上了但事件没人接」的真缺陷**：
+  `EventDispatcher` 未注册 `im.message.receive_v1` handler（SDK 抛 `HandlerNotFoundException`）、
+  `convertValue` 默认驼峰命名与飞书蛇形 JSON 不符（换 `SNAKE_CASE` mapper）。**对外措辞**
+  按票 99 定死的口径：只能说「飞书真连已验证」，不说「已接入飞书」——**票 99 尚未收口，
+  这句口径现在还不是对外可引用的定稿**。
 
 ### B5 · 跨平台身份统一
 
