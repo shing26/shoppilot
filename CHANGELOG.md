@@ -29,6 +29,7 @@
 | README 首屏 | 「三十秒：一次请求怎么流过这座网关」——入站 → INTAKE 情绪门 → TRIAGE 三级级联 → CACHE_READ / RETRIEVE → PLAN → TOOL_EXEC（2 轮硬上限、涉资只出草案）→ SLOT_ASK → REPLY → CACHE_WRITE → FALLBACK，逐格在 `docs/CODE_MAP.md` 有源码落点；「数字看板：防线开 vs 关」是同机同计数器口径下逐档关防线的对照 |
 | 两段现场录像 | [`docs/refund-hitl-demo.gif`](docs/refund-hitl-demo.gif)（涉资动作的人机协同，6 帧、328 KB）与 [`docs/polarity-guard-demo.gif`](docs/polarity-guard-demo.gif)（极性守卫，5 帧、308 KB）。帧全部来自浏览器截图 + `logs/gateway.log` 原始行 + `/actuator` 计数器读数，**没有一帧是画出来的**；四个采集/合成脚本全在仓，且自带断错（SSE 一帧没抓到、日志里没有极性守卫行 → 抛错不产出） |
 | CI 修复 | 重建 `shoppilot-gateway/src/main/resources/static/workspace/` 构建产物并连同 `index.html` 提交，新哈希与 CI 自己产出的一致 |
+| 面试官导读卡片 | README 顶部新增「致面试官：两分钟导读」四行表（ADR 决策推演 / 压测双曲线与模型延迟剥离 / 静默失效复盘 / 一条命令起栈），每行只指向仓库里已存在的证据；**两处口径更正**——ADR 是 64 篇成文（65 编号，0022 有意预留）不是 65 篇；`docker compose up -d` 只起中间件，四个域服务在 `full` profile 里（容器档走 `scripts/up.ps1 -Containerized`），导读里如实写明 |
 
 **读数**：复跑 `.\mvnw.cmd -B -ntp verify` 四模块 **`10 + 67 + 383 + 45 = 505`** 全绿；连续两次 `npm run build` 输出逐字节相同（产物确定）；`git diff --check` 干净。**一处记账更正**：round30 记的 biz-mock **66** 实为 **67**（源码一个字节没动，重跑仍是 67），历史读数不动、更正登记在 `docs/EVIDENCE.md`。
 
