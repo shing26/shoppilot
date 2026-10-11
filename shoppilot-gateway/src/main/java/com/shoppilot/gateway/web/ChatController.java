@@ -17,6 +17,7 @@ import com.shoppilot.tool.Intent;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -104,8 +105,16 @@ public class ChatController {
         }
     }
 
-    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@Valid @RequestBody ChatRequest request, HttpServletRequest servletRequest) {
+    // Content-Type 必须带 charset：SSE 语义上恒为 UTF-8，但 SseEmitter.extendResponse
+    // 只在响应头未设置时才写 text/event-stream，produces 里的 charset 到不了响应头
+    // （实测 produces 声明了 charset 头上仍然没有）——中文 Windows 上按区域嗅探的
+    // 客户端（Chromium CDP、旧代理）会按 GBK 解码再重编码，帧里中文变成双重编码乱码。
+    // 2026-10-11 由展示面采集实测定位
+    @PostMapping(value = "/chat/stream",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
+    public SseEmitter stream(@Valid @RequestBody ChatRequest request, HttpServletRequest servletRequest,
+            HttpServletResponse servletResponse) {
+        servletResponse.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8");
         ChannelContext.set(Channel.WEB);
         // 身份必须在请求线程上取出后带进工作线程：ThreadLocal 不会跟着任务跑
         TenantContext.Identity identity = TenantContext.current();

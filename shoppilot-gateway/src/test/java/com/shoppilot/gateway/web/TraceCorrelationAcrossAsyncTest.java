@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -150,7 +151,8 @@ class TraceCorrelationAcrossAsyncTest {
             AgentStateMachine smooth = mock(AgentStateMachine.class);
             when(smooth.run(any(), any(), any())).thenReturn(result());
             controller(smooth).stream(new ChatController.ChatRequest(QUERY, null),
-                    new MockHttpServletRequest("POST", "/api/v1/support/chat/stream"));
+                    new MockHttpServletRequest("POST", "/api/v1/support/chat/stream"),
+                    new MockHttpServletResponse());
             assertThat(awaitEvent(appender, "流式问答完成").getMDCPropertyMap())
                     .containsEntry(RequestTrace.TRACE_ID, traceId);
 
@@ -158,7 +160,8 @@ class TraceCorrelationAcrossAsyncTest {
             AgentStateMachine broken = mock(AgentStateMachine.class);
             when(broken.run(any(), any(), any())).thenThrow(new IllegalStateException("编排脱轨"));
             controller(broken).stream(new ChatController.ChatRequest(QUERY, null),
-                    new MockHttpServletRequest("POST", "/api/v1/support/chat/stream"));
+                    new MockHttpServletRequest("POST", "/api/v1/support/chat/stream"),
+                    new MockHttpServletResponse());
 
             ILoggingEvent event = awaitEvent(appender, "编排异常");
             assertThat(event.getMDCPropertyMap()).containsEntry(RequestTrace.TRACE_ID, traceId);

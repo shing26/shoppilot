@@ -31,7 +31,7 @@
 // （`shoppilot:kb:epoch`）与库内 chunk 一致，否则检索恒空、写回不发生、守卫不出现。
 import { createRequire } from 'node:module';
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 
@@ -39,8 +39,19 @@ const BASE = process.env.SHOPPILOT_CAPTURE_BASE || 'http://127.0.0.1:8082';
 const OPS_TOKEN = process.env.SHOPPILOT_OPS_TOKEN || 'dev-ops-token';
 const GATEWAY_LOG = process.env.SHOPPILOT_GATEWAY_LOG ||
   join(process.cwd(), 'logs', 'gateway.log');
-const OUT = process.env.SHOPPILOT_CAPTURE_OUT ||
-  join(process.cwd(), 'logs', 'capture-polarity');
+// OUT 会 rmSync 整树清空，所以必须钉死在仓库内部（同 capture-refund-hitl 的守卫）；
+// 覆盖变量与本脚本一一对应（SHOPPILOT_CAPTURE_POLARITY_OUT），两个采集互不清对方的产物。
+const OUT = resolve(process.env.SHOPPILOT_CAPTURE_POLARITY_OUT ||
+  join(process.cwd(), 'logs', 'capture-polarity'));
+{
+  const rel = relative(process.cwd(), OUT);
+  if (rel === '' || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) {
+    console.error(
+      `SHOPPILOT_CAPTURE_POLARITY_OUT 必须指向仓库内部的专用子目录，拒绝清空：${OUT}`,
+    );
+    process.exit(2);
+  }
+}
 const METRIC = 'shoppilot_cache_l2_polarity_blocked_total';
 
 const CONSOLE_W = 900, LOG_W = 560, PANEL_H = 940;

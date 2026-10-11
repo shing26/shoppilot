@@ -29,7 +29,7 @@
 //      模型侧是 Mock（工具参数与答案文案由 Mock 模板产出）。
 import { createRequire } from 'node:module';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 
@@ -45,8 +45,20 @@ if (!DEMO_PASSWORD) {
   );
   process.exit(2);
 }
-const OUT = process.env.SHOPPILOT_CAPTURE_OUT ||
-  join(process.cwd(), 'logs', 'capture-refund');
+// OUT 会 rmSync 整树清空，所以必须钉死在仓库内部：env 覆盖一旦解析出 cwd
+// （或本身就是 cwd），拒绝执行——env 里一个手滑把盘符根喂进来不该有第二次机会。
+// 本脚本用自己的覆盖变量（SHOPPILOT_CAPTURE_REFUND_OUT），与 polarity 采集互不覆盖。
+const OUT = resolve(process.env.SHOPPILOT_CAPTURE_REFUND_OUT ||
+  join(process.cwd(), 'logs', 'capture-refund'));
+{
+  const rel = relative(process.cwd(), OUT);
+  if (rel === '' || isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) {
+    console.error(
+      `SHOPPILOT_CAPTURE_REFUND_OUT 必须指向仓库内部的专用子目录，拒绝清空：${OUT}`,
+    );
+    process.exit(2);
+  }
+}
 const QUERY = '订单 90001 我要申请退款，商品有质量问题';
 const BUYER_W = 500, SEAT_W = 520, LOG_W = 400, PANEL_H = 720;
 
@@ -69,27 +81,31 @@ const logPageHtml = `<!doctype html><html><head><meta charset="utf-8"><style>
 </body></html>`;
 
 /** 把 SSE 原始帧渲染成中间栏的事件流（只做排版，内容不改）。 */
+const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
 function renderFrames(frames) {
   const lines = [];
   for (const f of frames) {
     let data;
     try { data = JSON.parse(f.data); } catch { data = f.data; }
-    if (typeof data !== 'object' || data === null) data = {};
+    // token 帧的 data 是 JSON 字符串字面量（"…"），解析后就是 string，原样保留；
+    // 其余帧若是散串（不该发生）丢给兜底，别把文本吞成 [object Object]
+    if (f.event !== 'token' && (typeof data !== 'object' || data === null)) data = {};
     if (f.event === 'status') {
-      lines.push(`<span class="st">[${data.state || '?'}]</span> ${data.label || ''} <span class="dim">${data.detail || ''}</span>`);
+      lines.push(`<span class="st">[${esc(data.state || '?')}]</span> ${esc(data.label || '')} <span class="dim">${esc(data.detail || '')}</span>`);
     } else if (f.event === 'meta') {
-      lines.push(`<span class="st">[meta]</span> intent=${data.intent} cache=${data.cacheLayer} channel=${data.channel}`);
+      lines.push(`<span class="st">[meta]</span> intent=${esc(data.intent)} cache=${esc(data.cacheLayer)} channel=${esc(data.channel)}`);
     } else if (f.event === 'tool_executing') {
-      lines.push(`<span class="ar">→</span> ${data.tool} <span class="dim">${data.label || ''}</span>`);
+      lines.push(`<span class="ar">→</span> ${esc(data.tool)} <span class="dim">${esc(data.label || '')}</span>`);
     } else if (f.event === 'tool_result') {
-      lines.push(`<span class="ar">←</span> <b>${data.tool} ${data.status}</b> <span class="dim">${data.summary || ''}</span>`);
+      lines.push(`<span class="ar">←</span> <b>${esc(data.tool)} ${esc(data.status)}</b> <span class="dim">${esc(data.summary || '')}</span>`);
     } else if (f.event === 'token') {
-      lines.push(`<span class="ev">「</span>${data}<span class="ev">」</span>`);
+      lines.push(`<span class="ev">「</span>${esc(typeof data === 'string' ? data : JSON.stringify(data))}<span class="ev">」</span>`);
     } else if (f.event === 'fallback') {
-      lines.push(`<span class="ar">[fallback]</span> ${data.reason} ticket=${data.ticketId || '-'}`);
+      lines.push(`<span class="ar">[fallback]</span> ${esc(data.reason)} ticket=${esc(data.ticketId || '-')}`);
     } else if (f.event === 'done') {
       const plan = (data.plan || []).map((p) => `${p.tool}:${p.status}`).join(', ');
-      lines.push(`<span class="st">[done]</span> ${plan} <span class="dim">${data.usage ? data.usage.promptTokens + '/' + data.usage.completionTokens + ' tok' : ''}</span>`);
+      lines.push(`<span class="st">[done]</span> ${esc(plan)} <span class="dim">${data.usage ? esc(data.usage.promptTokens + '/' + data.usage.completionTokens + ' tok') : ''}</span>`);
     }
   }
   return lines.join('\n');
@@ -160,6 +176,16 @@ async function paintLog() {
   console.log(`  SSE ${frames.length} 帧 → sse-frames.json`);
   for (const f of frames) {
     console.log(`    [${f.event}] ${f.data.slice(0, 160)}`);
+  }
+  // 断错：帧里出现 U+FFFD = 编码链路坏了（真实事故：端点未声明 charset 时，
+  // Chromium 按 zh-CN 系统区域 GBK 解码 CDP 文本通道，中文全部双重编码乱码）。
+  // 这种帧绝不能进 GIF——宁可中断采集，也不产出「看起来成立」的证据。
+  if (frames.some((f) => f.data.includes('\uFFFD'))) {
+    console.error(
+      'SSE 帧含 U+FFFD（替换符）：编码链路异常（见 sse-frames.json），' +
+        '本批帧不能当证据用。先确认网关 SSE 已声明 charset=UTF-8 再重跑。',
+    );
+    process.exit(3);
   }
 }
 
