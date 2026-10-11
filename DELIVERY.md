@@ -56,7 +56,7 @@ start http://127.0.0.1:8082
 
 | 你有多少时间 | 读什么 |
 | --- | --- |
-| 3 分钟 | [`docs/portfolio-interview.md`](docs/portfolio-interview.md)：架构、四个工程问题、三个数字和一个踩坑 |
+| 3 分钟 | [`docs/design-walkthrough.md`](docs/design-walkthrough.md)：架构走读、四个工程问题、三个数字和一个踩坑 |
 | 10 分钟 | 本文件的[五件索引](#五件索引) → [`RELEASE.md`](RELEASE.md) → `README.md` 的指标表 |
 | 1 小时 | 再进 [`docs/CODE_MAP.md`](docs/CODE_MAP.md)（模块所有权 + 请求链路源码落点） |
 | 要动手改 | [`AGENTS.md`](AGENTS.md)：接手顺序、source of truth、修改禁令、验证与 Handoff 流程 |

@@ -1,14 +1,11 @@
-# 面试问答清单（由各 ticket 的 Handoff notes 生成）
+# 架构与选型问答（Architecture FAQ）
 
-生成方式：`python scripts/collect_interview_questions.py`。
-每题答案直接取自当时写下的收尾记录，不做事后润色——答不上来的就是当时没想清楚的。
+本文汇总自各构建阶段的收尾记录，覆盖 238 个问题、69 个实现单元。答案取自实现当时写下的记录，不做事后润色——当时没想清楚的，答案里也是直说。
 
-共 238 问，覆盖 69 个 ticket。
-
-用法：每条先只看问题，自己答 30 秒，再对答案。答不出细节的题回去读对应 ticket。
+每条先只看问题再对答案；答不出细节的题，去读对应源码与 `docs/CODE_MAP.md` 的落点。实现单元编号对应 `.scratch/shoppilot-mvp/issues/` 下的同号文件。
 
 
-## Ticket 01 — skeleton and compose
+## Unit 01 — skeleton and compose
 
 **Q：为什么 ES 用 7.17 而不是 8.x？**
 
@@ -35,7 +32,7 @@ A：Qdrant 那条以前没有——它恒红，因为镜像里根本没有 wget/
 A：因为本机 PATH 上是 JDK 18，而项目要 21（虚拟线程）。解析顺序里 PATH 只排第三，而且排在前面的候选也一样要过版本校验——顺序解决"用哪个"，校验解决"能不能用"，两件事不能合并成一条。实测四种组合：给了 21 就用 21；`JAVA_HOME` 指到 18 会被跳过并继续找；全都不是 21 时报错会列出试过的来源与版本号。
 
 
-## Ticket 02 — mock jwt identity
+## Unit 02 — mock jwt identity
 
 **Q：伪造一个 claims 正确的 JWT 不行吗？**
 
@@ -50,7 +47,7 @@ A：不会，密钥在环境变量里，不在进程内存里。这是有意的�
 A：往下传要改一长串签名，改一处漏一处就是越权；MDC 只用于日志，不作为可信来源。`TenantContext` 是唯一可信入口，且有架构测试兜着。
 
 
-## Ticket 03 — biz mock data foundation
+## Unit 03 — biz mock data foundation
 
 **Q：A 店查 B 店订单，为什么返回"未在本店找到该订单"而不是 403？**
 
@@ -73,7 +70,7 @@ A：不会。`receiverName` 与 `receiverPhone` 仍是必填，缺任一项在�
 A：默认值是业务规则（哪种退款理由算主观），归业务系统所有；网关只负责把"模型没抽到这个字段"如实传下去。放在网关会让 Mock 中台的语义随编排层漂移。
 
 
-## Ticket 04 — knowledge ingestion
+## Unit 04 — knowledge ingestion
 
 **Q：为什么不用现成的文档解析框架？**
 
@@ -88,7 +85,7 @@ A：对演示与压测足够，因为要测的是链路而不是召回率上限�
 A：不会，Qdrant 用 `ruleId` 作 point id，重复写是覆盖；验收就是"连跑两次两边条目数相等且不增长"。
 
 
-## Ticket 05 — thin vertical slice
+## Unit 05 — thin vertical slice
 
 **Q：为什么用 SSE 不用 WebSocket？**
 
@@ -103,7 +100,7 @@ A：检索层返回的规则块 `ruleId` 列表，随 `CacheEntry.sourceRuleIds`
 A：只差 ES 那一路检索（ticket 08）、L2 语义缓存（ticket 09）、工具闭环（ticket 10/11）。状态机骨架、事件契约、身份注入、三模式模型依赖从第一天起就是最终形态，没有临时脚手架。
 
 
-## Ticket 06 — l1 cache admission writeback
+## Unit 06 — l1 cache admission writeback
 
 **Q：怎么证明命中路径没碰模型和向量库？**
 
@@ -118,7 +115,7 @@ A：跟着政策走的是 `kbEpoch`——纪元一变，key 变了，旧条目�
 A：不会。穿透者自己流式输出，等待者只在 leader 完成后一次性拿到整段答案并作为单个 `token` 帧推出。代价是等待者没有打字机效果，收益是不用维护 N 路转发；2 秒等待上限保证最坏情况也只是退化成自己穿透。
 
 
-## Ticket 07 — intent cascade
+## Unit 07 — intent cascade
 
 **Q：为什么不直接让模型分类？**
 
@@ -133,7 +130,7 @@ A：质心由 `intent-samples.json` 现算并缓存到 `shoppilot.triage.centroi
 A：对电商客服场景够，且这是刻意的上限——意图数线性影响质心维护成本与误判面。新增意图要走规则表与样例句双份改动，这个摩擦是有意的。
 
 
-## Ticket 08 — es bm25 rrf fusion
+## Unit 08 — es bm25 rrf fusion
 
 **Q：只有 90 个块，为什么要上 ES？**
 
@@ -148,7 +145,7 @@ A：论文给出的经验值，作用是压平头部名次的分数差。语料�
 A：任一路失败按空结果处理，另一路仍可出答案；两路都空则走 `INTENT_UNRESOLVED` 降级并落工单，不硬编一段"抱歉"进缓存。
 
 
-## Ticket 09 — l2 semantic cache epoch
+## Unit 09 — l2 semantic cache epoch
 
 **Q：0.95 这个阈值是拍脑袋的吗？**
 
@@ -171,7 +168,7 @@ A：不是打挂，是**报错了但语义没错**。删表重建中间有几十
 A：为一个"清空"动作把在线读路径阻塞几十毫秒不值——缓存空的时候
 
 
-## Ticket 10 — tool contract http boundary
+## Unit 10 — tool contract http boundary
 
 **Q：为什么不直接用 Spring 的 `@HttpExchange` 声明式客户端？**
 
@@ -186,7 +183,7 @@ A：泄漏不到。浏览器只与同源网关通信，`X-Internal-Token` 由网
 A：熔断打开后请求不再打过去，直接 `TOOL_UNAVAILABLE` 降级并落工单，`GET /ops/circuit` 能看到 `CLOSED/OPEN/HALF_OPEN` 与模型名、当日 token 用量。实测停进程后返回降级语义而非 500。
 
 
-## Ticket 11 — action loop
+## Unit 11 — action loop
 
 **Q：网关直接执行工具，那还要 Function Calling 干什么？**
 
@@ -213,7 +210,7 @@ A：轮次预算仍然封顶，第二次规划如果又发查询，`rounds` 到 
 A：读意图答错的后果是信息不全，写意图答错的后果是顾客以为钱已经退了。这条防线守的是"承诺与事实不能分家"。
 
 
-## Ticket 12 — write idempotency state guard
+## Unit 12 — write idempotency state guard
 
 **Q：Redis 挂了会不会重复退款？**
 
@@ -240,7 +237,7 @@ A：会，而且应该留——`address_history` 每次带 version 递增，这�
 A：因为幂等验收（`verify-idempotency.ps1`）用的是显式同 token 重放，走的正是客户端带 token 那条分支，派生分支从来没有 JVM 用例覆盖。这次是评测链路把“真实对话里客户端不带 token”的形态跑出来了。
 
 
-## Ticket 13 — rate limiting
+## Unit 13 — rate limiting
 
 **Q：为什么不用 Sentinel 或网关自带的 RequestRateLimiter？**
 
@@ -255,7 +252,7 @@ A：这是实测踩到的坑——`trySetRate` 只在"没设置过"时生效，�
 A：不重复。限流管"这个买家每秒能问几次"，幂等管"同一个动作别执行两遍"，业务锁管"同一订单的两个不同动作别并发写"。三者键空间不同、失败语义不同。
 
 
-## Ticket 14 — fallback tickets local mode
+## Unit 14 — fallback tickets local mode
 
 **Q：降级原因你怎么证明不是写在纸上的？**
 
@@ -274,7 +271,7 @@ A：不会漏，只是不重复开单。工单里带 `(tenant, customer)`，另�
 A：字面显式表达在 T0 定案，不碰 embedding 也不碰模型，这是事故后补的最低可用线（ADR 0017）；换说法的求助（"叫你们经理过来"）仍走 T1/T2，embedding 超时就 fail-closed 进模型定案，模型也没了才落到 LLM_* 那几种 reason。三层各自兜一段，不承诺任何说法都不依赖服务，这句话写进 README 已知限制。
 
 
-## Ticket 15 — debug console
+## Unit 15 — debug console
 
 **Q：为什么不直接上 React + Vite？**
 
@@ -289,7 +286,7 @@ A：作用域不同。它只授权"演示环境的故障注入与复位"，默�
 A：它不保证——它只转发。每一帧都是 `SseEventSink` 写出来的原样内容，页面不做二次推断，所以后端加一个事件（比如 `duplicate_submit`）前端不改一行也能显示。这是刻意的：调试台一旦开始自己"编"状态，就失去作为证据的资格。
 
 
-## Ticket 16 — tool calling eval
+## Unit 16 — tool calling eval
 
 **Q：任务书说工具调用准确率 ≥95%，你这里最高 88.9%？**
 
@@ -344,7 +341,7 @@ A：后者是品味，一旦允许就没有边界（`ACT-ORD-13` 那条双诉求
 A：因为一个诚实的比率给不出来，就不硬凑。三分法是 57 条比对过且全对、3 条放开后合格工具已打出但明细当年没存它的实发参数（要重跑才判得了）、3 条工具仍未命中天然不可比对。把它们折算成 `57/60 = 95.0%` 是编一个不存在的读数，而本项目全部信用都在"数字怎么量的"这一句上。
 
 
-## Ticket 17 — threshold calibration
+## Unit 17 — threshold calibration
 
 **Q：那你这语义缓存不是白做的？80% 拦截率是虚的？**
 
@@ -359,7 +356,7 @@ A：换模型改变的是余弦分布，不改变"同意图桶内存在反义"�
 A：会，NEGATED 与 AFFIRMING 永不互用是有意的保守。A-not-A 判 NEUTRAL 不拦、句末语气词不拦，剩下的误杀在当前工作点不可测量（召回本来就是 0），且每次拒绝都打点，不是静默失效。
 
 
-## Ticket 18 — load test dual curves
+## Unit 18 — load test dual curves
 
 **Q：1200 QPS 是刷缓存刷出来的吧？**
 
@@ -386,7 +383,7 @@ A：把首字拆开量：单连接串行时服务端 TTFT 均值 725ms，其中 
 A：因为它量的不是首字而是第一个 SSE 分片（服务端在检索与模型之前就推 status/meta 帧），而且样本八成是缓存命中，等于拿"500 并发下命中路径的首帧"去对"未命中端到端首字"的判据。修法是首字只认 `event: token`、并按服务端自己报的 `cacheLayer`+`intent` 分桶，旧产物保留但降级标注为"首帧口径"。
 
 
-## Ticket 19 — materials star
+## Unit 19 — materials star
 
 **Q：README 上的数字你自己当场能复现吗？**
 
@@ -409,7 +406,7 @@ A：判据的对象是"提交物自不自足"，不是"某个人的手感"：HEA
 A：交付窗口（9/13，无余量）内不会有这个真人，而这条判据真正要防的东西此前每一项都是机器先撞出来的：容器名全局唯一挡住第二个检出、fat jar 文件锁、`.env` 在仓库外、入库依赖、内存挤死构建 JVM。人来了也只是重复机器已经能判的那一半，剩下那一半（换机）换个人也证不了。
 
 
-## Ticket 20 — action order attribution
+## Unit 20 — action order attribution
 
 **Q：改标注是不是为了让数字过线？**
 
@@ -432,7 +429,7 @@ A：三类反证都在机器上：把四处量具修复分别改回旧语义，`
 A：看现场而不是看等待时长——第三轮那次 `stack` 步 20 分钟不动，被冻住的 pwsh 是活的、19 线程、CPU 停在 5.546875 不再增长、**没有任何子进程**、`8082`/`8091` 始终不通，而它的日志最后四行是被拉起的第三方进程自己打的 `INFO`；这五条合起来指向"继承句柄的探活挂死"，不指向任何一条业务防线，因为业务防线连开口的机会都没有。同一套区分用在 `polarity` 的 `exit 3` 上：前置不成立时脚本自己拒绝下结论，栈不动单跑一次就绿，那种红也不记成防线失效，见 README「假红」一节。
 
 
-## Ticket 21 — bind address gated credential fail fast
+## Unit 21 — bind address gated credential fail fast
 
 **Q：为什么触发器取绑定地址，而不是新增一个 `prod` profile？**
 
@@ -447,7 +444,7 @@ A：反向代理、端口转发或同机进程都能让请求以回环地址到�
 A：守护规则必须判断进程真正会使用的值。两份默认值一旦漂移，就可能出现配置类放行而后置处理器认为未覆盖，或反过来把干净克隆起栈打死；单一来源让启动判断、观测字段和 mock 注册条件不可分家。
 
 
-## Ticket 22 — conversation owned by shop and customer
+## Unit 22 — conversation owned by shop and customer
 
 **Q：订单查询本来就按店铺 + 买家拦，为什么会话还要再加买家段？**
 
@@ -462,7 +459,7 @@ A：系统必须对“同一个人”只有一种判断。订单和幂等键用�
 A：旧键没有可靠的买家归属，要迁移只能维护一张 conv 到 customer 的映射和失效路径，正好违反 ADR 0025 的否决结论。旧键按 TTL 走，期间读到旧形状就当作无上下文，不报错也不污染新键。
 
 
-## Ticket 23 — dependency health outside readiness
+## Unit 23 — dependency health outside readiness
 
 **Q：为什么 Qdrant / ES / 知识库不进 readiness？**
 
@@ -477,7 +474,7 @@ A：修了两端：服务端第一次能明确区分“可接流量但已降级�
 A：先写新 ADR 明确这条依赖从可降级变为放行条件，再把对应 indicator 纳入 readiness 或单独的 ingress gate；不能只改脚本或页面，因为那会把运行时语义偷偷改成 stop-the-world。
 
 
-## Ticket 24 — mdc trace correlation across async
+## Unit 24 — mdc trace correlation across async
 
 **Q：为什么不用上下文传播库，手工 wrap 不是更容易漏？**
 
@@ -492,7 +489,7 @@ A：流式聊天的工作线程和缓存写回提交。工单升级在 `agent.ru
 A：`CallerRunsPolicy` 可能让任务在提交者线程直接执行。恢复快照能保证结束后外层请求仍保留自己的 trace、tenant、buyer、conversation；盲目 clear 只会让后半程日志失去归属。
 
 
-## Ticket 25 — rest error envelope
+## Unit 25 — rest error envelope
 
 **Q：为什么下游错误不也统一成同一个信封？**
 
@@ -507,7 +504,7 @@ A：信封解决“错误长什么样”，状态码解决“HTTP 层是什么�
 A：Spring 判定的多个 4xx 异常也是运行时异常，`HttpMessageNotReadableException` 就是例子。继承 `ResponseEntityExceptionHandler` 后由框架先保留原状态码，本类只负责换形状；变异/回退用例保证 400 与 405 都还会红。
 
 
-## Ticket 26 — debug console remaining defects
+## Unit 26 — debug console remaining defects
 
 **Q：为什么走查断言必须搬进 `verify-console.mjs`？**
 
@@ -522,7 +519,7 @@ A：Playwright 的 `fill()` 只发 `input`，不会等 `change` 失焦；运维�
 A：判断元素“还在 DOM”或“几何没有重叠”都不能证明点击最终落到哪个元素。`elementFromPoint` 直接验证 header 按钮仍然接得到指针，正是那次人工跑器超时暴露的缺陷形状。
 
 
-## Ticket 27 — writeback pool shutdown seam and saturation
+## Unit 27 — writeback pool shutdown seam and saturation
 
 **Q：为什么写回需要一个专用 seam，不能直接给 `ExecutorService` 多包几个监听？**
 
@@ -537,7 +534,7 @@ A：源码在 executor shutdown 后会判断 `isShutdown()` 并静默返回，�
 A：`dropped` 是强制停机时仍在队列、没被工作线程取走的写回；`caller_runs` 是队列饱和或池关闭后，由调用线程代跑的次数。前者表示停机损失，后者表示饱和代价，不能合并成一个数。
 
 
-## Ticket 28 — config format validation and secret non echo
+## Unit 28 — config format validation and secret non echo
 
 **Q：为什么不给四类敏感值加 `@NotBlank`？**
 
@@ -552,7 +549,7 @@ A：`GatewayProperties` 的聚合前缀是 `shoppilot`，而 `server.port` 属�
 A：约束消息只写配置字段名，不拼字段值；测试同时注入 JWT、模型 key、内部令牌、运维令牌并断言失败文本里四个当前值都不出现。
 
 
-## Ticket 29 — state gauges four groups
+## Unit 29 — state gauges four groups
 
 **Q：为什么不用 `resilience4j-micrometer` 桥？**
 
@@ -567,7 +564,7 @@ A：两次 Prometheus 抓取之间可以 OPEN 后立刻 CLOSED，瞬时 gauge �
 A：那会复制 `DependencyHealthConfiguration` 的判定；这里直接读 `deps` 健康组的端点读数，灯与指标天然说同一件事。
 
 
-## Ticket 30 — bookkeeping closure readme scopes and registries
+## Unit 30 — bookkeeping closure readme scopes and registries
 
 **Q：为什么指标名要在 README 里现场 grep 去重，不能手抄旧数量？**
 
@@ -582,7 +579,7 @@ A：ADR 0030 的 P1 清单当时不含这个缺陷，照票面写会伪造一个
 A：它是历史检出现场，重写等于事后篡改，删除则丢掉判断演进过程；顶部标注只负责阻止读者把旧基线当现状，文件本身继续原样保留且不入提交。
 
 
-## Ticket 31 — crash attribution and heap caps
+## Unit 31 — crash attribution and heap caps
 
 **Q：为什么不是按日志里的 `-Xmx` 继续调，而是改成百分比？**
 
@@ -597,7 +594,7 @@ A：它们是压测 headline 的数字条件，证据在 env JSON；崩溃日志
 A：本票只做证据与运维参数收口；历史读数是当时形态的一次性实测，重跑会换掉被测形态，反而破坏跨轮可比性。
 
 
-## Ticket 32 — ci subset gate
+## Unit 32 — ci subset gate
 
 **Q：为什么 CI 不直接跑 17 步全量？**
 
@@ -612,7 +609,7 @@ A：Ubuntu 更快、更便宜，而且这次确实先抓出了一个只在 Linux
 A：它只表示压缩线程已把临时文件删/移走，目标状态就是“文件不存在”；权限错误、句柄占用等仍标记 `retryNeeded`，在 5 秒预算内重试，清不干净仍由 JUnit 报红。
 
 
-## Ticket 33 — gateway main path jvm tests
+## Unit 33 — gateway main path jvm tests
 
 **Q：为什么不是 `@SpringBootTest` 全量起网关？**
 
@@ -627,7 +624,7 @@ A：缓存命中若又偷偷经过模型、`AgentStateMachine` 不再把工具�
 A：它只证明干净 runner 能构建并跑 224 条 JVM 测试；SSE 长连接、真实 ES/Qdrant、Ollama、浏览器和压测仍在 17 步活体验收里，名字保留正是为了不把两者混为一谈。（**换代指针（round17）**：224 → 当前 267，17 步 → 当前 22 步；"subset 不冒充全量"这条边界判据本身未变。）
 
 
-## Ticket 34 — eval subset ci
+## Unit 34 — eval subset ci
 
 **Q：为什么比对的是"差异集合"而不是 95.6% 这个分数？**
 
@@ -642,7 +639,7 @@ A：会，而且是故意的。扩 schema 改变了新字段用例的判法，�
 A：本机的 rescore 产物是"当次验证"的一次性读数，与 `tool-eval-20260911-042142-rescore.csv`（判据定版时的基线证据）内容相同；重复入库只会制造第二份数字表，违反 EVIDENCE 入账规则第 1 条。CI runner 本就临时，无此问题。
 
 
-## Ticket 35 — prompt versioning
+## Unit 35 — prompt versioning
 
 **Q：为什么版本文件只增不删、meta 指向缺失就炸启动？**
 
@@ -657,7 +654,7 @@ A：新建版本文件 + 改 `meta.json` 的 current + （若走门禁比对）�
 A：缓存条目没有记录产出时的版本（本票未给 CacheEntry 加字段——那是缓存判据域的改动）。登记的口径是"命中路径报告当前服务版本"，其归因边界写进了验收项 4；未来若要逐条归因，触发条件是"prompt 变更后需要区分新旧命中"成为真实需求。
 
 
-## Ticket 36 — sentiment gate
+## Unit 36 — sentiment gate
 
 **Q：为什么情绪门放在会话加载之后、待办续办之前？**
 
@@ -672,7 +669,7 @@ A：见验收项 5 的登记：含"投诉"的显式转人工现在走情绪门�
 A：ADR 0034 把词典定义为"改词条不改代码"的独立配置资产：它在自己的文件里带注释、按语义分三张表、被 0 token 单测直接驱动；application.yml 是网关运行参数，混进去会让"运营调词表"和"运维调网关"共享同一个变更面。数字词条加引号（YAML Integer 坑）已写进文件头注释。
 
 
-## Ticket 37 — feedback loop
+## Unit 37 — feedback loop
 
 **Q：为什么隐式信号只计数不落行？**
 
@@ -687,7 +684,7 @@ A：线索只服务"下一次点踩时的关联"这一件事，重启丢失的�
 A：负率口径（周聚合）需要分母，只有踩没有赞算不出率；UP 行 reviewStatus=NONE 不进队列，存储成本与审计价值对等。
 
 
-## Ticket 38 — channel adapter
+## Unit 38 — channel adapter
 
 **Q：为什么 webhook 三个标签（app/miniapp/webhook）共用一个适配器？**
 
@@ -702,7 +699,7 @@ A：诉求原文是下游全链路（意图判定、检索、评测）的唯一�
 A：/actuator/metrics/shoppilot_rate_limited_total 依旧给出跨渠道总和；要按渠道拆分用 /actuator/prometheus 的标签选择，`{dimension="buyer",channel="web"}`。压测口径不受影响（0917 产物里的 rate_limited 读数按名读取，语义相同）。
 
 
-## Ticket 39 — plan ordered steps
+## Unit 39 — plan ordered steps
 
 **Q：为什么中止而不是让模型自己判断后步还要不要做？**
 
@@ -717,7 +714,7 @@ A：取值路径越自由，注入面越大：模型可以构造 `steps[0].resul
 A：plan.length ≤ 2 与 ADR 0008 的 2 轮硬上限是同一条边界；放开到三步等于放开时延预算，那是另一个产品决策（触发条件写在 ADR 0040 的非目标表里）。
 
 
-## Ticket 41 — tool loop semantics pinned
+## Unit 41 — tool loop semantics pinned
 
 **Q：为什么超限判定要加一次预算外规划调用，而不是预算耗尽直接 FALLBACK？**
 
@@ -732,7 +729,7 @@ A：转录里保留未执行的 tool_call 才是谎言：严格端点因 tool_ca
 A：不能直接比。0917 等产物里的读数是旧口径（每次预算出口 +1，含正常两轮链），新口径只数真超限与写动作未办成；对比时要换算或重测。EVIDENCE 纪律下这是"指标口径演进"，不是改分母——旧产物保留原样，新读数从本票起算。
 
 
-## Ticket 42 — flyway baseline and validate
+## Unit 42 — flyway baseline and validate
 
 **Q：H2 是内存库，加迁移体系有什么意义？**
 
@@ -747,7 +744,7 @@ A：会，而且这正是要的。第 6 条变异对照就是证据：改一个�
 A：两条路径，都写在 `U1__baseline_down.sql` 文件头。本仓常规走第一条：H2 内存库每次起栈就是干净世界，设 `flyway.clean-disabled=false` 后 `clean` + `migrate` 即可，或直接重启进程。要保留数据时走第二条：手工执行文件里的 `drop table` 再删掉 `flyway_schema_history` 里 V1 那一行。**社区版没有 `undo`，这一点不糊弄。**
 
 
-## Ticket 43 — slow query index and explain evidence
+## Unit 43 — slow query index and explain evidence
 
 **Q：为什么两个真实缺索引的查询只补了一个？**
 
@@ -762,7 +759,7 @@ A：绝对数值没有意义，产物文档里明写了这条边界。有意义�
 A：`v2IndexesExist` 当场红；另外 `rejectedTicketListIndex` 里那笔被否决的测量仍在跑，它把「为什么没加另一个索引」变成可复跑的证据，而不是一句散文。
 
 
-## Ticket 44 — jacoco coverage ratchet
+## Unit 44 — jacoco coverage ratchet
 
 **Q：为什么门槛比实测低 1pp 而不是正好等于实测？**
 
@@ -777,7 +774,7 @@ A：设成当前值就已经拿到评分体系要的「防退化守卫」要件�
 A：round15 排除覆盖率的理由是「子集门禁不依赖外部服务」，JaCoCo 在进程内跑，那条理由对它不成立。这是一次范围边界的更正，已在该 spec 那一行留换代指针，其余 Out of Scope 项与全部门禁判据一字未动。
 
 
-## Ticket 45 — explicit escalation precedes sentiment
+## Unit 45 — explicit escalation precedes sentiment
 
 **Q：为什么不让情绪门只管情绪、显式转人工交给 T0 就行？**
 
@@ -792,7 +789,7 @@ A：成立，且没被削弱。它管的是**没有显式喊人**的高情绪；
 A：因为 ADR 0017 立这条 T0 词表的理由就是"人要不要来"不该由会抖的外部依赖决定。用模型判优先级等于把刚还回去的承诺再押在一次概率调用上；而 `转人工` 这类词是确定的、0 token 的、可枚举的。
 
 
-## Ticket 46 — sentiment second layer dev only
+## Unit 46 — sentiment second layer dev only
 
 **Q：为什么直接关掉 local 的第二层，而不是把它挪到缓存查询之后？**
 
@@ -807,7 +804,7 @@ A：是，而且是有意的——local 是演示与验收档，dev 才是云端
 A：因为 `hitzero` 步在 round17 之前是绿的，情绪门上来之后变红——一条此前成立的不变量被打破了，这是回归的定义。round17 spec 的活体验收登记也把它记成 F1（`sentiment_llm_classified_total=47/requests_total=50`），归因栏写的是「ADR 0034 未把第二层限定为 dev 口径」。
 
 
-## Ticket 47 — embedding latency timer
+## Unit 47 — embedding latency timer
 
 **Q：为什么一定要带 `result` 标签，不带不行吗？**
 
@@ -822,7 +819,7 @@ A：会，而且不该假装不会。311 是探针口径（另起一条新问句
 A：因为它是**唯一**没有服务端计时器的一段。TTFT、稠密检索、词法检索、模型四段早就有了；向量化那一步发生在 L2 查表内部，脚本注释当时就自陈「没有计时器包住，只能自己量一次放进来」。它恰好又是未命中 TTFT 里占比最大的一项（311/725），所以这是「观测盲区」而不是「指标不够多」。
 
 
-## Ticket 48 — plan as first class record
+## Unit 48 — plan as first class record
 
 **Q：`Plan` 现在是个真对象了吗？ADR 0036 说「有序步骤列表 ≤ 2」。**
 
@@ -837,7 +834,7 @@ A：看得到，只是出口不同——编造单号与缺槽位在 `trace` 里�
 A：`dispatcher.dispatch(...)` 的墙钟，也就是**工具派发这一跳**（含到 biz-mock 的 HTTP 往返与幂等处理）。模型耗时另有 `shoppilot_llm_latency_seconds`，两者不重叠、可相加。
 
 
-## Ticket 49 — done frame context composition
+## Unit 49 — done frame context composition
 
 **Q：`estimatedPromptTokens` 和 `usage.promptTokens` 有什么区别？**
 
@@ -852,7 +849,7 @@ A：不会，而且有机器证据：零召回那条用例断言 user 消息的�
 A：因为它和 `citations` 是同一件事的两种呈现（「注入了哪些条款」/「答案引用了哪些条款」）。各算各的就会出现两个数漂移而没人发现；同源同序 + 一条相等断言把这个问题从「可能发生」变成「不可能编译过不了用例」。
 
 
-## Ticket 50 — explicit output token cap
+## Unit 50 — explicit output token cap
 
 **Q：加输出上限，会不会把答案截断导致准确率掉？**
 
@@ -867,7 +864,7 @@ A：因为 Ollama 的 `/api/chat` 不认这个字段名，它把生成参数放�
 A：能跑，但输出长度完全由模型自行决定——一个跑飞的生成会把一次请求拖到读超时，而超时在链路上表现为降级（`LLM_TIMEOUT`），根因被藏在「模型不可用」后面。显式上限把这种失败模式从「偶发的降级」变成「确定的上限」。
 
 
-## Ticket 51 — context terms and style boundary
+## Unit 51 — context terms and style boundary
 
 **Q：风格档位传 `null` 是不是 bug？**
 
@@ -882,7 +879,7 @@ A：都对，是三个不同集合：枚举 10 是全集、「降级」= 枚举 
 A：因为术语表记的是**系统里存在的东西**。这两个概念当前不存在，写进去会让下一个读者以为它们存在——那正是 `可查工单` 条目 `_Avoid_` 里那句「工单回流（现状不存在此路径，别拿这个词指称它）」要防的事。它们的位置是 round19 spec 的登记节，带触发条件。
 
 
-## Ticket 52 — round19 registration closeout
+## Unit 52 — round19 registration closeout
 
 **Q：本轮有没有为了让结果变绿而动判据、阈值、gold？**
 
@@ -897,7 +894,7 @@ A：活体针对性步。它需要起栈 + Playwright，成本不高，但它是
 A：因为它们不是旁挂项——工单回流要改 ADR 0030 第 2 条的未承诺边界，审批会冲击 ADR 0008 的 2 轮时延预算论证。ADR 0033/0041 的先例把政策覆盖的范围限定在「不碰判据、阈值、gold、已锁定 ADR 结论」，越界就不是政策覆盖而是重写架构。它们进了登记节，各带触发条件。
 
 
-## Ticket 53 — feedback harness readings
+## Unit 53 — feedback harness readings
 
 **Q：这条断言现在到底是绿还是红？**
 
@@ -912,7 +909,7 @@ A：那正是功能改动，而且要先想清楚一件事——**判重放的�
 A：不算，方向和那条铁律相反——**改之前那两条断言恒为 `0 > 0` 恒假，即"从来没测过"；改之后它们真的开始读计数**。两条读数 bug 是脚手架缺陷（ADR 0031:10 豁免），`negative` 的刺激错和退款的买家错同属这一类：它们都不是"判据太严"，而是"刺激根本触发不了判据"。**修完仍有红的（`implied_retry`）我原样留着并写清了机制**，一条没摘。
 
 
-## Ticket 54 — emotion case reclassification
+## Unit 54 — emotion case reclassification
 
 **Q：把期望从 `EMOTION_ESCALATION` 改成 `USER_REQUESTED`，这不就是"改判据让结果变绿"吗？**
 
@@ -927,7 +924,7 @@ A：靠词典层而不是靠模型——它含 `破玩意儿`，在 `sentiment/l
 A：因为原来**根本没跑完**。队列反查只带了 `X-Ops-Token`，而该端点走 JWT 鉴权 → 401 → `ErrorActionPreference=Stop` 直接中止，所以 8 条 priority 反查与 12 条非升级断言从未执行，矩阵看到的"1 条红"其实是"跑到第 9 条就断了"。**这提醒一件事：一个 exit 1 的步骤，要看清它是"某条断言红了"还是"中途崩了"**——前者的证据力是判据结论，后者只是中断信号。我这次差点把两者当成一回事（上一次跑完我用 `EXIT=$?` 取到的其实是 `grep` 的退出码，误判成"全过"）。
 
 
-## Ticket 55 — plansteps registration corrections
+## Unit 55 — plansteps registration corrections
 
 **Q：`plansteps` 一直红，你凭什么说它不是缺陷？**
 
@@ -942,7 +939,7 @@ A：那正是 ADR 0043 明令禁止的"把判据改窄去适配实现"。改完�
 A：**取证结论也要核对，尤其当它要变成"更正"的时候。** 取证报告说"两处都引 `PlanExpressionTest`"，我如果照抄，就会在三个文件里删掉一个正确的引用——那等于用一次更正制造三处新错误。动手前 grep 一遍全仓（`grep -rn PlanExpressionTest`），成本几秒。
 
 
-## Ticket 56 — orderno provenance guard
+## Unit 56 — orderno provenance guard
 
 **Q：加一道溯源，会不会把"买家确实报了单号"的正常路径也拦掉？**
 
@@ -957,11 +954,11 @@ A：黑名单语义就是错的——`10023` 格式合法，问题不在它"是�
 A：因为 `eval/cases-part2-action.jsonl` 的 `ACT-LOG-12` **本来就写着** `"slotAsk": true` 且 `"mustNotContainArgs": ["orderNo"]`——判据没动，是代码没做到。修完那三条缺槽位用例的行为与 gold 对齐，gold 一个字没改（它还是内容级禁面，本票只复核不改动）。
 
 
-## Ticket 57 — metric count and report provenance
+## Unit 57 — metric count and report provenance
 
-**Q：为什么 `docs/interview-qa.md` 不直接改，绕道去改一张已收口的票？**
+**Q：为什么 `docs/architecture-faq.md` 不直接改，绕道去改源头记录？**
 
-A：因为它是**生成物**（`scripts/collect_interview_questions.py` 从各 ticket 的 Handoff 生成）。直接改生成物有两个坏处：下次重生成会被覆盖（改动静默消失），以及生成物与来源不一致（同一句话说两遍就有一遍是错的）。改源头再重跑是唯一能让"来源 → 生成物"这条链保持单一真相的做法。
+A：本文 2026-10-11 前是**生成物**（由各实现单元的收尾记录汇总，生成工具现已移出仓库、转为静态维护）。改生成物有两个坏处：下次重生成会被覆盖（改动静默消失），以及生成物与来源不一致（同一句话说两遍就有一遍是错的）。改源头再重生成，是让"来源 → 汇总"这条链保持单一真相的做法。
 
 **Q：`README.md:852` 那个 41 为什么不一起改成 52？**
 
@@ -972,7 +969,7 @@ A：那一行绑着 `commit=8c4b616` 那次落点的描述，是**历史读数**
 A：不是。`calibrate_threshold.py` **直连 Ollama、不经网关**，它拿不到网关的档位与知识纪元——这两格写 `-` 是"该维度对本脚本不适用"，不是"忘了填"。**表头的价值全在可信**，所以拿不到的维度宁可留空也不猜一个值。另一个脚本（`retrieval_compare.py`）走网关，所以它两格都填得上。
 
 
-## Ticket 58 — idempotent replay before the model
+## Unit 58 — idempotent replay before the model
 
 **Q：为什么回放要放在模型之前？放在幂等层（模型之后）不是更省事吗？**
 
@@ -987,7 +984,7 @@ A：不会，这正是 `queryHash` 那道条件的用处：指纹不等就**放�
 A：为了不给同一事实造第二本账。结果复制进索引就意味着存在两份可能不一致的副本（写一半失败、TTL 不同步收走），而本仓对这类形状有明确前科否决。多一次 Redis 读换"结果的唯一真相只有一个键"，这笔账在本项目的量级下是划算的。
 
 
-## Ticket 59 — refund approval gate
+## Unit 59 — refund approval gate
 
 **Q：为什么审批闸门做在业务侧的状态迁移上，而不是做在会话轮次里？**
 
@@ -1002,7 +999,7 @@ A：复用 `OK` 会让"已受理"与"已放行"在 `tool_result` 与 trace 里�
 A：`@TenantId` 的判别器作用于**查询**，不作用于 `find(id)`。这是本票实测发现的（跨租户审核返回 200）。显式比对后跨租户一律 `NOT_FOUND`，与订单归属口径一致；派生查询（如 `findByStatus...`）仍由判别器自动过滤。
 
 
-## Ticket 60 — buyer refund readback
+## Unit 60 — buyer refund readback
 
 **Q：为什么加一个新枚举而不是直接回传退款单的原始状态串？**
 
@@ -1017,7 +1014,7 @@ A：`message` 在本仓就是"给模型组织人话"的通道（`failure` 的 me
 A：不碰。gold 逐行断言 `{"tool","args","slotAsk"}`，**没有任何一条断言答案文本**，加字段构造上就碰不到判据；间接风险是 dev 模型答案文本可能变，那由活体复核（票 62）覆盖。
 
 
-## Ticket 61 — console refund review panel
+## Unit 61 — console refund review panel
 
 **Q：为什么退款审核入口放页脚而工单队列在页头？**
 
@@ -1032,7 +1029,7 @@ A：退款受理本来就要经模型（网关不为写动作派生工具调用�
 A：面板读不到订单状态（它列的是退款单）。该语义由 biz-mock 的 `RefundReviewTest` 在机器上钉住（驳回→推导回滚→再申请成功）；面板这趟只验队列清空，两者合起来才是完整判据。
 
 
-## Ticket 62 — refund approval live verification
+## Unit 62 — refund approval live verification
 
 **Q：为什么读回断言不用流式原文？**
 
@@ -1047,7 +1044,7 @@ A：前者在本地 3B 下落 `ACTION_REFUND` 且不调读工具（实测），�
 A：两条——驳回那一笔的读回原文出现「订单已恢复原状态」，以及第 7 步对同一订单**再次申请成功**（`PENDING_APPROVAL`）。若回滚没发生，订单仍在 `REFUNDING`，第二次申请会落 `STATE_NOT_ALLOWED`。
 
 
-## Ticket 63 — round21 closeout
+## Unit 63 — round21 closeout
 
 **Q：为什么 JVM 从 `3 + 21 + 276` 涨到 `5 + 29 + 290`，涨得最多的是 biz-mock？**
 
@@ -1062,7 +1059,7 @@ A：那是核对时发现的**过期数字**（round19 的票 48/49 就把它推
 A：不需要。本轮不改交付方向与冻结线；round21 是 ADR 0046 覆盖的一次政策覆盖轮，收口即回到 ADR 0031 机制，**不自动续期**（ADR 0046 的 Consequences 已写明）。
 
 
-## Ticket 64 — retrieval fusion replay gate
+## Unit 64 — retrieval fusion replay gate
 
 **Q：为什么重算放在 JVM 而不放在 Python？**
 
@@ -1077,7 +1074,7 @@ A：因为本票要修的正是「夹具对融合判别力为零」这个病。�
 A：守住了**排序流水线的确定性**（同样的两路序必然给出同样的融合序）、**四个常数没被悄悄改**、**语料没被悄悄换**、**夹具没被悄悄换**（哈希钉）。没守住**活体 hit@5 准确率** —— 那要连模型一起回放，代价高一个量级，仍挂在 round19 登记第 5 项上。
 
 
-## Ticket 65 — task level judgement
+## Unit 65 — task level judgement
 
 **Q：为什么单独一列而不给总分？**
 
@@ -1092,7 +1089,7 @@ A：离线明细不带 `plan`（它落的是 CSV，没有这一步的字段）�
 A：反例的成立前提是「四列都绿」——真跑里这个前提不可控（取决于模型与业务返回），而夹具用合成 result 就能**确定性地**证明「同一条 result 在四列上是绿的、在 `task_done` 上是红的」。判据的机器证明要的是确定性，不是一次运气好的真跑。
 
 
-## Ticket 66 — token source label
+## Unit 66 — token source label
 
 **Q：为什么不新增一个指标名来区分？**
 
@@ -1107,7 +1104,7 @@ A：`mode` 答的是「打哪个端点」（dev/local/perf），`source` 答的�
 A：没关系，而且必须没关系。预算管的是放行，本票管的是读数口径；`TokenBudgetTest` 原样通过就是「没动预算语义」的机器证据。
 
 
-## Ticket 67 — alert rules and promtool
+## Unit 67 — alert rules and promtool
 
 **Q：为什么这条算「触发已到」而不是「政策越过」？**
 
@@ -1122,7 +1119,7 @@ A：PromQL 的向量运算默认按标签集匹配。`shoppilot_fallback_total` 
 A：二进制入库是 ~100 MB 资产入仓、升级要走提交；容器镜像会把 `docker pull` 引进一个刻意零依赖的 CI 子集（其余步骤都不碰 Docker）。`curl` 固定版本 + 校验，把外部依赖**局限在一步内**、可 pin 可审 —— 这个代价写进了 ADR 0051。
 
 
-## Ticket 68 — round22 closeout
+## Unit 68 — round22 closeout
 
 **Q：round22 补上的到底是什么？**
 
@@ -1137,7 +1134,7 @@ A：因为本轮没有任何一处新增指标名。票 66 加的是标签（名
 A：**票 66**。ADR 0048 自己写明它最弱、可无损删：部署期模式固定，同一条序列里本来就不混计量方法，它换来的只是口径声明的机器可读性。若工期紧或评审认为不值，删掉它只损失一条用例与一个 tag。
 
 
-## Ticket readme — non goals
+## Unit readme — non goals
 
 **Q：为什么"有意不做"也要写进 README？**
 
@@ -1152,7 +1149,7 @@ A："出现第二实例部署"、"工具 P99 > 500ms"这类条件是可以被现
 A：会——触发条件满足时它就该被改写甚至删掉。这正是把它与"已知限制"分节的原因：那一节是长期事实，这一节是当前判断，修订成本低、修订信号明确。
 
 
-## Ticket style — engine
+## Unit style — engine
 
 **Q：为什么风格用"注入提示词"而不是"回答后处理改写"？**
 

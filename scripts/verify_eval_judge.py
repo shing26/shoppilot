@@ -50,7 +50,7 @@ EOL_BASELINE = {
     "eval/cases-part3-edge.jsonl": "lf",
     "eval/tool-cases.jsonl": "crlf",
     "PLAN.md": "crlf",
-    "docs/interview-qa.md": "crlf",
+    "docs/architecture-faq.md": "crlf",
     ".scratch/shoppilot-mvp/issues/12-write-idempotency-state-guard.md": "crlf",
     "scripts/run-dev-eval.ps1": "lf",
     "README.md": "lf",

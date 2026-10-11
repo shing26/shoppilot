@@ -69,4 +69,4 @@ pwsh -NoProfile -File scripts/demo.ps1
 > 「可运行的多租户客服系统雏形」这件事本身就是所有者的决定，由 ADR 0052 承载。
 > 所以上面第 4 条的适用范围是 round17 – round22，不是「v1.0.0 之后的所有轮次」。
 
-未触发的工作只登记到 [docs/interview-feedback.md](docs/interview-feedback.md)，不直接进入实现队列。
+未触发的工作只登记到 [`.scratch/shoppilot-mvp/registered-debt.md`](.scratch/shoppilot-mvp/registered-debt.md)，不直接进入实现队列。

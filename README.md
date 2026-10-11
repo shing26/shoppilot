@@ -2,7 +2,8 @@
 
 [![ci-subset](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
-这是已冻结的 `v1.0.0` 发布入口：[RELEASE.md](RELEASE.md)。想先看能否投递或快速理解，再进入作品集与证据库。
+这是 `v1.0.0` 的发布入口：[RELEASE.md](RELEASE.md)。快速理解看下面的「核心架构与工程验证索引」；
+逐条数字的证据文件与复现命令见 [docs/EVIDENCE.md](docs/EVIDENCE.md)。
 
 面向电商大促的高并发智能客服与业务网关：**静态政策 RAG + 动态业务 Tool Calling + 两级缓存 + 降级工单**，
 跑在 Java 21 虚拟线程与 Spring Boot 3.3.5 上。
@@ -12,16 +13,16 @@
 
 四个问题的答案都在下面，而且每条都带实测数字与证据文件——**没达成的也照写**。
 
-## 致面试官：两分钟导读
+## 核心架构与工程验证索引 (Architecture & Verification Map)
 
-不用自己翻仓库找亮点，按你想验证的东西直接去：
+按想核验的事情直接去：
 
-| 想看什么 | 去哪 | 一句话为什么值得看 |
-| --- | --- | --- |
-| 架构决策是怎么推出来的 | [`docs/adr/`](docs/adr/) | **65 个编号、64 篇成文**（0022 有意预留未占用），每篇写清背景、备选与后果——从「为什么工具循环 2 轮硬上限」到「为什么出站只有 2xx 才算送达」都有落点 |
-| 高并发压测与模型延迟剥离 | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 双曲线压测图：左图 QPS 拐点（对数轴，三条带缓存曲线在 1000 QPS 附近压平），右图延迟分位与 TTFT 判据线；**每请求真打一次 bge-m3 那条只有 24-65 QPS**——这就是模型延迟与编排延迟剥离后的读数。全部数字由脚本从 `loadtest/results/` 直读生成，不手工誊写；perf 口径 = MockLLM 固定延迟，量的是编排层 |
-| 真实故障怎么被挖出来的 | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 静默失败的三种形状：**门禁全绿，事件骨干却从未在真 Redis 上跑通**——语义只在内存替身上存在；用 Redis `MONITOR` 抓客户端真正发出的命令后定位三个缺陷，全部不报错、全在软依赖处；事后新增的 0 token 机器判据**第一次运行就抓到第三个缺陷** |
-| 本机把整套栈跑起来 | 下文「快速开始（一条命令）」 | `pwsh -NoProfile -File scripts/up.ps1`：中间件 → 拉模型 → 构建 → seed → 入库 → 起服务（前置 JDK 21 / Ollama / Docker / pwsh 7）。**注意 `docker compose up -d` 只起中间件**——四个域服务在 `full` profile 里，容器档是 `scripts/up.ps1 -Containerized`（要 `.env` 凭据，守卫会拒空凭证启动） |
+| 评估维度 | 依据路径 | 关键设计考量与实测读数 |
+| :--- | :--- | :--- |
+| **架构决策演进** | [`docs/adr/`](docs/adr/) | 65 个编号 / 64 篇成文（0022 有意预留未占用），每篇含选型权衡、备选方案与后果推演 |
+| **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求真打一次 bge-m3 为 24-65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平；全部数字由脚本从 `loadtest/results/` 直读生成 |
+| **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0 token 判据抓出三个隐蔽缺陷 |
+| **全套技术栈本地运行** | [快速开始](#快速开始一条命令) | `pwsh -NoProfile -File scripts/up.ps1`：中间件 → 拉模型 → 构建 → seed → 入库 → 起服务；容器档严格执行凭据校验，空凭证由启动守卫拒启 |
 
 下一节就是三十秒架构图与「防线开 vs 关」数字看板，再往下有两段现场录像。
 所有对外数字都有证据文件（[`docs/EVIDENCE.md`](docs/EVIDENCE.md)）与复现命令，未达成的三条**保持红值**。
@@ -103,7 +104,7 @@
 
 ![调试台](docs/console.png)
 
-> 坐席工作台（`/workspace/`，round23 票 73）：工单队列、领取、处理完成、释放。凭证是 `X-Ops-Token` + 自报坐席名（**真身份域是下一轮**，ADR 0056）。
+> 坐席工作台（`/workspace/`）：工单队列、领取、处理完成、释放、退款审核。凭证是坐席账号登录（身份域见 ADR 0056/0058）。
 
 ## 两段现场录像
 
@@ -157,12 +158,11 @@ python scripts/compose-polarity-gif.py    # 合成 docs/polarity-guard-demo.gif
 按目的先读下面入口，再进入 ticket 和源码：
 
 - 想先知道这个项目有什么、在哪、到哪一步了：[`DELIVERY.md`](DELIVERY.md)：交付契约入口页，一屏。
-- 想 3 分钟看懂：[`docs/portfolio-interview.md`](docs/portfolio-interview.md)：架构、四个问题、三个数字和一个踩坑。
-- 想先看是否值得投递：[`docs/portfolio-hr.md`](docs/portfolio-hr.md)：五行项目摘要。
-- 想系统准备面试：[`docs/interview-guide.md`](docs/interview-guide.md)：八站掌握路线、练习顺序与追问答法。
+- 想按请求生命周期读关键决策：[`docs/design-walkthrough.md`](docs/design-walkthrough.md)：八站架构走读与复现命令。
+- 架构与选型的常见疑问：[`docs/architecture-faq.md`](docs/architecture-faq.md)：238 问，答案取自实现当时的收尾记录。
 - 想核对全部证据：[`docs/EVIDENCE.md`](docs/EVIDENCE.md)：数字对应的报告、原始产物与复现命令。
 - [`AGENTS.md`](AGENTS.md)：接手顺序、source of truth、修改禁令、验证与 Handoff 流程。
-- [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)：按项目定位制定的 v1.0 收口、作品集与冻结路线。
+- [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)：v1.0 收口与冻结策略的原始实施计划（2026-09-08，历史文档）。
 - [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-116 的当前状态；[`registered-debt.md`](.scratch/shoppilot-mvp/registered-debt.md)：欠账总账（每笔要么有触发条件、要么有「永不做」的裁决）。
 - [`docs/CODE_MAP.md`](docs/CODE_MAP.md)：模块所有权、请求链路源码落点和已知代码债候选。
 
@@ -194,10 +194,10 @@ UP/DOWN（ADR 0026）。这一组**刻意不进 readiness**——缓存、模型
 调试台左上角那颗灯读 `deps`，它从这一轮起才有能力变红（三态：齐 / 降级 / 读不到读数）。
 
 要停：`pwsh -NoProfile -File scripts/down.ps1`（加 `-Containers` 连中间件一起停，数据卷保留）。
-停机预算 35 秒（票 27）：HTTP 收尾走 `server.shutdown: graceful` 的 Spring 默认 30 秒，缓存写回池 drain 另给
+停机预算 35 秒：HTTP 收尾走 `server.shutdown: graceful` 的 Spring 默认 30 秒，缓存写回池 drain 另给
 5 秒——宽限内落不完的笔数记在 `shoppilot_writeback_dropped_total` 上；`stop.ps1` 等端口释放的超时默认 40 秒，
 不小于这个预算，预算没走完不报「停了」。
-两个服务从票 31 起都带显式堆上限：网关 `-XX:MaxRAMPercentage=3`（16 G 机上约 491 MB），业务 Mock
+两个服务都带显式堆上限：网关 `-XX:MaxRAMPercentage=3`（16 G 机上约 491 MB），业务 Mock
 `-XX:MaxRAMPercentage=2`（约 327 MB）；看门狗重启业务 Mock 时抬到 4%。历轮压测读数按当时 `-Xmx512m` /
 `-Xmx256m` 的启动形态原样供着，**不承诺换到这个起栈形态后逐位复现**。
 
@@ -210,15 +210,15 @@ ollama pull bge-m3                                # embedding，1024 维，全�
 ollama pull qwen2.5:3b                            # local 模式的生成模型
 mvn -o -DskipTests package                        # 干净机器去掉 -o 联网取依赖；或用 .\mvnw.cmd
 pwsh -NoProfile -File scripts/start-bizmock.ps1   # :8091，seed 3 租户 / 200 买家 / 5 万订单
-pwsh -NoProfile -File scripts/start-ticket.ps1    # :8092，工单与坐席服务（round23 票 72）
-# 坐席工作台（round23 票 73）：http://127.0.0.1:8082/workspace/ （由网关同源提供，见 frontend-workspace/）
-# 可选容器档（round24）：四个域服务跑在容器里。**要导出/放置凭证**——ADR 0029 的守卫会在容器内
+pwsh -NoProfile -File scripts/start-ticket.ps1    # :8092，工单与坐席服务
+# 坐席工作台：http://127.0.0.1:8082/workspace/ （由网关同源提供，见 frontend-workspace/）
+# 可选容器档：四个域服务跑在容器里。**要导出/放置凭证**——ADR 0029 的守卫会在容器内
 # 绑定 0.0.0.0 时检查 SHOPPILOT_INTERNAL_TOKEN / SHOPPILOT_OPS_TOKEN / SHOPPILOT_JWT_SECRET 三处，
 # 缺任一（或运维端点没显式关闭）就拒绝启动。这是那条防线按设计工作，不是配置错误。
 pwsh -NoProfile -File scripts/up.ps1 -Containerized      # 首次要构建镜像（数分钟）
 pwsh -NoProfile -File scripts/down.ps1 -Containerized
 # 另一份克隆想并存：给它一份自己的 .env（端口整体右移 + 上面那三处凭证）即可
-# 验收矩阵分两档（round23 票 74）：档位切的是**步骤集合**，判据逐字相同
+# 验收矩阵分两档：档位切的是**步骤集合**，判据逐字相同
 pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier daily   # 日常档：不起栈，只跑 0 token 与 JVM 层（≈3.5 GB → 实际不到 1 GB）
 pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四服务 + 活体链路（≈7 GB，仅清场日）
 pwsh -NoProfile -File scripts/ingest.ps1          # 30 篇政策 -> 90 规则块 -> ES + Qdrant，推进 kb_epoch
@@ -269,7 +269,7 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
                              |
                     +--------v---------+        HTTP + X-Internal-Token（跨进程边界，ADR 0002）
                     | biz-mock :8091   |        H2 + Spring Data JPA，@TenantId 行级隔离
-                    | ticket :8092     |        H2 + Flyway，工单表与分流规则表随服务搬走（票 72）
+                    | ticket :8092     |        H2 + Flyway，工单表与分流规则表随服务搬走
                     | orders logistics coupons refunds tickets
                     +------------------+
 ```
@@ -690,7 +690,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 | 接厂商 SDK | OpenAI 兼容端点 + 自写 HTTP 客户端 | 少 200 行依赖，换来 dev/local 同一条调用路径（ADR 0012） |
 | Redis 不可用时拒绝一切写操作 | 照常执行，交给 DB 唯一约束 | 幂等存储是加速器不是正确性来源；为它把大促写操作全拒掉是本末倒置 |
 
-## 面试讲法（STAR）
+## 三条主线叙述（矛盾 → 决策 → 数字）
 
 三条，每条先摆矛盾，再讲决策，最后给数字。
 
@@ -1081,8 +1081,8 @@ native OOM 归因分五票落地，指标名按三模块 `src/main` 去重后为
 | 18 | `run_experiment_suite.ps1` → `loadtest/results/`（每组一份 `env-*.json`）+ `build_loadtest_report.py`；首字那一格另有 `run_ttft_sweep.ps1`（分桶并发扫描）、`ttft_attribution.py`（服务端计时器分解）、`probe_embedding_latency.py`（单条向量化实价）、`plot_ttft_sweep.py` |
 | 19 | 得由没参与的人照本页跑一遍才算；机器侧最接近的是 `run-acceptance.ps1 -Only stack,demo`，同机全量矩阵里这两步实测 80s / 12s（索引行原来写的 `69s / 13s` 与第三轮任何一次落点跑法都不符，随换轮一并改；**但第三轮订正时我把那句话说过头了**——写成「与本机任何一份落盘矩阵都不符」，而 09-09 的 `logs/acceptance-run5.log` 里 `stack 0 ok / 69s` + `demo 0 ok / 13s` 是成对在的：它是更早一天的真读数，只是不属于这一轮任何一次跑法。收口审计 H2 钉住那一对确实存在，H2b 钉住 README 里不许再出现那种全称否定） |
 
-各 ticket 的实现决策与"当时能答上来的三个追问"记在 `.scratch/shoppilot-mvp/issues/`，
-汇总清单：`python scripts/collect_interview_questions.py` → [docs/interview-qa.md](docs/interview-qa.md)。
+各实现单元的决策与"当时能答上来的三个追问"记在 `.scratch/shoppilot-mvp/issues/`，
+汇总成静态问答：[docs/architecture-faq.md](docs/architecture-faq.md)（238 问，不再随轮次更新）。
 
 压测与标定脚本要一份独立 venv（起栈与三条演示不需要它）：
 `python -m venv .venv-loadtest` 后 `pip install -r loadtest/requirements.txt`，
@@ -1100,7 +1100,7 @@ shoppilot-tool-api/    纯契约 jar：10 意图枚举 + Function Schema + 工�
 loadtest/              locustfile（四种流量模型）与 results/（保留 ladder-*.csv 与 env-*.json）
 eval/results/         工具调用评测 CSV/meta（入库的评测证据）
 docs/adr/              ADR 0001-0060（0022 未占用），正文里每处 ADR 编号都能点进去
-docs/                  阈值标定、意图标定、检索对比、压测报告、证据地图、代码地图、面试问答清单
+docs/                  阈值标定、意图标定、检索对比、压测报告、证据地图、代码地图、架构与选型问答
 knowledge/             30 篇政策语料
 scripts/               up/down/start/stop、ingest、demo、verify-*、run_loadtest、实验矩阵、TTFT 扫描与归因、报告生成
 .scratch/shoppilot-mvp/ 正式 tracker、round spec、票 01-99、收口审计、欠账总账；不是临时草稿目录
