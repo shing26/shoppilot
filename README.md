@@ -1,115 +1,102 @@
-# ShopPilot
+# Shoppilot
+
+> 面向不可靠大模型的防御式 Agent 运行时与高可用网关底座。
 
 [![ci-subset](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
+[![ADR](https://img.shields.io/badge/Architecture-64_ADRs-blue)](docs/adr/)
 
-这是 `v1.0.0` 的发布入口：[RELEASE.md](RELEASE.md)。快速理解看下面的「核心架构与工程验证索引」；
-逐条数字的证据文件与复现命令见 [docs/EVIDENCE.md](docs/EVIDENCE.md)。
+在企业级生产环境中，大模型（LLM）具有高延迟、非确定性、发散死循环以及向量相似度反义误召回等天然缺陷。
+**Shoppilot** 不依赖重型黑盒 Agent 框架，基于 Spring Boot 3.3 与 Java 21 虚拟线程构建，
+用确定性的经典系统工程护栏治理不确定性的大模型应用。它要回答四个工程问题：
+**重复热点怎么不进模型、对话怎么真的改成订单、语义缓存怎么不把反义问句串到一起、外部依赖挂了怎么兜住**。
 
-面向电商大促的高并发智能客服与业务网关：**静态政策 RAG + 动态业务 Tool Calling + 两级缓存 + 降级工单**，
-跑在 Java 21 虚拟线程与 Spring Boot 3.3.5 上。
+发布声明与冻结策略见 [RELEASE.md](RELEASE.md)；逐条数字的证据文件与复现命令见 [docs/EVIDENCE.md](docs/EVIDENCE.md)——**未达成的也照写**。
 
-它要回答的不是"能不能对话"，而是大促洪峰下的四个工程问题：重复热点怎么不进模型、
-对话怎么真的改成订单、语义缓存怎么不把反义问句串到一起、外部依赖挂了怎么兜住。
+## 🧭 核心架构与工程验证索引 (Architecture & Verification Map)
 
-四个问题的答案都在下面，而且每条都带实测数字与证据文件——**没达成的也照写**。
+为技术评审者与架构师提供系统关键设计、故障定位与实测读数的直接检索通道：
 
-## 核心架构与工程验证索引 (Architecture & Verification Map)
-
-按想核验的事情直接去：
-
-| 评估维度 | 依据路径 | 关键设计考量与实测读数 |
+| 评估维度 | 文档与证据依据 | 核心读数与工程考量 |
 | :--- | :--- | :--- |
-| **架构决策演进** | [`docs/adr/`](docs/adr/) | 65 个编号 / 64 篇成文（0022 有意预留未占用），每篇含选型权衡、备选方案与后果推演 |
-| **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求真打一次 bge-m3 为 24-65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平；全部数字由脚本从 `loadtest/results/` 直读生成 |
-| **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0 token 判据抓出三个隐蔽缺陷 |
-| **全套技术栈本地运行** | [快速开始](#快速开始一条命令) | `pwsh -NoProfile -File scripts/up.ps1`：中间件 → 拉模型 → 构建 → seed → 入库 → 起服务；容器档严格执行凭据校验，空凭证由启动守卫拒启 |
+| **架构决策推演** | [`docs/adr/`](docs/adr/) | 65 个编号 / 64 篇成文（0022 有意预留未占用），包含完整选型权衡、备选方案与后果推演。 |
+| **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络抖动：每请求真打一次 bge-m3 为 24-65 QPS，编排层三条带缓存曲线压平在 1000 QPS 附近。 |
+| **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流定位；通过 `MONITOR` 取证与新增 0 token 判据抓出三个隐蔽缺陷。 |
+| **全套技术栈本地运行** | [快速开始](#-快速开始一条命令-quickstart) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |
 
-下一节就是三十秒架构图与「防线开 vs 关」数字看板，再往下有两段现场录像。
-所有对外数字都有证据文件（[`docs/EVIDENCE.md`](docs/EVIDENCE.md)）与复现命令，未达成的三条**保持红值**。
+## 🏗️ 核心架构流向 (Architecture Topology)
 
-## 三十秒：一次请求怎么流过这座网关
+流量自入站端点进入，依次经过意图级联防御、缓存击穿防护、有界运行时执行与状态转移门禁：
 
-```
-                 入站（都只跟 :8082 说话）
-  浏览器 Web SSE ──┐
-  飞书 WSS 长连接 ──┼──► 网关 :8082 · Java 21 虚拟线程 · Spring Boot 3.3.5
-  webhook / email ─┘        │
-                            ▼
-  INTAKE      验签 → TenantContext（身份只来自已验签 token，body 里塞 tenantId 被忽略）
-              情绪门（ADR 0034）：词典层 0 token 定案，高情绪先于意图判定转人工
-                            │
-  TRIAGE      T0 规则 ──► T1 向量质心 ──► T2 模型（仅不确定时）
-              字面「转人工」在 T0 定案：不碰 embedding，向量服务挂了也转得出去（ADR 0017）
-                            │
-        ┌───────────────────┴────────────────────────────┐
-        ▼                                                ▼
-  CACHE_READ（仅政策意图）                        RETRIEVE（知识路径）
-  L1 精确哈希：零向量化，命中 P99 22 ms、         Qdrant dense top20 + ES BM25 top20
-  模型调用增量恒为 0                              → RRF(k=60) → top5 注入 Prompt
-  L2 语义缓存：cosine ≥ 0.95 + 极性守卫
-  反义对（「能退」vs「不能退」余弦 0.9682）
-  阈值拦不住，由词法极性词典当场拒复用
-        │
-        ▼  miss
-  PLAN        有序步骤（≤2 步；前序依赖只认 `{steps[i].result.<field>}` 白名单表达式，ADR 0036）
-        │
-  TOOL_EXEC   HTTP → biz-mock :8091（跨进程边界带内部凭证，ADR 0002）
-               **硬上限 2 轮**：超限落 TOOL_ROUNDS_EXHAUSTED 降级，不拿失败前提硬办后步
-               涉资操作（退款/改地址）**剥离模型执行权**：只生成草案 → PROPOSED 状态
-               → 坐席审核；B3 起资金动作必须已验签坐席账号，自报头不再受理（ADR 0063）
-        │
-  SLOT_ASK    必填槽位缺失就追问，绝不猜订单号；两轮拿不到 → 转人工
-        │
-  REPLY       风格注入（channel × emotion，同一次调用不二次改写）→ SSE 流式，done 带 citations
-        │
-  CACHE_WRITE 异步写回，先过七道资格判定（降级话术、空答案、用过工具的答案都不写）
-
-  FALLBACK    9 种降级 reason → 每种落**可查工单**（不是日志里一行字）
-        │
-  Redis Streams 事件总线：工单 resolve → channel.outbound → 投递回原渠道，**只有 2xx 算送达**
-              三个前端：/ 调试台 · /workspace/ 坐席工作台 · /buyer/ 买家中心
+```text
+[用户请求 Inbound Request] (Web SSE / 飞书长连接 WSS / webhook / email)
+       │
+       ▼
+┌────────────────── 1. 意图分流与级联防御 (Triage Cascade) ──────────────────┐
+│  [T0 规则匹配] ──(高频确定性政策/人工接入)──> 毫秒级直接响应 (0 Token)        │
+│       │ (未命中)                                                           │
+│  [T1 向量质心] ──(高置信语义变体)──────────> 免模型直接路由                  │
+│       │ (复杂意图)                                                         │
+│  [T2 模型推理] ──(单次模型决策与参数抽取)────> 进入 Agent 运行时状态机       │
+└──────────────────────────────────────┬────────────────────────────────────┘
+                                       │
+       ┌───────────────────────────────┴────────────────────────────────┐
+       ▼                                                                ▼
+┌─ 2. 缓存体系与击穿防御 ──────────────┐              ┌─ 3. 有界状态机与涉资门禁 ──────────────┐
+│  • SingleFlight: 消除同类并发穿透    │              │  • 两轮硬约束 (Max 2 Rounds) 阻断死循环 │
+│  • L1 精确缓存 / L2 向量语义缓存    │              │  • 涉资操作 (退款/改址) 剥离直接执行权  │
+│  • Polarity Guard: 阻断反义词误命中 │              │    仅生成提案 (PENDING_APPROVAL) 停进  │
+│                                     │              │    工单审核队列，等待人工放行           │
+└─────────────────────────────────────┘              └──────────────────┬─────────────────────┘
+                                                                        │
+                                        [工单审核队列] ──┴──> [人工客服工作台审批（放行/驳回，记进审计）]
+                                                         │ resolve
+                                     [Redis Streams 事件总线] ──> [结果回流原渠道，只有 2xx 算送达]
 ```
 
-图里每一格都能在 `docs/CODE_MAP.md` 找到源码落点；完整状态机逐态说明见下文「请求主链路」。
+各格的源码落点见 [`docs/CODE_MAP.md`](docs/CODE_MAP.md)；状态机逐态说明见下文「请求主链路」。
 
-## 数字看板：防线开 vs 关
+## 🛡️ 核心工程防线 (Defensive Engineering Highlights)
 
-**先说清楚这张表的对照是什么**：本仓**没有**对第三方开源 Agent / 裸 LLM 串联的横评——
-不同机器、不同流量模型、不同判据的数字摆在一张表里没有意义。这里的两列是
-**同一套流量模型、同一台机器、同一份计数器口径下，把防线逐个关掉**测出来的
-（`loadtest/results/ladder-*-nocache*`、`nocache,nosf`、`no-ollama` 三档）。
-关掉防线的那个"自己"，就是这个系统里裸调的等价物。
+### 1. 三级意图级联分流 (Deterministic Triage)
 
-| 维度 | 关掉防线（同仓实测） | 开着防线（同仓实测） | 工程收益与口径 |
-| --- | --- | --- | --- |
-| 命中路径延迟 | 走完整检索 + 模型调用 | **P99 22 ms**（200 并发，未饱和队列读数；100 并发 32 ms） | L1 精确哈希零向量化 + 命中路径模型调用增量**恒为 0**（`verify-hit-zero-llm.ps1` 计数器断言） |
-| 单请求 token | **1096.8** token/请求（nocache,nosf 档） | **412.3** token/请求 | 节约 **62.4%**；三档只差防线开关，perf 的 Mock 按模板估算，不是计费口径 |
-| 冷缓存击穿 | 8 分钟 **35264 次**远程 embedding 全部失败，拦截率掉到 0 | 同类并发合并后 **18 次**，拦截率回到 77.6% | 进程内向量 LRU + 每问句穿透合并（等者拿完整结果，不做 token 流广播）；ADR 0018 另把"检索失败不算零命中"，防一次抖动写 60 秒负标记 |
-| 语义缓存投毒 | 「能退」与「不能退」余弦 **0.9682**，越过 0.95 工作点，阈值与意图分区都拦不住 | 极性守卫词法判定，反义对 **8/8 不互命中** | 不调阈值换召回（0.85 处 precision 只有 0.231）；代价是两桶永不互用，而 0.95 工作点 L2 召回实测本来就是 0，代价不可测量 |
-| Agent 发散 | 自由循环直到"任务完成"，没有轮次上界 | **2 轮硬上限**，超限落 `TOOL_ROUNDS_EXHAUSTED` 可查工单；缺槽位最多追问一次 | 涉资操作另外只生成草案，不进模型执行权；50 并发同幂等 token 库里仍只有 1 行 |
-| 外部依赖挂了 | 500 或长时间挂起 | 同一条 SSE 通道推 `fallback{reason, ticketId}`，工单号可反查 | 7/7 降级 reason 帧内 ticketId 都能从队列读回（`verify-fallback.ps1`） |
+大模型全量承接请求不仅开销高昂，长尾延迟极高。Shoppilot 采用三级递进式路由：
 
-每一行的口径、反证与"红在哪"在下面「指标与口径」「验收对照」两节，未达成的三条（拦截率、吞吐、TTFT）**保持红值**，不改分母刷绿。
+- **T0 规则层**：正则与关键词字典强匹配，毫秒级响应并阻断高频咨询（如运费规则、人工转接），模型调用降为 0；字面「转人工」在 T0 定案，向量服务挂了也转得出去。
+- **T1 向量质心层**：常见问句的语义变体通过质心距离快速定案意图，高置信度直接路由，不触发模型。
+- **T2 模型推理层**：仅复杂、多轮或参数未闭环场景才触发大模型推理。
 
-| | |
-| --- | --- |
-| 命中路径 P99 | **22 ms**（200 并发，perf 模式；**未饱和队列下的读数**；100 并发 32 ms，400 起进入排队） |
-| 缓存总拦截率 | **74%**（L1 主导模型）/ **78%**（任务书 80% 命中口径）— 判据 ≥80%，**未达成**；分母 30% 按 ADR 0003 不准入缓存，指标定义与架构决策冲突已知、**裁决挂起**（ADR 0030 第 4 条），红不摘 |
-| 吞吐峰值 | **1013 QPS** @800 并发，错误率 0% — 判据 ≥1200，**未达成**，归因见下 |
-| Token 节约率 | **62.4%**（实测，不是任务书里的 75%） |
-| 虚拟线程收益 | 400-800 并发 **+64%**；100-200 并发无收益 |
-| 降级路径 | 降级 9 种（= `FallbackReason` 枚举 10 − 主动转人工 1），其中 6 种有脚本逐条复现（脚本另断言一条主动转人工；限流那条只在真打出 429 时才落行），且每种都落成工单；「可查」仅限业务 Mock 进程生命周期（跨重启与 RESOLVED 回流不承诺，定义见 `CONTEXT.md`、ADR 0030 第 2 条） |
+### 2. 两轮有界状态机与涉资操作门禁 (Bounded FSM & HITL Gate)
 
-完整口径与逐条对照：[docs/loadtest-report.md](docs/loadtest-report.md)、[docs/threshold-calibration.md](docs/threshold-calibration.md)。
+- **有界执行（Max 2 Rounds）**：解决 ReAct 式模型陷入自我反思死循环的通病。网关严格限制 Tool-Calling 执行轮次上限为 2 轮，超过阈值落 `TOOL_ROUNDS_EXHAUSTED` 可查工单，不拿失败前提硬办后步。
+- **人机协同门禁（State Transition Gate）**：针对退款、改收货地址等资金敏感与状态变更操作，模型只具备「提议权」——动作停在 `PENDING_APPROVAL`，停进工单审核队列，由已验签坐席在工作台放行/驳回并记进审计，杜绝模型越权与不可抵赖风险。
 
-![调试台](docs/console.png)
+### 3. L1/L2 双层缓存与极性守卫 (Polarity Guard)
 
-> 坐席工作台（`/workspace/`）：工单队列、领取、处理完成、释放、退款审核。凭证是坐席账号登录（身份域见 ADR 0056/0058）。
+- **SingleFlight 并发合并**：同一问句的高并发穿透请求自动合并，单个周期仅打一次向量检索/模型推理（等待者拿完整结果，不做 token 流广播），避免瞬时配额耗尽。
+- **极性守卫机制**：余弦相似度在极短反义 Query 下存在天然盲区——「这个能退吗」与「这个不能退吗」实测余弦高达 **0.9799**，越过 0.95 工作点，阈值与意图分区都拦不住。Shoppilot 在 L2 语义缓存命中后接入词法极性校验，反义词命中时强制判定 Cache Miss 并穿透，反义对 **8/8 不互命中**，消除语义缓存投毒。
 
-## 两段现场录像
+## 📊 性能表现与实机证据 (Benchmarks & Evidence)
 
-两张 GIF 都是当场抓的：画面内容全部来自浏览器截图，右栏的每一行来自网关日志文件与 `/actuator`
-计数器；标题栏、字幕与栏标签是合成脚本的排版注记。采集与合成脚本都在仓库里：
+### 1. 防线全开 vs 防线关闭基准对照
+
+**先说清楚这张表的对照口径**：没有对第三方 Agent / 裸 LLM 的横评——两列是**同一套流量模型、同一台机器、同一份计数器口径下，把防线逐个关掉**测出来的（`loadtest/results/ladder-*` 各档）；关掉防线的那个「自己」，就是这个系统里裸调的等价物。
+
+| 评估维度 | 防线关闭（同仓实测） | 防线开启（同仓实测） | 工程收益 |
+| :--- | :--- | :--- | :--- |
+| **命中路径延迟** | 走完整检索 + 模型调用：未命中 TTFT P50 690 → 1499 ms（50 → 500 并发；判据 500 ms，**未达成**） | **P99 22 ms**（200 并发；100 并发 32 ms），模型调用增量**恒为 0** | 高频咨询不进模型，延迟大幅下降 |
+| **冷缓存击穿** | 8 分钟 **35264 次**远程 embedding 全部失败，拦截率掉到 0 | 同类并发合并后 **18 次**，拦截率回到 77.6% | 进程内向量 LRU + SingleFlight 穿透合并 |
+| **反义短句缓存判定** | 「能退」vs「不能退」余弦 **0.9682**，越过 0.95 工作点，阈值与意图分区都拦不住 | 极性守卫词法判定，反义对 **8/8 不互命中** | 阻断虚假命中造成的错误答复，且不调阈值换召回 |
+| **调用边界失控** | 自由循环直到「任务完成」，没有轮次上界 | **2 轮硬上限**，超限落 `TOOL_ROUNDS_EXHAUSTED` 可查工单；50 并发同幂等 token 仍只有 1 行退款 | 保证调用边界，消除失控递归 |
+| **单请求 token** | **1096.8** token/请求（nocache,nosf 档） | **412.3** token/请求 | 节约 **62.4%**（perf 的 Mock 按模板估算，非计费口径） |
+
+逐行口径、反证与「红在哪」见下文「指标与口径」「验收对照」两节；未达成的三条（拦截率、吞吐、TTFT）**保持红值**，不改分母刷绿。
+
+### 2. 现场录屏演示 (Real-Runtime Demos)
+
+- **极性守卫阻断演示**（[`docs/polarity-guard-demo.gif`](docs/polarity-guard-demo.gif)）：实测高相似反义句触发 L2 命中时，被守卫判定 `polarity-conflict` 并强制穿透的真实日志与响应流。
+- **涉资动作人机协同门禁**（[`docs/refund-hitl-demo.gif`](docs/refund-hitl-demo.gif)）：买家触发退款后，模型工具调用生成待审提案，工单系统流转至工作台审核放行的闭环过程。
+
+两张 GIF 都是当场抓的：画面内容全部来自浏览器截图，右栏的每一行来自网关日志文件与 `/actuator` 计数器（标题栏、字幕与栏标签是合成脚本的排版注记）。采集与合成脚本都在仓库里，且自带断错——SSE 一帧没抓到、日志里没有极性守卫行、SSE 帧含 U+FFFD（编码链路坏）→ 抛错退出，不产出「看起来成立」的 GIF：
 
 ```bash
 node scripts/capture-refund-hitl.mjs      # 抓帧：退款涉资动作的人机协同
@@ -118,66 +105,53 @@ python scripts/compose-refund-gif.py      # 合成 docs/refund-hitl-demo.gif
 python scripts/compose-polarity-gif.py    # 合成 docs/polarity-guard-demo.gif
 ```
 
-### 涉资动作：模型只有草案权，放行必须是人
+**两条录像的边界照登**：两段都跑在 **perf 档（MockLLM + 真 bge-m3 + 真 Qdrant/ES + 真 Redis）**——被演示的链路（语义缓存、极性守卫、工具编排、人机审核、审计）都真实发生，模型侧是 Mock，那笔退款的工具参数与答案文案由 Mock 模板产出。① 坐席点「放行」之后**没有任何链路**把结果推回买家浏览器（出站投递只认 webhook / email / 回执工单三类），所以录像停在放行那一刻，没有编「买家收到通知」那一帧；② 守卫的真实日志是 `L2 语义命中被极性守卫拒绝: polarity-conflict (cached=… incoming=…)`；③ 守卫要能出场有前提：Ollama bge-m3 / Qdrant / ES 在跑，且 Redis 里的知识库纪元（`shoppilot:kb:epoch`）与库内 chunk 一致，否则检索恒空、守卫一次都不触发——这一步红不代表防线失效。
 
-![退款涉资动作的人机协同](docs/refund-hitl-demo.gif)
+## 📦 系统模块划分 (System Modules)
 
-三栏是同一次真实请求：买家端发起退款 → 网关 SSE 事件流（中间栏是这笔请求的真实响应帧）→
-坐席工作台。模型输出的 `applyRefund` 不直接执行：状态机把它转成草案停在 `PENDING_APPROVAL`，
-买家拿到的是"已受理、等待人工审核"；只有已验签坐席账号点了"放行"，资金动作才真的发生并记进审计（ADR 0063）。
+```text
+├── shoppilot-gateway/         # Agent 网关运行时、意图级联、双层缓存、有界 FSM、限流
+├── shoppilot-ticket/          # 工单流转服务、SLA 路由规则、涉资操作人工审核
+├── shoppilot-biz-mock/        # 下游电商系统模拟基座、多租户行级隔离、身份域、审计流
+├── shoppilot-tool-api/        # 统一工具契约、JSON Schema 生成、领域 DTO
+├── frontend-buyer/            # 买家交互端应用 (Vue 3 + Vite)
+├── frontend-workspace/        # 客服审核工作台 (Vue 3 + Vite)
+├── docs/                      # 架构决策记录 (ADR)、压测报告、事故复盘与架构走读
+└── eval/                      # 8 分区端到端自动化回归评测数据集与基准
+```
 
-**这条录像的边界**：坐席点完"放行"之后，系统里**没有任何一条链路**把这个结果推回买家浏览器。
-出站投递只认 webhook / email / 回执工单三类（`OutboundDeliveryService`），退款审核只发审计事件。
-所以买家答案里"审核结果会再通知您"这句，在 web 渠道上目前没有兑现路径——录像因此停在坐席放行那一刻，
-没有编一帧"买家收到通知"。
+## 🚀 快速开始一条命令 (Quickstart)
 
-### 极性守卫：余弦 0.95 拦不住的那一对
+### 前置要求
 
-![极性守卫现场](docs/polarity-guard-demo.gif)
+- Docker Desktop（中间件容器）
+- Ollama（`up.ps1` 自动拉取 `bge-m3` 与 `qwen2.5:3b`）
+- PowerShell 7+（`pwsh`）
+- JDK 21（脚本按 `SHOPPILOT_JDK` → `JAVA_HOME` → PATH 依次定位并校验主版本号）
 
-左栏是调试台的真实操作与事件时间线，右栏是 `logs/gateway.log` 的原始行。三问同属一个意图桶：
-「这个能退吗」先写进 L2；同极性近义「这个能退么」（余弦 **0.9980**）命中 L2——这是语义缓存该做的事；
-反义的「这个不能退吗」（余弦 **0.9799**）**同样越过 0.95 阈值**，却在复用前被拒，
-日志留下 `L2 语义命中被极性守卫拒绝: polarity-conflict (cached=… incoming=…)`，
-计数器 `shoppilot_cache_l2_polarity_blocked_total` +1。后两句与源问法的向量距离几乎一样，
-唯一差别是极性——命中与否因此能直接归因到守卫，而不是阈值。
-
-**这条录像的边界**（两处，都得说清）：
-
-1. 系统**没有** `[PolarityGuard] Antonym polarity detected, bypass L2 cache.` 这行日志，
-   真实打印的就是上面那句中文。
-2. 最初想演示的那对「我想要申请换货 / 我不想换货了」实测余弦只有 **0.8851**，到不了 L2 命中，
-   守卫根本不会被触发；所以用的是项目自己标定过的那一对（`docs/threshold-calibration.md`）。
-
-要让守卫真的出场还有前提：Ollama bge-m3、Qdrant、ES 都在跑，且 Redis 里的知识库纪元与库内 chunk 一致。
-本机这次就栽在第 4 条——Redis 丢了数据、纪元回退成 1，检索全空，写回根本不发生，守卫一次都没触发
-（重跑一次入库把纪元对齐后才复现）。这一步红不代表防线失效。
-
-## 接手导航
-
-按目的先读下面入口，再进入 ticket 和源码：
-
-- 想先知道这个项目有什么、在哪、到哪一步了：[`DELIVERY.md`](DELIVERY.md)：交付契约入口页，一屏。
-- 想按请求生命周期读关键决策：[`docs/design-walkthrough.md`](docs/design-walkthrough.md)：八站架构走读与复现命令。
-- 架构与选型的常见疑问：[`docs/architecture-faq.md`](docs/architecture-faq.md)：238 问，答案取自实现当时的收尾记录。
-- 想核对全部证据：[`docs/EVIDENCE.md`](docs/EVIDENCE.md)：数字对应的报告、原始产物与复现命令。
-- [`AGENTS.md`](AGENTS.md)：接手顺序、source of truth、修改禁令、验证与 Handoff 流程。
-- [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md)：v1.0 收口与冻结策略的原始实施计划（2026-09-08，历史文档）。
-- [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md)：正式 tracker、round spec 与票 01-116 的当前状态；[`registered-debt.md`](.scratch/shoppilot-mvp/registered-debt.md)：欠账总账（每笔要么有触发条件、要么有「永不做」的裁决）。
-- [`docs/CODE_MAP.md`](docs/CODE_MAP.md)：模块所有权、请求链路源码落点和已知代码债候选。
-
-## 快速开始（一条命令）
-
-前置：Docker Desktop、JDK 21、Ollama、PowerShell 7（`pwsh`）。中间件端口全部偏移并只绑 `127.0.0.1`，
-不会和你机器上的别的项目抢 6379/6333/9200/8080。JDK 不用你告诉脚本装在哪：`SHOPPILOT_JDK` → `JAVA_HOME`
-→ PATH 上的 `java.exe` 依次找，**每个候选都校验 `java -version` 主版本号 ≥21**，全不过就列出试过的来源与版本再停；
-PATH 上恰好是 JDK 18 这种机器（作者这台就是），盲信 PATH 会把构建炸在编译目标上。
+### 一键拉起
 
 ```powershell
+# 1. 克隆代码并配置基础环境变量
 git clone https://github.com/shing26/shoppilot.git ShopPilot; cd ShopPilot
-pwsh -NoProfile -File scripts/up.ps1          # 起中间件 -> 拉模型 -> 构建 -> seed -> 入库 -> 起服务
-start http://127.0.0.1:8082                   # 调试台
+Copy-Item .env.example .env
+
+# 2. 一键启动基础设施与网关运行时 (自动校验凭据)
+pwsh -NoProfile -File scripts/up.ps1
+start http://127.0.0.1:8082
 ```
+
+> **注意**：裸 `docker compose up -d` 仅初始化数据层中间件容器（PostgreSQL、Redis、Elasticsearch、Qdrant）；
+> 应用服务受 `full` profile 托管，统一经由 `up.ps1` 启动脚本完成凭据安全守卫校验后拉起。
+
+### 服务端点
+
+- 买家端界面：<http://127.0.0.1:8082/buyer/>
+- 客服审核工作台：<http://127.0.0.1:8082/workspace/>
+- 网关运行时监控指标：<http://127.0.0.1:8082/actuator/prometheus>
+- 工单服务健康端点：<http://127.0.0.1:8092/actuator/health>
+
+### 启动后的行为与运维细节
 
 `up.ps1` 里每一步都可重入：容器已在跑就跳过，seed 非空即跳过，入库是幂等 upsert。
 就绪判定用 Spring Boot 的 readiness 健康组（`/actuator/health/readiness`）：`ApplicationRunner`
@@ -233,6 +207,23 @@ pwsh -NoProfile -File scripts/start-gateway.ps1 -Profile local
 已经导出到环境里的同名变量优先，所以 CI 与实验脚本不需要 `.env` 也能覆盖配置。
 
 </details>
+
+
+## 🧪 评测体系与门禁 (Evaluation & CI Gates)
+
+项目拒绝主观模糊打分，在 `eval/` 目录下建立了包含 8 个独立维度的自动化回归评测集：
+
+- **Part 1 Policy**：政策检索准确度与召回率
+- **Part 2 Action**：工具调用选择与参数抽取精度
+- **Part 3 Edge**：极端输入与边缘边界防御
+- **Part 4 Emotion**：情绪识别与人工转接升级率
+- **Part 5 Channel**：多通道协议归一化验证
+- **Part 6 Plan**：两轮状态机步进执行有效性
+- **Part 7 Style & Feedback**：话术对齐与用户反馈闭环
+- **Part 8 Task**：端到端复合任务完成度
+
+代码库每一次提交均通过 GitHub Actions 执行九步门禁：构建与 JVM 测试（四模块 505 条）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及**两个前端构建产物的逐字节校验**。未达成指标保留红值、判据、归因和限制，逐条见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。
+
 
 ## 三条演示
 
