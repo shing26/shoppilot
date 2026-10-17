@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
+import java.util.Map;
 
 /** 全量配置集中声明，避免各处 @Value 散落。 */
 @Validated
@@ -24,6 +25,7 @@ public record GatewayProperties(
         @Valid RateLimit ratelimit,
         @Valid Ingest ingest,
         @Valid Triage triage,
+        @Valid TenantDomains tenantDomains,
         @Valid Ops ops,
         @Valid Feishu feishu) {
 
@@ -137,6 +139,14 @@ public record GatewayProperties(
     }
 
     public record Triage(String centroidCache) {
+    }
+
+    /**
+     * 租户行业登记（round33 / ADR 0067）。
+     *
+     * <p>未登记租户默认 UNKNOWN，只看本租户规则；平台级政策必须显式匹配 domain 才可见。
+     */
+    public record TenantDomains(Map<String, String> domains) {
     }
 
     /**

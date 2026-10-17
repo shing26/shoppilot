@@ -1,6 +1,7 @@
 package com.shoppilot.gateway.cache;
 
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.EmbeddingClient;
 import com.shoppilot.gateway.knowledge.RuleChunk;
 import com.shoppilot.tool.Intent;
@@ -100,20 +101,21 @@ public class CacheService {
         totalCounter.increment();
     }
 
-    public Lookup lookup(String tenantId, Intent intent, String rawQuery, long kbEpoch, float[] precomputedVector) {
+    public Lookup lookup(String tenantId, Domain domain, Intent intent, String rawQuery, long kbEpoch,
+                         float[] precomputedVector) {
         String normalized = QueryNormalizer.normalize(rawQuery);
         if (!config.enabled()) {
             return Lookup.disabled();
         }
         admittedCounter.increment();
-        List<Bucket> buckets = buckets(tenantId, intent, kbEpoch, normalized);
+        List<Bucket> buckets = buckets(tenantId, domain, intent, kbEpoch, normalized);
         for (Bucket bucket : buckets) {
             if (l1.negativePresent(bucket.key())) {
                 negativeHitCounter.increment();
                 return Lookup.negative(normalized);
             }
             Optional<CacheEntry> entry = l1.get(bucket.key());
-            if (entry.isPresent() && entry.get().matches(intent, bucket.tenantId(), kbEpoch)) {
+            if (entry.isPresent() && entry.get().matches(intent, bucket.tenantId(), domain, kbEpoch)) {
                 l1HitCounter.increment();
                 return new Lookup(Layer.L1, entry, precomputedVector, normalized, false);
             }
@@ -134,8 +136,9 @@ public class CacheService {
             return new Lookup(Layer.NONE, Optional.empty(), null, normalized, false);
         }
         for (Bucket bucket : buckets) {
-            Optional<CacheEntry> entry = l2.search(vector, bucket.tenantId(), bucket.scope(), intent.name(), kbEpoch);
-            if (entry.isEmpty() || !entry.get().matches(intent, bucket.tenantId(), kbEpoch)) {
+            Optional<CacheEntry> entry =
+                    l2.search(vector, bucket.tenantId(), bucket.scope(), intent.name(), domain, kbEpoch);
+            if (entry.isEmpty() || !entry.get().matches(intent, bucket.tenantId(), domain, kbEpoch)) {
                 continue;
             }
             String reason = PolarityGuard.blocked(normalized, entry.get().query());
@@ -159,18 +162,19 @@ public class CacheService {
      * <p>向量缺失不拦写回：条目本身（正文 + 意图 + 桶 + 归一化问法）够 L1 用了，
      * 缺的只是 L2 那一份定位。
      */
-    public Optional<CacheEntry> prepareWrite(String tenantId, Intent intent, long kbEpoch, Lookup lookup,
-                                             String answer, List<String> citedRuleScopes,
-                                             List<String> sourceRuleIds, String modelId) {
+    public Optional<CacheEntry> prepareWrite(String tenantId, Domain domain, Intent intent, long kbEpoch,
+                                             Lookup lookup, String answer, List<String> citedRuleScopes,
+                                             List<String> sourceRuleIds, List<String> sourceHeadings,
+                                             String modelId) {
         if (lookup.normalizedQuery() == null || lookup.normalizedQuery().isEmpty()) {
             return Optional.empty();
         }
         boolean allPlatform = citedRuleScopes != null && !citedRuleScopes.isEmpty()
                 && citedRuleScopes.stream().allMatch(SCOPE_PLATFORM::equalsIgnoreCase);
-        String bucketTenant = allPlatform ? RuleChunk.PLATFORM_TENANT : tenantId;
+        String bucketTenant = allPlatform ? platformBucketId(domain) : tenantId;
         String scope = allPlatform ? SCOPE_PLATFORM : SCOPE_SHOP;
-        return Optional.of(CacheEntry.of(answer, intent, bucketTenant, scope, kbEpoch, sourceRuleIds, modelId,
-                lookup.normalizedQuery()));
+        return Optional.of(CacheEntry.of(answer, intent, bucketTenant, scope, domain, kbEpoch, sourceRuleIds,
+                sourceHeadings, modelId, lookup.normalizedQuery()));
     }
 
     /**
@@ -190,7 +194,9 @@ public class CacheService {
         l2.store(lookup.queryVector(), key, entry);
     }
 
-    public void writeNegative(String tenantId, Intent intent, long kbEpoch, Lookup lookup) {
+    public void writeNegative(String tenantId, Domain domain, Intent intent, long kbEpoch, Lookup lookup) {
+        // 只标本店桶：负缓存说的是"这一问在本租户可见范围里没有条款"，跨店共享会把一个租户的
+        // "确实没有这条政策"扩散成同行业其他租户的短路。平台桶的负标记只由运维演示端点显式打。
         l1.putNegative(l1.key(tenantId, intent.name(), kbEpoch, lookup.normalizedQuery()));
     }
 
@@ -201,10 +207,10 @@ public class CacheService {
      * 极难自然命中；一条打不开的内部开关，好过一段永远走不到的死代码。
      * 只在运维代理开启时可达，见 {@code OpsController}。
      */
-    public void markNegative(String tenantId, Intent intent, long kbEpoch, String rawQuery) {
+    public void markNegative(String tenantId, Domain domain, Intent intent, long kbEpoch, String rawQuery) {
         String normalized = QueryNormalizer.normalize(rawQuery);
         // 两个桶都打：查询顺序是先平台桶后本店桶，只标本店桶会被平台桶里的既有答案抢先命中
-        l1.putNegative(l1.key(RuleChunk.PLATFORM_TENANT, intent.name(), kbEpoch, normalized));
+        l1.putNegative(l1.key(platformBucketId(domain), intent.name(), kbEpoch, normalized));
         l1.putNegative(l1.key(tenantId, intent.name(), kbEpoch, normalized));
     }
 
@@ -223,10 +229,23 @@ public class CacheService {
         return view;
     }
 
-    private List<Bucket> buckets(String tenantId, Intent intent, long kbEpoch, String normalized) {
+    private List<Bucket> buckets(String tenantId, Domain domain, Intent intent, long kbEpoch, String normalized) {
+        String platformBucket = platformBucketId(domain);
         return List.of(
-                new Bucket(RuleChunk.PLATFORM_TENANT, SCOPE_PLATFORM, l1.key(RuleChunk.PLATFORM_TENANT, intent.name(), kbEpoch, normalized)),
+                new Bucket(platformBucket, SCOPE_PLATFORM,
+                        l1.key(platformBucket, intent.name(), kbEpoch, normalized)),
                 new Bucket(tenantId, SCOPE_SHOP, l1.key(tenantId, intent.name(), kbEpoch, normalized)));
+    }
+
+    /**
+     * 平台桶的身份（round33 / ADR 0067）：{@code PLATFORM:<DOMAIN>}。
+     *
+     * <p>把行业编进桶身份而不是另加一个平行参数，是为了让 L1 key、L2 payload 的 {@code tenant_id}
+     * 过滤、负缓存三处**天然同源**——三处都从同一个字符串派生，就不可能有一处漏改。
+     * 同一句"押金什么时候退"在 ECOMMERCE 与 HOTEL 下因此落在两条不同的 key 上。
+     */
+    static String platformBucketId(Domain domain) {
+        return RuleChunk.PLATFORM_TENANT + ":" + (domain == null ? Domain.UNKNOWN.name() : domain.name());
     }
 
     private record Bucket(String tenantId, String scope, String key) {

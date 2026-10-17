@@ -144,8 +144,8 @@ public class ChatController {
             ChannelContext.set(channel);
             try {
                 AgentResult result = agent.run(request.query(), request.idempotencyToken(), sink);
-                sink.done(traceId, result.citations(), result.promptTokens(), result.completionTokens(),
-                        result.plan(), result.context());
+                sink.done(traceId, result.citations(), result.citationDetails(), result.promptTokens(),
+                        result.completionTokens(), result.plan(), result.context());
                 // 与同步路径同形：流式答案也要进反馈账本，点踩关联与重问检测不分通道
                 feedbackService.noteAnswer(identity.conversationId(),
                         result.intent() == null ? null : result.intent().name(),
@@ -199,7 +199,8 @@ public class ChatController {
                                String cacheLayer, List<String> citations, String fallbackReason, String ticketId,
                                boolean slotAsked, int promptTokens, int completionTokens, boolean toolUsed,
                                List<AgentResult.TraceStep> trace, String promptVersion, String channel,
-                               List<AgentResult.PlanStep> plan, AgentResult.ContextComposition context) {
+                               List<AgentResult.PlanStep> plan, AgentResult.ContextComposition context,
+                               List<AgentResult.CitationDetail> citationDetails) {
 
         static ChatResponse of(String answerId, AgentResult result, String channel) {
             Intent intent = result.intent();
@@ -210,7 +211,8 @@ public class ChatController {
                     result.toolUsed(), result.trace(), result.promptVersion(), channel,
                     // 与 SSE 的 done 帧同形（票 48/49）：两个协议面都不做判空分支，空计划是空数组
                     result.plan() == null ? List.of() : result.plan(),
-                    result.context() == null ? AgentResult.ContextComposition.NONE : result.context());
+                    result.context() == null ? AgentResult.ContextComposition.NONE : result.context(),
+                    result.citationDetails() == null ? List.of() : result.citationDetails());
         }
     }
 }

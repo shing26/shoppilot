@@ -1,4 +1,4 @@
-import type { Citation, Session, Ticket } from './types'
+import type { Citation, CitationDetail, Session, Ticket } from './types'
 
 /**
  * 与另两个前端同一套失败口径（`scripts/verify-console.mjs` 之外那份家法的第三份实现）。
@@ -69,7 +69,7 @@ export async function streamAnswer(
   query: string,
   conversationId: string,
   onToken: (chunk: string) => void,
-): Promise<ApiResult<{ ticketId: string | null; citations: Citation[]; fallbackReason: string | null }>> {
+): Promise<ApiResult<{ ticketId: string | null; citations: Citation[]; citationDetails: CitationDetail[]; fallbackReason: string | null }>> {
   let res: Response
   try {
     res = await fetch('/api/v1/support/chat/stream', {
@@ -99,6 +99,7 @@ export async function streamAnswer(
   let answer = ''
   let ticketId: string | null = null
   let citations: Citation[] = []
+  let citationDetails: CitationDetail[] = []
   let fallbackReason: string | null = null
 
   // 分帧不能按子串猜：round21 记过一次「流式分帧不能子串匹配 → 读回用同步端点」。
@@ -131,6 +132,8 @@ export async function streamAnswer(
             ticketId = (parsed.ticketId as string) ?? ticketId
           } else if (event === 'done') {
             const parsed = asObject(safeParse(data))
+            // round33 / ADR 0067：详情优先，citations 那份字符串契约照旧留着（旧客户端读它）
+            citationDetails = (parsed.citationDetails as CitationDetail[]) ?? citationDetails
             citations = (parsed.citations as Citation[]) ?? citations
             ticketId = (parsed.ticketId as string) ?? ticketId
           }
@@ -140,7 +143,7 @@ export async function streamAnswer(
       split = buffer.indexOf('\n\n')
     }
   }
-  return { status: 200, body: { ticketId, citations, fallbackReason } }
+  return { status: 200, body: { ticketId, citations, citationDetails, fallbackReason } }
 }
 
 function safeParse(raw: string): unknown {

@@ -16,7 +16,7 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { describe, login, messageOf, myTickets, streamAnswer } from './api'
-import { PRIORITY_LABEL, STATUS_LABEL, minutesLeft, type Citation, type Session, type Ticket } from './types'
+import { PRIORITY_LABEL, STATUS_LABEL, minutesLeft, type CitationDetail, type Session, type Ticket } from './types'
 
 const STORAGE_KEY = 'shoppilot.buyer.session'
 
@@ -28,7 +28,9 @@ const loginError = ref('')
 
 const query = ref('')
 const answer = ref('')
-const citations = ref<Citation[]>([])
+// round33 / ADR 0067：网关的 `citations` 是字符串数组，只带 ruleId；标题与出处在新字段
+// `citationDetails` 里。页面优先读详情，否则引用列表会退化成一条条「政策条款」。
+const citations = ref<CitationDetail[]>([])
 const fallbackNote = ref('')
 const asking = ref(false)
 
@@ -98,8 +100,8 @@ async function ask() {
     answer.value = describe(result, '')
     return
   }
-  const body = result.body as { ticketId: string | null; citations: Citation[]; fallbackReason: string | null }
-  citations.value = body.citations ?? []
+  const body = result.body as { ticketId: string | null; citationDetails: CitationDetail[]; fallbackReason: string | null }
+  citations.value = body.citationDetails ?? []
   // 降级也是一种结局：说清楚发生了什么，并给出工单号，而不是给一句「稍后」
   if (body.fallbackReason) {
     fallbackNote.value = body.ticketId
@@ -189,9 +191,9 @@ function clearStoredSession() {
         <p v-if="fallbackNote" class="warn">{{ fallbackNote }}</p>
         <p v-if="answer" class="body">{{ answer }}</p>
         <ul v-if="citations.length" class="cites">
-          <li v-for="(c, i) in citations" :key="c.ruleId ?? i">
+          <li v-for="(c, i) in citations" :key="c.ruleId || i">
             <span class="mono">{{ c.ruleId }}</span>
-            <span>{{ c.heading ?? c.doc ?? '政策条款' }}</span>
+            <span>{{ c.heading || c.doc || '政策条款' }}</span>
           </li>
         </ul>
       </section>

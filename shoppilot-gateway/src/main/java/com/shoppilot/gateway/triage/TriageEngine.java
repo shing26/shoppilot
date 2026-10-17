@@ -1,6 +1,7 @@
 package com.shoppilot.gateway.triage;
 
 import com.shoppilot.gateway.knowledge.EmbeddingClient;
+import com.shoppilot.gateway.knowledge.Domain;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
@@ -48,8 +49,17 @@ public class TriageEngine {
         return T0RuleLayer.explicitEscalation(query);
     }
 
+    /** 默认按电商口径判定：给不关心行业的调用方保持旧行为。 */
     public Outcome triage(String query) {
-        Optional<TriageResult> byRules = t0.classify(query);
+        return triage(query, Domain.ECOMMERCE);
+    }
+
+    /**
+     * @param domain 租户行业（ADR 0067）。它是 T0 行业门的输入：酒店租户只认酒店词表，
+     *               电商的政策/动作词表在那一支里不成立。
+     */
+    public Outcome triage(String query, Domain domain) {
+        Optional<TriageResult> byRules = t0.classify(query, domain);
         if (byRules.isPresent()) {
             earlyExitCounter.increment();
             return new Outcome(byRules.get(), null);

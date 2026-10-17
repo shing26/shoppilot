@@ -1,6 +1,7 @@
 package com.shoppilot.gateway.ingest;
 
 import com.shoppilot.gateway.knowledge.RuleChunk;
+import com.shoppilot.gateway.knowledge.Domain;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -67,13 +68,16 @@ public final class MarkdownChunker {
                                  Map<String, String> frontMatter, String heading, String text, long kbEpoch) {
         String headingPath = heading == null || heading.isBlank() ? docTitle : docTitle + " > " + heading;
         String ruleId = sha256Hex(sourceDoc + "|" + headingPath);
+        String intent = intentOf(sourceDoc, frontMatter);
+        Domain domain = Domain.from(frontMatter.getOrDefault("domain", Domain.ofIntent(intent).name()));
         chunks.add(new RuleChunk(ruleId, sourceDoc, headingPath, heading == null ? docTitle : heading,
                 text.strip(),
                 frontMatter.getOrDefault("rule_type", "POLICY"),
                 frontMatter.getOrDefault("applicable_category", "ALL"),
                 frontMatter.getOrDefault("scope", "PLATFORM"),
                 frontMatter.getOrDefault("tenant_id", RuleChunk.PLATFORM_TENANT),
-                intentOf(sourceDoc, frontMatter),
+                intent,
+                domain,
                 frontMatter.getOrDefault("effective_from", ""),
                 kbEpoch));
     }
@@ -98,6 +102,9 @@ public final class MarkdownChunker {
         }
         if (sourceDoc.startsWith("shipping-")) {
             return "POLICY_SHIPPING";
+        }
+        if (sourceDoc.startsWith("hotel-")) {
+            return "POLICY_HOTEL";
         }
         return "UNKNOWN";
     }

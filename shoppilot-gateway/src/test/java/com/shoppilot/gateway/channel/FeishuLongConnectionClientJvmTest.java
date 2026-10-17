@@ -73,7 +73,7 @@ class FeishuLongConnectionClientJvmTest {
 
         AgentResult result = new AgentResult("你好，有什么可以帮你？", null, "L1",
                 CacheService.Layer.NONE, List.of(), List.of(), null, null, false, 0, 0,
-                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE);
+                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE, List.of());
         when(agentStateMachine.run(anyString(), anyString(), any(EventSink.class))).thenReturn(result);
 
         client.handleEvent(payload);
@@ -103,7 +103,7 @@ class FeishuLongConnectionClientJvmTest {
 
         AgentResult result = new AgentResult("回复", null, "L1",
                 CacheService.Layer.NONE, List.of(), List.of(), null, null, false, 0, 0,
-                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE);
+                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE, List.of());
         // 在 run() 执行时捕获 TenantContext 状态（handleEvent 完成后 finally 会清理）
         TenantContext.Identity[] capturedIdentity = new TenantContext.Identity[1];
         doAnswer(invocation -> {
@@ -133,7 +133,7 @@ class FeishuLongConnectionClientJvmTest {
 
         AgentResult result = new AgentResult("", null, "L1",
                 CacheService.Layer.NONE, List.of(), List.of(), null, null, false, 0, 0,
-                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE);
+                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE, List.of());
         when(agentStateMachine.run(anyString(), anyString(), any(EventSink.class))).thenReturn(result);
 
         client.handleEvent(payload);
@@ -266,7 +266,7 @@ class FeishuLongConnectionClientJvmTest {
 
         AgentResult result = new AgentResult("回复", null, "L1",
                 CacheService.Layer.NONE, List.of(), List.of(), null, null, false, 0, 0,
-                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE);
+                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE, List.of());
         when(agentStateMachine.run(anyString(), anyString(), any(EventSink.class))).thenReturn(result);
 
         client.handleEvent(payload);
@@ -428,7 +428,7 @@ class FeishuLongConnectionClientJvmTest {
 
         AgentResult result = new AgentResult("回复", null, "L1",
                 CacheService.Layer.NONE, List.of(), List.of(), null, null, false, 0, 0,
-                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE);
+                false, false, "v1", List.of(), AgentResult.ContextComposition.NONE, List.of());
         when(agentStateMachine.run(anyString(), anyString(), any(EventSink.class))).thenReturn(result);
 
         client.handleEvent(payload);

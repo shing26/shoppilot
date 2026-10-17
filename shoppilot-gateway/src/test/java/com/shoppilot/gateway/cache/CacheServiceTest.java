@@ -2,6 +2,7 @@ package com.shoppilot.gateway.cache;
 
 import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.knowledge.EmbeddingClient;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.tool.Intent;
 import com.shoppilot.gateway.knowledge.RuleChunk;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -19,9 +20,11 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.startsWith;
 
 /**
  * 缓存层在"向量服务不可用"时的退化边界。
@@ -56,7 +59,7 @@ class CacheServiceTest {
 
     private CacheService.Lookup missWithOutage() {
         when(embedding.embed(anyString())).thenThrow(new IllegalStateException("Ollama 不可达"));
-        return service.lookup("T001", Intent.POLICY_RETURN, "七天无理由怎么退", EPOCH, null);
+        return service.lookup("T001", Domain.ECOMMERCE, Intent.POLICY_RETURN, "七天无理由怎么退", EPOCH, null);
     }
 
     @Test
@@ -75,8 +78,9 @@ class CacheServiceTest {
     void writeBackStillStoresL1WithoutVector() {
         CacheService.Lookup lookup = missWithOutage();
 
-        Optional<CacheEntry> prepared = service.prepareWrite("T001", Intent.POLICY_RETURN, EPOCH, lookup,
-                "签收次日起七天内可退", List.of("shop"), List.of("R-01"), "qwen2.5:3b");
+        Optional<CacheEntry> prepared = service.prepareWrite("T001", Domain.ECOMMERCE, Intent.POLICY_RETURN, EPOCH,
+                lookup, "签收次日起七天内可退", List.of("shop"), List.of("R-01"), List.of("七天无理由"),
+                "qwen2.5:3b");
         assertThat(prepared).isPresent();
         service.writeBack(prepared.get(), lookup);
 
@@ -89,11 +93,13 @@ class CacheServiceTest {
     @DisplayName("有向量时两写齐全，且不记退化写回")
     void writeBackStoresBothLayersWithVector() {
         when(embedding.embed(anyString())).thenReturn(new float[]{1.0f, 0.0f});
-        when(l2.search(any(), anyString(), anyString(), anyString(), anyLong())).thenReturn(Optional.empty());
-        CacheService.Lookup lookup = service.lookup("T001", Intent.POLICY_RETURN, "七天无理由怎么退", EPOCH, null);
+        when(l2.search(any(), anyString(), anyString(), anyString(), any(), anyLong())).thenReturn(Optional.empty());
+        CacheService.Lookup lookup =
+                service.lookup("T001", Domain.ECOMMERCE, Intent.POLICY_RETURN, "七天无理由怎么退", EPOCH, null);
 
-        CacheEntry entry = service.prepareWrite("T001", Intent.POLICY_RETURN, EPOCH, lookup,
-                "签收次日起七天内可退", List.of("shop"), List.of("R-01"), "qwen2.5:3b").orElseThrow();
+        CacheEntry entry = service.prepareWrite("T001", Domain.ECOMMERCE, Intent.POLICY_RETURN, EPOCH, lookup,
+                "签收次日起七天内可退", List.of("shop"), List.of("R-01"), List.of("七天无理由"),
+                "qwen2.5:3b").orElseThrow();
         service.writeBack(entry, lookup);
 
         verify(l1).put(anyString(), any(CacheEntry.class));
@@ -105,11 +111,12 @@ class CacheServiceTest {
     @DisplayName("L1 命中不碰 embedding：命中路径零远程向量化调用是链路性质，不是运气")
     void l1HitNeedsNoEmbedding() {
         CacheEntry platformEntry = CacheEntry.of("平台口径答案", Intent.POLICY_RETURN,
-                RuleChunk.PLATFORM_TENANT, CacheService.SCOPE_PLATFORM, EPOCH,
-                List.of("R-01"), "qwen2.5:3b", "七天无理由怎么退");
+                CacheService.platformBucketId(Domain.ECOMMERCE), CacheService.SCOPE_PLATFORM, Domain.ECOMMERCE, EPOCH,
+                List.of("R-01"), List.of("七天无理由"), "qwen2.5:3b", "七天无理由怎么退");
         when(l1.get(anyString())).thenReturn(Optional.of(platformEntry));
 
-        CacheService.Lookup lookup = service.lookup("T001", Intent.POLICY_RETURN, "七天无理由怎么退", EPOCH, null);
+        CacheService.Lookup lookup =
+                service.lookup("T001", Domain.ECOMMERCE, Intent.POLICY_RETURN, "七天无理由怎么退", EPOCH, null);
 
         assertThat(lookup.hit()).isTrue();
         assertThat(lookup.layer()).isEqualTo(CacheService.Layer.L1);
@@ -120,16 +127,39 @@ class CacheServiceTest {
     @DisplayName("引用全为平台条款才进跨店桶，掺本店规则就写本店桶")
     void writeBucketFollowsCitedScopes() {
         when(embedding.embed(anyString())).thenReturn(new float[]{1.0f, 0.0f});
-        CacheService.Lookup lookup = service.lookup("T001", Intent.POLICY_RETURN, "七天无理由怎么退", EPOCH, null);
+        CacheService.Lookup lookup =
+                service.lookup("T001", Domain.ECOMMERCE, Intent.POLICY_RETURN, "七天无理由怎么退", EPOCH, null);
 
-        CacheEntry platform = service.prepareWrite("T001", Intent.POLICY_RETURN, EPOCH, lookup,
-                "答案", List.of("PLATFORM", "platform"), List.of("R-01", "R-02"), "m").orElseThrow();
-        assertThat(platform.tenantId()).isEqualTo(RuleChunk.PLATFORM_TENANT);
+        CacheEntry platform = service.prepareWrite("T001", Domain.ECOMMERCE, Intent.POLICY_RETURN, EPOCH, lookup,
+                "答案", List.of("PLATFORM", "platform"), List.of("R-01", "R-02"), List.of("", ""), "m").orElseThrow();
+        assertThat(platform.tenantId()).isEqualTo("PLATFORM:ECOMMERCE");
         assertThat(platform.scope()).isEqualTo(CacheService.SCOPE_PLATFORM);
 
-        CacheEntry mixed = service.prepareWrite("T001", Intent.POLICY_RETURN, EPOCH, lookup,
-                "答案", List.of("PLATFORM", "SHOP"), List.of("R-01", "R-09"), "m").orElseThrow();
+        CacheEntry mixed = service.prepareWrite("T001", Domain.ECOMMERCE, Intent.POLICY_RETURN, EPOCH, lookup,
+                "答案", List.of("PLATFORM", "SHOP"), List.of("R-01", "R-09"), List.of("", ""), "m").orElseThrow();
         assertThat(mixed.tenantId()).isEqualTo("T001");
         assertThat(mixed.scope()).isEqualTo(CacheService.SCOPE_SHOP);
+    }
+
+    @Test
+    @DisplayName("round33：平台桶带 domain，电商与酒店的同问法不会互相命中")
+    void platformBucketIsScopedByDomain() {
+        when(embedding.embed(anyString())).thenReturn(new float[]{1.0f, 0.0f});
+        CacheService.Lookup ecommerceLookup =
+                service.lookup("T001", Domain.ECOMMERCE, Intent.POLICY_HOTEL, "押金什么时候退", EPOCH, null);
+
+        CacheEntry hotel = service.prepareWrite("T001", Domain.ECOMMERCE, Intent.POLICY_HOTEL, EPOCH,
+                ecommerceLookup, "电商口径", List.of("PLATFORM"), List.of("fresh-01"),
+                List.of("生鲜理赔"), "m").orElseThrow();
+
+        assertThat(hotel.domain()).isEqualTo(Domain.ECOMMERCE);
+        // 平台桶身份把行业编进去（PLATFORM:<DOMAIN>），这正是两个行业不共用同一格的原因
+        assertThat(hotel.tenantId()).isEqualTo(CacheService.platformBucketId(Domain.ECOMMERCE));
+
+        service.lookup("T004", Domain.HOTEL, Intent.POLICY_HOTEL, "押金什么时候退", EPOCH, null);
+
+        // 两个 domain 的 platform 桶 key 必须不同；这里用捕获到的 key 前缀证明不会复用同一条。
+        verify(l1, atLeastOnce()).get(startsWith("key:PLATFORM:HOTEL:"));
+        verify(l1, atLeastOnce()).get(startsWith("key:PLATFORM:ECOMMERCE:"));
     }
 }

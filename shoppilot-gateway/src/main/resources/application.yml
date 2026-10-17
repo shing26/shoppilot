@@ -148,6 +148,13 @@ shoppilot:
   triage:
     # T1 意图质心的本地缓存，按样本指纹失效；删掉它会重新向量化 90 条样本
     centroid-cache: ${SHOPPILOT_CENTROID_CACHE:.cache/intent-centroids.json}
+  tenant-domains:
+    # round33：行业隔离的单位。未登记租户 fail-closed 为 UNKNOWN，不自动看平台电商政策。
+    domains:
+      T001: ECOMMERCE
+      T002: ECOMMERCE
+      T003: ECOMMERCE
+      T004: HOTEL
   ops:
     # 调试台的故障注入 / 工单队列 / 演示复位经网关代理到 biz-mock（ticket 14、15）。
     # 生产必须置 false：故障注入是平台级动作，能拖慢整条链路。

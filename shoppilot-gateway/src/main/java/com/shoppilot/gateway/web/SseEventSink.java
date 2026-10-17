@@ -147,14 +147,18 @@ public class SseEventSink implements EventSink {
      * 不读它们不受影响，与 {@code promptVersion} 当初加进 meta 同一形态。两处都做空值归一，避免
      * 客户端多一条判空分支——{@code plan} 是空数组、{@code context} 是零值对象，都不是 null。
      */
-    public void done(String answerId, List<String> citations, int promptTokens, int completionTokens,
-                     List<AgentResult.PlanStep> plan, AgentResult.ContextComposition context) {
+    public void done(String answerId, List<String> citations, List<AgentResult.CitationDetail> citationDetails,
+                     int promptTokens, int completionTokens, List<AgentResult.PlanStep> plan,
+                     AgentResult.ContextComposition context) {
         Map<String, Object> usage = new LinkedHashMap<>();
         usage.put("promptTokens", promptTokens);
         usage.put("completionTokens", completionTokens);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("answerId", answerId);
         data.put("citations", citations);
+        // 引用详情（round33 / ADR 0067）：只增字段。citations 的字符串契约不动（反馈账本读它），
+        // 买家端优先读这一份——它才带标题与出处。
+        data.put("citationDetails", citationDetails == null ? List.of() : citationDetails);
         data.put("usage", usage);
         data.put("plan", plan == null ? List.of() : plan);
         data.put("context", context == null ? AgentResult.ContextComposition.NONE : context);

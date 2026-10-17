@@ -7,9 +7,11 @@ import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.config.DevDefaultsPolicy;
 import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.config.OpsAccess;
+import com.shoppilot.gateway.config.TenantDomainRegistry;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.llm.LlmFaultInjector;
 import com.shoppilot.gateway.llm.TokenBudget;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.tool.Intent;
@@ -63,13 +65,15 @@ public class OpsController {
     private final KbEpoch kbEpoch;
     private final TokenBudget tokenBudget;
     private final HybridRetriever retriever;
+    private final TenantDomainRegistry domainRegistry;
     private final DevDefaultsPolicy devDefaults;
     private final ApiErrorWriter errors;
 
     public OpsController(HttpClient http, GatewayProperties properties, BizMockClient bizMockClient,
                          ObjectMapper mapper, LlmFaultInjector llmFaultInjector, CacheService cacheService,
                          KbEpoch kbEpoch, TokenBudget tokenBudget,
-                         HybridRetriever retriever, DevDefaultsPolicy devDefaults, ApiErrorWriter errors) {
+                         HybridRetriever retriever, TenantDomainRegistry domainRegistry,
+                         DevDefaultsPolicy devDefaults, ApiErrorWriter errors) {
         this.http = http;
         this.properties = properties;
         this.bizMockClient = bizMockClient;
@@ -79,6 +83,7 @@ public class OpsController {
         this.kbEpoch = kbEpoch;
         this.tokenBudget = tokenBudget;
         this.retriever = retriever;
+        this.domainRegistry = domainRegistry;
         this.devDefaults = devDefaults;
         this.errors = errors;
     }
@@ -337,7 +342,8 @@ public class OpsController {
             return errors.entity(400, ApiError.INVALID_REQUEST, "query 不能为空");
         }
         TenantContext.Identity identity = TenantContext.current();
-        cacheService.markNegative(identity.tenantId(), intent, kbEpoch.current(), query);
+        cacheService.markNegative(identity.tenantId(), domainRegistry.resolve(identity.tenantId()), intent,
+                kbEpoch.current(), query);
         return ResponseEntity.ok("{\"marked\":true}");
     }
 
@@ -367,6 +373,7 @@ public class OpsController {
         }
         try {
             var diagnosis = retriever.diagnose(query, TenantContext.current().tenantId(),
+                    domainRegistry.resolve(TenantContext.current().tenantId()),
                     intent == null || intent.isBlank() ? null : Intent.valueOf(intent),
                     Math.max(1, Math.min(20, limit)));
             return ResponseEntity.ok(mapper.writeValueAsString(diagnosis));

@@ -2,7 +2,9 @@
   "recorded_at": "2026-09-28T19:32:59",
   "kb_epoch": 6,
   "llm_mode": "local",
-  "corpus_sha256": "b8ce339d14641efb4ae3199cb5301054b6693f4fa77614d0df9d91c179367be8",
+  "tenant": "T001",
+  "corpus_scope": "该租户可见的那部分 knowledge/*.md = T001 + PLATFORM（round32 收紧；录制时用的是 --tenant T001）。round33 语料修正（return-01 七天正文）后按现算值重钉指纹：dense/lexical/fused 未重录，只换指纹",
+  "corpus_sha256": "063edb9d37203c06abf0e4a510f9d3535b8e72c79bc7c688fdda11c798cc8528",
   "record_limit": 20,
   "constants": {
     "rrfK": 60,

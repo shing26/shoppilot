@@ -2,6 +2,7 @@ package com.shoppilot.gateway.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.knowledge.EmbeddingClient;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.EsRestClient;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
@@ -147,7 +148,7 @@ class DependencyHealthTest {
         HybridRetriever retriever = new HybridRetriever(liveQdrant(), new EsRestClient(HttpClient.newHttpClient(),
                 new ObjectMapper(), properties), mock(EmbeddingClient.class), kbEpoch(), properties,
                 new SimpleMeterRegistry());
-        HybridRetriever.Result result = retriever.retrieve("七天无理由", "T001", null);
+        HybridRetriever.Result result = retriever.retrieve("七天无理由", "T001", Domain.ECOMMERCE, null);
         assertThat(result.degraded()).isTrue();
         assertThat(result.lexicalHits()).isZero();
         assertThat(result.rules()).isNotEmpty();

@@ -5,6 +5,7 @@ import com.shoppilot.gateway.agent.BizMockClient;
 import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.config.DevDefaultsPolicy;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.config.TenantDomainRegistry;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
@@ -82,7 +83,8 @@ class BuyerTicketsEndpointTest {
         ApiErrorWriter writer = new ApiErrorWriter(JSON);
         return MockMvcBuilders.standaloneSetup(new OpsController(http, properties, mock(BizMockClient.class), JSON,
                 mock(LlmFaultInjector.class), mock(CacheService.class), mock(KbEpoch.class),
-                mock(TokenBudget.class), mock(HybridRetriever.class), mock(DevDefaultsPolicy.class), writer))
+                mock(TokenBudget.class), mock(HybridRetriever.class), mock(TenantDomainRegistry.class),
+                mock(DevDefaultsPolicy.class), writer))
                 .build();
     }
 

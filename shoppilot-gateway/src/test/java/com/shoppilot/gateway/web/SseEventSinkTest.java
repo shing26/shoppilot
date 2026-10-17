@@ -54,7 +54,10 @@ class SseEventSinkTest {
         SseEventSink sink = new SseEventSink(emitter, new ObjectMapper(), "trace-1", "v1.0.0", "app",
                 mock(Timer.class), System.nanoTime());
 
-        sink.done("ans-1", List.of("return-01-7day-basic"), 120, 30,
+        sink.done("ans-1", List.of("return-01-7day-basic"),
+                List.of(new AgentResult.CitationDetail("return-01-7day-basic", "七天无理由退货的适用起点",
+                        "return-01-7day-basic")),
+                120, 30,
                 List.of(new AgentResult.PlanStep("queryOrderDetail", "OK", 12L, Map.of("orderNo", "90001"))),
                 new AgentResult.ContextComposition(List.of("return-01-7day-basic"), 2, 88));
 
@@ -68,6 +71,10 @@ class SseEventSinkTest {
         assertEquals("90001", done.path("plan").get(0).path("arguments").path("orderNo").asText());
         assertEquals(2, done.path("context").path("historyTurns").asInt());
         assertEquals("return-01-7day-basic", done.path("context").path("ruleIds").get(0).asText());
+        // round33：citations 保持字符串（反馈账本依赖它），详情走新字段
+        assertEquals("return-01-7day-basic", done.path("citations").get(0).asText());
+        assertEquals("七天无理由退货的适用起点", done.path("citationDetails").get(0).path("heading").asText());
+        assertEquals("return-01-7day-basic", done.path("citationDetails").get(0).path("doc").asText());
     }
 
     @Test
@@ -77,7 +84,7 @@ class SseEventSinkTest {
         SseEventSink sink = new SseEventSink(emitter, new ObjectMapper(), "trace-1", "v1.0.0", "app",
                 mock(Timer.class), System.nanoTime());
 
-        sink.done("ans-2", List.of(), 0, 0, null, null);
+        sink.done("ans-2", List.of(), null, 0, 0, null, null);
 
         ArgumentCaptor<SseEmitter.SseEventBuilder> captured = ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
         verify(emitter).send(captured.capture());
@@ -86,6 +93,8 @@ class SseEventSinkTest {
         assertEquals(0, done.path("plan").size());
         assertTrue(done.path("context").isObject(), "context 必须是零值对象而不是 null：" + done.path("context"));
         assertEquals(0, done.path("context").path("historyTurns").asInt());
+        assertTrue(done.path("citationDetails").isArray(),
+                "citationDetails 必须是空数组而不是 null：" + done.path("citationDetails"));
     }
 
     private static String jsonDataOf(SseEmitter.SseEventBuilder builder) {

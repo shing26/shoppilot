@@ -7,8 +7,8 @@
 [![Java](https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/projects/loom/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
-[![ADR](https://img.shields.io/badge/Architecture-64%20ADRs-blueviolet)](docs/adr/)
-[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-505-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
+[![ADR](https://img.shields.io/badge/Architecture-65%20ADRs-blueviolet)](docs/adr/)
+[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-536-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
 [![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
 **10** 态有界状态机 · **2** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
@@ -28,6 +28,15 @@
 
 ---
 
+## 🧭 先看这里
+
+- **业务侧读者（客服主管 / 运营 / 产品）**：先读
+  [《两个能跑的场景：一份给业务侧的一页纸》](docs/round32-two-runnable-scenarios.md)——
+  三分钟能复述**谁在问、走哪几步、哪一步转人、什么情况办不了、现在哪段没通**。
+  它只讲业务、不复述指标；所有数字与未达成项仍只在本文与 [`docs/EVIDENCE.md`](docs/EVIDENCE.md) 维护。
+- **工程读者**：从下面的[架构与工程验证索引](#-架构与工程验证索引)进入，或直接看
+  [快速开始](#-快速开始一条命令)。
+
 > **核心哲学**：大模型本质是具有随机性、高延迟与幻觉风险的概率引擎。**Shoppilot** 不盲目采用重型封装的黑盒 Agent 框架，而是基于 **Spring MVC + Java 21 虚拟线程**，以确定性的经典系统工程手段为大模型交互构建高吞吐、防击穿、防死循环与涉资不可抵赖的工业级运行底座。
 
 发布声明与冻结策略见 [RELEASE.md](RELEASE.md)；逐条数字的证据文件与复现命令见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)——**未达成的也照写**。
@@ -40,7 +49,7 @@
 
 | 评估维度 | 依据路径 | 关键设计考量与实测读数 |
 | :--- | :--- | :--- |
-| **架构决策演进** | [`docs/adr/`](docs/adr/) | 65 个编号 / 64 篇成文（ADR-0022 有意预留未占用），包含完整选型权衡、备选方案与后果推演。 |
+| **架构决策演进** | [`docs/adr/`](docs/adr/) | 66 个编号 / 65 篇成文（ADR-0022 有意预留未占用），包含完整选型权衡、备选方案与后果推演。 |
 | **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求实打 bge-m3 为 24–65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平。 |
 | **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0-token 判据抓出三个静默缺陷。 |
 | **全套技术栈本地运行** | [快速开始](#-快速开始一条命令) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |
@@ -140,13 +149,23 @@ flowchart TD
 
 ### 2. 现场录屏实录
 
-**极性守卫阻断演示** — 实测高相似反义句越过 0.95 阈值触发 L2 命中时，被守卫判定 `polarity-conflict` 并强制穿透的真实日志与响应流（[`docs/polarity-guard-demo.gif`](docs/polarity-guard-demo.gif)）。
+这一节不放宣传截图，只放两段当场抓取的真实链路录屏：
+
+<div align="center">
+
+**① 极性守卫阻断** — 实测高相似反义句越过 0.95 阈值触发 L2 命中时，被守卫判定 `polarity-conflict` 并强制穿透的真实日志与响应流。
 
 ![极性守卫阻断演示：L2 命中被 polarity-conflict 拒绝并强制穿透](docs/polarity-guard-demo.gif)
 
-**涉资动作人机协同门禁** — 买家触发退款后，模型工具调用生成待审提案，工单系统流转至工作台审核放行的闭环过程（[`docs/refund-hitl-demo.gif`](docs/refund-hitl-demo.gif)）。
+</div>
+
+<div align="center">
+
+**② 涉资动作人机协同门禁** — 买家触发退款后，模型工具调用生成待审提案，工单系统流转至工作台审核放行的闭环过程。
 
 ![涉资动作人机协同门禁：退款受理 → 工单审核 → 人工放行](docs/refund-hitl-demo.gif)
+
+</div>
 
 > **现场实录前置边界说明**：
 > 1. **模型基准**：两段录屏均运行在 `perf` 档位（MockLLM + 真实 bge-m3 + 真实 Qdrant/ES/Redis）；被演示的链路（语义缓存、极性守卫、工具编排、人机审核、审计）都真实发生，模型侧答案由 Mock 模板产出。
@@ -282,7 +301,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 * **Part 7 Style & Feedback**：话术风格注入与反馈回流完整性
 * **Part 8 Task**：复合业务长链路端到端完成率
 
-**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **505 条** JVM 测试（tool-api 10 + biz-mock 67 + ticket 45 + gateway 383）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 28 步全量验收（含活体中间件、浏览器与一键演示）。
+**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **536 条** JVM 测试（tool-api 10 + biz-mock 69 + ticket 45 + gateway 412）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 28 步全量验收（含活体中间件、浏览器与一键演示）。
 
 ---
 
@@ -565,7 +584,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 <summary>🔁 复现：压测、评测与验收命令</summary>
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（四模块 10 + 67 + 383 + 45 = 505 项）
+# 单元、架构与主链路 JVM 集成测试（四模块 10 + 69 + 412 + 45 = 536 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟

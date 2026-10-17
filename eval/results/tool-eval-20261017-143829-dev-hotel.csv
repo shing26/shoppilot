@@ -1,0 +1,13 @@
+answer_excerpt,channel,checks_ok,cited_ok,error,id,intent,intent_ok,kind,noTool_ok
+根据政策条款，酒店的标准入住时间是当天十四点以后，您可以提前到店，但房间是否立即可用取决于上一手客房的清扫与查房进度。建议您提前联系酒店确认。,web,,True,,HTL-CHK-01,POLICY_HOTEL,True,hotel,True
+请提供您的订单号，以便查询具体的退房时间。,web,,True,,HTL-CHK-02,POLICY_HOTEL,True,hotel,True
+根据政策条款[18ec42a35c31db4662f19ff4ce6e0845f0e1c2262dfcd4cd16b337acda00399d]，可取消房型在入住当日十八点以前取消是免费的，但需注意房型的取消政策。请提供您的订单号，以便查询,web,,True,,HTL-CAN-01,POLICY_HOTEL,True,hotel,True
+根据政策条款[18ec42a35c31db4662f19ff4ce6e0845f0e1c2262dfcd4cd16b337acda00399d]，不可取消房型从支付成功那一刻起即锁定，取消不退款。但是，可以申请改期一次，改期需在入住当日十八,web,,True,,HTL-CAN-02,POLICY_HOTEL,True,hotel,True
+您的订单号是？需要确认您想要加床的房型与房间号。,web,,True,,HTL-BED-01,POLICY_HOTEL,True,hotel,True
+,web,False,,HTTP Error 429: ,HTL-BED-02,POLICY_HOTEL,,hotel,
+,web,False,,HTTP Error 429: ,HTL-EXT-01,POLICY_HOTEL,,hotel,
+,web,False,,HTTP Error 429: ,HTL-DEP-01,POLICY_HOTEL,,hotel,
+,web,False,,HTTP Error 429: ,HTL-BKF-01,POLICY_HOTEL,,hotel,
+,web,False,,HTTP Error 429: ,HTL-ECO-01,POLICY_HOTEL,,hotel,
+,web,False,,HTTP Error 429: ,HTL-REP-01,POLICY_HOTEL,,hotel,
+,web,False,,HTTP Error 429: ,HTL-ESC-01,ESCALATE,,hotel,

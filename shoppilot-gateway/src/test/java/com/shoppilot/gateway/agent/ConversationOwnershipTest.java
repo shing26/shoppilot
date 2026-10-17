@@ -5,7 +5,9 @@ import com.shoppilot.gateway.cache.CacheService;
 import com.shoppilot.gateway.cache.SingleFlight;
 import com.shoppilot.gateway.cache.WriteBackPolicy;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.config.TenantDomainRegistry;
 import com.shoppilot.gateway.identity.TenantContext;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.agent.PromptCatalog;
@@ -271,15 +273,23 @@ class ConversationOwnershipTest {
 
     private AgentStateMachine stateMachine(LlmGateway llm, ToolDispatcher dispatcher) {
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.dynamic(Intent.ACTION_ADDRESS, "T0", true), null));
         WriteBackPolicy policy = mock(WriteBackPolicy.class);
         when(policy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(false, "单元测试不外写缓存"));
         KbEpoch epoch = mock(KbEpoch.class);
         when(epoch.current()).thenReturn(7L);
         return new AgentStateMachine(triage, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
+                ecommerceDomains(),
                 mock(HybridRetriever.class), llm, dispatcher, store, mock(FallbackService.class), properties(),
                 mock(WriteBackPool.class), new PromptCatalog(), perfModeGate(), new StyleService(), new SimpleMeterRegistry());
+    }
+
+    /** round33：测试里的租户按电商登记（ADR 0067）。 */
+    private static TenantDomainRegistry ecommerceDomains() {
+        TenantDomainRegistry domains = mock(TenantDomainRegistry.class);
+        when(domains.resolve(anyString())).thenReturn(Domain.ECOMMERCE);
+        return domains;
     }
 
     /** 情绪门只走词典层（perf-mode 跳过 LLM 分类）：会话归属测试不关心情绪第二层。 */

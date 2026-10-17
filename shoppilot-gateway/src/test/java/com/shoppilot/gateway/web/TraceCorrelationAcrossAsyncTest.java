@@ -20,8 +20,10 @@ import com.shoppilot.gateway.cache.SingleFlight;
 import com.shoppilot.gateway.cache.WriteBackPolicy;
 import com.shoppilot.gateway.cache.WriteBackPool;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.config.TenantDomainRegistry;
 import com.shoppilot.gateway.identity.RequestTrace;
 import com.shoppilot.gateway.identity.TenantContext;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.llm.LlmGateway;
@@ -94,7 +96,7 @@ class TraceCorrelationAcrossAsyncTest {
         // 与 AsyncConfig 的写回池同形：小池、有界队列、饱和与关闭后走提交线程代跑
         WriteBackPool writeBack = new WriteBackPool(1, 1, 0L, 1, new SimpleMeterRegistry());
         CacheService cache = mock(CacheService.class);
-        when(cache.prepareWrite(any(), any(), anyLong(), any(), any(), any(), any(), any()))
+        when(cache.prepareWrite(any(), any(), any(), anyLong(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(Optional.of(entry()));
         doThrow(new IllegalStateException("Redis 写不进去")).when(cache).writeBack(any(), any());
         AgentStateMachine machine = machine(cache, writeBack);
@@ -199,19 +201,27 @@ class TraceCorrelationAcrossAsyncTest {
     private AgentStateMachine machine(CacheService cache, WriteBackPool writeBack) {
         TriageEngine triage = mock(TriageEngine.class);
         // dynamic：cacheAdmissible=false，直接走模型路径，写回判定仍在末尾
-        when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.dynamic(Intent.POLICY_RETURN, "T3", false), null));
         WriteBackPolicy policy = mock(WriteBackPolicy.class);
         when(policy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(true, "单元测试放行写回"));
         KbEpoch epoch = mock(KbEpoch.class);
         when(epoch.current()).thenReturn(7L);
         HybridRetriever retriever = mock(HybridRetriever.class);
-        when(retriever.retrieve(any(), any(), any())).thenReturn(HybridRetriever.Result.unavailable(7L));
+        when(retriever.retrieve(any(), any(), any(), any())).thenReturn(HybridRetriever.Result.unavailable(7L));
         LlmGateway llm = mock(LlmGateway.class);
         when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("支持七天无理由退货"));
-        return new AgentStateMachine(triage, cache, mock(SingleFlight.class), policy, epoch, retriever, llm,
+        return new AgentStateMachine(triage, cache, mock(SingleFlight.class), policy, epoch, ecommerceDomains(),
+                retriever, llm,
                 mock(ToolDispatcher.class), store, mock(FallbackService.class), properties(), writeBack,
                 new PromptCatalog(), perfModeGate(), new StyleService(), new SimpleMeterRegistry());
+    }
+
+    /** round33：测试里的租户按电商登记（ADR 0067）。 */
+    private static TenantDomainRegistry ecommerceDomains() {
+        TenantDomainRegistry domains = mock(TenantDomainRegistry.class);
+        when(domains.resolve(anyString())).thenReturn(Domain.ECOMMERCE);
+        return domains;
     }
 
     private SentimentGate perfModeGate() {
@@ -221,14 +231,14 @@ class TraceCorrelationAcrossAsyncTest {
     }
 
     private static CacheEntry entry() {
-        return CacheEntry.of("支持七天无理由退货", Intent.POLICY_RETURN, TENANT, "SHOP", 7L, List.of("R-1"),
-                "qwen2.5:3b", QUERY);
+        return CacheEntry.of("支持七天无理由退货", Intent.POLICY_RETURN, TENANT, "SHOP", Domain.ECOMMERCE, 7L,
+                List.of("R-1"), List.of("七天无理由"), "qwen2.5:3b", QUERY);
     }
 
     private static AgentResult result() {
         return new AgentResult("支持七天无理由退货", Intent.POLICY_RETURN, "T3", CacheService.Layer.NONE,
                 List.of(), new ArrayList<>(), null, null, false, 3, 5, false, false, "v1.0.0", List.of(),
-                AgentResult.ContextComposition.NONE);
+                AgentResult.ContextComposition.NONE, List.of());
     }
 
     private static GatewayProperties properties() {

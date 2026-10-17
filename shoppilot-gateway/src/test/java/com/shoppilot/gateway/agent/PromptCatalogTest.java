@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,15 +20,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PromptCatalogTest {
 
     @Test
-    @DisplayName("生产资源：加载 v1.0.0，正文与迁移前的 11 条规则逐字同源")
+    @DisplayName("生产资源：加载 v1.1.0，11 条规则结构不变")
     void loadsProductionResources() {
         PromptCatalog catalog = new PromptCatalog();
-        assertEquals("v1.0.0", catalog.version());
+        assertEquals("v1.1.0", catalog.version());
         var rulePattern = Pattern.compile("(?m)^\\d+\\.");
         assertEquals(11, rulePattern.matcher(catalog.systemPrompt()).results().count(),
                 "11 条规则一条都不能少：多一条或少一条都是行为语义变更，必须走新版本文件");
-        assertTrue(catalog.systemPrompt().startsWith("你是电商店铺的在线客服助手。请遵守：\n"));
+        assertTrue(catalog.systemPrompt().startsWith("你是商家的在线客服助手。请遵守：\n"));
         assertTrue(catalog.systemPrompt().endsWith("11. 用简体中文，口语、简洁，不超过 200 字。\n"));
+    }
+
+    @Test
+    @DisplayName("round33：底座行业无关，且写明「没有可用工具时办理类诉求照实说明并转人」（ADR 0067）")
+    void basePromptIsIndustryNeutralWithConsultOnlyFallback() {
+        String prompt = new PromptCatalog().systemPrompt();
+
+        assertFalse(prompt.contains("电商店铺"), "酒店租户拿到电商人设就是跨行业串味的源头："
+                + "底座必须是行业无关的客服人设，行业差异由语料与工具表决定，不写死在提示词里");
+        assertTrue(prompt.contains("没有任何可用工具"), "纯咨询行业（酒店）没有办理工具，"
+                + "底座必须给模型一条明确的兜底：办不了就说明并转人，不能凭空承诺已经办理");
     }
 
     @Test

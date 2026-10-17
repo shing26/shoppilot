@@ -18,8 +18,9 @@ import java.util.function.Supplier;
 /**
  * 双引擎混合检索：Qdrant 稠密召回 + ES BM25 召回，RRF 融合（ADR 0010）。
  *
- * <p>租户可见范围 = 本店铺规则 + 平台规则，两者共享同一份平台条目，
- * 不按店铺复制 N 份（ADR 0004）。
+ * <p>租户可见范围 = 本租户规则 + **同行业**平台规则（ADR 0004、ADR 0067），平台条目不按店铺
+ * 复制 N 份。行业是过滤条件而不是排序偏好：酒店租户永远拿不到电商平台条款，未登记行业的租户
+ * fail-closed 只看得到自己那一份。
  */
 @Component
 public class HybridRetriever {
@@ -45,29 +46,36 @@ public class HybridRetriever {
         this.lexicalTimer = Timer.builder("shoppilot_retrieve_lexical_seconds").register(registry);
     }
 
-    public Result retrieve(String query, String tenantId, Intent intent) {
+    public Result retrieve(String query, String tenantId, Domain domain, Intent intent) {
         long epoch = kbEpoch.current();
-        List<String> visibleTenants = List.of(tenantId, RuleChunk.PLATFORM_TENANT);
-        Recalls recalls = recall(query, visibleTenants, intent, epoch);
+        List<String> visibleTenants = visibleTenants(tenantId, domain);
+        Recalls recalls = recall(query, visibleTenants, domain, intent, epoch);
         List<Scored> dense = recalls.dense();
         List<Scored> lexical = recalls.lexical();
-
-        // 意图过滤过严导致召回为空时退回不带意图的检索：宁可噪声高，不可答不出
-        if (dense.isEmpty() && lexical.isEmpty() && intent != null && intent.cacheAdmissible()) {
-            recalls = recall(query, visibleTenants, null, epoch);
-            dense = recalls.dense();
-            lexical = recalls.lexical();
-        }
 
         List<Retrieved> fused = rrf(dense, lexical);
         return new Result(fused.subList(0, Math.min(config.fusedTopK(), fused.size())),
                 dense.size(), lexical.size(), epoch, recalls.degraded());
     }
 
-    private Recalls recall(String query, List<String> visibleTenants, Intent intent, long epoch) {
-        Path dense = timed(denseTimer, () -> run("稠密召回", () -> denseRecall(query, visibleTenants, intent, epoch)));
+    /**
+     * 可见范围（round33 / ADR 0067）：本租户自己的规则 + **同行业**平台规则。
+     *
+     * <p>未登记行业的租户 fail-closed：只看得到本租户那一份，不自动继承平台电商政策。
+     * 这修的是 round32 复现的"酒店租户问押金，答出电商条款"——平台级语料全部是电商政策，
+     * 而可见范围过去只有 {@code tenantId + PLATFORM}，行业这一维根本不存在。
+     */
+    private static List<String> visibleTenants(String tenantId, Domain domain) {
+        return domain != null && domain.platformVisible()
+                ? List.of(tenantId, RuleChunk.PLATFORM_TENANT)
+                : List.of(tenantId);
+    }
+
+    private Recalls recall(String query, List<String> visibleTenants, Domain domain, Intent intent, long epoch) {
+        Path dense = timed(denseTimer,
+                () -> run("稠密召回", () -> denseRecall(query, visibleTenants, domain, intent, epoch)));
         Path lexical = timed(lexicalTimer,
-                () -> run("词法召回", () -> lexicalRecall(query, visibleTenants, intent, epoch)));
+                () -> run("词法召回", () -> lexicalRecall(query, visibleTenants, domain, intent, epoch)));
         return new Recalls(dense.hits(), lexical.hits(), dense.failed() || lexical.failed());
     }
 
@@ -95,21 +103,15 @@ public class HybridRetriever {
      * 跑两遍会各自触发一次向量入库与一次意图兜底重试，两行数据不可比；
      * 从同一次召回结果里分别取序，比较的才只是融合这一步带来的差别。
      */
-    public Diagnosis diagnose(String query, String tenantId, Intent intent, int limit) {
+    public Diagnosis diagnose(String query, String tenantId, Domain domain, Intent intent, int limit) {
         long epoch = kbEpoch.current();
-        List<String> visibleTenants = List.of(tenantId, RuleChunk.PLATFORM_TENANT);
-        Recalls recalls = recall(query, visibleTenants, intent, epoch);
+        List<String> visibleTenants = visibleTenants(tenantId, domain);
+        Recalls recalls = recall(query, visibleTenants, domain, intent, epoch);
         List<Scored> dense = recalls.dense();
         List<Scored> lexical = recalls.lexical();
-        boolean usedFallback = false;
-        if (dense.isEmpty() && lexical.isEmpty() && intent != null && intent.cacheAdmissible()) {
-            recalls = recall(query, visibleTenants, null, epoch);
-            dense = recalls.dense();
-            lexical = recalls.lexical();
-            usedFallback = true;
-        }
         return new Diagnosis(topIds(dense, limit), topIds(lexical, limit),
-                topIdsFromFused(rrf(dense, lexical), limit), dense.size(), lexical.size(), epoch, usedFallback, recalls.degraded());
+                topIdsFromFused(rrf(dense, lexical), limit), dense.size(), lexical.size(), epoch, false,
+                recalls.degraded());
     }
 
     private static List<String> topIds(List<Scored> scored, int limit) {
@@ -131,11 +133,13 @@ public class HybridRetriever {
                             boolean degraded) {
     }
 
-    private List<Scored> denseRecall(String query, List<String> visibleTenants, Intent intent, long epoch) {
+    private List<Scored> denseRecall(String query, List<String> visibleTenants, Domain domain, Intent intent,
+                                     long epoch) {
         // 向量化失败不在此处吞：上层要靠异常区分“这路挂了”与“库里确实没有”
         float[] vector = embedding.embed(query);
         List<Map<String, Object>> must = new ArrayList<>();
         must.add(Map.of("key", "kb_epoch", "match", Map.of("value", epoch)));
+        must.add(Map.of("key", "domain", "match", Map.of("value", domainName(domain))));
         if (intent != null) {
             must.add(Map.of("key", "intent", "match", Map.of("value", intent.name())));
         }
@@ -153,14 +157,18 @@ public class HybridRetriever {
             scored.add(new Scored(ruleId, i,
                     stringField(hits.get(i).payload(), "scope", "SHOP"),
                     stringField(payload, "title", ""),
+                    stringField(payload, "heading_path", ""),
+                    stringField(payload, "source_doc", ""),
                     stringField(payload, "text", "")));
         }
         return scored;
     }
 
-    private List<Scored> lexicalRecall(String query, List<String> visibleTenants, Intent intent, long epoch) {
+    private List<Scored> lexicalRecall(String query, List<String> visibleTenants, Domain domain, Intent intent,
+                                       long epoch) {
         Map<String, Object> filters = new LinkedHashMap<>();
         filters.put("kbEpoch", epoch);
+        filters.put("domain", domainName(domain));
         if (intent != null) {
             filters.put("intent", intent.name());
         }
@@ -169,7 +177,8 @@ public class HybridRetriever {
         List<Scored> scored = new ArrayList<>();
         for (int i = 0; i < hits.size(); i++) {
             EsRestClient.Hit hit = hits.get(i);
-            scored.add(new Scored(hit.ruleId(), i, hit.scope(), hit.title(), hit.text()));
+            scored.add(new Scored(hit.ruleId(), i, hit.scope(), hit.title(), hit.headingPath(), hit.sourceDoc(),
+                    hit.text()));
         }
         return scored;
     }
@@ -186,12 +195,18 @@ public class HybridRetriever {
         bool.put("filter", filter);
         try {
             return es.searchRaw(config.esIndex(), Map.of("size", size,
-                    "_source", List.of("ruleId", "text", "title", "ruleType", "applicableCategory", "scope"),
+                    "_source", List.of("ruleId", "text", "title", "ruleType", "applicableCategory", "scope",
+                            "headingPath", "domain"),
                     "query", Map.of("bool", bool)));
         } catch (RuntimeException failure) {
             // 异常抛到 recall() 那层统一记 degraded：绝不把“挂了”翻译成“没查到”
             throw new IllegalStateException("ES 词法召回失败", failure);
         }
+    }
+
+    /** 未登记行业按 UNKNOWN 过滤：这类租户只可能看到自己那些同样未标注行业的规则。 */
+    private static String domainName(Domain domain) {
+        return domain == null ? Domain.UNKNOWN.name() : domain.name();
     }
 
     /**
@@ -221,6 +236,8 @@ public class HybridRetriever {
             if (aggregated.text == null || aggregated.text.isBlank()) {
                 aggregated.text = item.text();
                 aggregated.title = item.title();
+                aggregated.headingPath = item.headingPath();
+                aggregated.sourceDoc = item.sourceDoc();
             }
             if (isDense) {
                 aggregated.denseRank = item.rank() + 1;
@@ -240,7 +257,8 @@ public class HybridRetriever {
     }
 
     /** 包级可见同 {@link #rrf}：录放门要从两路序重建输入。 */
-    record Scored(String ruleId, int rank, String scope, String title, String text) {
+    record Scored(String ruleId, int rank, String scope, String title, String headingPath, String sourceDoc,
+                  String text) {
     }
 
     private static final class Aggregated {
@@ -250,6 +268,8 @@ public class HybridRetriever {
         private int denseRank;
         private int lexicalRank;
         private String title;
+        private String headingPath;
+        private String sourceDoc;
         private String text;
 
         private Aggregated(String ruleId) {
@@ -257,13 +277,17 @@ public class HybridRetriever {
         }
 
         private Retrieved toRetrieved() {
-            return new Retrieved(ruleId, score, denseRank, lexicalRank, scope, title, text);
+            return new Retrieved(ruleId, score, denseRank, lexicalRank, scope, title, headingPath, sourceDoc, text);
         }
     }
 
-    /** @param text 条款原文，注入 Prompt 用；检索侧拿不到正文就等于答不出，见 ADR 0010 */
+    /**
+     * @param text 条款原文，注入 Prompt 用；检索侧拿不到正文就等于答不出，见 ADR 0010
+     * @param headingPath 文档标题 &gt; 小节标题，买家端引用详情用（round33 / ADR 0067）
+     * @param sourceDoc 条款出处文件名，买家端引用详情里的 {@code doc}
+     */
     public record Retrieved(String ruleId, double rrfScore, int denseRank, int lexicalRank, String scope,
-                            String title, String text) {
+                            String title, String headingPath, String sourceDoc, String text) {
     }
 
     public record Result(List<Retrieved> rules, int denseHits, int lexicalHits, long kbEpoch, boolean degraded) {

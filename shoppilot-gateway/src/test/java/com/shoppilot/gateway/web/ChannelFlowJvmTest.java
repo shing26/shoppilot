@@ -80,8 +80,8 @@ class ChannelFlowJvmTest {
 
     private static AgentResult answer(String reply) {
         return new AgentResult(reply, Intent.POLICY_RETURN, "T1", CacheService.Layer.NONE, List.of("R-1"), List.of(),
-                null, null, false, 3, 5, false, false, "v1.0.0", List.of(),
-                AgentResult.ContextComposition.NONE);
+                null, null, false, 3, 5, false, false, "v1.1.0", List.of(),
+                AgentResult.ContextComposition.NONE, List.of());
     }
 
     @Test
@@ -96,7 +96,7 @@ class ChannelFlowJvmTest {
                 .andExpect(jsonPath("$.channel").value("app"))
                 .andExpect(jsonPath("$.streaming").value(false))
                 .andExpect(jsonPath("$.answer").value("签收后七天内可以申请退货"))
-                .andExpect(jsonPath("$.promptVersion").value("v1.0.0"));
+                .andExpect(jsonPath("$.promptVersion").value("v1.1.0"));
 
         assertTrue(registry.get("shoppilot_channel_requests_total").tag("channel", "app").counter().count() == 1.0d);
     }
@@ -138,7 +138,7 @@ class ChannelFlowJvmTest {
     void emailFallbackReusesExistingTicket() throws Exception {
         AgentResult fallback = new AgentResult("稍后人工跟进", Intent.ESCALATE, "FALLBACK", CacheService.Layer.NONE,
                 List.of(), List.of(), FallbackReason.TOOL_UNAVAILABLE, "T-FB-9", false, 0, 0, false, true, "v1.0.0",
-                List.of(), AgentResult.ContextComposition.NONE);
+                List.of(), AgentResult.ContextComposition.NONE, List.of());
         when(agent.run(any(), any(), any())).thenReturn(fallback);
 
         mvc().perform(post("/api/v1/support/email")

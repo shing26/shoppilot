@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,6 +49,9 @@ import static org.mockito.Mockito.when;
 class RetrievalFusionReplayTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    /** front matter 里的租户归属；与 `scripts/retrieval_gate.py` 的同名正则逐字一致。 */
+    private static final Pattern FRONT_TENANT =
+            Pattern.compile("^tenant_id:\\s*([A-Za-z0-9_\\-]+)\\s*$", Pattern.MULTILINE);
 
     private static JsonNode fixture;
     private static Path fixturePath;
@@ -120,10 +125,20 @@ class RetrievalFusionReplayTest {
     }
 
     @Test
-    @DisplayName("语料指纹现算相等（改任一 knowledge/*.md 即红）")
+    @DisplayName("语料指纹现算相等；口径是**该夹具租户可见的那部分语料**（round32 收紧）")
     void corpusFingerprintMatchesTheFixture() throws Exception {
-        assertEquals(fixture.path("corpus_sha256").asText(), corpusSha256(),
-                "knowledge/ 下的语料与录制夹具时不一致：夹具是按当时那份语料录的，语料一改就要重录");
+        String tenant = fixture.path("tenant").asText();
+        assertEquals(fixture.path("corpus_sha256").asText(), corpusSha256(tenant),
+                "该夹具租户可见的语料与录制时不一致：" + tenant + " 自己的那份或平台级那份改过就要重录；"
+                        + "别的租户新增知识库不该惊动这份夹具（理由是 HybridRetriever 的可见范围）");
+    }
+
+    @Test
+    @DisplayName("反证：把另一租户的语料也算进来，指纹必须与夹具不同（证明口径真的在按租户过滤）")
+    void wholeCorpusFingerprintIsNotTheRecordedOne() throws Exception {
+        assertNotEquals(fixture.path("corpus_sha256").asText(), wholeCorpusSha256(),
+                "全量指纹竟然等于夹具里那个 —— 要么 knowledge/ 下还没有别的租户的语料，"
+                        + "要么这条用例的过滤根本没生效（那就退回了旧的全量口径）");
     }
 
     // ---- 辅助 -----------------------------------------------------------------
@@ -148,7 +163,7 @@ class RetrievalFusionReplayTest {
     private static List<HybridRetriever.Scored> scored(List<String> ruleIds) {
         List<HybridRetriever.Scored> scored = new ArrayList<>();
         for (int i = 0; i < ruleIds.size(); i++) {
-            scored.add(new HybridRetriever.Scored(ruleIds.get(i), i, "PLATFORM", "", ""));
+            scored.add(new HybridRetriever.Scored(ruleIds.get(i), i, "PLATFORM", "", "", "", ""));
         }
         return scored;
     }
@@ -183,21 +198,69 @@ class RetrievalFusionReplayTest {
         return bound.retrieval();
     }
 
-    /** 与 scripts/provenance.py 同一定义：knowledge/*.md 按文件名排序，逐个拼进摘要。 */
-    private static String corpusSha256() throws Exception {
+    /**
+     * 与 `scripts/retrieval_gate.py` 同一定义（round32 收紧后）：**该夹具租户可见的那部分**语料，
+     * 按文件名排序逐个拼「文件名 + 内容」。
+     *
+     * <p>与 `scripts/provenance.py:corpus_sha256()` 刻意不同：那份是活体报告的表头，回答的是
+     * 「这份读数对应当前整个知识库吗」，所以它必须覆盖全量；而本夹具是用 `--tenant T001` 录的，
+     * 录到的序只取决于 T001 可见的那部分（`HybridRetriever` 的 `tenantId + PLATFORM`）。
+     * 用全量口径守它，别的租户新增自己的知识库会让这份夹具假红——round32 加酒店租户时就会撞上。
+     */
+    private static String corpusSha256(String tenant) throws Exception {
+        return digestOf(knowledgeDocs().stream()
+                .filter(doc -> doc.tenant().equals(tenant) || doc.tenant().equals(RuleChunk.PLATFORM_TENANT))
+                .toList());
+    }
+
+    /** 全量口径：留一支反证，证明上面那份确实在按租户过滤，而不是把全量抄了一遍。 */
+    private static String wholeCorpusSha256() throws Exception {
+        return digestOf(knowledgeDocs());
+    }
+
+    private static String digestOf(List<Doc> docs) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (Stream<Path> files = Files.list(repoRoot().resolve("knowledge"))) {
-            for (Path path : files.filter(p -> p.toString().endsWith(".md"))
-                    .sorted(Comparator.comparing(p -> p.getFileName().toString())).toList()) {
-                digest.update(path.getFileName().toString().getBytes(StandardCharsets.UTF_8));
-                digest.update(Files.readAllBytes(path));
-            }
+        for (Doc doc : docs) {
+            digest.update(doc.name().getBytes(StandardCharsets.UTF_8));
+            digest.update(doc.content());
         }
         StringBuilder hex = new StringBuilder();
         for (byte b : digest.digest()) {
             hex.append(String.format("%02x", b));
         }
         return hex.toString();
+    }
+
+    private record Doc(String name, String tenant, byte[] content) {
+    }
+
+    private static List<Doc> knowledgeDocs() throws Exception {
+        try (Stream<Path> files = Files.list(repoRoot().resolve("knowledge"))) {
+            return files.filter(p -> p.toString().endsWith(".md"))
+                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))
+                    .map(path -> {
+                        try {
+                            byte[] content = Files.readAllBytes(path);
+                            return new Doc(path.getFileName().toString(), tenantOf(content), content);
+                        } catch (IOException failure) {
+                            throw new IllegalStateException(failure);
+                        }
+                    })
+                    .toList();
+        }
+    }
+
+    /**
+     * 只认 front matter 里的 `tenant_id`；缺省即平台级（与 {@code MarkdownChunker} 的默认同口径）。
+     * 只看开头 600 字节：正文里出现 `tenant_id:` 不算。
+     */
+    private static String tenantOf(byte[] content) {
+        String head = new String(content, StandardCharsets.UTF_8);
+        if (head.length() > 600) {
+            head = head.substring(0, 600);
+        }
+        Matcher found = FRONT_TENANT.matcher(head);
+        return found.find() ? found.group(1) : RuleChunk.PLATFORM_TENANT;
     }
 
     /** 夹具家族是 append-only：取**最新**那一份，与 scripts/retrieval_gate.py 同一口径。 */

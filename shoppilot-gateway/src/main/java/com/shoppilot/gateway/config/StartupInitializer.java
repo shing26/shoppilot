@@ -50,7 +50,7 @@ public class StartupInitializer implements ApplicationRunner {
         GatewayProperties.Retrieval retrieval = properties.retrieval();
         try {
             qdrant.ensureCollection(retrieval.ruleCollection(), properties.embedding().dimension(),
-                    List.of("tenant_id", "scope", "intent", "rule_type", "applicable_category", "source_doc"),
+                    List.of("tenant_id", "scope", "intent", "domain", "rule_type", "applicable_category", "source_doc"),
                     List.of("kb_epoch"));
             l2.ensureCollection();
             es.ensureIndex(retrieval.esIndex());

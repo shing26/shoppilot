@@ -32,6 +32,19 @@ export interface Citation {
   text?: string
 }
 
+/**
+ * 一条引用的可读详情（round33 / ADR 0067），与网关 `citationDetails` 同形。
+ *
+ * <p>网关的 `citations` 是**字符串数组**（反馈账本与旧脚本按它读，契约不动），只带 ruleId；
+ * 标题与出处在新字段里。两者同源同序，页面优先读这一份——否则引用列表会退化成
+ * 一条条「政策条款」。
+ */
+export interface CitationDetail {
+  ruleId: string
+  heading: string
+  doc: string
+}
+
 /** 登录态：只有登录换来的那一张令牌（会话存 sessionStorage，关掉标签页即登出）。 */
 export interface Session {
   token: string

@@ -1,5 +1,6 @@
 package com.shoppilot.gateway.triage;
 
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.tool.Intent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,10 @@ class T0RuleLayerTest {
             "发什么快递, POLICY_SHIPPING",
             "跨店满减怎么算, POLICY_PROMO",
             "生鲜坏了怎么赔, POLICY_FRESH",
+            "几点可以办理入住, POLICY_HOTEL",
+            "退房时间是几点, POLICY_HOTEL",
+            "订错了能免费取消吗, POLICY_HOTEL",
+            "早餐是几点到几点, POLICY_HOTEL",
     })
     @DisplayName("政策咨询定案为准入意图")
     void classifiesPolicyQuestions(String query, Intent expected) {
@@ -30,6 +35,110 @@ class T0RuleLayerTest {
         assertThat(result.intent()).isEqualTo(expected);
         assertThat(result.cacheAdmissible()).isTrue();
         assertThat(result.layer()).isEqualTo("T0");
+    }
+
+    @Test
+    @DisplayName("round33：酒店租户的酒店问句即使带第一人称也判政策（行业门在实体/第一人称之前）")
+    void hotelWordsWinOverPossessiveSoNoShopToolsAreAttached() {
+        var hotel = layer.classify("我订的房能免费取消吗", Domain.HOTEL).orElseThrow();
+
+        assertThat(hotel.intent()).isEqualTo(Intent.POLICY_HOTEL);
+        assertThat(hotel.cacheAdmissible()).isTrue();
+        // 工具裁剪按 isAction() 分流（AgentStateMachine:728）：政策意图挂零个工具。
+        // 这一条是那件事在判定层的可断言面——酒店问句绝不能拿到 QUERY_ORDER。
+        assertThat(hotel.intent().isAction()).isFalse();
+    }
+
+    @Test
+    @DisplayName("反证：同一句去掉酒店词就回到动态动作 —— 说明上面那条真的是酒店词表在起作用")
+    void withoutHotelWordsThePossessiveGoesBackToDynamic() {
+        // 电商租户：去掉酒店词之后，"我订的…" 命中第一人称 → 动态动作
+        var withoutHotelWord = layer.classify("我订的东西到哪了").orElseThrow();
+        assertThat(withoutHotelWord.intent()).isEqualTo(Intent.ACTION_LOGISTICS);
+        assertThat(withoutHotelWord.cacheAdmissible()).isFalse();
+
+        // 酒店租户：同一句不带酒店词 → 行业门之后不定案，交给下一级（工具表为空）
+        assertThat(layer.classify("我订的东西到哪了", Domain.HOTEL)).isEmpty();
+    }
+
+    // ---- round33 / ADR 0067：动作优先、行业门、泛词反证 -------------------------------------
+
+    @Test
+    @DisplayName("round33 动作优先：没有实体也没有第一人称的显式办理诉求仍判动作，不落政策")
+    void explicitActionPhraseBeatsPolicyWords() {
+        var refund = layer.classify("生鲜坏了我要退款").orElseThrow();
+        assertThat(refund.intent()).isEqualTo(Intent.ACTION_REFUND);
+        assertThat(refund.cacheAdmissible()).isFalse();
+
+        var address = layer.classify("地址填错了我要改地址").orElseThrow();
+        assertThat(address.intent()).isEqualTo(Intent.ACTION_ADDRESS);
+        assertThat(address.cacheAdmissible()).isFalse();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "退款政策是什么, POLICY_RETURN",
+            "这个还能退吗, POLICY_RETURN",
+            "七天无理由怎么退, POLICY_RETURN",
+    })
+    @DisplayName("反证：纯政策问法不许被上面那条误判成动作 —— 否则政策咨询会被拖进工具循环")
+    void purePolicyQuestionsStayPolicy(String query, Intent expected) {
+        var result = layer.classify(query).orElseThrow();
+
+        assertThat(result.intent()).isEqualTo(expected);
+        assertThat(result.cacheAdmissible()).isTrue();
+    }
+
+    @Test
+    @DisplayName("round33 行业门：酒店租户的电商办理/政策问句不落电商意图，留给下一级")
+    void hotelDomainGateRejectsEcommerceIntents() {
+        // D5：旧实现把"我要取消订单"判成 ACTION_REFUND 并挂上 APPLY_REFUND
+        assertThat(layer.classify("我要取消订单", Domain.HOTEL)).isEmpty();
+        // D2/D3：酒店租户问生鲜，不许落 POLICY_FRESH
+        assertThat(layer.classify("生鲜坏了怎么赔", Domain.HOTEL)).isEmpty();
+        // 酒店自己的问句照常定案
+        assertThat(layer.classify("押金什么时候退", Domain.HOTEL).orElseThrow().intent())
+                .isEqualTo(Intent.POLICY_HOTEL);
+        // 显式转人工优先级最高，行业门不能把它挡掉
+        assertThat(layer.classify("我要转人工", Domain.HOTEL).orElseThrow().intent())
+                .isEqualTo(Intent.ESCALATE);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "手机坏了怎么赔",
+            "早餐机坏了怎么赔",
+            "家电破损了怎么理赔",
+    })
+    @DisplayName("round33 泛词反证：去掉了行业对象词的泛问句不再被 T0 判成生鲜/酒店")
+    void genericWordsNoLongerTriggerIndustryPolicies(String query) {
+        assertThat(layer.classify(query)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "早餐是几点到几点",
+            "早餐几点开始",
+            "早餐时间",
+    })
+    @DisplayName("round33 修 HTL-BKF-01：餐饮语境的「早餐」判酒店，两个域一致")
+    void breakfastTimeQuestionIsHotelPolicy(String query) {
+        // 电商租户问酒店早餐属于越界咨询：T0 仍给 POLICY_HOTEL，检索 domain 过滤后转人工
+        assertThat(layer.classify(query, Domain.ECOMMERCE).orElseThrow().intent())
+                .isEqualTo(Intent.POLICY_HOTEL);
+        // 酒店租户走行业门，同一句话同样定案
+        assertThat(layer.classify(query, Domain.HOTEL).orElseThrow().intent())
+                .isEqualTo(Intent.POLICY_HOTEL);
+        // 负向断言只放行餐饮语境：家电名里的「早餐机」不判酒店（D6 不回归）
+        assertThat(layer.classify("早餐机坏了怎么赔", Domain.HOTEL)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("round32：酒店新意图是政策意图，缓存分区自动跟着 isPolicy() 走")
+    void hotelIntentIsCacheAdmissibleByConstruction() {
+        assertThat(Intent.POLICY_HOTEL.isPolicy()).isTrue();
+        assertThat(Intent.POLICY_HOTEL.cacheAdmissible()).isTrue();
+        assertThat(Intent.POLICY_HOTEL.isAction()).isFalse();
     }
 
     @Test

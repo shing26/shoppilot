@@ -12,14 +12,30 @@ import java.util.Map;
  * @param trace 每一步状态转移，落盘后可复盘"这个答案是怎么来的"
  * @param plan 计划各步的**执行事实**（票 48）；没走工具循环时是空列表，不是 null
  * @param context 这次回答用了什么上下文（票 49）；纯观测，不参与任何判定
+ * @param citationDetails 引用详情（round33 / ADR 0067）：与 {@code citations} 同源同序，
+ *                        多带标题与出处。**只增字段**——{@code citations} 的字符串契约一字不动，
+ *                        反馈账本与旧脚本照常读它
  */
 public record AgentResult(String answer, Intent intent, String triageLayer, CacheService.Layer cacheLayer,
                           List<String> citations, List<TraceStep> trace, FallbackReason fallbackReason,
                           String ticketId, boolean slotAsked, int promptTokens, int completionTokens,
                           boolean toolUsed, boolean degraded, String promptVersion,
-                          List<PlanStep> plan, ContextComposition context) {
+                          List<PlanStep> plan, ContextComposition context, List<CitationDetail> citationDetails) {
 
     public record TraceStep(String state, long atMillis, String detail) {
+    }
+
+    /**
+     * 一条引用的可读详情（round33 / ADR 0067）。
+     *
+     * <p>买家端原来按 {@code {ruleId, heading}} 对象读 {@code citations}，而网关发的是字符串，
+     * 于是每条引用都只渲染成"政策条款"。这里把标题与出处补成独立字段：既让买家端能显示，
+     * 又不动 {@code citations} 那份被反馈账本依赖的字符串契约。
+     *
+     * @param heading 小节标题（拿不到正文时为文档标题）
+     * @param doc     条款出处文件名
+     */
+    public record CitationDetail(String ruleId, String heading, String doc) {
     }
 
     /**

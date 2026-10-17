@@ -2,7 +2,7 @@
 
 这里是本仓的正式 ticket tracker，不是临时草稿目录。目录名里的 `.scratch` 是历史命名；路径已被 README、ticket、审计脚本和提交记录大量引用，不要为了改名而移动。
 
-最后整理日期：2026-09-28。
+最后整理日期：2026-10-17。
 
 ## 当前状态
 
@@ -96,7 +96,10 @@
 - `done` 与 `implemented` 在本 tracker 中都表示已收口；差异只是早期票和后续 round 的用词。
 - Git push 与 PR 由 `.github/workflows/ci-subset.yml` 跑干净 runner 的构建、JVM 测试与 0 token 评测门禁（票 34：判据自检 + 离线 rescore 比对；round18 票 44 加第四步：覆盖率棘轮；round23 票 73 加前端构建步、round27 扩到两个前端 → **九步**）；全量活体验收矩阵仍是作者本机证据（round23 加 `workspace` → 26 步、round26 加 `outbound`、round27 加 `buyer` → **28 步**，分 daily / live / full 三档）。
 - **2026-10-05：票 72 的状态位校正**。它一直是本 tracker 索引写 `implemented`、而**票面自己写 `ready-for-agent`**——于是 frontier 把它摆回了可领取。判据统一成一条并写进票面 Handoff：**Handoff 有完整验证落点 + tracker 索引写 `implemented` → 票面就该是 `implemented`**。**这是票 21 那个毛病的复发**（票 21 当时「只落了审账没改状态位」，被记进它自己的 Handoff 一次）；说明**光在 tracker 改状态不够，票面必须同步改**，否则两个 source of truth 会长期互相矛盾。
-- **当前交付层读数**（供简历与投递引用，2026-10-11 核准）：**505 条** JVM 测试（四模块 10 + 67 + 383 + 45，surefire 汇总）、**64 篇** ADR、**116 张**票、CI **九步**绿（2026-10-10 修复前端产物漂移并推送，run **38080802513** 九步全绿，关闭 round30 起的持续红）、**2.96 万行** Java / 260 个文件。**全仓口径是五段**，别混：ADR 65 编号 − 0022 预留 = 64 篇；票 01-116 里 01-95、96-97、113-116 已收口（91 暂缓、99 开放）。
+- 2026-10-17：**round32 收口（票 117-123，ADR 0066「把通用客服从形容词变成两个能跑的场景」）**——**所有者政策覆盖**（`RELEASE.md` 第 4 条，不自动续期）。两个**可跑**场景落地：门面=鲜果驿站 T002 死蟹理赔（六小时窗口 / 按只折算 / 需订单核验 / 看照片定责必转人），对照=云栖酒店 T004 入住与退改（**纯咨询、零工具依赖**）。新增共享枚举 `POLICY_HOTEL`：**缓存分区与工具裁剪随 `isPolicy()` / `isAction()` 自动生效、检索按意图过滤、评测集新增 `kind: hotel` 分区**；**限流统计这一处不成立**（`RateLimitService` 键是租户 + 买家/IP，无意图维度，ADR 0007 那句是继承来的、未核实的说法，ADR 0066 决策 8 照登）。**意图数由 ADR 0007 的「封顶 10」越过到 11，是本轮所有者政策覆盖下的有意偏离、照登**。另加酒店语料（挂 `tenant_id: T004`、**刻意不挂 PLATFORM**）+ 酒店评测 12 条（**不并入 180 条 gold**）。术语收敛：`CONTEXT.md`「租户 / 店铺」改写为「租户唯一、店铺是电商域业务叫法」（ADR 0066 授权）。交付面：业务一页纸 `docs/round32-two-runnable-scenarios.md` + README 首屏降级为指路牌 + `RELEASE.md` 只加换代指针。**标定重跑**：加酒店质心未移动 180 条 gold 任何读数，工作点仍 `conf=0.70 / margin=0.02`。**读数**：JVM 四模块 **`10 + 69 + 391 + 45 = 515`** 全绿；CI **九步不变**（一页纸防腐化门禁并入 Suite 步）。**两处照登未执行**：① 真人 cold-read（本轮主判）需真实业务侧的人；② 酒店套件活体跑批（`run_tool_eval.py --suite hotel`）需本机活体栈；本机只跑通它们的 0 token 夹具与 JVM 覆盖，均不许写成「已验证」，协议见票 123。
+- 2026-10-17：**round33 开轮 + 收口（票 124-128，ADR 0067「把跨行业从文件名不同补成运行时可隔离的 domain 维度」）**——**所有者政策覆盖**（所有者裁定「按修复顺序建议开始修复」，不自动续期）。触发：round32 落地后业务侧实机复现「换店铺/换行业问同一句、答案几乎一样」，核实为**九类缺陷**（跨行业平台缓存污染 / 跨行业知识泄漏 / 空召回放宽意图 / 动作优先失效 / 酒店办理进电商工具 / 泛词误判 / 电商提示词硬编码 / 买家引用契约错位 / 语料内容冲突）。**修法**：新增 `Domain`（`ECOMMERCE`/`HOTEL`/`UNKNOWN`）贯穿租户解析 / 规则块 / 入库 payload / 检索过滤 / 缓存分区 / 负缓存，平台桶键改 `PLATFORM:<DOMAIN>`，检索可见范围改「本租户 + 同行业平台」并**删掉空召回的意图放宽**；`T0RuleLayer.classify(query, domain)` 明确顺序（显式转人工 → 行业门 → 实体/第一人称 → 显式办理动作 → 酒店词表 → 电商政策词表），收紧 `FRESH_WORDS`/`HOTEL_WORDS`；提示词换代 `v1.1.0`（行业无关底座）；引用契约**只增** `citationDetails`（买家端优先读，旧 `citations` 字符串保留）；语料修 `return-01` 七天正文 + 新增 T002 死蟹细则。**活体正确性补丁**：`EsRestClient.ensureIndex` 改为老索引也 `PUT _mapping` 合并一次（否则 ES 动态映射成 `text`、`term domain` 永不命中），`StartupInitializer` 的 Qdrant 规则集合 keywordFields 加 `domain`。**读数**：JVM 四模块 **`10 + 69 + 412 + 45 = 536`** 全绿；0 token 门禁全过（判据自检 `40/40`、离线 rescore `cases=180 files=6 tool_diff=4`、套件 `ok=30`、一页纸 `failures=0`、task `ok=14`、检索 `ok cases=10`、覆盖率 4 模块 OK）；CI 九步不变。**活体**（profile=local，kbEpoch=6，37 篇 / 111 块）：T001/T004 同一句「押金什么时候退」不再串答案、T004 无电商工具、T002 死蟹细则可检索、`生鲜坏了我要退款`+补单号仍执行退款、`citationDetails` 带 `heading`/`doc`。**未达成照登**：round32 的真人 cold-read 仍未执行（`--suite hotel` 活体跑批本轮补上：首跑 12 条 11 绿 1 红 → 修 HTL-BKF-01 早餐词表回归 → 复跑 12/12 绿）；本轮检索夹具只**重钉指纹**、未重录 `dense/lexical/fused`；全量活体矩阵未跑；round32 收口审计读数未重跑。**一条判据都没改**（gold / 阈值 / 分母 / 验收判据）。
+  - 收口审计（2026-10-17 实跑）：审计自 round31 删 `docs/interview-qa.md` 起就 `FileNotFoundError` 崩在半路；本轮修掉审计自己两处崩溃（E5/E5b 判 SKIP、`DOC_GLOBS` 缺文件跳过，**判据一字未动**），实读 **`PASS 73 / FAIL 13 / SKIP 10 / 共 96 项`**——13 条红逐条登记：`A1/A2` 未提交/未推送、`B7` 既有窗口红、`G6` 常数 536 ≠ 旧日志 448（本轮没重跑带 build/unit 的活体矩阵）、其余为先前轮次的文档漂移。**不许为消红改判据。**
+- **当前交付层读数**（供简历与投递引用，2026-10-17 round33 收口核准）：**536 条** JVM 测试（四模块 10 + 69 + 412 + 45，surefire 汇总）、**66 篇** ADR、**128 张**票、CI **九步**绿、**2.96 万行** Java / 260 个文件（行数/文件数沿用 round32 口径，未重测）。**全仓口径是五段**，别混：ADR 67 编号 − 0022 预留 = 66 篇；票 01-128 里 01-95、96-97、113-128 已收口（91 暂缓、99 开放）。
   **换代（2026-10-06，round28 收口实测）**：**454 条**（`10 + 59 + 345 + 40`；+3 全可归因：biz-mock +2、ticket +1）、**60 篇** ADR（新增 0061）、**103 张**票（新增 100-103，全收口）；CI 九步不变。
   **换代二（2026-10-06 晚，round29 收口实测）**：**464 条**（`10 + 64 + 345 + 45`；+10 全为本轮：biz-mock +5、ticket +5）、**61 篇** ADR（新增 0062）、**107 张**票（新增 104-107，全收口）；CI 九步不变。
   **换代三（2026-10-06 晚，round30 收口实测）**：**466 条**（`10 + 66 + 345 + 45`；+2 全为本轮：biz-mock +2）、**62 篇** ADR（新增 0063）、**112 张**票（新增 108-112，全收口）；CI 九步不变。
@@ -104,6 +107,8 @@
   **换代五（2026-10-07，round31 票 96 收口）**：**479 条**（`10 + 66 + 358 + 45`；+13 全在 gateway：两格派生测试 10 + AuthFilter 现状锚 1 + 上下文调整 2）；**64 篇** ADR（新增 0065 开线决策）；**116 张**票（新增 113-116）。
   **换代六（2026-10-07，round31 票 97 收口）**：**485 条**（`10 + 66 + 364 + 45`；+6 全在 gateway：`FeishuAdapterReplayTest` 录放门）；`eval/im-events/` 夹具目录新建（5 份，append-only 哈希钉）。
   **换代七（2026-10-09，round31 票 113/114/115 收口 + 补测）**：**505 条**（`10 + 67 + 383 + 45`；+20：gateway +19——票 113 长连接客户端 10、票 114 PostureGuard 7、事件处理器与蛇形命名补测 2；biz-mock +1 为使 round30 记账 66 回到实际 67 的更正，源码一个字节没动）。**round31 六票全部收口**；wss 握手、事件收发全链路、重启自动重连三项活体通过（落点 `docs/EVIDENCE.md`）。
+  **换代八（2026-10-17，round32 收口实测）**：**515 条**（`10 + 69 + 391 + 45`；+10：biz-mock +2——票 118 `SeedSegmentationTest` 两条；gateway +8——票 119 T0 酒店词表三条 + Chunker 一条、票 120 检索融合租户可见范围指纹与反证四条）、**65 篇** ADR（新增 0066）、**123 张**票（新增 117-123，全收口）；CI 九步不变。
+  **换代九（2026-10-17，round33 收口实测）**：**536 条**（`10 + 69 + 412 + 45`；+21 全在 gateway——票 125 Domain 维度与 `EsRestClientWireTest`、票 126 T0 行业门与动作优先（另含 HTL-BKF-01 早餐词表回归修复 +4）、票 127 提示词/引用/语料一致性）、**66 篇** ADR（新增 0067）、**128 张**票（新增 124-128，全收口）；CI 九步不变。
   **换代八（2026-10-10，交付层展示面升级 + CI 产物漂移修复，不占票号）**：条数不变（零 Java 改动）；README 首屏重做、`docs/` 新增两段现场录像 GIF、`static/workspace/` 产物重建；**CI 红的原因定位并修复待推**（见上 2026-10-10 条目）。
 - 下一轮不能从旧 `ready-for-agent` 字样推断。重开条件与仍然挂红的裁决见 [`docs/adr/0030-round14-closure-scope-and-reopen-triggers.md`](../../docs/adr/0030-round14-closure-scope-and-reopen-triggers.md)。
 
@@ -134,6 +139,8 @@
 | round27 | **买家端前端**：把闭环暴露成人能点的界面（票 92-95） | [`round27-spec-buyer-frontend.md`](round27-spec-buyer-frontend.md)；ADR 0057、0059、0005 | **done**（票 92-95 全部收口；**两个浏览器门禁未实跑，照登**） |
 | round25 | **身份域**：账号 + 角色守卫 + 自报身份退役（票 80-85） | [`round25-spec-identity-domain.md`](round25-spec-identity-domain.md)；ADR 0056、**0058** | **done**（票 80-85 全部收口） |
 | **A→B** | **从「系统样品」到「准备真的投用」**（B 段入口清单 B1-B5） | [`program-a-to-b-upgrade.md`](program-a-to-b-upgrade.md)；round28/29/30 → **ADR 0061、0062、0063** | **B1、B2、B3、B4 已收口**（2026-10-06：B1 双档持久化票 100-103；B2 凭据生产态 + 隔离 + 备份演练票 104-107；B3 资金动作不可抵赖票 108-112；2026-10-09：B4 飞书长连接真连 round31 票 96/97/113-116）；B5 触发条件原样 |
+| **round32** | **把「通用客服」变成两个能跑的场景**（票 117-123） | [`round32-spec-generic-customer-service.md`](round32-spec-generic-customer-service.md)；**ADR 0066**（开轮 + 术语收敛授权） | **done**（票 117-123 全部收口；两个场景 + 业务一页纸 + 标定重跑 + JVM **515**；**两处照登未执行**：真人 cold-read、酒店套件活体跑批） |
+| **round33** | **把跨行业补成运行时可隔离的 domain 维度**（票 124-128） | [`round33-spec-cross-industry-isolation.md`](round33-spec-cross-industry-isolation.md)；**ADR 0067**（所有者政策覆盖，不自动续期） | **done**（票 124-128 全部收口；九类缺陷修复 + 活体探针 + JVM **536**；**round32 两处未执行仍照登**） |
 | **round31** | **B4：飞书长连接真连**（票 96、97、113-116） | [`round31-spec-b4-feishu-live.md`](round31-spec-b4-feishu-live.md)；**ADR 0064**（考察）、**0065**（开线决策） | **done**（票 96/97/113-116 全部收口；wss 握手 + 事件收发全链路 + 重启自动重连三项活体通过；JVM **505**） |
 | **round29** | **B2：凭据生产态 + 按库用户隔离 + 备份恢复演练**（票 104-107） | [`round29-spec-b2-credentials-and-backup.md`](round29-spec-b2-credentials-and-backup.md)；**ADR 0062** | **done**（票 104-107 全部收口；演练 14/14；Redis 不备份/R5/TLS 带触发条件登记） |
 | **round30** | **B3：资金动作不可抵赖**（票 108-112） | [`round30-spec-b3-non-repudiation.md`](round30-spec-b3-non-repudiation.md)；**ADR 0063** | **done**（票 108-112 全部收口；JVM 466） |
@@ -264,6 +271,18 @@
 | 114 | [`114-feishu-credentials-guard.md`](issues/114-feishu-credentials-guard.md) | implemented | 飞书凭据接线（`.env` 家法 + PostureGuard 回环空凭据 WARN / 非回环空凭据拒启） |
 | 115 | [`115-feishu-wss-handshake-live.md`](issues/115-feishu-wss-handshake-live.md) | implemented | wss 应用层握手活体验证（外部前置 = 所有者凭据到位，已到位）；事件收发全链路与重启自动重连均实测通过，边界照登 |
 | 116 | [`116-round31-closeout.md`](issues/116-round31-closeout.md) | implemented | round31 收口（对外措辞定死：握手实测前不说「真连已验证」） |
+| 117 | [`117-round32-adr-and-spec.md`](issues/117-round32-adr-and-spec.md) | implemented | round32 ADR 0066 + spec（所有者政策覆盖，不自动续期；**授权 CONTEXT.md 租户术语收敛**） |
+| 118 | [`118-seed-store-identity-and-t002-fixtures.md`](issues/118-seed-store-identity-and-t002-fixtures.md) | implemented | 种子店铺身份对齐语料 + T004 租户行 + T002 生鲜演示单 91001/91002（逐租户补行） |
+| 119 | [`119-policy-hotel-four-place-sync.md`](issues/119-policy-hotel-four-place-sync.md) | implemented | `POLICY_HOTEL` 四处同步 + T0 酒店词表（置于第一人称判定之前）+ JVM 用例 |
+| 120 | [`120-hotel-tenant-and-corpus.md`](issues/120-hotel-tenant-and-corpus.md) | implemented | 酒店租户 T004 + 酒店语料入库（**不挂 PLATFORM**）+ 检索指纹口径收敛为租户可见范围 |
+| 121 | [`121-intent-calibration-and-hotel-eval.md`](issues/121-intent-calibration-and-hotel-eval.md) | implemented | 180 条标定重跑（工作点不变）+ 酒店评测 `kind: hotel` 12 条单独成列 |
+| 122 | [`122-onepager-readme-release.md`](issues/122-onepager-readme-release.md) | implemented | 业务一页纸 + README 首屏指路牌 + RELEASE 换代指针 + 一页纸防腐化门禁 |
+| 123 | [`123-round32-closeout.md`](issues/123-round32-closeout.md) | implemented | round32 收口（EVIDENCE / CODE_MAP / tracker / `G6_EXPECT` 换代；**真人 cold-read 照登未执行**） |
+| 124 | [`124-round33-adr-and-spec.md`](issues/124-round33-adr-and-spec.md) | implemented | round33 ADR 0067 + spec（所有者政策覆盖，不自动续期） |
+| 125 | [`125-domain-dimension.md`](issues/125-domain-dimension.md) | implemented | Domain 维度落检索/缓存/入库 + ES mapping 合并补丁 + JVM 隔离用例 |
+| 126 | [`126-t0-industry-gate.md`](issues/126-t0-industry-gate.md) | implemented | T0 行业门、动作优先与词表精度 + JVM 用例 |
+| 127 | [`127-prompt-citations-corpus.md`](issues/127-prompt-citations-corpus.md) | implemented | 提示词 v1.1.0 + `citationDetails` + 语料修正（七天正文 / T002 死蟹细则）+ JVM 用例 |
+| 128 | [`128-round33-live-verification-and-closeout.md`](issues/128-round33-live-verification-and-closeout.md) | implemented | round33 活体验证与收口登记（**round32 两处未执行照登**） |
 
 ## 如何新增或领取工作
 

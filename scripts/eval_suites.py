@@ -14,6 +14,7 @@
 import csv
 import datetime as dt
 import json
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -24,7 +25,15 @@ SUITES = {
     "channel": "eval/cases-part5-channel.jsonl",
     "plan": "eval/cases-part6-plan.jsonl",
     "style-feedback": "eval/cases-part7-style-feedback.jsonl",
+    # round32：酒店租户（T004）的纯咨询对照，证明「换知识库就换场景」。
+    # 单独成列，**不并入 part1-3 的 180 条 gold**——并进去就动了分母，违反仓库红线。
+    "hotel": "eval/cases-part9-hotel.jsonl",
 }
+
+# 套件逐条节流（2026-10-17 酒店套件复跑实测）：默认 `customer-qps=5`（application.yml），
+# 缓存热起来后逐条请求会在 10ms 内打满令牌桶，**第 6 条起整批 429**——套件于是"只有第一次跑得动"。
+# 0.25s 间隔 ≈ 4 QPS，低于默认 5 QPS，冷/热两种状态下都能复跑。判据一字未动，只改发送节奏。
+PACE_SECONDS = 0.25
 
 
 def load_suite(name):
@@ -114,6 +123,18 @@ def score_case(case, result):
             checks["mustNotContain_ok"] = not any(t in answer for t in expect["mustNotContain"])
         if expect.get("mustNotCarryFacts"):
             checks["mustNotCarryFacts_ok"] = None  # 语义断言 → 未观测
+        return checks
+
+    if kind == "hotel":
+        # 酒店域是纯咨询：判三点——定案意图、一个工具都不打、答案带得出引用。
+        # 再加一条「政策问句必须能 0 token 命中」：cacheLayer 落在 L1/L2 才算命中。
+        checks["intent_ok"] = (result.get("intent") == expect.get("intent"))
+        if expect.get("noTool"):
+            checks["noTool_ok"] = not bool(result.get("toolUsed"))
+        if expect.get("cited"):
+            checks["cited_ok"] = bool(result.get("citations"))
+        if expect.get("cacheHit"):
+            checks["cacheHit_ok"] = str(result.get("cacheLayer") or "").upper() in ("L1", "L2")
         return checks
 
     raise ValueError("未知 kind: " + str(kind))
@@ -229,6 +250,34 @@ FIXTURES = [
         {"kind": "style", "expect": {"style": "FORMAL", "mustNotCarryFacts": True}},
         {"answer": "您好，已为您处理。", "trace": [{"detail": "style=FORMAL"}]},
         {"mustNotCarryFacts_ok": None}),
+    _fx("酒店政策：定案 POLICY_HOTEL、不打工具、有引用、L1 命中，四格全绿",
+        {"kind": "hotel", "expect": {"intent": "POLICY_HOTEL", "noTool": True, "cited": True, "cacheHit": True}},
+        {"answer": "入住时间为 14:00 起。", "intent": "POLICY_HOTEL", "toolUsed": False,
+         "citations": ["hotel-01#checkin"], "cacheLayer": "L1"},
+        {"intent_ok": True, "noTool_ok": True, "cited_ok": True, "cacheHit_ok": True}),
+    _fx("酒店语义缓存的命中同样算 0 token（L2 与 L1 等价）",
+        {"kind": "hotel", "expect": {"intent": "POLICY_HOTEL", "cacheHit": True}},
+        {"answer": "17℃ 起免费取消。", "intent": "POLICY_HOTEL", "toolUsed": False,
+         "citations": ["hotel-02#cancel"], "cacheLayer": "L2"},
+        {"cacheHit_ok": True}),
+    _fx("反证：定案跑到别的意图必须判负（酒店问句被判成电商政策也算错）",
+        {"kind": "hotel", "expect": {"intent": "POLICY_HOTEL"}},
+        {"answer": "……", "intent": "POLICY_RETURN", "toolUsed": False, "cacheLayer": "NONE"},
+        {"intent_ok": False}),
+    _fx("反证：给酒店问句挂了工具必须判负（它本该纯咨询）",
+        {"kind": "hotel", "expect": {"intent": "POLICY_HOTEL", "noTool": True}},
+        {"answer": "……", "intent": "POLICY_HOTEL", "toolUsed": True, "cacheLayer": "NONE"},
+        {"noTool_ok": False}),
+    _fx("反证：答案是空的、没有引用必须判负（政策答不出引用就不算答对了政策）",
+        {"kind": "hotel", "expect": {"intent": "POLICY_HOTEL", "cited": True}},
+        {"answer": "……", "intent": "POLICY_HOTEL", "toolUsed": False, "citations": [],
+         "cacheLayer": "NONE"},
+        {"cited_ok": False}),
+    _fx("反证：宣称命中缓存而 cacheLayer 是 NONE，必须判负（0 token 卖点不许口头成立）",
+        {"kind": "hotel", "expect": {"intent": "POLICY_HOTEL", "cacheHit": True}},
+        {"answer": "入住时间为 14:00 起。", "intent": "POLICY_HOTEL", "toolUsed": False,
+         "citations": ["hotel-01#checkin"], "cacheLayer": "NONE"},
+        {"cacheHit_ok": False}),
     _fx("反证：未知 kind 必须抛错，不许静默判过",
         {"kind": "plugin", "expect": {}}, {"answer": "……"},
         {}, raises=True),
@@ -276,15 +325,29 @@ def run(parser_args, runner) -> int:
         print("未知套件：" + ",".join(unknown) + "；可选 " + ",".join(sorted(SUITES)))
         return 2
     cases = [c for name in names for c in load_suite(name)]
-    token = runner.mock_token(parser_args.base, "T001", "C001")
-    headers = {"Authorization": "Bearer " + token}
-    ops_headers = dict(headers, **{"X-Ops-Token": parser_args.ops_token})
+    # round32 起套件里有第二个租户（酒店 T004）：令牌按用例的 tenant/customer 现领并按 (租户,买家) 缓存，
+    # 不是整批一份 T001 令牌——否则酒店用例会被当成电商买家，命中不了酒店知识库。
+    token_cache = {}
+
+    def token_for(case):
+        key = (case.get("tenant", "T001"), case.get("customer", "C001"))
+        if key not in token_cache:
+            token_cache[key] = runner.mock_token(parser_args.base, key[0], key[1])
+        return token_cache[key]
+
+    default_headers = {"Authorization": "Bearer " + token_for({})}
+    ops_headers = dict(default_headers, **{"X-Ops-Token": parser_args.ops_token})
     circuit = runner.http_json(f"{parser_args.base}/api/v1/support/ops/circuit", headers=ops_headers)
     mode, model = circuit.get("llmMode"), circuit.get("llmModel")
 
     rows, by_id = [], {}
-    for case in cases:
+    for index, case in enumerate(cases):
+        # 逐条节流：见 PACE_SECONDS 的说明。首条不睡，避免无谓等待。
+        if index:
+            time.sleep(PACE_SECONDS)
         conversation = f"eval-suite-{case['id']}"
+        token = token_for(case)
+        headers = {"Authorization": "Bearer " + token}
         try:
             if case.get("kind") == "feedback":
                 checks = _feedback_case(parser_args, case, token, headers, conversation, runner)

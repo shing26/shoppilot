@@ -2,6 +2,7 @@ package com.shoppilot.gateway.cache;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.EmbeddingClient;
 import com.shoppilot.gateway.knowledge.QdrantRestClient;
 import io.micrometer.core.instrument.Counter;
@@ -29,7 +30,8 @@ public class L2SemanticCache {
 
     private static final Logger log = LoggerFactory.getLogger(L2SemanticCache.class);
     /** 缓存表上要建 keyword 索引的字段；`kb_epoch` 是整数索引，单列在下面。 */
-    private static final List<String> CACHE_INDEX_KEYS = List.of("tenant_id", "scope", "intent", "answer_key");
+    private static final List<String> CACHE_INDEX_KEYS =
+            List.of("tenant_id", "scope", "intent", "domain", "answer_key");
     /** 读路径补建的最小间隔，避免 flush 撞上并发检索时一堆线程同时去建表。 */
     private static final long RECREATE_MIN_INTERVAL_MS = 1_000L;
 
@@ -65,12 +67,16 @@ public class L2SemanticCache {
                 List.of("kb_epoch"));
     }
 
-    public Optional<CacheEntry> search(float[] queryVector, String tenantId, String scope, String intent, long kbEpoch) {
+    public Optional<CacheEntry> search(float[] queryVector, String tenantId, String scope, String intent,
+                                       Domain domain, long kbEpoch) {
         Map<String, Object> filter = new LinkedHashMap<>();
         filter.put("must", List.of(
                 Map.of("key", "tenant_id", "match", Map.of("value", tenantId)),
                 Map.of("key", "scope", "match", Map.of("value", scope)),
                 Map.of("key", "intent", "match", Map.of("value", intent)),
+                // 平台桶身份里已经编了行业（PLATFORM:<DOMAIN>），domain 再单列一道是纵深防御：
+                // 语义近邻跨行业误召回时，这一条过滤器直接把它挡在候选之外。
+                Map.of("key", "domain", "match", Map.of("value", domain.name())),
                 Map.of("key", "kb_epoch", "match", Map.of("value", kbEpoch))));
         try {
             List<QdrantRestClient.Hit> hits = qdrant.search(retrievalConfig.cacheCollection(), queryVector,
@@ -139,6 +145,7 @@ public class L2SemanticCache {
             payload.put("tenant_id", entry.tenantId());
             payload.put("scope", entry.scope());
             payload.put("intent", entry.intent());
+            payload.put("domain", entry.domain() == null ? Domain.UNKNOWN.name() : entry.domain().name());
             payload.put("kb_epoch", entry.kbEpoch());
             qdrant.upsert(retrievalConfig.cacheCollection(),
                     List.of(new QdrantRestClient.Point(pointId, vector, payload)));

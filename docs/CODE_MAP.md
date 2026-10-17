@@ -48,6 +48,7 @@
 | trace 与 MDC | `identity/RequestTrace`、`config/AsyncConfig` |
 | 限流 | `ratelimit/RateLimitService` |
 | 意图判定与缓存准入 | `triage/TriageEngine`、`triage/T0RuleLayer`、`triage/T1CentroidLayer` |
+| 跨行业隔离（round33 / ADR 0067，round32 酒店对照） | 租户行业 `config/TenantDomainRegistry`（配置 `shoppilot.tenant-domains`，未登记 = `UNKNOWN` fail-closed）、`knowledge/Domain`（`ECOMMERCE`/`HOTEL`/`UNKNOWN`）；判定 `triage/T0RuleLayer`（`classify(query, domain)`：显式转人工 → 行业门 → 实体/第一人称 → 显式办理动作 → 酒店词表 → 电商政策词表）、`ingest/MarkdownChunker`（`hotel-` → `POLICY_HOTEL`）；隔离面 `cache/CacheService`（平台桶 `PLATFORM:<DOMAIN>`）、`cache/L2SemanticCache`（payload filter 带 `domain`）、`knowledge/HybridRetriever`（可见 = 本租户 + 同行业平台，空召回不再放宽意图）、`agent/AgentStateMachine`（`toolsFor(triage, domain)`：非电商域工具列表为空）；语料 `knowledge/hotel-*.md`（挂 `tenant_id: T004`，**不挂 PLATFORM**）。接新行业 = 显式登记 domain + 语料 domain + 意图/词表/入库映射/评测集，**不是「只换知识库」** |
 | 请求级幂等回放（模型之前、情绪门之后） | `agent/IdempotencyService.lookupByClientToken`、`agent/ReplayReply` |
 | L1/L2 缓存 | `cache/CacheService`、`cache/L1Cache`、`cache/L2SemanticCache`、`cache/PolarityGuard` |
 | 混合检索 | `knowledge/EmbeddingClient`、`knowledge/QdrantRestClient`、`knowledge/EsRestClient`、`knowledge/HybridRetriever` |

@@ -8,7 +8,9 @@ import com.shoppilot.gateway.cache.WriteBackPolicy;
 import com.shoppilot.gateway.cache.WriteBackPool;
 import com.shoppilot.gateway.channel.ChannelContext;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.config.TenantDomainRegistry;
 import com.shoppilot.gateway.identity.TenantContext;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.llm.LlmException;
@@ -55,6 +57,7 @@ public class AgentStateMachine {
     private final SingleFlight singleFlight;
     private final WriteBackPolicy writeBackPolicy;
     private final KbEpoch kbEpoch;
+    private final TenantDomainRegistry domainRegistry;
     private final HybridRetriever retriever;
     private final LlmGateway llm;
     private final ToolDispatcher dispatcher;
@@ -72,7 +75,8 @@ public class AgentStateMachine {
     private final Counter multiToolCallCounter;
 
     public AgentStateMachine(TriageEngine triageEngine, CacheService cacheService, SingleFlight singleFlight,
-                             WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, HybridRetriever retriever,
+                             WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, TenantDomainRegistry domainRegistry,
+                             HybridRetriever retriever,
                              LlmGateway llm, ToolDispatcher dispatcher, SessionStore sessionStore,
                              FallbackService fallbackService, GatewayProperties properties,
                              WriteBackPool writeBackPool, PromptCatalog promptCatalog, SentimentGate sentimentGate,
@@ -82,6 +86,7 @@ public class AgentStateMachine {
         this.singleFlight = singleFlight;
         this.writeBackPolicy = writeBackPolicy;
         this.kbEpoch = kbEpoch;
+        this.domainRegistry = domainRegistry;
         this.retriever = retriever;
         this.llm = llm;
         this.dispatcher = dispatcher;
@@ -115,6 +120,10 @@ public class AgentStateMachine {
         // 载出来的就是别人的对话轮次与别人没办完的待办动作。
         SessionStore.Session session = sessionStore.load(tenantId, customerId, conversationId);
         long epoch = kbEpoch.current();
+        // 行业是**显式登记**出来的，不是从店铺名或问句猜的（ADR 0067）。未登记租户 fail-closed 成
+        // UNKNOWN：检索只看本租户规则，缓存平台桶按 UNKNOWN 分区。这一格同时喂给意图判定、检索、
+        // 缓存与工具裁剪四处，是 round33 修跨行业串答案的唯一来源。
+        Domain domain = domainRegistry.resolve(tenantId);
 
         // 情绪门（ADR 0034）：INTAKE → TRIAGE 之间，词典层 0 token。高情绪在这里直接落工单转人工，
         // 不让激动的买家走完检索/模型/工具全链路才被转接——等待本身就是二次激怒。
@@ -161,7 +170,7 @@ public class AgentStateMachine {
         }
 
         step(trace, sink, AgentState.TRIAGE, "开始判定");
-        TriageEngine.Outcome outcome = triageEngine.triage(query);
+        TriageEngine.Outcome outcome = triageEngine.triage(query, domain);
         TriageResult triage = outcome.result();
         step(trace, sink, AgentState.TRIAGE,
                 "layer=" + triage.layer() + " intent=" + triage.intent() + " admissible=" + triage.cacheAdmissible());
@@ -173,7 +182,7 @@ public class AgentStateMachine {
 
         if (triage.cacheAdmissible()) {
             step(trace, sink, AgentState.CACHE_READ, "intent=" + triage.intent());
-            CacheService.Lookup lookup = cacheService.lookup(tenantId, triage.intent(), query, epoch,
+            CacheService.Lookup lookup = cacheService.lookup(tenantId, domain, triage.intent(), query, epoch,
                     outcome.queryVector());
             if (lookup.hit()) {
                 sink.meta(conversationId, triage.intent(), lookup.layer());
@@ -186,7 +195,8 @@ public class AgentStateMachine {
                 return new AgentResult(entry.answer(), triage.intent(), triage.layer(), lookup.layer(),
                         entry.sourceRuleIds(), trace, null, null, false, 0, 0, false, false,
                         promptCatalog.version(), List.of(),
-                        new AgentResult.ContextComposition(List.copyOf(entry.sourceRuleIds()), 0, 0));
+                        new AgentResult.ContextComposition(List.copyOf(entry.sourceRuleIds()), 0, 0),
+                        citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings()));
             }
             if (lookup.negative()) {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
@@ -206,7 +216,8 @@ public class AgentStateMachine {
                         .map(entry -> new AgentResult(entry.answer(), triage.intent(), triage.layer(),
                                 CacheService.Layer.FLIGHT, entry.sourceRuleIds(), trace, null, null, false,
                                 0, 0, false, false, promptCatalog.version(), List.of(),
-                                AgentResult.ContextComposition.NONE))
+                                AgentResult.ContextComposition.NONE,
+                                citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings())))
                         .orElseGet(() -> fallback(AgentState.CACHE_READ, trace, sink,
                                 FallbackReason.INTENT_UNRESOLVED, query, null, styleTier));
             }
@@ -214,7 +225,7 @@ public class AgentStateMachine {
             try {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
                 ModelRun run = runModelPath(triage, lookup, query, idempotencyToken, tenantId, customerId,
-                        conversationId, session, epoch, trace, sink, systemPrompt, styleTier);
+                        conversationId, session, epoch, domain, trace, sink, systemPrompt, styleTier);
                 // 只有真的写回缓存的那条答案才广播给等待者，降级话术一律不共享（ADR 0006）
                 published = run.shareable();
                 singleFlight.publish(flightKey, run.cacheEntry());
@@ -228,7 +239,7 @@ public class AgentStateMachine {
 
         sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
         return runModelPath(triage, CacheService.Lookup.disabled(), query, idempotencyToken, tenantId, customerId,
-                conversationId, session, epoch, trace, sink, systemPrompt, styleTier).result();
+                conversationId, session, epoch, domain, trace, sink, systemPrompt, styleTier).result();
     }
 
     /**
@@ -248,7 +259,7 @@ public class AgentStateMachine {
 
     private ModelRun runModelPath(TriageResult triage, CacheService.Lookup lookup,
                                   String query, String idempotencyToken, String tenantId, String customerId,
-                                  String conversationId, SessionStore.Session session, long epoch,
+                                  String conversationId, SessionStore.Session session, long epoch, Domain domain,
                                   List<AgentResult.TraceStep> trace, EventSink sink, String systemPrompt,
                                   StyleService.Tier styleTier) {
         Intent intent = triage.intent();
@@ -260,7 +271,7 @@ public class AgentStateMachine {
         if (intent == null || intent == Intent.UNKNOWN || intent.isPolicy()) {
             step(trace, sink, AgentState.RETRIEVE, "intent=" + intent);
             try {
-                retrieved = retriever.retrieve(query, tenantId, intent == Intent.UNKNOWN ? null : intent);
+                retrieved = retriever.retrieve(query, tenantId, domain, intent == Intent.UNKNOWN ? null : intent);
             } catch (RuntimeException retrievalFailure) {
                 log.warn("混合检索失败，本轮无政策上下文: {}", retrievalFailure.getMessage());
                 retrieved = HybridRetriever.Result.unavailable(epoch);
@@ -286,7 +297,7 @@ public class AgentStateMachine {
         LlmTypes.Reply lastReply = null;
         while (rounds < properties.agent().maxToolRounds()) {
             step(trace, sink, AgentState.PLAN, "round=" + rounds);
-            LlmTypes.Request planRequest = new LlmTypes.Request(messages, toolsFor(triage),
+            LlmTypes.Request planRequest = new LlmTypes.Request(messages, toolsFor(triage, domain),
                     properties.llm().temperature());
             try {
                 lastReply = llm.complete(planRequest);
@@ -408,7 +419,7 @@ public class AgentStateMachine {
                         "轮次上限内未能完成 " + expectedWrite.apiName(), styleTier));
             }
             step(trace, sink, AgentState.PLAN, "budget-check");
-            LlmTypes.Request budgetRequest = new LlmTypes.Request(messages, toolsFor(triage),
+            LlmTypes.Request budgetRequest = new LlmTypes.Request(messages, toolsFor(triage, domain),
                     properties.llm().temperature());
             try {
                 lastReply = llm.complete(budgetRequest);
@@ -427,7 +438,9 @@ public class AgentStateMachine {
             answeredByBudgetCheck = true;
         }
 
-        if (rounds == 0 && !toolUsed && intent != null && intent.isAction()) {
+        // 行业门同样管住网关派生这一枪（ADR 0067）：酒店租户即使被判成动作意图也不许由网关
+        // 代为派发电商读工具——否则"酒店不碰电商工具"会从 toolsFor 那道门旁边绕过去。
+        if (rounds == 0 && !toolUsed && intent != null && intent.isAction() && domain == Domain.ECOMMERCE) {
             // 小模型经常用自然语言追问槽位而不是发 function call。槽位状态机不能建在"模型肯不肯调工具"上，
             // 否则 maxSlotAsks 与 SLOT_UNRESOLVED 全是摆设：网关自己派生工具、自己抽槽位、自己数追问次数。
             DerivedCall derived = deriveActionCall(intent, query);
@@ -508,14 +521,18 @@ public class AgentStateMachine {
                 : retrieved.rules().stream().map(HybridRetriever.Retrieved::ruleId).toList();
         List<String> citedScopes = retrieved == null ? List.of()
                 : retrieved.rules().stream().map(HybridRetriever.Retrieved::scope).toList();
+        // 与 citations 同源同序的标题：买家端引用详情要用它（round33 / ADR 0067）。
+        // 命中路径不跑检索，标题必须随缓存条目一起落库，否则缓存命中时买家端又只剩"政策条款"。
+        List<String> citedHeadings = retrieved == null ? List.of()
+                : retrieved.rules().stream().map(HybridRetriever.Retrieved::title).toList();
 
         WriteBackPolicy.Verdict verdict = writeBackPolicy.evaluate(new WriteBackPolicy.Request(
                 intent, answer, retrieved != null && !retrieved.empty(), toolUsed,
                 retrieved != null && retrieved.degraded(), false));
         Optional<CacheEntry> written = Optional.empty();
         if (verdict.eligible()) {
-            Optional<CacheEntry> prepared = cacheService.prepareWrite(tenantId, intent, epoch, lookup, answer,
-                    citedScopes, citations, properties.llm().model());
+            Optional<CacheEntry> prepared = cacheService.prepareWrite(tenantId, domain, intent, epoch, lookup, answer,
+                    citedScopes, citations, citedHeadings, properties.llm().model());
             if (prepared.isEmpty()) {
                 // 准入判定没给出向量（例如缓存被关），写回无从落点
                 step(trace, sink, AgentState.CACHE_WRITE, "skipped:no-write-target");
@@ -537,7 +554,7 @@ public class AgentStateMachine {
             step(trace, sink, AgentState.CACHE_WRITE, "rejected:" + verdict.reason());
             if (retrieved != null && retrieved.empty() && !retrieved.degraded()
                     && intent != null && intent.cacheAdmissible()) {
-                cacheService.writeNegative(tenantId, intent, epoch, lookup);
+                cacheService.writeNegative(tenantId, domain, intent, epoch, lookup);
             } else if (retrieved != null && retrieved.empty() && retrieved.degraded()) {
                 // 检索引擎挂了不等于库里没有。这时写负缓存，等于把一次抖动固化成
                 // 60 秒的批量转人工——2026-09-08 mix80 压测里就是这样把自己打停的。
@@ -548,7 +565,8 @@ public class AgentStateMachine {
 
         return new ModelRun(new AgentResult(answer, intent, triage.layer(), CacheService.Layer.NONE, citations, trace,
                 null, null, false, promptTokens, completionTokens, toolUsed, false, promptCatalog.version(),
-                List.copyOf(planSteps), contextComposition(retrieved, session, messages)), written);
+                List.copyOf(planSteps), contextComposition(retrieved, session, messages),
+                citationDetailsOf(retrieved)), written);
     }
 
     /** 缺槽位：追问一次，仍缺则转人工。绝不猜（ADR 0008、ticket 11）。 */
@@ -568,7 +586,7 @@ public class AgentStateMachine {
                 dispatch.tool().apiName(), new LinkedHashMap<>(Map.of("askedSlot", slot)), asks));
         return new AgentResult(question, dispatch.tool().intent(), "SLOT", CacheService.Layer.NONE, List.of(), trace,
                 null, null, true, 0, 0, false, false, promptCatalog.version(), List.of(),
-                AgentResult.ContextComposition.NONE);
+                AgentResult.ContextComposition.NONE, List.of());
     }
 
     /** 网关自己派生出的工具调用：missing 非空即追问，missing 为空且是读工具即可代为执行。 */
@@ -657,7 +675,7 @@ public class AgentStateMachine {
                     tool.apiName(), arguments, asks));
             return new AgentResult(question, tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(), trace,
                     null, null, true, 0, 0, false, false, promptCatalog.version(), List.of(),
-                    AgentResult.ContextComposition.NONE);
+                    AgentResult.ContextComposition.NONE, List.of());
         }
         LlmTypes.ToolCall call = new LlmTypes.ToolCall("resumed", tool.apiName(), arguments);
         ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken, dialogueText(query, session),
@@ -688,7 +706,7 @@ public class AgentStateMachine {
                     sessionStore.appendTurn(clearPending(session), query, reply.content()));
             return new AgentResult(reply.content(), tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(),
                     trace, null, null, false, reply.promptTokens(), reply.completionTokens(), true, false,
-                    promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE);
+                    promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE, List.of());
         } catch (LlmException failure) {
             return fallback(AgentState.REPLY, trace, sink, mapLlmFailure(failure), query, failure.getMessage(),
                     styleTier);
@@ -709,7 +727,7 @@ public class AgentStateMachine {
         sink.token(answer);
         return new AgentResult(answer, Intent.ESCALATE, "FALLBACK", CacheService.Layer.NONE, List.of(), trace,
                 reason, ticket.orElse(null), false, 0, 0, false, true, promptCatalog.version(), List.of(),
-                AgentResult.ContextComposition.NONE);
+                AgentResult.ContextComposition.NONE, List.of());
     }
 
     /**
@@ -719,8 +737,16 @@ public class AgentStateMachine {
      * 把一句政策咨询答成"查不到您的订单"。落到任一动作意图时下发全部四个业务工具，让工具选择本身充当
      * 意图证据——dev 评测（DashScope qwen-plus，180 条）实测按子意图裁到单个工具，会把 T0 的路由误差
      * 放大成选错工具：判成 ACTION_ORDER 的改地址请求只拿到 queryOrderDetail，模型没有选对的机会。
+     *
+     * <p>round33 / ADR 0067 加行业门：**电商工具只属于电商行业**。酒店租户的"我要取消订单"
+     * 即使被判成动作意图也拿不到 APPLY_REFUND，只能照实说明办不了并转人；未登记行业的租户
+     * 同样 fail-closed。少了这道门，"酒店不碰电商工具"就只是 T0 词表的好运气——T1 质心层
+     * 一旦把句子判成 ACTION_REFUND，全套电商工具又会挂回去。
      */
-    private List<Map<String, Object>> toolsFor(TriageResult triage) {
+    private List<Map<String, Object>> toolsFor(TriageResult triage, Domain domain) {
+        if (domain != Domain.ECOMMERCE) {
+            return List.of();
+        }
         Intent intent = triage.intent();
         if (intent == null || intent == Intent.UNKNOWN) {
             return ToolContracts.actionDescriptors();
@@ -786,6 +812,40 @@ public class AgentStateMachine {
             tokens += estimateTokens(message.content());
         }
         return new AgentResult.ContextComposition(ruleIds, historyTurns, tokens);
+    }
+
+    /**
+     * 引用详情（round33 / ADR 0067）：把检索结果里的标题与出处搬进可输出的字段。
+     *
+     * <p>与 {@code citations} 同源同序——买家端引用列表的两列就是这两份数据的拼装。
+     * 零召回时是空列表，不是 null。
+     */
+    private static List<AgentResult.CitationDetail> citationDetailsOf(HybridRetriever.Result retrieved) {
+        if (retrieved == null || retrieved.empty()) {
+            return List.of();
+        }
+        return retrieved.rules().stream()
+                .map(rule -> new AgentResult.CitationDetail(rule.ruleId(),
+                        rule.title() == null ? "" : rule.title(),
+                        rule.sourceDoc() == null ? "" : rule.sourceDoc()))
+                .toList();
+    }
+
+    /**
+     * 命中路径的引用详情：标题随缓存条目落库，出处没有随条目存（见 {@link CacheEntry}），
+     * 这一格照实留空——买家端优先显示标题，缺出处不会退化成"政策条款"。
+     */
+    private static List<AgentResult.CitationDetail> citationDetailsOf(List<String> ruleIds, List<String> headings) {
+        if (ruleIds == null || ruleIds.isEmpty()) {
+            return List.of();
+        }
+        List<AgentResult.CitationDetail> details = new ArrayList<>();
+        for (int i = 0; i < ruleIds.size(); i++) {
+            String heading = headings != null && i < headings.size() && headings.get(i) != null
+                    ? headings.get(i) : "";
+            details.add(new AgentResult.CitationDetail(ruleIds.get(i), heading, ""));
+        }
+        return List.copyOf(details);
     }
 
     /**
@@ -883,7 +943,7 @@ public class AgentStateMachine {
         sink.token(answer);
         return new AgentResult(answer, intent, "replay", CacheService.Layer.NONE, List.of(), trace, null, null,
                 false, 0, 0, true, false, promptCatalog.version(), List.of(),
-                AgentResult.ContextComposition.NONE);
+                AgentResult.ContextComposition.NONE, List.of());
     }
 
     /**
@@ -904,7 +964,7 @@ public class AgentStateMachine {
         sink.token(answer);
         return new AgentResult(answer, dispatch.tool().intent(), layer, CacheService.Layer.NONE, List.of(), trace,
                 null, null, false, 0, 0, true, false, promptCatalog.version(), planSteps,
-                AgentResult.ContextComposition.NONE);
+                AgentResult.ContextComposition.NONE, List.of());
     }
 
     private static String dialogueText(String query, SessionStore.Session session) {

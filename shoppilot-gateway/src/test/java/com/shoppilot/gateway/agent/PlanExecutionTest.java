@@ -6,8 +6,10 @@ import com.shoppilot.gateway.cache.SingleFlight;
 import com.shoppilot.gateway.cache.WriteBackPolicy;
 import com.shoppilot.gateway.cache.WriteBackPool;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.config.TenantDomainRegistry;
 import com.shoppilot.gateway.identity.RequestTrace;
 import com.shoppilot.gateway.identity.TenantContext;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.llm.LlmGateway;
@@ -74,12 +76,12 @@ class PlanExecutionTest {
 
     private AgentStateMachine machine() {
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.dynamic(Intent.ACTION_REFUND, "T1", false), null));
         KbEpoch epoch = mock(KbEpoch.class);
         when(epoch.current()).thenReturn(7L);
         HybridRetriever retriever = mock(HybridRetriever.class);
-        when(retriever.retrieve(anyString(), anyString(), any()))
+        when(retriever.retrieve(anyString(), anyString(), any(), any()))
                 .thenReturn(HybridRetriever.Result.unavailable(7L));
         WriteBackPolicy policy = mock(WriteBackPolicy.class);
         when(policy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(false, "plan-test"));
@@ -93,9 +95,17 @@ class PlanExecutionTest {
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("dev", "http://127.0.0.1:1", "k", "qwen-plus",
                 0.0d, Duration.ofSeconds(5), Duration.ofSeconds(5), 0L, null, null, null, null, 1024));
         return new AgentStateMachine(triage, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
+                ecommerceDomains(),
                 retriever, llm, new ToolDispatcher(bizMock, idempotencyStub(), registry), store,
                 mock(FallbackService.class), properties, mock(WriteBackPool.class), new PromptCatalog(), gate,
                 new StyleService(), registry);
+    }
+
+    /** round33：测试里的租户按电商登记，工具裁剪与旧行为一致（ADR 0067）。 */
+    private static TenantDomainRegistry ecommerceDomains() {
+        TenantDomainRegistry domains = mock(TenantDomainRegistry.class);
+        when(domains.resolve(anyString())).thenReturn(Domain.ECOMMERCE);
+        return domains;
     }
 
     /** 幂等层放行：不重复、不忙锁、无缓存结果（本类测的是计划执行语义，不是幂等）。 */

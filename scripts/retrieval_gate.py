@@ -5,7 +5,10 @@
 
   ① 夹具 schema：字段齐、每条 case 的 id/query/dense/lexical/fused 都在且非空；
   ② `fused ⊆ dense ∪ lexical`：融合的候选集就是两路的并集，越界的 id 说明夹具坏了；
-  ③ `corpus_sha256` 现算 == 夹具里那个（语料一改即红）；
+  ③ `corpus_sha256` 现算 == 夹具里那个。**口径是「该夹具租户可见的那部分语料」**（round32 收紧）：
+     夹具是用 `--tenant T001` 录的，而 `HybridRetriever` 的可见范围是
+     `List.of(tenantId, PLATFORM_TENANT)`，所以别的租户新增自己的知识库**不该**惊动这份夹具，
+     平台级或 T001 的语料改一个字才该红；
   ④ 四个常数与生产 `application.yml` 一致（改 yml 即红）。
 
 CI 里还多一道：`RETRIEVAL_FIXTURE_SHA256` 有值时，夹具文件本身的 sha256 必须等于它（哈希钉，
@@ -27,8 +30,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 KIND_DIR = REPO / "eval"
+KNOWLEDGE = REPO / "knowledge"
 APP_YML = REPO / "shoppilot-gateway" / "src" / "main" / "resources" / "application.yml"
 CONSTANT_KEYS = ("rrfK", "denseTopK", "lexicalTopK", "fusedTopK")
+PLATFORM_TENANT = "PLATFORM"
+_FRONT_TENANT = re.compile(r"^tenant_id:\s*([A-Za-z0-9_\-]+)\s*$", re.M)
 
 
 def constants_from_yml(path=APP_YML):
@@ -48,12 +54,40 @@ def constants_from_yml(path=APP_YML):
             "lexicalTopK": value("lexical-top-k"), "fusedTopK": value("fused-top-k")}
 
 
-def corpus_sha256():
+def tenant_of(name, content):
+    """只认 front matter 里的 `tenant_id`；缺省即平台级（与 `MarkdownChunker` 的默认同口径）。
+
+    只看开头 600 字节：front matter 就在那里，正文里出现 `tenant_id:` 不算。
+    """
+    head = content.decode("utf-8", "replace")[:600]
+    found = _FRONT_TENANT.search(head)
+    return found.group(1) if found else PLATFORM_TENANT
+
+
+def visible_to(entries, tenant):
+    """`HybridRetriever` 的可见性口径：`tenantId` 自己那份 + 平台级共享那份。"""
+    return [entry for entry in entries if entry[1] in (tenant, PLATFORM_TENANT)]
+
+
+def fingerprint(entries):
+    """按文件名排序、逐个拼「文件名 + 内容」——与旧口径逐字节同构，只是先过一遍可见性。"""
     digest = hashlib.sha256()
-    for path in sorted((REPO / "knowledge").glob("*.md")):
-        digest.update(path.name.encode("utf-8"))
-        digest.update(path.read_bytes())
+    for name, _tenant, content in sorted(entries):
+        digest.update(name.encode("utf-8"))
+        digest.update(content)
     return digest.hexdigest()
+
+
+def corpus_entries(root=KNOWLEDGE):
+    entries = []
+    for path in sorted(root.glob("*.md")):
+        content = path.read_bytes()
+        entries.append((path.name, tenant_of(path.name, content), content))
+    return entries
+
+
+def corpus_sha256(tenant, root=KNOWLEDGE):
+    return fingerprint(visible_to(corpus_entries(root), tenant))
 
 
 def validate(fixture, constants, corpus, kind_dir=KIND_DIR):
@@ -61,14 +95,15 @@ def validate(fixture, constants, corpus, kind_dir=KIND_DIR):
     problems = []
     if not isinstance(fixture, dict):
         return ["夹具不是对象"]
-    for key in ("corpus_sha256", "constants", "record_limit", "cases"):
+    for key in ("tenant", "corpus_sha256", "constants", "record_limit", "cases"):
         if key not in fixture:
             problems.append(f"缺字段 {key}")
     if problems:
         return problems
 
     if fixture["corpus_sha256"] != corpus:
-        problems.append("corpus_sha256 与当前语料不符：夹具是按当时那份 knowledge/ 录的，语料一改要重录")
+        problems.append("corpus_sha256 与当前语料不符：夹具是按当时那份**该租户可见**的语料录的，"
+                        "平台级或该租户自己的语料一改就要重录")
     for key in CONSTANT_KEYS:
         pinned = (fixture["constants"] or {}).get(key)
         if pinned != constants.get(key):
@@ -123,7 +158,8 @@ def _good_case():
 
 
 def _good_fixture(constants, corpus):
-    return {"corpus_sha256": corpus, "record_limit": 20, "constants": dict(constants), "cases": [_good_case()]}
+    return {"tenant": "T001", "corpus_sha256": corpus, "record_limit": 20,
+            "constants": dict(constants), "cases": [_good_case()]}
 
 
 SELFCHECK = [
@@ -133,6 +169,24 @@ SELFCHECK = [
     _fx("反证：常数与 yml 不符 → 必须报错", "good_bad_constant"),
     _fx("反证：cases 为空 → 必须报错", "empty_cases"),
     _fx("反证：某条 case 缺 fused → 必须报错", "missing_fused"),
+    _fx("反证：缺 tenant → 必须报错（口径变了就不许拿旧夹具蒙混）", "missing_tenant"),
+]
+
+
+# 可见性口径的自检：正向要成立，反向也必须能失败。四支都作用在 `fingerprint(visible_to(...))`
+# 这条真实规则上，不是复述一遍规则。
+FINGERPRINT_SELFCHECK = [
+    ("另一租户新增自己的知识库 → T001 的指纹不变（本轮修掉的假红）",
+     [("a.md", "PLATFORM", b"p")], [("a.md", "PLATFORM", b"p"), ("h.md", "T004", b"hotel")], False),
+    ("平台级新增一条 → T001 的指纹必变",
+     [("a.md", "PLATFORM", b"p")], [("a.md", "PLATFORM", b"p"), ("b.md", "PLATFORM", b"q")], True),
+    ("本租户新增一条 → T001 的指纹必变",
+     [("a.md", "PLATFORM", b"p")], [("a.md", "PLATFORM", b"p"), ("s.md", "T001", b"shop")], True),
+    ("改另一租户的正文一个字 → T001 的指纹仍不变",
+     [("a.md", "PLATFORM", b"p"), ("t2.md", "T002", b"fresh")],
+     [("a.md", "PLATFORM", b"p"), ("t2.md", "T002", b"fresh!")], False),
+    ("改平台级正文一个字 → 指纹必变（指纹真的对内容敏感）",
+     [("a.md", "PLATFORM", b"p")], [("a.md", "PLATFORM", b"p!")], True),
 ]
 
 
@@ -148,6 +202,7 @@ def selfcheck(constants, corpus):
         "empty_cases": lambda: {**_good_fixture(constants, corpus), "cases": []},
         "missing_fused": lambda: {**_good_fixture(constants, corpus),
                                   "cases": [{k: v for k, v in _good_case().items() if k != "fused"}]},
+        "missing_tenant": lambda: {k: v for k, v in _good_fixture(constants, corpus).items() if k != "tenant"},
     }
     for case in SELFCHECK:
         problems = validate(variants[case["fixture"]](), constants, corpus)
@@ -156,7 +211,11 @@ def selfcheck(constants, corpus):
             failures.append(f"{case['name']}：应当报错，实际零问题")
         if not should_fail and problems:
             failures.append(f"{case['name']}：不该报错，实际 {problems[0]}")
-    return failures, len(SELFCHECK)
+    for name, before, after, should_differ in FINGERPRINT_SELFCHECK:
+        changed = fingerprint(visible_to(before, "T001")) != fingerprint(visible_to(after, "T001"))
+        if changed != should_differ:
+            failures.append(f"{name}：期望{'变' if should_differ else '不变'}，实际{'变' if changed else '不变'}")
+    return failures, len(SELFCHECK) + len(FINGERPRINT_SELFCHECK)
 
 
 def main() -> int:
@@ -165,7 +224,11 @@ def main() -> int:
     args = parser.parse_args()
 
     constants = constants_from_yml()
-    corpus = corpus_sha256()
+    fixture_path = Path(args.fixture) if args.fixture else newest_fixture()
+    raw = fixture_path.read_bytes()
+    fixture = json.loads(raw.decode("utf-8"))
+    # 语料指纹按**夹具自己声明的租户**现算：可见范围是 tenantId + PLATFORM。
+    corpus = corpus_sha256(fixture.get("tenant") or PLATFORM_TENANT)
 
     failures, count = selfcheck(constants, corpus)
     for line in failures:
@@ -175,9 +238,7 @@ def main() -> int:
         return 1
     print(f"RETRIEVAL GATE SELFCHECK ok={count}")
 
-    fixture_path = Path(args.fixture) if args.fixture else newest_fixture()
-    raw = fixture_path.read_bytes()
-    problems = validate(json.loads(raw.decode("utf-8")), constants, corpus)
+    problems = validate(fixture, constants, corpus)
     for problem in problems:
         print("RETRIEVAL GATE FAILED  " + problem)
 

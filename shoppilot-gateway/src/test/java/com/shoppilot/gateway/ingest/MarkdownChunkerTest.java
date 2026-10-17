@@ -165,6 +165,30 @@ class MarkdownChunkerTest {
     }
 
     @Test
+    @DisplayName("round32：hotel- 前缀映射到 POLICY_HOTEL，且租户归属跟着 front matter 走（不挂平台级）")
+    void hotelPrefixMapsToTheHotelIntentAndStaysTenantScoped(@TempDir Path dir) throws IOException {
+        Path file = write(dir, "hotel-99-demo.md", """
+                ---
+                title: 演示酒店政策
+                rule_type: HOTEL_POLICY
+                scope: SHOP
+                tenant_id: T004
+                ---
+                ## 入住
+                %s
+                """.formatted(longBody("癸")));
+
+        RuleChunk chunk = MarkdownChunker.chunk(file, EPOCH).get(0);
+
+        assertEquals("POLICY_HOTEL", chunk.intent(),
+                "入库映射漏了这一支，酒店语料会以 UNKNOWN 进库：检索得到、但永远不准入缓存");
+        // 挂成 PLATFORM 会让酒店规则对所有电商租户可见（可见范围是 tenantId + PLATFORM），
+        // 那是跨行业的污染，不是"顺手多一份语料"。
+        assertEquals("T004", chunk.tenantId());
+        assertNotEquals(RuleChunk.PLATFORM_TENANT, chunk.tenantId());
+    }
+
+    @Test
     @DisplayName("相邻的短段落并成一块，不各自成块（避免「本条自某年起生效」这类碎块）")
     void adjacentShortSectionsMergeIntoOneChunk(@TempDir Path dir) throws IOException {
         Path file = write(dir, "return-97-demo.md", """

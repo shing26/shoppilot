@@ -176,6 +176,7 @@ public class IngestRunner implements ApplicationRunner {
         payload.put("scope", chunk.scope());
         payload.put("tenant_id", chunk.tenantId());
         payload.put("intent", chunk.intent());
+        payload.put("domain", chunk.domain().name());
         payload.put("effective_from", chunk.effectiveFrom());
         payload.put("kb_epoch", chunk.kbEpoch());
         return payload;
@@ -193,6 +194,7 @@ public class IngestRunner implements ApplicationRunner {
         document.put("scope", chunk.scope());
         document.put("tenantId", chunk.tenantId());
         document.put("intent", chunk.intent());
+        document.put("domain", chunk.domain().name());
         document.put("effectiveFrom", chunk.effectiveFrom());
         document.put("kbEpoch", chunk.kbEpoch());
         return document;

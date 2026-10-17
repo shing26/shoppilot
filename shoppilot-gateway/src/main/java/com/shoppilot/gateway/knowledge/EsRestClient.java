@@ -35,10 +35,21 @@ public class EsRestClient {
     }
 
     public void ensureIndex(String index) {
+        Map<String, Object> mappings = mappings();
         String existing = trySend("GET", "/" + index);
-        if (existing != null) {
+        if (existing == null) {
+            Map<String, Object> body = Map.of("settings", Map.of("number_of_shards", 1, "number_of_replicas", 0),
+                    "mappings", mappings);
+            send("PUT", "/" + index, body);
             return;
         }
+        // 索引已存在也要把 mapping 合并一次：后来新增的字段（如 round33 的 domain）在老索引上缺映射时，
+        // ES 会走动态映射把它当 text，`term` 过滤就永远不命中——检索会静默地把跨行业条款放进来。
+        // PUT _mapping 是幂等的合并，字段已在就返回 200，不加也不报错。
+        send("PUT", "/" + index + "/_mapping", mappings);
+    }
+
+    private static Map<String, Object> mappings() {
         Map<String, Object> mappings = new LinkedHashMap<>();
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("text", Map.of("type", "text"));
@@ -48,14 +59,13 @@ public class EsRestClient {
         properties.put("scope", Map.of("type", "keyword"));
         properties.put("tenantId", Map.of("type", "keyword"));
         properties.put("intent", Map.of("type", "keyword"));
+        properties.put("domain", Map.of("type", "keyword"));
         properties.put("kbEpoch", Map.of("type", "long"));
         properties.put("sourceDoc", Map.of("type", "keyword"));
         properties.put("headingPath", Map.of("type", "keyword"));
         properties.put("effectiveFrom", Map.of("type", "keyword"));
         mappings.put("properties", properties);
-        Map<String, Object> body = Map.of("settings", Map.of("number_of_shards", 1, "number_of_replicas", 0),
-                "mappings", mappings);
-        send("PUT", "/" + index, body);
+        return mappings;
     }
 
     public void index(String index, String docId, Map<String, Object> document) {
@@ -77,7 +87,8 @@ public class EsRestClient {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("size", size);
-        body.put("_source", List.of("ruleId", "text", "title", "ruleType", "applicableCategory", "scope", "headingPath"));
+        body.put("_source", List.of("ruleId", "text", "title", "ruleType", "applicableCategory", "scope",
+                "headingPath", "sourceDoc", "domain"));
         body.put("query", Map.of("bool", bool));
         String response = send("POST", "/" + index + "/_search", body);
         List<Hit> hits = new ArrayList<>();
@@ -85,10 +96,7 @@ public class EsRestClient {
             JsonNode buckets = mapper.readTree(response).path("hits").path("hits");
             for (JsonNode node : buckets) {
                 JsonNode source = node.path("_source");
-                hits.add(new Hit(node.path("_id").asText(), node.path("_score").asDouble(),
-                        source.path("text").asText(""), source.path("title").asText(""),
-                        source.path("ruleType").asText(""), source.path("applicableCategory").asText(""),
-                        source.path("scope").asText("")));
+                hits.add(hitOf(node, source));
             }
         } catch (Exception failure) {
             throw new IllegalStateException("解析 ES 检索结果失败", failure);
@@ -104,15 +112,20 @@ public class EsRestClient {
             JsonNode buckets = mapper.readTree(response).path("hits").path("hits");
             for (JsonNode node : buckets) {
                 JsonNode source = node.path("_source");
-                hits.add(new Hit(node.path("_id").asText(), node.path("_score").asDouble(),
-                        source.path("text").asText(""), source.path("title").asText(""),
-                        source.path("ruleType").asText(""), source.path("applicableCategory").asText(""),
-                        source.path("scope").asText("")));
+                hits.add(hitOf(node, source));
             }
         } catch (Exception failure) {
             throw new IllegalStateException("解析 ES 检索结果失败", failure);
         }
         return hits;
+    }
+
+    private static Hit hitOf(JsonNode node, JsonNode source) {
+        return new Hit(node.path("_id").asText(), node.path("_score").asDouble(),
+                source.path("text").asText(""), source.path("title").asText(""),
+                source.path("ruleType").asText(""), source.path("applicableCategory").asText(""),
+                source.path("scope").asText(""), source.path("headingPath").asText(""),
+                source.path("sourceDoc").asText(""));
     }
 
     public long count(String index) {
@@ -168,7 +181,12 @@ public class EsRestClient {
         }
     }
 
+    /**
+     * @param headingPath 供买家端引用详情用（round33 / ADR 0067）：命中路径不跑检索，
+     *                    标题必须随命中结果一路带到响应里
+     * @param sourceDoc   条款出处文件名，引用详情里的 {@code doc}
+     */
     public record Hit(String ruleId, double score, String text, String title, String ruleType,
-                      String applicableCategory, String scope) {
+                      String applicableCategory, String scope, String headingPath, String sourceDoc) {
     }
 }

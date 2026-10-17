@@ -16,6 +16,7 @@ public record RuleChunk(
         String scope,
         String tenantId,
         String intent,
+        Domain domain,
         String effectiveFrom,
         long kbEpoch) {
 

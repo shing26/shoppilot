@@ -15,8 +15,10 @@ import com.shoppilot.gateway.cache.SingleFlight;
 import com.shoppilot.gateway.cache.WriteBackPolicy;
 import com.shoppilot.gateway.cache.WriteBackPool;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.config.TenantDomainRegistry;
 import com.shoppilot.gateway.identity.RequestTrace;
 import com.shoppilot.gateway.identity.TenantContext;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.HybridRetriever;
 import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.llm.LlmGateway;
@@ -109,8 +111,9 @@ class GatewayMainPathJvmTest {
     void cacheHitReturnsWithoutCallingTheModel() throws Exception {
         CacheService cache = mock(CacheService.class);
         CacheEntry cached = CacheEntry.of("签收后七天内可以申请退货", Intent.POLICY_RETURN, TENANT,
-                CacheService.SCOPE_SHOP, 7L, List.of("POLICY-RETURN-01"), "perf-mock", QUERY);
-        when(cache.lookup(eq(TENANT), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
+                CacheService.SCOPE_SHOP, Domain.ECOMMERCE, 7L, List.of("POLICY-RETURN-01"), List.of("七天无理由"),
+                "perf-mock", QUERY);
+        when(cache.lookup(eq(TENANT), eq(Domain.ECOMMERCE), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
                 .thenReturn(new CacheService.Lookup(CacheService.Layer.L1, Optional.of(cached), null,
                         QUERY, false));
 
@@ -136,8 +139,9 @@ class GatewayMainPathJvmTest {
     void cacheHitPathStaysZeroModelCallsInLocalMode() throws Exception {
         CacheService cache = mock(CacheService.class);
         CacheEntry cached = CacheEntry.of("签收后七天内可以申请退货", Intent.POLICY_RETURN, TENANT,
-                CacheService.SCOPE_SHOP, 7L, List.of("POLICY-RETURN-01"), "perf-mock", QUERY);
-        when(cache.lookup(eq(TENANT), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
+                CacheService.SCOPE_SHOP, Domain.ECOMMERCE, 7L, List.of("POLICY-RETURN-01"), List.of("七天无理由"),
+                "perf-mock", QUERY);
+        when(cache.lookup(eq(TENANT), eq(Domain.ECOMMERCE), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
                 .thenReturn(new CacheService.Lookup(CacheService.Layer.L1, Optional.of(cached), null,
                         QUERY, false));
 
@@ -427,7 +431,7 @@ class GatewayMainPathJvmTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fallbackReason").value("EMOTION_ESCALATION"))
                 .andExpect(jsonPath("$.ticketId").value("T-901"))
-                .andExpect(jsonPath("$.promptVersion").value("v1.0.0"));
+                .andExpect(jsonPath("$.promptVersion").value("v1.1.0"));
 
         // 情绪升级发生在 TRIAGE 之前：判定不出意图、不进缓存、答案话术先安抚
         verify(fallback).escalate(eq(FallbackReason.EMOTION_ESCALATION), anyString(), anyString(), eq("high"));
@@ -442,7 +446,7 @@ class GatewayMainPathJvmTest {
         when(feedbackService.recordExplicit(eq("conv-integration-1"), eq("DOWN"), any()))
                 .thenReturn(new FeedbackService.Ack("FB-9", true, "T-901", List.of("POLICY-RETURN-01")));
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d), null));
         CacheService cache = mock(CacheService.class);
         RateLimitService rateLimit = mock(RateLimitService.class);
@@ -478,21 +482,22 @@ class GatewayMainPathJvmTest {
         when(calmGate.evaluate(any())).thenReturn(
                 new SentimentGate.Verdict(com.shoppilot.gateway.sentiment.Emotion.CALM, 0.9d, false, "llm"));
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.dynamic(Intent.POLICY_RETURN, "T1", false), null));
         WriteBackPolicy policy = mock(WriteBackPolicy.class);
         when(policy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(false, "style-test"));
         KbEpoch epoch = mock(KbEpoch.class);
         when(epoch.current()).thenReturn(7L);
         HybridRetriever retriever = mock(HybridRetriever.class);
-        when(retriever.retrieve(anyString(), anyString(), any()))
+        when(retriever.retrieve(anyString(), anyString(), any(), any()))
                 .thenReturn(HybridRetriever.Result.unavailable(7L));
         SessionStore store = mock(SessionStore.class);
         when(store.load(anyString(), anyString(), anyString())).thenReturn(SessionStore.Session.empty(CONVERSATION));
         when(store.appendTurn(any(), anyString(), anyString())).thenAnswer(call -> call.getArgument(0));
 
         AgentStateMachine machine = new AgentStateMachine(triage, mock(CacheService.class),
-                mock(SingleFlight.class), policy, epoch, retriever, llm, mock(ToolDispatcher.class), store,
+                mock(SingleFlight.class), policy, epoch, ecommerceDomains(), retriever, llm,
+                mock(ToolDispatcher.class), store,
                 mock(FallbackService.class), properties(), mock(WriteBackPool.class), new PromptCatalog(),
                 calmGate, new StyleService(), registry);
         RateLimitService rateLimit = mock(RateLimitService.class);
@@ -586,8 +591,11 @@ class GatewayMainPathJvmTest {
         when(store.appendTurn(any(), anyString(), anyString())).thenAnswer(call -> call.getArgument(0));
 
         HybridRetriever.Result retrieved = new HybridRetriever.Result(List.of(
-                new HybridRetriever.Retrieved("return-01-7day-basic", 0.91d, 1, 1, "platform", "7天无理由", "自签收次日起算"),
-                new HybridRetriever.Retrieved("return-02-7day-exclusions", 0.84d, 2, 3, "platform", "例外", "定制商品除外")),
+                new HybridRetriever.Retrieved("return-01-7day-basic", 0.91d, 1, 1, "platform", "7天无理由",
+                        "七天无理由退货基础规则 > 七天无理由退货的适用起点", "return-01-7day-basic",
+                        "自签收次日起算"),
+                new HybridRetriever.Retrieved("return-02-7day-exclusions", 0.84d, 2, 3, "platform", "例外",
+                        "七天无理由退货除外清单 > 除外商品", "return-02-7day-exclusions", "定制商品除外")),
                 2, 2, 7L);
 
         MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.POLICY_RETURN, "T1", true),
@@ -869,8 +877,10 @@ class GatewayMainPathJvmTest {
     void cacheHitContextMirrorsCitations() throws Exception {
         CacheService cache = mock(CacheService.class);
         CacheEntry cached = CacheEntry.of("签收后七天内可以申请退货", Intent.POLICY_RETURN, TENANT,
-                CacheService.SCOPE_SHOP, 7L, List.of("POLICY-RETURN-01", "POLICY-RETURN-02"), "perf-mock", QUERY);
-        when(cache.lookup(eq(TENANT), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
+                CacheService.SCOPE_SHOP, Domain.ECOMMERCE, 7L,
+                List.of("POLICY-RETURN-01", "POLICY-RETURN-02"), List.of("七天无理由", "除外清单"),
+                "perf-mock", QUERY);
+        when(cache.lookup(eq(TENANT), eq(Domain.ECOMMERCE), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
                 .thenReturn(new CacheService.Lookup(CacheService.Layer.L1, Optional.of(cached), null,
                         QUERY, false));
 
@@ -921,7 +931,7 @@ class GatewayMainPathJvmTest {
     private MockMvc mockMvc(TriageResult triageResult, CacheService cache, LlmGateway llm,
                             ToolDispatcher dispatcher, FallbackService fallback, SentimentGate gate) {
         HybridRetriever retriever = mock(HybridRetriever.class);
-        when(retriever.retrieve(anyString(), anyString(), any()))
+        when(retriever.retrieve(anyString(), anyString(), any(), any()))
                 .thenReturn(HybridRetriever.Result.unavailable(7L));
         SessionStore sessionStore = mock(SessionStore.class);
         when(sessionStore.load(anyString(), anyString(), anyString()))
@@ -942,7 +952,7 @@ class GatewayMainPathJvmTest {
                             ToolDispatcher dispatcher, FallbackService fallback, SentimentGate gate,
                             HybridRetriever.Result retrieved, SessionStore sessionStore) {
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString())).thenReturn(new TriageEngine.Outcome(triageResult, null));
+        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(triageResult, null));
         // 显式转人工谓词走真实现（纯词表、0 token）：mock 若默认返回 false，ADR 0042 的优先级
         // 在这条缝上就永远不生效，回归用例会变成一条恒绿假防线。
         when(triage.isExplicitEscalation(anyString()))
@@ -952,14 +962,14 @@ class GatewayMainPathJvmTest {
         when(epoch.current()).thenReturn(7L);
 
         HybridRetriever retriever = mock(HybridRetriever.class);
-        when(retriever.retrieve(anyString(), anyString(), any()))
+        when(retriever.retrieve(anyString(), anyString(), any(), any()))
                 .thenReturn(retrieved);
 
         WriteBackPolicy writeBackPolicy = mock(WriteBackPolicy.class);
         when(writeBackPolicy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(false, "integration-test"));
 
         AgentStateMachine machine = new AgentStateMachine(triage, cache, mock(SingleFlight.class),
-                writeBackPolicy, epoch, retriever, llm, dispatcher, sessionStore, fallback,
+                writeBackPolicy, epoch, ecommerceDomains(), retriever, llm, dispatcher, sessionStore, fallback,
                 properties(), mock(WriteBackPool.class), new PromptCatalog(), gate, new StyleService(), registry);
 
         RateLimitService rateLimit = mock(RateLimitService.class);
@@ -968,6 +978,13 @@ class GatewayMainPathJvmTest {
         ChatController controller = new ChatController(machine, MAPPER, registry, new PromptCatalog(),
                 mock(FeedbackService.class), new ChatAdmission(cache, rateLimit, fallback, registry));
         return MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
+    /** round33：集成缝里的租户按电商登记，工具裁剪与判定顺序保持旧行为（ADR 0067）。 */
+    private static TenantDomainRegistry ecommerceDomains() {
+        TenantDomainRegistry domains = mock(TenantDomainRegistry.class);
+        when(domains.resolve(anyString())).thenReturn(Domain.ECOMMERCE);
+        return domains;
     }
 
     /** 情绪门第二层可用（dev 口径）且判 URGENT：复现 2026-09-20 矩阵 F2 的触发条件。 */

@@ -89,7 +89,7 @@ class ChannelDerivedSessionJvmTest {
     private static AgentResult answer() {
         return new AgentResult("签收后七天内可以申请退货", Intent.POLICY_RETURN, "T1", CacheService.Layer.NONE,
                 List.of("R-1"), List.of(), null, null, false, 3, 5, false, false, "v1.0.0", List.of(),
-                AgentResult.ContextComposition.NONE);
+                AgentResult.ContextComposition.NONE, List.of());
     }
 
     private MvcResult postWebhook(String channel, String json) throws Exception {

@@ -113,7 +113,16 @@ _DEF_LANDED = 0
 # 注意这一格的四个数是 [tool-api, biz-mock, gateway, ticket]，**不要在它前面再多写一个 5**——
 # 本仓在 2026-10-05 收尾时确实把读数写成过 `5 + 10 + 57 + ... `，那个多出来的 5 是笔误，
 # 已在 EVIDENCE 与 tracker 里更正。
-G6_EXPECT = [10, 57, 342, 39]
+# 换代（round33 收口，2026-10-17 本机 JVM verify 实测）：四模块 `10 + 69 + 412 + 45 = 536`。
+# 相对上一格 `[10, 69, 391, 45] = 515`（round32）：+21 全在 gateway——票 125 Domain 维度与
+# `EsRestClientWireTest`、票 126 T0 行业门与动作优先（另含酒店活体跑批暴露的 HTL-BKF-01
+# 早餐词表回归修复 +4）、票 127 提示词/引用/语料一致性。
+# **注意这一格现在必然读红**：它读的是 logs/acceptance/{build,unit}.log，而那两份日志仍是
+# 2026-10-05 的清场日落点（`10 + 57 + 342 + 39 = 448`），比本常数旧。也就是说，跑本审计会得到一条
+# 「常数 536 ≠ 日志 448」的红——那**不是防线失效、而是「本轮没有重跑带 build/unit 的活体矩阵」**，
+# 与上面那条「中途加票时不要动它」是同一回事的另一面。**不许为消这条红把常数改回 448**：本常数
+# 表达的是当前真实测试数（`.\mvnw.cmd -B -ntp verify` 实测），日志追上它是矩阵下次重跑时的事。
+G6_EXPECT = [10, 69, 412, 45]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 
@@ -123,6 +132,10 @@ LOCAL_ONLY = [
     # A3 的零额度口径被有意打破；证据在 eval/results 的三套产物与 round17 spec 的收口记录里。
     # 网关当前已停（跑 Maven 需腾内存），A3 因此判 SKIP 而不是"本轮真的零额度"——别把这次 SKIP 当绿灯。
     "D3 verify_eval_judge 退出码 0 且 40/40 条断言全过",  # 依赖检出后的换行符，见 eol_drift()
+    # round33：`docs/interview-qa.md` 在 round31 被删（去求职明牌），E5/E5b 的前置随之不成立；
+    # 文件不在时判 SKIP（不是防线失效），H16 两个方向都靠这条声明对上。
+    "E5 问答库 238 问、头部计数 = 正文 Q 条目 = 答案条数",
+    "E5b 问答库覆盖 69 个 ticket 且无缺收尾记录",
     "F1c 文档里的 logs 类产物名都指向本机 logs/（本机限定：logs 不入库）",
     "G2b 落点那轮极性守卫真被触发（blocked 计数器增量 = 1）",
     "G3 落点日志记 commit=9eede6d 且开跑时工作树 clean",
@@ -553,10 +566,21 @@ check("E4b 对照组：把那一行删掉后 E4 的判据必须变 False（钉�
       merge_denied(readme) and not merge_denied(_stripped),
       f"正本 True={merge_denied(readme)}；删掉同现行后 False={not merge_denied(_stripped)}（删了 {len(readme.splitlines()) - len(_stripped.splitlines())} 行）")
 
-qa = read(REPO / "docs" / "interview-qa.md")
-head_line = re.search(r"共 (\d+) 问，覆盖 (\d+) 个 ticket", qa)
-body_q = qa.count("*Q：")
-body_a = len(re.findall(r"(?m)^A：", qa))
+#
+# round33 换代：`docs/interview-qa.md` 已在 round31（`810c841`，去求职明牌）从库里删除，但这里
+# 一直还在读它——审计于是 `FileNotFoundError` 崩在半路，自 round31 起根本跑不到底。文件不在时
+# E5/E5b 的**前置不成立**（被检查的对象已不存在，不是防线失效），按三态判 SKIP 并点名原因；
+# 文件哪天回来（有意重生）就照旧走 PASS/FAIL。**不改判据本身**：头部计数 = 正文 Q = 答案条数、
+# 覆盖 ticket 数、无「缺收尾记录」三条一字未动。
+qa_path = REPO / "docs" / "interview-qa.md"
+if qa_path.exists():
+    qa = read(qa_path)
+else:
+    qa = None
+_QA_ABSENT = "docs/interview-qa.md 不存在（round31 去求职明牌时删除）；E5/E5b 前置不成立"
+head_line = re.search(r"共 (\d+) 问，覆盖 (\d+) 个 ticket", qa) if qa else None
+body_q = qa.count("*Q：") if qa else 0
+body_a = len(re.findall(r"(?m)^A：", qa)) if qa else 0
 # 换代指针（第十三轮票 21/22）：问答库从 91 涨到 93。
 # 换代指针（v1.0 交接补录）：票 21-32 的 Handoff notes 全部进入生成源，问答库从 93 涨到 127，
 # 覆盖从 20 个 ticket 扩到全部 32 个。与 G6 同一族：涨问答是文档产出，不跟着改会把新内容报成防线失效。
@@ -569,11 +593,13 @@ body_a = len(re.findall(r"(?m)^A：", qa))
 # 换代指针（round22 收口）：票 64-68 的 Handoff 追问进入生成源，问答库 223 → **238**，
 # 覆盖 64 → **69** 个 ticket。判据本身没放宽：头部计数、正文 Q 条目、A 条目三者仍必须逐字相等。
 check("E5 问答库 238 问、头部计数 = 正文 Q 条目 = 答案条数",
-      head_line is not None and int(head_line.group(1)) == 238 == body_q == body_a and body_a == 238,
-      f"头部 {head_line.group(1) if head_line else '-'}，正文 Q {body_q}，A {body_a}")
+      qa is not None and head_line is not None and int(head_line.group(1)) == 238 == body_q == body_a and body_a == 238,
+      _QA_ABSENT if qa is None else f"头部 {head_line.group(1) if head_line else '-'}，正文 Q {body_q}，A {body_a}",
+      skip=qa is None)
 check("E5b 问答库覆盖 69 个 ticket 且无缺收尾记录",
-      head_line is not None and head_line.group(2) == "69" and "缺收尾记录" not in qa,
-      f"头部行 {head_line.group(0) if head_line else '-'}；正文无缺收尾记录={'缺收尾记录' not in qa}")
+      qa is not None and head_line is not None and head_line.group(2) == "69" and "缺收尾记录" not in qa,
+      _QA_ABSENT if qa is None else f"头部行 {head_line.group(0) if head_line else '-'}；正文无缺收尾记录={'缺收尾记录' not in qa}",
+      skip=qa is None)
 
 ticket20 = read(REPO / ".scratch" / "shoppilot-mvp" / "issues" / "20-action-order-attribution.md")
 # 185608 是 17/17 但让位的上一轮，只需在 ticket 20 留痕；200038/201808 是没拿全绿的两轮，README 也必须照登。
@@ -623,6 +649,11 @@ def resolvable(stem):
 # `acceptance-run-*` / `clean-clone-check-*` 落在 logs/（不入库，H5 钉着），只有本机核得动。
 # 混成一条会让"缺 logs 的克隆"整条判红（假红），整体豁免又会让漏名混过去（假绿）。
 for doc in DOC_GLOBS:
+    # round33：`docs/interview-qa.md` 已在 round31 从库里删除，这里若照读会 FileNotFoundError 崩在
+    # 半路（自 round31 起审计根本跑不到底）。文件不在就跳过它的引用核对——对象没了，不是引用漏解析。
+    if not (REPO / doc).exists():
+        print(f"        （跳过已删除文档 {doc} 的引用核对）")
+        continue
     for m in PATTERN.finditer(read(REPO / doc)):
         stem = m.group(0)
         occurrences += 1
@@ -963,6 +994,8 @@ def cite_ok(doc, fname, lineno):
 bad_cites = []
 n_cites = 0
 for doc in DOC_GLOBS:  # 与 F1 同一组文档，不再只扫三份
+    if not (REPO / doc).exists():  # round33：同 F1，跳过已删除文档（docs/interview-qa.md）
+        continue
     for fname, lineno in CITE_PAT.findall(read(REPO / doc)):
         n_cites += 1
         why = cite_ok(doc, fname, lineno)
@@ -1271,7 +1304,7 @@ check("H13 反证：『17 项断言』既不在 verify_eval_judge 里，在文�
       f"跑器源码命中={PHANTOM in vej}；文档命中 {len(_ph_lines)} 行、其中无幻影标记 {len(_unmarked)} 行 {_unmarked[:2]}")
 # 与 H3 同源：用同一个引用正则去扫，而不是另抄一份 `.count()`（第六轮 Standards 轴抓到那是第二把尺子）。
 _ghost_hits = {d: len([m for m in CITE_PAT.finditer(read(REPO / d)) if m.group(0) == "up.ps1:115"])
-               for d in DOC_GLOBS}
+               for d in DOC_GLOBS if (REPO / d).exists()}  # round33：跳过已删除文档（interview-qa.md）
 check("H13b 反证：被驳回的那处 `up.ps1` 第 115 行引用在 8 份文档里零命中（它本就不存在，不是漏核）",
       sum(_ghost_hits.values()) == 0,
       f"逐份命中 {dict((k, v) for k, v in _ghost_hits.items() if v)}" if sum(_ghost_hits.values())

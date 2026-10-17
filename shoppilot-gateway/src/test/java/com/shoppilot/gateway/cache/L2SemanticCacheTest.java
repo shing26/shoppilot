@@ -2,6 +2,7 @@ package com.shoppilot.gateway.cache;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.EmbeddingClient;
 import com.shoppilot.gateway.knowledge.QdrantRestClient;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -76,7 +77,8 @@ class L2SemanticCacheTest {
     void missingTableIsMissNotOutage() {
         failSearchWith(MISSING_TABLE);
 
-        assertThat(l2.search(new float[]{0.1f, 0.2f, 0.3f, 0.4f}, "T001", "platform", "POLICY_RETURN", 3L))
+        assertThat(l2.search(new float[]{0.1f, 0.2f, 0.3f, 0.4f}, "T001", "platform", "POLICY_RETURN",
+                Domain.ECOMMERCE, 3L))
                 .isEmpty();
 
         assertThat(count("shoppilot_cache_l2_total", "miss")).isEqualTo(1);
@@ -89,7 +91,8 @@ class L2SemanticCacheTest {
     void realFailureDoesNotTryToRecreate() {
         failSearchWith("Qdrant POST /collections/answer_cache/points/search -> 503 upstream unavailable");
 
-        assertThat(l2.search(new float[]{0.1f, 0.2f, 0.3f, 0.4f}, "T001", "platform", "POLICY_RETURN", 3L))
+        assertThat(l2.search(new float[]{0.1f, 0.2f, 0.3f, 0.4f}, "T001", "platform", "POLICY_RETURN",
+                Domain.ECOMMERCE, 3L))
                 .isEmpty();
 
         verify(qdrant, never()).ensureCollection(anyString(), anyInt(), anyList(), anyList());
@@ -103,8 +106,8 @@ class L2SemanticCacheTest {
         failSearchWith(MISSING_TABLE);
         float[] vector = {0.1f, 0.2f, 0.3f, 0.4f};
 
-        l2.search(vector, "T001", "platform", "POLICY_RETURN", 3L);
-        l2.search(vector, "T001", "platform", "POLICY_RETURN", 3L);
+        l2.search(vector, "T001", "platform", "POLICY_RETURN", Domain.ECOMMERCE, 3L);
+        l2.search(vector, "T001", "platform", "POLICY_RETURN", Domain.ECOMMERCE, 3L);
 
         assertThat(registry.find("shoppilot_cache_l2_missing_total").counter().count()).isEqualTo(2);
         verify(qdrant, times(1)).ensureCollection(eq("answer_cache"), eq(4), anyList(), anyList());
@@ -118,7 +121,7 @@ class L2SemanticCacheTest {
         InOrder order = inOrder(qdrant);
         order.verify(qdrant).deleteCollection("answer_cache");
         order.verify(qdrant).ensureCollection(eq("answer_cache"), eq(4),
-                eq(List.of("tenant_id", "scope", "intent", "answer_key")), eq(List.of("kb_epoch")));
+                eq(List.of("tenant_id", "scope", "intent", "domain", "answer_key")), eq(List.of("kb_epoch")));
     }
 
     @Test
