@@ -22,7 +22,11 @@ public record RuleChunk(
 
     public static final String PLATFORM_TENANT = "PLATFORM";
 
+    /** scope 的两个取值（ADR 0004）：平台级全租户共享一份，店铺级仅本租户可见。 */
+    public static final String SCOPE_PLATFORM = "PLATFORM";
+    public static final String SCOPE_SHOP = "SHOP";
+
     public boolean platformScoped() {
-        return "PLATFORM".equalsIgnoreCase(scope);
+        return SCOPE_PLATFORM.equalsIgnoreCase(scope);
     }
 }

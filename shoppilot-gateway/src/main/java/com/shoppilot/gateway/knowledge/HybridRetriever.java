@@ -194,9 +194,12 @@ public class HybridRetriever {
         bool.put("must", must);
         bool.put("filter", filter);
         try {
+            // _source 必须覆盖引用详情要用的两列（headingPath / sourceDoc）：词法路是"缺了它
+            // 就是空串"的那种漏——2026-10-17 黑盒 QA 实测稠密腿降级时全部新答案的
+            // citationDetails.doc 变空（同一 ruleId 在不同记录里 doc 空/非空混现）。
             return es.searchRaw(config.esIndex(), Map.of("size", size,
                     "_source", List.of("ruleId", "text", "title", "ruleType", "applicableCategory", "scope",
-                            "headingPath", "domain"),
+                            "headingPath", "sourceDoc", "domain"),
                     "query", Map.of("bool", bool)));
         } catch (RuntimeException failure) {
             // 异常抛到 recall() 那层统一记 degraded：绝不把“挂了”翻译成“没查到”

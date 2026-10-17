@@ -112,7 +112,7 @@ class GatewayMainPathJvmTest {
         CacheService cache = mock(CacheService.class);
         CacheEntry cached = CacheEntry.of("签收后七天内可以申请退货", Intent.POLICY_RETURN, TENANT,
                 CacheService.SCOPE_SHOP, Domain.ECOMMERCE, 7L, List.of("POLICY-RETURN-01"), List.of("七天无理由"),
-                "perf-mock", QUERY);
+                List.of("return-01-7day-basic"), "perf-mock", QUERY);
         when(cache.lookup(eq(TENANT), eq(Domain.ECOMMERCE), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
                 .thenReturn(new CacheService.Lookup(CacheService.Layer.L1, Optional.of(cached), null,
                         QUERY, false));
@@ -140,7 +140,7 @@ class GatewayMainPathJvmTest {
         CacheService cache = mock(CacheService.class);
         CacheEntry cached = CacheEntry.of("签收后七天内可以申请退货", Intent.POLICY_RETURN, TENANT,
                 CacheService.SCOPE_SHOP, Domain.ECOMMERCE, 7L, List.of("POLICY-RETURN-01"), List.of("七天无理由"),
-                "perf-mock", QUERY);
+                List.of("return-01-7day-basic"), "perf-mock", QUERY);
         when(cache.lookup(eq(TENANT), eq(Domain.ECOMMERCE), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
                 .thenReturn(new CacheService.Lookup(CacheService.Layer.L1, Optional.of(cached), null,
                         QUERY, false));
@@ -245,6 +245,73 @@ class GatewayMainPathJvmTest {
 
         verify(fallback).escalate(FallbackReason.USER_REQUESTED, "我要找人工", null);
         verifyNoInteractions(llm);
+    }
+
+    @Test
+    @DisplayName("空召回转人工（2026-10-17）：政策意图检索 0 条不再让模型自由发挥——确定性 INTENT_UNRESOLVED + 负缓存")
+    void emptyPolicyRecallEscalatesInsteadOfFreeFormAnswer() throws Exception {
+        // 实机复现：酒店租户问电商问题、电商租户问酒店问题时检索为空（可见范围内没有条款），
+        // 旧实现把模型自由发挥的正文当答案返回（编出"死蟹全额退款""15 天无理由"），零引用、
+        // 无降级、不落工单；同一句第二次问才因负缓存转人工。这里钉死新出口：首问即转人工。
+        String query = "死蟹怎么赔付";
+        CacheService cache = mock(CacheService.class);
+        when(cache.lookup(eq(TENANT), eq(Domain.ECOMMERCE), eq(Intent.POLICY_FRESH), eq(query), eq(7L), any()))
+                .thenReturn(new CacheService.Lookup(CacheService.Layer.NONE, Optional.empty(), null, query, false));
+        FallbackService fallback = mock(FallbackService.class);
+        when(fallback.escalate(eq(FallbackReason.INTENT_UNRESOLVED), eq(query), anyString()))
+                .thenReturn(Optional.of("T-EMPTY-1"));
+        LlmGateway llm = mock(LlmGateway.class);
+        // 给模型一个站桩答案：万一将来有人把空召回出口拆掉，红的是"响应里没有 fallbackReason"，
+        // 而不是一个看不出意图的 NPE——变异对照的诊断价值在这里。
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("模型自由发挥的答案"));
+        SessionStore store = mock(SessionStore.class);
+        when(store.load(anyString(), anyString(), anyString()))
+                .thenReturn(SessionStore.Session.empty(CONVERSATION));
+
+        MockMvc mvc = mockMvc(TriageResult.policy(Intent.POLICY_FRESH, "T1", 0.9d), cache, llm,
+                mock(ToolDispatcher.class), fallback, perfModeGate(),
+                new HybridRetriever.Result(List.of(), 0, 0, 7L), store);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"" + query + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fallbackReason").value("INTENT_UNRESOLVED"))
+                .andExpect(jsonPath("$.ticketId").value("T-EMPTY-1"))
+                .andExpect(jsonPath("$.answer").value(containsString("工单号 T-EMPTY-1")))
+                .andExpect(jsonPath("$.answer").value(not(containsString("死蟹"))));
+
+        // 负标记与转人工同一出口：第二次问同句由既有的 negative-marker 分支短路（0 token）
+        verify(cache).writeNegative(eq(TENANT), eq(Domain.ECOMMERCE), eq(Intent.POLICY_FRESH), eq(7L), any());
+        verifyNoInteractions(llm);
+    }
+
+    @Test
+    @DisplayName("检索降级不落空召回出口：degraded 的空结果仍走模型（一次抖动不能被固化成批量转人工）")
+    void degradedEmptyRecallStillReachesTheModel() throws Exception {
+        String query = "死蟹怎么赔付";
+        CacheService cache = mock(CacheService.class);
+        when(cache.lookup(eq(TENANT), eq(Domain.ECOMMERCE), eq(Intent.POLICY_FRESH), eq(query), eq(7L), any()))
+                .thenReturn(new CacheService.Lookup(CacheService.Layer.NONE, Optional.empty(), null, query, false));
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("正在为您查询"));
+        SessionStore store = mock(SessionStore.class);
+        when(store.load(anyString(), anyString(), anyString()))
+                .thenReturn(SessionStore.Session.empty(CONVERSATION));
+        when(store.appendTurn(any(), anyString(), anyString())).thenAnswer(call -> call.getArgument(0));
+
+        MockMvc mvc = mockMvc(TriageResult.policy(Intent.POLICY_FRESH, "T1", 0.9d), cache, llm,
+                mock(ToolDispatcher.class), mock(FallbackService.class), perfModeGate(),
+                HybridRetriever.Result.unavailable(7L), store);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"" + query + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fallbackReason").doesNotExist())
+                .andExpect(jsonPath("$.answer").value("正在为您查询"));
+
+        verify(cache, never()).writeNegative(any(), any(), any(), anyLong(), any());
     }
 
     @Test
@@ -879,7 +946,7 @@ class GatewayMainPathJvmTest {
         CacheEntry cached = CacheEntry.of("签收后七天内可以申请退货", Intent.POLICY_RETURN, TENANT,
                 CacheService.SCOPE_SHOP, Domain.ECOMMERCE, 7L,
                 List.of("POLICY-RETURN-01", "POLICY-RETURN-02"), List.of("七天无理由", "除外清单"),
-                "perf-mock", QUERY);
+                List.of("return-01-7day-basic", "return-02-7day-exclusions"), "perf-mock", QUERY);
         when(cache.lookup(eq(TENANT), eq(Domain.ECOMMERCE), eq(Intent.POLICY_RETURN), eq(QUERY), eq(7L), any()))
                 .thenReturn(new CacheService.Lookup(CacheService.Layer.L1, Optional.of(cached), null,
                         QUERY, false));
@@ -968,7 +1035,12 @@ class GatewayMainPathJvmTest {
         WriteBackPolicy writeBackPolicy = mock(WriteBackPolicy.class);
         when(writeBackPolicy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(false, "integration-test"));
 
-        AgentStateMachine machine = new AgentStateMachine(triage, cache, mock(SingleFlight.class),
+        // 穿透合并的 Gate 是 record（不可 mock），直接给一条 leader 门：走查全链路的用例
+        // （缓存未命中 → 检索 → 模型）必须能进到 runModelPath，否则 lookup 之后的 join 会拿到 null。
+        SingleFlight singleFlight = mock(SingleFlight.class);
+        when(singleFlight.join(anyString())).thenReturn(new SingleFlight.Gate(true, Optional.empty()));
+
+        AgentStateMachine machine = new AgentStateMachine(triage, cache, singleFlight,
                 writeBackPolicy, epoch, ecommerceDomains(), retriever, llm, dispatcher, sessionStore, fallback,
                 properties(), mock(WriteBackPool.class), new PromptCatalog(), gate, new StyleService(), registry);
 

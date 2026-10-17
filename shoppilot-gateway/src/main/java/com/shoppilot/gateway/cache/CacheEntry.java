@@ -18,6 +18,9 @@ import java.util.List;
  *   <li>{@code sourceHeadings} —— 与 {@code sourceRuleIds} 同序的条款标题。买家端要显示
  *       {@code ruleId + heading}，而命中路径不跑检索、拿不到正文；标题必须随条目一起落库。</li>
  * </ul>
+ *
+ * <p>2026-10-17 再补 {@code sourceDocs}：round33 落了标题却漏了出处，命中路径的
+ * {@code citationDetails.doc} 恒为空串——与 {@code sourceHeadings} 同一条理由，同序同源。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record CacheEntry(
@@ -31,14 +34,16 @@ public record CacheEntry(
         long kbEpoch,
         List<String> sourceRuleIds,
         List<String> sourceHeadings,
+        List<String> sourceDocs,
         String modelId,
         Instant createdAt) {
 
     public static CacheEntry of(String answer, Intent intent, String tenantId, String scope, Domain domain,
                                 long kbEpoch, List<String> sourceRuleIds, List<String> sourceHeadings,
-                                String modelId, String query) {
+                                List<String> sourceDocs, String modelId, String query) {
         return new CacheEntry(answer, query, intent.name(), tenantId, scope, domain, kbEpoch, sourceRuleIds,
-                sourceHeadings == null ? List.of() : List.copyOf(sourceHeadings), modelId, Instant.now());
+                sourceHeadings == null ? List.of() : List.copyOf(sourceHeadings),
+                sourceDocs == null ? List.of() : List.copyOf(sourceDocs), modelId, Instant.now());
     }
 
     /**

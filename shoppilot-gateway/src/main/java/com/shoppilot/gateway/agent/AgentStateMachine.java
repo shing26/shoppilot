@@ -196,7 +196,7 @@ public class AgentStateMachine {
                         entry.sourceRuleIds(), trace, null, null, false, 0, 0, false, false,
                         promptCatalog.version(), List.of(),
                         new AgentResult.ContextComposition(List.copyOf(entry.sourceRuleIds()), 0, 0),
-                        citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings()));
+                        citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings(), entry.sourceDocs()));
             }
             if (lookup.negative()) {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
@@ -217,7 +217,7 @@ public class AgentStateMachine {
                                 CacheService.Layer.FLIGHT, entry.sourceRuleIds(), trace, null, null, false,
                                 0, 0, false, false, promptCatalog.version(), List.of(),
                                 AgentResult.ContextComposition.NONE,
-                                citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings())))
+                                citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings(), entry.sourceDocs())))
                         .orElseGet(() -> fallback(AgentState.CACHE_READ, trace, sink,
                                 FallbackReason.INTENT_UNRESOLVED, query, null, styleTier));
             }
@@ -278,6 +278,23 @@ public class AgentStateMachine {
             }
             step(trace, sink, AgentState.RETRIEVE, "dense=" + retrieved.denseHits() + " lexical=" + retrieved.lexicalHits()
                     + " fused=" + retrieved.rules().size() + " degraded=" + retrieved.degraded());
+        }
+        // 空召回不是答案（2026-10-17 实机复现后定：与跨店同问同答同批修复）。
+        // 政策意图在可见范围里检索不到任何条款时，此前把模型自由发挥的正文直接当答案返回——
+        // 酒店租户会编出"死蟹全额退款""无理由退货 15 天"这类本店并不存在的承诺，零引用、无降级、
+        // 不落工单；同一句第二次问才因负缓存转人工，首问与复问的口径自相矛盾。这与 ADR 0009
+        // 「办不成就给一句实话并落可查工单」、ADR 0067「宁可转人工，不可拿另一个行业的条款回答」
+        // 直接冲突。改成与负缓存同一出口：确定性转人工 + 落单 + 写负标记，模型不再有机会发挥。
+        // 只在"跑完了、确实 0 条"时触发；检索降级（degraded）仍走原路——把一次抖动固化成
+        // 批量转人工是 2026-09-08 压测里踩过的坑，不在本出口的范围内。
+        if (intent != null && intent.isPolicy() && retrieved != null && retrieved.empty()
+                && !retrieved.degraded()) {
+            if (lookup.normalizedQuery() != null && !lookup.normalizedQuery().isEmpty()) {
+                cacheService.writeNegative(tenantId, domain, intent, epoch, lookup);
+            }
+            step(trace, sink, AgentState.RETRIEVE, "empty-recall:可见范围内无该意图条款");
+            return ModelRun.solo(fallback(AgentState.RETRIEVE, trace, sink, FallbackReason.INTENT_UNRESOLVED,
+                    query, "可见范围内没有该诉求的政策条款（空召回）", styleTier));
         }
         messages.add(LlmTypes.Message.user(composeUserMessage(query, retrieved)));
 
@@ -521,10 +538,12 @@ public class AgentStateMachine {
                 : retrieved.rules().stream().map(HybridRetriever.Retrieved::ruleId).toList();
         List<String> citedScopes = retrieved == null ? List.of()
                 : retrieved.rules().stream().map(HybridRetriever.Retrieved::scope).toList();
-        // 与 citations 同源同序的标题：买家端引用详情要用它（round33 / ADR 0067）。
-        // 命中路径不跑检索，标题必须随缓存条目一起落库，否则缓存命中时买家端又只剩"政策条款"。
+        // 与 citations 同源同序的标题与出处：买家端引用详情要用它们（round33 / ADR 0067，出处 2026-10-17 补）。
+        // 命中路径不跑检索，这两份必须随缓存条目一起落库，否则缓存命中时买家端又只剩"政策条款"。
         List<String> citedHeadings = retrieved == null ? List.of()
                 : retrieved.rules().stream().map(HybridRetriever.Retrieved::title).toList();
+        List<String> citedDocs = retrieved == null ? List.of()
+                : retrieved.rules().stream().map(HybridRetriever.Retrieved::sourceDoc).toList();
 
         WriteBackPolicy.Verdict verdict = writeBackPolicy.evaluate(new WriteBackPolicy.Request(
                 intent, answer, retrieved != null && !retrieved.empty(), toolUsed,
@@ -532,12 +551,14 @@ public class AgentStateMachine {
         Optional<CacheEntry> written = Optional.empty();
         if (verdict.eligible()) {
             Optional<CacheEntry> prepared = cacheService.prepareWrite(tenantId, domain, intent, epoch, lookup, answer,
-                    citedScopes, citations, citedHeadings, properties.llm().model());
+                    citedScopes, citations, citedHeadings, citedDocs, properties.llm().model());
             if (prepared.isEmpty()) {
                 // 准入判定没给出向量（例如缓存被关），写回无从落点
                 step(trace, sink, AgentState.CACHE_WRITE, "skipped:no-write-target");
             } else {
-                step(trace, sink, AgentState.CACHE_WRITE, "eligible");
+                // scope 进 trace：平台桶 vs 本店桶是坏缓存分区的唯一现场读数，
+                // 排查"跨店同问同答"时不用去翻 Redis key（2026-10-17 修复时加）
+                step(trace, sink, AgentState.CACHE_WRITE, "eligible scope=" + prepared.get().scope());
                 written = prepared;
                 CacheService.Lookup forWrite = lookup;
                 CacheEntry entry = prepared.get();
@@ -552,12 +573,10 @@ public class AgentStateMachine {
             }
         } else {
             step(trace, sink, AgentState.CACHE_WRITE, "rejected:" + verdict.reason());
-            if (retrieved != null && retrieved.empty() && !retrieved.degraded()
-                    && intent != null && intent.cacheAdmissible()) {
-                cacheService.writeNegative(tenantId, domain, intent, epoch, lookup);
-            } else if (retrieved != null && retrieved.empty() && retrieved.degraded()) {
-                // 检索引擎挂了不等于库里没有。这时写负缓存，等于把一次抖动固化成
-                // 60 秒的批量转人工——2026-09-08 mix80 压测里就是这样把自己打停的。
+            // "空召回且未降级"的负标记写在上面那个确定性出口里（政策意图到不了这里）。
+            // 这里只剩下检索降级的一格：检索引擎挂了不等于库里没有，写负缓存等于把一次抖动
+            // 固化成 60 秒的批量转人工——2026-09-08 mix80 压测里就是这样把自己打停的。
+            if (retrieved != null && retrieved.empty() && retrieved.degraded()) {
                 negativeSuppressedCounter.increment();
                 step(trace, sink, AgentState.CACHE_WRITE, "negative-suppressed:retrieval-degraded");
             }
@@ -832,10 +851,14 @@ public class AgentStateMachine {
     }
 
     /**
-     * 命中路径的引用详情：标题随缓存条目落库，出处没有随条目存（见 {@link CacheEntry}），
-     * 这一格照实留空——买家端优先显示标题，缺出处不会退化成"政策条款"。
+     * 命中路径的引用详情：标题与出处都随缓存条目落库（{@link CacheEntry}），
+     * 与 {@code citations} 同源同序。
+     *
+     * <p>{@code sourceDocs} 是 2026-10-17 补的：round33 落了标题却漏了出处，于是命中路径
+     * {@code citationDetails.doc} 恒为空串——买家端引用列表的两列本就是从这两份数据拼的。
      */
-    private static List<AgentResult.CitationDetail> citationDetailsOf(List<String> ruleIds, List<String> headings) {
+    private static List<AgentResult.CitationDetail> citationDetailsOf(List<String> ruleIds, List<String> headings,
+                                                                      List<String> docs) {
         if (ruleIds == null || ruleIds.isEmpty()) {
             return List.of();
         }
@@ -843,7 +866,8 @@ public class AgentStateMachine {
         for (int i = 0; i < ruleIds.size(); i++) {
             String heading = headings != null && i < headings.size() && headings.get(i) != null
                     ? headings.get(i) : "";
-            details.add(new AgentResult.CitationDetail(ruleIds.get(i), heading, ""));
+            String doc = docs != null && i < docs.size() && docs.get(i) != null ? docs.get(i) : "";
+            details.add(new AgentResult.CitationDetail(ruleIds.get(i), heading, doc));
         }
         return List.copyOf(details);
     }

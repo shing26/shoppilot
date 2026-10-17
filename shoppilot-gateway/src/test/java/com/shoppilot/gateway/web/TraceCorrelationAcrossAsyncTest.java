@@ -96,7 +96,7 @@ class TraceCorrelationAcrossAsyncTest {
         // 与 AsyncConfig 的写回池同形：小池、有界队列、饱和与关闭后走提交线程代跑
         WriteBackPool writeBack = new WriteBackPool(1, 1, 0L, 1, new SimpleMeterRegistry());
         CacheService cache = mock(CacheService.class);
-        when(cache.prepareWrite(any(), any(), any(), anyLong(), any(), any(), any(), any(), any(), any()))
+        when(cache.prepareWrite(any(), any(), any(), anyLong(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(Optional.of(entry()));
         doThrow(new IllegalStateException("Redis 写不进去")).when(cache).writeBack(any(), any());
         AgentStateMachine machine = machine(cache, writeBack);
@@ -232,7 +232,7 @@ class TraceCorrelationAcrossAsyncTest {
 
     private static CacheEntry entry() {
         return CacheEntry.of("支持七天无理由退货", Intent.POLICY_RETURN, TENANT, "SHOP", Domain.ECOMMERCE, 7L,
-                List.of("R-1"), List.of("七天无理由"), "qwen2.5:3b", QUERY);
+                List.of("R-1"), List.of("七天无理由"), List.of("return-01-7day-basic"), "qwen2.5:3b", QUERY);
     }
 
     private static AgentResult result() {

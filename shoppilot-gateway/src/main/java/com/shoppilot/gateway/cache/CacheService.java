@@ -4,6 +4,7 @@ import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.knowledge.EmbeddingClient;
 import com.shoppilot.gateway.knowledge.RuleChunk;
+import com.shoppilot.gateway.knowledge.ShopRuleIndex;
 import com.shoppilot.tool.Intent;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -20,8 +21,12 @@ import java.util.Optional;
  * 缓存准入之后的读取与写回编排（ADR 0003、ADR 0004）。
  *
  * <p>两条 key 分别对应"平台级共享答案"与"本店专属答案"：读取时先查平台桶再查店铺桶，
- * 写回时按本次引用的规则块 scope 决定落在哪个桶。这样平台政策不会被按店铺复制 N 份，
- * 也不会出现各店答案不一致。
+ * 写回时按本次引用的规则块 scope 决定落在哪个桶，平台政策因此不会被按店铺复制 N 份。
+ *
+ * <p>但"引用全是平台条款"不等于"这份答案对各店都成立"（2026-10-17 实机复现的跨店同问同答
+ * 缺陷）：只要同行业里有店铺对同一意图备了店铺级条款，写方看不见它、写进了平台桶，
+ * 有细则的那家店再问同句就会命中别人家的答案。所以平台桶的读写都要再过一道
+ * {@link ShopRuleIndex}（"本行业该意图是否存在店铺级条款"）。
  *
  * <p>顺序很重要：先 L1 精确哈希（零向量化），miss 才向量化，再 L2 语义。
  * 反过来会让每个 cacheable 请求都付一次 CPU-bound 的 embedding，TP99 30ms 直接作废。
@@ -37,8 +42,8 @@ public class CacheService {
         FLIGHT
     }
 
-    public static final String SCOPE_PLATFORM = "PLATFORM";
-    public static final String SCOPE_SHOP = "SHOP";
+    public static final String SCOPE_PLATFORM = RuleChunk.SCOPE_PLATFORM;
+    public static final String SCOPE_SHOP = RuleChunk.SCOPE_SHOP;
 
     /**
      * @param queryVector 走到 L2 才有值，写回时复用，避免二次向量化
@@ -62,6 +67,7 @@ public class CacheService {
     private final L1Cache l1;
     private final L2SemanticCache l2;
     private final EmbeddingClient embedding;
+    private final ShopRuleIndex shopRules;
     private final GatewayProperties.Cache config;
     private final Counter admittedCounter;
     private final Counter totalCounter;
@@ -72,11 +78,12 @@ public class CacheService {
     private final Counter embedUnavailableCounter;
     private final Counter l1OnlyWriteBackCounter;
 
-    public CacheService(L1Cache l1, L2SemanticCache l2, EmbeddingClient embedding, GatewayProperties properties,
-                        MeterRegistry registry) {
+    public CacheService(L1Cache l1, L2SemanticCache l2, EmbeddingClient embedding, ShopRuleIndex shopRules,
+                        GatewayProperties properties, MeterRegistry registry) {
         this.l1 = l1;
         this.l2 = l2;
         this.embedding = embedding;
+        this.shopRules = shopRules;
         this.config = properties.cache();
         this.totalCounter = Counter.builder("shoppilot_requests_total")
                 .description("进入网关的有效咨询请求数，总拦截率的分母").register(registry);
@@ -119,8 +126,7 @@ public class CacheService {
                 l1HitCounter.increment();
                 return new Lookup(Layer.L1, entry, precomputedVector, normalized, false);
             }
-        }
-        // 向量化失败只意味着 L2 用不上，绝不能让整个请求 500：缓存不是正确性依赖
+        }        // 向量化失败只意味着 L2 用不上，绝不能让整个请求 500：缓存不是正确性依赖
         float[] vector;
         try {
             vector = precomputedVector != null ? precomputedVector : embedding.embed(rawQuery);
@@ -156,8 +162,14 @@ public class CacheService {
     }
 
     /**
-     * 写回落哪个桶由本次引用的规则块决定：全部是平台级条款才允许跨店共享。
-     * 只要掺了一条本店规则，就写进本店桶，避免把店铺细则说成平台统一口径。
+     * 写回落哪个桶由两件事共同决定：本次引用的规则块 scope，以及**本行业该意图是否存在店铺级条款**
+     * （{@link ShopRuleIndex}，2026-10-17 跨店同问同答修复）。
+     *
+     * <p>旧规则只看引用：「全部是平台级条款就跨店共享」——它在店铺级条款存在时不成立。写方看不到
+     * 别家的店铺条款，所以 T001 在「死蟹怎么赔付」上只引到平台条款（它自己没有门店细则），
+     * 答案进了平台桶；T002（有 fresh-08 门店细则）再问同句就直接命中，细则永远不生效。
+     * 实机复现后改成：引用全是平台条款 **且** 本行业该意图没有任何店铺级条款，才允许进平台桶；
+     * 否则写进本店桶。多存几份平台答案只是命中率，串店答案是事故。
      *
      * <p>向量缺失不拦写回：条目本身（正文 + 意图 + 桶 + 归一化问法）够 L1 用了，
      * 缺的只是 L2 那一份定位。
@@ -165,16 +177,17 @@ public class CacheService {
     public Optional<CacheEntry> prepareWrite(String tenantId, Domain domain, Intent intent, long kbEpoch,
                                              Lookup lookup, String answer, List<String> citedRuleScopes,
                                              List<String> sourceRuleIds, List<String> sourceHeadings,
-                                             String modelId) {
+                                             List<String> sourceDocs, String modelId) {
         if (lookup.normalizedQuery() == null || lookup.normalizedQuery().isEmpty()) {
             return Optional.empty();
         }
         boolean allPlatform = citedRuleScopes != null && !citedRuleScopes.isEmpty()
                 && citedRuleScopes.stream().allMatch(SCOPE_PLATFORM::equalsIgnoreCase);
-        String bucketTenant = allPlatform ? platformBucketId(domain) : tenantId;
-        String scope = allPlatform ? SCOPE_PLATFORM : SCOPE_SHOP;
+        boolean shareable = allPlatform && platformShareAllowed(domain, intent);
+        String bucketTenant = shareable ? platformBucketId(domain) : tenantId;
+        String scope = shareable ? SCOPE_PLATFORM : SCOPE_SHOP;
         return Optional.of(CacheEntry.of(answer, intent, bucketTenant, scope, domain, kbEpoch, sourceRuleIds,
-                sourceHeadings, modelId, lookup.normalizedQuery()));
+                sourceHeadings, sourceDocs, modelId, lookup.normalizedQuery()));
     }
 
     /**
@@ -230,11 +243,27 @@ public class CacheService {
     }
 
     private List<Bucket> buckets(String tenantId, Domain domain, Intent intent, long kbEpoch, String normalized) {
+        // 平台桶是跨店共享格：只在本行业该意图**没有任何店铺级条款**时才参与读写。
+        // 这一格与 prepareWrite 的判定必须同源，否则会出现"读得到但写不进"（或反过来）的半截状态。
+        Bucket shop = new Bucket(tenantId, SCOPE_SHOP, l1.key(tenantId, intent.name(), kbEpoch, normalized));
+        if (!platformShareAllowed(domain, intent)) {
+            return List.of(shop);
+        }
         String platformBucket = platformBucketId(domain);
-        return List.of(
-                new Bucket(platformBucket, SCOPE_PLATFORM,
-                        l1.key(platformBucket, intent.name(), kbEpoch, normalized)),
-                new Bucket(tenantId, SCOPE_SHOP, l1.key(tenantId, intent.name(), kbEpoch, normalized)));
+        Bucket platform = new Bucket(platformBucket, SCOPE_PLATFORM,
+                l1.key(platformBucket, intent.name(), kbEpoch, normalized));
+        return List.of(platform, shop);
+    }
+
+    /**
+     * 平台桶共享安全性（2026-10-17）：本行业该意图存在店铺级条款时，平台桶既不能读也不能写。
+     *
+     * <p>"存在店铺级条款"由 {@link ShopRuleIndex} 按知识库（当前纪元）实测，不是按写方引用猜的。
+     * 读侧同样要跳过的理由有两个：修复前写下的平台桶条目仍带着跨店答案，跳过它们才能自愈；
+     * 而对存在店铺级条款的意图，平台桶本来就再也写不进了，读它只是白跑一趟 Redis。
+     */
+    private boolean platformShareAllowed(Domain domain, Intent intent) {
+        return intent != null && !shopRules.hasShopScopedRules(domain, intent);
     }
 
     /**
