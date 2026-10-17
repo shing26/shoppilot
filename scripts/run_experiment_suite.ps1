@@ -16,7 +16,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
-$all = @("mix80", "l1", "l2", "l2emb", "noollama", "novirtual", "nocache", "sse", "pool")
+$all = @("mix80", "l1", "l2", "l2emb", "noollama", "novirtual", "nocache", "sse", "pool", "storemix")
 $selected = if ($Only) { $Only -split "," | ForEach-Object { $_.Trim() } } else { $all }
 
 # 压测依赖装在项目本地 venv 里（locust + requests），系统 python 是 Anaconda base。
@@ -114,11 +114,15 @@ function Restart-BizMock([string]$Pool) {
     Write-Host "  biz-mock 就绪 HikariCP maximum-pool-size=$([int]$max.value)"
 }
 
-function Invoke-Ladder([string]$key, [string]$model, [string]$profile, [string]$steps) {
+function Invoke-Ladder([string]$key, [string]$model, [string]$profile, [string]$steps,
+                       [string]$Tenants = "", [string]$TenantMode = "") {
     Write-Host ""
-    Write-Host "===== 实验 $key：模型 $model / profile $profile ====="
+    Write-Host "===== 实验 $key：模型 $model / profile $profile / tenants=$Tenants / mode=$TenantMode ====="
+    $extra = @()
+    if ($Tenants) { $extra += @("--tenants", $Tenants) }
+    if ($TenantMode) { $extra += @("--tenant-mode", $TenantMode) }
     & $Python scripts/run_loadtest.py --model $model --profile $profile --steps $steps `
-        --duration $Duration --spawn $Spawn --workers $Workers --tag $key
+        --duration $Duration --spawn $Spawn --workers $Workers --tag $key @extra
     if ($LASTEXITCODE -ne 0) { Write-Host "  !! 实验 $key 退出码 $LASTEXITCODE" }
     Get-ChildItem (Join-Path $root "loadtest\results") -Filter "ladder-*-$key.csv" |
         ForEach-Object { Write-Host "  产物 $($_.Name)" }
@@ -177,6 +181,16 @@ foreach ($key in $selected) {
             Restart-Gateway "perf,no-ollama" $noOllama
             Invoke-Ladder "noollama" "l1" "perf,no-ollama" "100,200,400"
             Restart-Gateway "perf" $perfOn
+        }
+        "storemix" {
+            # 跨店共享代价参数组（2026-10-17 round34 / ADR 0068）：同一流量模型、同一并发阶梯，
+            # 只改租户切法。alternate = 逐请求在两家店之间轮转（同句跨店不复用，最坏形状）；
+            # one = 单店对照（同模型同并发，用来把"店数效应"与"跨店共享被关"分开看）。
+            # 与修复前的同一组读数对照方法见 docs/EVIDENCE.md 的 round34 行（旧 jar 由
+            # 独立 worktree 构建、同 profile 起、同一套参数）。
+            Restart-Gateway "perf" $perfOn
+            Invoke-Ladder "alt2" "mix80" "perf" $Steps -Tenants "T001,T002" -TenantMode "alternate"
+            Invoke-Ladder "one" "mix80" "perf" $Steps -Tenants "T001" -TenantMode "alternate"
         }
         "sse" {
             Restart-Gateway "perf" $perfOn

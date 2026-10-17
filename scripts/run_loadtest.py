@@ -342,10 +342,16 @@ def aggregate_locust(per_worker_stats):
     return merged
 
 
-def run_step(base, users, spawn, duration, model, out_prefix, workers=1, bizmock=""):
+def run_step(base, users, spawn, duration, model, out_prefix, workers=1, bizmock="",
+             tenants="", tenant_mode="mixed"):
     environment = dict(os.environ)
     environment["SHOPPILOT_TRAFFIC_MODEL"] = model
     environment["SHOPPILOT_BASE_URL"] = base
+    # 租户维度（2026-10-17 round34）：店铺清单与轮转方式必须经由环境变量下给 locust，
+    # 并且要落进 CSV/环境记录——一份不写清"跑的是几个店、怎么切的"的命中率数字无法归因。
+    if tenants:
+        environment["SHOPPILOT_TENANTS"] = tenants
+    environment["SHOPPILOT_TENANT_MODE"] = tenant_mode
     # locust 在 Windows 上不支持 --processes，而单进程自己就会先成为瓶颈（实测约 260 QPS/进程）。
     # 高并发档必须多进程发压，否则测到的是发压机而不是网关。
     per_users = max(1, users // workers)
@@ -412,6 +418,8 @@ def run_step(base, users, spawn, duration, model, out_prefix, workers=1, bizmock
     stats.update({
         "users": users,
         "workers": workers,
+        "tenant_mode": tenant_mode,
+        "tenants": tenants,
         "per_worker_users": per_users,
         "wall_s": round(elapsed, 1),
         "model": model,
@@ -465,6 +473,10 @@ def main() -> int:
     parser.add_argument("--workers", type=int, default=1,
                         help="locust 进程数；单进程约 260 QPS 就会自饱和，高并发档必须 >1")
     parser.add_argument("--tag", default="", help="附加到结果文件名上的实验标识")
+    parser.add_argument("--tenants", default="",
+                        help="店铺清单（逗号分隔，如 T001,T002）；空=locustfile 默认三店")
+    parser.add_argument("--tenant-mode", choices=("mixed", "alternate"), default="mixed",
+                        help="mixed=一用户盯一店（历史口径）；alternate=逐请求跨店轮转（跨店共享代价组）")
     args = parser.parse_args()
 
     RESULTS.mkdir(parents=True, exist_ok=True)
@@ -480,7 +492,7 @@ def main() -> int:
         print(f"== 并发 {users}（{args.workers} 进程），时长 {args.duration}s，流量模型 {args.model} ==",
               flush=True)
         row = run_step(args.base, users, args.spawn, args.duration, args.model, prefix,
-                       args.workers, args.bizmock)
+                       args.workers, args.bizmock, args.tenants, args.tenant_mode)
         row["profile"] = args.profile
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
@@ -491,7 +503,7 @@ def main() -> int:
             break
 
     ladder = RESULTS / f"ladder-{tag}.csv"
-    fields = ["users", "workers", "per_worker_users", "model", "profile",
+    fields = ["users", "workers", "per_worker_users", "model", "profile", "tenant_mode", "tenants",
               "request_count", "failure_count", "qps", "p50", "p95",
         "p99", "max", "requests_delta", "admitted_delta", "ratelimited_delta",
         "valid_requests_delta", "l1_delta", "l2_delta",
@@ -522,6 +534,7 @@ def main() -> int:
         writer.writerows(rows)
     (RESULTS / f"env-{tag}.json").write_text(json.dumps({
         "run": tag, "trafficModel": args.model, "gatewayProfile": args.profile,
+        "tenantMode": args.tenant_mode, "tenants": args.tenants or "T001,T002,T003(默认)",
         "locustWorkers": args.workers, "stepsCsv": str(ladder.name),
         "durationPerStepS": args.duration, "steps": rows, "env": env_record(),
         "counters": COUNTERS,

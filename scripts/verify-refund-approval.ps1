@@ -16,7 +16,14 @@ param(
     [string]$ApproveOrder = '90001',
     [string]$RejectOrder = '90002',
     [string]$AgentUser = 'agent',
-    [string]$AgentPassword = 'agent123'
+    # 审计查询面的真实落点（round23 票 71 / ADR 0056）：只在 biz-mock 的 /api/audit，
+    # 网关没有 /ops/audit 代理路由（2026-10-18 全量矩阵实测 404「接口不存在」）。
+    # 脚本直连它并带内部令牌——这条修的是「判据在不存在的端点上永远红」，判据本身不变。
+    [string]$BizMockUrl = 'http://127.0.0.1:8091',
+    # 口令从环境读，仓库里不放默认口令（ADR 0056 同一条家法）：
+    # 之前这里写死 'agent123'，演示口令换代后整步在 401 上红（2026-10-18 全量矩阵实测），
+    # 而那看起来像闸门坏了。缺口令时与 buyer/workspace 门禁同口径 exit 2。
+    [string]$AgentPassword = $env:SHOPPILOT_IDENTITY_DEMO_PASSWORD
 )
 $ErrorActionPreference = 'Stop'
 
@@ -82,6 +89,10 @@ function New-Token { return 'rev-' + [guid]::NewGuid().ToString('N').Substring(0
 
 Reset-DemoFixtures
 $buyerToken = Get-MockToken $Tenant $Customer
+if (-not $AgentPassword) {
+    Write-Host '缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：退款审核走坐席账号登录，演示口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。' -ForegroundColor Red
+    exit 2
+}
 $agentToken = Get-AgentToken $Tenant $AgentUser $AgentPassword
 
 Write-Host "`n=== 1. apply refund (order $ApproveOrder) ===" -ForegroundColor Cyan
@@ -126,16 +137,26 @@ Assert 'rejected order can be refunded again (rollback)' ($raw3 -match 'PENDING_
 Write-Host "`n=== 8. B3: audit actor_authenticated ===" -ForegroundColor Cyan
 # B3 起（ADR 0063）：资金动作的责任人必须是已验签账号。
 # 查审计表，确认退款审核事件的 actor_authenticated = true。
-$auditRows = @(Invoke-RestMethod -Uri "$BaseUrl/api/v1/support/ops/audit?limit=100" `
-    -Headers @{ Authorization = "Bearer $agentToken" })
-$refundAudit = $auditRows | Where-Object { $_.action -match 'REFUND' -and $_.action -match 'REVIEW' } | Select-Object -First 1
+if (-not $env:SHOPPILOT_INTERNAL_TOKEN) {
+    Write-Host '缺少 SHOPPILOT_INTERNAL_TOKEN：审计查询面在 biz-mock 上、要内部令牌。请在 .env 里给一个（harness 不注入）再跑。' -ForegroundColor Red
+    exit 2
+}
+# Invoke-RestMethod 在 PS7 上把顶层 JSON 数组包成单元素 Object[]（实测），
+# 用 ConvertFrom-Json 才能拿到按行可枚举的形状——否则 $_.action 会投影成数组，断言直接炸。
+$auditRows = @((Invoke-WebRequest -Uri "$BizMockUrl/api/audit?limit=200" `
+    -Headers @{ 'X-Internal-Token' = $env:SHOPPILOT_INTERNAL_TOKEN; 'X-Tenant-Id' = $Tenant } `
+    -UseBasicParsing).Content | ConvertFrom-Json)
+# action 名以 AuditActions 常量为准（REFUND_APPROVED / REFUND_REJECTED）。
+# 旧写法找的 'REVIEW' 子串一个都匹配不上——这条断言此前要么打在 404 上、要么恒走 else 分支，
+# 从没真正量过 actor_authenticated（2026-10-18 全量矩阵把它修成真的在测量）。
+$refundAudit = $auditRows | Where-Object { $_.action -match '^REFUND_(APPROVED|REJECTED)$' } | Select-Object -First 1
 if ($refundAudit) {
     Assert 'audit event actor_authenticated is true' ($refundAudit.actorAuthenticated -eq $true) `
         "actor=$($refundAudit.actor), authenticated=$($refundAudit.actorAuthenticated)"
 } else {
     # 审计事件可能还没有刷新，或者 action 名称不匹配。先查所有审计事件看看。
     $allActions = $auditRows | ForEach-Object { $_.action } | Sort-Object -Unique
-    Assert 'audit event actor_authenticated is true' $false "no REFUND_REVIEW event found; actions: $($allActions -join ', ')"
+    Assert 'audit event actor_authenticated is true' $false "no REFUND_APPROVED/REJECTED event found; actions: $($allActions -join ', ')"
 }
 
 if ($script:failures.Count -gt 0) {

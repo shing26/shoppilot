@@ -52,13 +52,15 @@ check('页面标题是坐席工作台', (await page.locator('h1').innerText()).i
 // （早先那版是塞 ops token + 自报坐席名；票 83 起那条路已经不存在了。）
 //
 // 未登录时先断一格：没有身份时必须给出可读原因，而不是冻在空态——那是票 61 修过的坑。
+// 选择器对齐票 83 之后的页面形态：未登录的"为什么"画在 `.notice`（与买家端同一句的写法，
+// 见 verify-buyer.mjs）；`.err` 只在登录/加载失败时出现。旧版这里等 `.err`，票 83 改版后
+// 结构上再也等不到（2026-10-18 全量矩阵实测：11/12，唯一红）。
 await page.reload({ waitUntil: 'networkidle' });
-await page.locator('button:has-text("刷新"), button:has-text("登录")').first().click().catch(() => {});
-await page.waitForTimeout(300);
+await page.waitForSelector('.notice', { timeout: 5000 }).catch(() => {});
 check(
   '未登录时给出可读原因，而不是空态',
-  (await page.locator('.err').innerText().catch(() => '')).includes('登录'),
-  await page.locator('.err').innerText().catch(() => '(没有 .err)'),
+  (await page.locator('.notice').innerText().catch(() => '')).includes('登录'),
+  await page.locator('.notice').innerText().catch(() => '(等 5 s 也没有那句提示)'),
 );
 
 await page.fill('input[placeholder="店铺编号，如 T001"]', TENANT);

@@ -7,10 +7,19 @@
   SHOPPILOT_TRAFFIC_MODEL=l1  L1 主导：55% 文本重复热点 + 15% 口语改写 + 15% 业务办理 + 15% 长尾
   SHOPPILOT_TRAFFIC_MODEL=l2  L2 主导：15% 文本重复 + 55% 口语改写 + 15% 业务办理 + 15% 长尾
 
+租户维度（2026-10-17 round34，ADR 0068 的命中率代价参数组）：
+  SHOPPILOT_TENANT_MODE=mixed     一个虚拟用户整场盯一个店（历史口径，默认，与 09-08 梯子可比）
+  SHOPPILOT_TENANT_MODE=alternate **逐请求**在 SHOPPILOT_TENANTS 列出的店铺间轮转——
+                                  量的是"同句跨店不复用"的最坏形状：相邻请求打不同店、
+                                  热点文本池相同，跨店共享一旦被关（存在门店细则的意图），
+                                  每个店都要自己付一次穿透。
+  SHOPPILOT_TENANTS=T001,T002     覆盖店铺清单（默认三个店；买家号按 seed 目录配对）。
+
 perf 模式下生成侧是 MockLLM（固定延迟），但 embedding 仍打真实 bge-m3——
 否则 L2 那条曲线根本不存在（ADR 0011 明确否决了连向量化一起 mock 的做法）。
 """
 
+import itertools
 import json
 import os
 import random
@@ -19,7 +28,26 @@ import time
 from locust import HttpUser, between, task
 
 TRAFFIC_MODEL = os.environ.get("SHOPPILOT_TRAFFIC_MODEL", "l1").strip().lower()
-TENANTS = [("T001", "C001"), ("T002", "C200"), ("T003", "C300")]
+TENANT_MODE = os.environ.get("SHOPPILOT_TENANT_MODE", "mixed").strip().lower()
+
+# 店铺 → 演示买家号（与 SeedRunner 的种子对齐；买家号只影响会话归属与限流键）
+TENANT_ACCOUNTS = {"T001": "C001", "T002": "C200", "T003": "C300"}
+DEFAULT_TENANT_IDS = ("T001", "T002", "T003")
+
+
+def configured_tenants():
+    raw = os.environ.get("SHOPPILOT_TENANTS", "").strip()
+    if not raw:
+        return [(tenant, TENANT_ACCOUNTS[tenant]) for tenant in DEFAULT_TENANT_IDS]
+    pairs = [(item.strip(), TENANT_ACCOUNTS.get(item.strip(), "C001"))
+             for item in raw.split(",") if item.strip()]
+    return pairs or [(tenant, TENANT_ACCOUNTS[tenant]) for tenant in DEFAULT_TENANT_IDS]
+
+
+TENANTS = configured_tenants()
+# alternate 模式的轮转游标：next() 不含 I/O，gevent 协作调度下不会再切到别的 greenlet。
+# 多进程发压时每个进程各持一份，聚合流量仍是店铺交错。
+TENANT_ROTATOR = itertools.cycle(TENANTS)
 
 # 文本重复热点：小池子，跑起来必然反复命中同一条 L1 key
 HOT_EXACT = [
@@ -104,20 +132,35 @@ class ShopPilotUser(HttpUser):
     wait_time = between(0, 0)
     host = os.environ.get("SHOPPILOT_BASE_URL", "http://127.0.0.1:8082")
 
-    def on_start(self):
-        self.tenant, self.customer = random.choice(TENANTS)
-        self.token = None
+    def _mint(self, tenant, customer):
         with self.client.post("/auth/mock-token",
-                              json={"tenantId": self.tenant, "customerId": self.customer},
+                              json={"tenantId": tenant, "customerId": customer},
                               name="auth/mock-token", catch_response=True) as response:
             try:
-                self.token = response.json()["token"]
+                token = response.json()["token"]
                 response.success()
+                return token
             except (KeyError, ValueError) as bad:
                 response.failure(f"mock-token 解析失败: {bad}")
+                return None
+
+    def on_start(self):
+        if TENANT_MODE == "alternate":
+            # 逐请求轮转：每个用户把清单里所有店铺的令牌都领好（auth 不计入头条吞吐），
+            # 请求时只换令牌与买家号，不额外增加鉴权往返。
+            self.tokens = {(tenant, customer): self._mint(tenant, customer)
+                           for tenant, customer in TENANTS}
+            self.tenant, self.customer = next(TENANT_ROTATOR)
+        else:
+            self.tenant, self.customer = random.choice(TENANTS)
+            self.tokens = {(self.tenant, self.customer): self._mint(self.tenant, self.customer)}
+        self.token = self.tokens[(self.tenant, self.customer)]
 
     @task
     def chat(self):
+        if TENANT_MODE == "alternate":
+            self.tenant, self.customer = next(TENANT_ROTATOR)
+            self.token = self.tokens[(self.tenant, self.customer)]
         if not self.token:
             return
         kind = pick_kind()
