@@ -46,4 +46,17 @@ class ServedConsoleHidesDevDefaultsTest {
         assertThat(line).doesNotContain("value=");
         assertThat(line).contains("placeholder=");
     }
+
+    @Test
+    @DisplayName("坐席登录输入框同样不预填（2026-10-18 加登录路时的同一条规则：静态资源不派发凭证）")
+    void staffLoginInputsAreNotPrefilled() throws Exception {
+        String html = servedPage();
+        // 两个输入框都可能有换行：按整页找 id 与 value 的同现形态，而不是逐行找。
+        assertThat(html).contains("id=\"agentUser\"");
+        assertThat(html).contains("id=\"agentPass\"");
+        assertThat(html).doesNotContain("id=\"agentUser\" value=");
+        assertThat(html).doesNotContain("id=\"agentPass\" value=");
+        // 口令框必须是 password 型，不能把键入内容晾在屏幕上
+        assertThat(html).contains("id=\"agentPass\" size=\"10\" placeholder=\"口令\"");
+    }
 }

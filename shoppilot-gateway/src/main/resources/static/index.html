@@ -196,6 +196,19 @@
     <button class="sm" id="btnFlush">清缓存</button><button class="sm" id="btnDemo">复位演示单</button></div>
   <!-- 退款审核入口放页脚：header 高度被抽屉 inset 钉死在 49px，往里塞按钮要动那处几何；
        页脚本来就 flex-wrap，加一颗按钮只是多一行，不动任何既有布局。 -->
+  <!-- 坐席登录也放页脚，同一条理由，且是被门禁实测逼过来的：先放进 header 时 390px 视口下
+       整页被撑宽到 554（header 不换行），narrow-footer 那条断言当场红。它服务的是紧邻的
+       「退款审核」抽屉——队列读面是 staff-only（B3 / ADR 0063），要读它必须有坐席账号这条路
+       （2026-10-18 / R9：在那之前面板恒 403，是对运维面关死的抽屉）。
+       令牌只活在页面内存里、口令用完即清，不落 localStorage/sessionStorage：
+       这是调试台，关标签页即登出就是它该有的形态。 -->
+  <div class="ctl"><span class="t">坐席</span><input type="text" id="agentUser" size="8" placeholder="坐席账号">
+    <input type="password" id="agentPass" size="10" placeholder="口令">
+    <button class="sm" id="btnAgentLogin">登录</button></div>
+  <!-- 身份显示单独一格：.ctl 是 white-space:nowrap 的整块，把「当前坐席：x」并进去会让
+       390px 视口下的 footer 单行超宽（实测 404 > 390，narrow-footer 断言当场红）。
+       拆开后 footer 的 flex-wrap 才有地方可换行。 -->
+  <div class="ctl"><span class="val" id="agentWho"></span></div>
   <div class="ctl"><button class="sm" id="btnRefunds">退款审核</button></div>
   <div class="ctl"><span class="t">circuit</span><span class="val" id="circuit">-</span><span class="t">refunds</span><span class="val" id="refunds">-</span></div>
 </footer>
@@ -212,7 +225,9 @@
 </aside>
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { token: '', tenant: 'T001', customer: 'C001', conv: crypto.randomUUID(), busy: false };
+const state = { token: '', tenant: 'T001', customer: 'C001', conv: crypto.randomUUID(), busy: false,
+  // 坐席令牌（只读退款队列用）：内存一份，刷新即失效——调试台不做持久登录态
+  staffToken: '', staffUser: '' };
 
 function newConv() {
   state.conv = crypto.randomUUID();
@@ -251,9 +266,12 @@ async function readSse(response, onFrame) {
   }
 }
 
-async function api(method, path, body, withAuth = true) {
+async function api(method, path, body, withAuth = true, tokenOverride = '') {
   const headers = { 'Content-Type': 'application/json' };
-  if (withAuth && state.token) headers.Authorization = 'Bearer ' + state.token;
+  // tokenOverride 只给 staff-only 的读面用（退款队列）：那里的身份是坐席账号，不是页面的
+  // buyer 会话令牌——把两具身份混成一支，就会回到 R9 那种"拿错令牌恒 403"的局面。
+  const bearer = tokenOverride || state.token;
+  if (withAuth && bearer) headers.Authorization = 'Bearer ' + bearer;
   // 运维凭证随每个请求带上：只有 ops 端点会读它，其余端点忽略
   headers['X-Ops-Token'] = $('opsToken').value.trim();
   // 网络级失败（fetch 自己 reject）也走同一支笔：以前这里会直接抛出去，调用方只判 res.status，
@@ -651,8 +669,15 @@ function closeRefundDrawer() {
 }
 
 async function loadRefunds() {
+  // 读面先判身份：没有坐席令牌时给一句可读的原因，而不是打一发注定 403 的请求再显示
+  // 一句看不懂的失败（R9 的现场形态就是"面板永远空着，没人知道为什么"）。
+  if (!state.staffToken) {
+    $('refundQueue').innerHTML =
+      '<div class="empty refund-need-staff">退款队列要坐席身份才能读：用页脚的坐席账号登录后重开本抽屉（B3 / ADR 0063）</div>';
+    return;
+  }
   $('refundQueue').innerHTML = '<div class="empty">加载中…</div>';
-  const res = await api('GET', '/api/v1/support/ops/refunds/pending', null, true);
+  const res = await api('GET', '/api/v1/support/ops/refunds/pending', null, true, state.staffToken);
   if (res.status !== 200) {
     $('refundQueue').innerHTML = '<div class="empty">拉取失败：' + esc(failureReason(res)) + '</div>';
     return;
@@ -675,8 +700,35 @@ function syncSliders() {  $('delayV').textContent = $('delay').value + ' ms';
   $('failRateV').textContent = Number($('failRate').value).toFixed(2);
 }
 
+// ---- 坐席登录（只服务退款队列这条 staff-only 读面）----
+// 与工作台同一套后端契约（/auth/login，用户名按 (租户, 用户名) 唯一）。这里刻意不复用
+// login()：那是 buyer 的 mock 身份领取口，两具身份各有各的用途，混成一支就会回到 R9。
+async function loginStaff() {
+  const tenant = $('tenant').value || state.tenant;
+  const user = $('agentUser').value.trim();
+  const pass = $('agentPass').value;
+  if (!user || !pass) { report(false, '坐席登录需要账号与口令'); return; }
+  const res = await api('POST', '/auth/login', { tenantId: tenant, username: user, password: pass }, false);
+  if (res.status !== 200 || !res.body || !res.body.token) {
+    state.staffToken = ''; state.staffUser = '';
+    $('agentWho').textContent = '';
+    // 口令错与「这个账号没有坐席权限」在登录这一步是同一句话（后端只说用户名或口令不对），
+    // 照实转述，不替它编原因。
+    report(false, '坐席登录失败：' + failureReason(res));
+    return;
+  }
+  state.staffToken = res.body.token;
+  state.staffUser = res.body.username || user;
+  $('agentPass').value = '';                       // 口令不留痕
+  $('agentWho').textContent = '当前坐席：' + state.staffUser;
+  report(true, '坐席已登录（' + tenant + ' / ' + state.staffUser + '）');
+  if ($('refundDrawer').classList.contains('open')) loadRefunds();
+}
+
 // ---- 装配 ----
 $('btnLogin').onclick = login;
+$('btnAgentLogin').onclick = loginStaff;
+$('agentPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') loginStaff(); });
 $('btnNewConv').onclick = newConv;
 $('btnSend').onclick = ask;
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });

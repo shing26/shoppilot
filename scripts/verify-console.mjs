@@ -10,6 +10,19 @@ const BASE = process.env.SHOPPILOT_CONSOLE_BASE || 'http://127.0.0.1:8082';
 // 本脚本按各 verify-*.ps1 的 $OpsToken 家法自带这个值，代人在输入框里敲一次。
 // 15 条断言一字未改，改的只是「谁来提供凭证」这一步前置。
 const OPS_TOKEN = process.env.SHOPPILOT_OPS_TOKEN || 'dev-ops-token';
+// 退款面板的读面是 staff-only（B3 / ADR 0063）：调试台要读队列必须先用坐席账号登录
+// （2026-10-18 / R9）。口令按工作台与买家端门禁同一家法从环境读、缺则 exit 2——
+// 仓库里不放默认口令（ADR 0056）。
+const DEMO_PASSWORD = process.env.SHOPPILOT_IDENTITY_DEMO_PASSWORD;
+if (!DEMO_PASSWORD) {
+  console.error('缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：退款面板走坐席账号登录才能读队列，'
+    + '演示口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。');
+  process.exit(2);
+}
+// 造一笔待审核退款的确定性回退路径（模型不可用时用）：直连 biz-mock 的工具边界，带内部令牌。
+// 不给就退回到「只靠模型造数据」的旧形态——那条路在 3B 抖动或显存被占时会整段红，
+// 而这一段门禁要量的是**面板**，不是模型肯不肯发工具调用。
+const INTERNAL_TOKEN = process.env.SHOPPILOT_INTERNAL_TOKEN || '';
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
@@ -41,14 +54,9 @@ page.on('console', (msg) => {
 });
 page.on('pageerror', (err) => (phase === 'probe' ? probeErrors : consoleErrors).push('pageerror:' + err.message));
 
-// 退款面板对「放行」加了二次确认（不可逆的资金动作，见 ADR 0047）。Playwright 默认**取消** dialog，
-// 不处理的话放行根本不会发生、那条断言会假红。这里显式接受，并记下每条的文案供新断言复核。
-const dialogs = [];
-page.on('dialog', async (dialog) => {
-  dialogs.push(dialog.message());
-  await dialog.accept();
-});
-
+// 这里原有一个 dialog 处理器（为退款面板的放行二次确认而挂）。round30 把面板改成只读、
+// 放行/驳回搬去坐席工作台之后，控制台流程里已经没有任何 confirm 了（页面源码零命中），
+// 处理器随之成为死代码——审核动作的二次确认由 verify-workspace.mjs 在那里接着量。
 const dumpTimeline = async () => (await page.$$eval('#timeline .ev',
   (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()))).join('\n    ');
 
@@ -232,14 +240,15 @@ const scrimClosed = await page.evaluate(() => ({
 check('clicking the scrim closes the drawer', scrimClosed.open === 0 && scrimClosed.scrimHidden,
   JSON.stringify(scrimClosed));
 
-// ---- 退款审核面板（票 61 / ADR 0047）----
+// ---- 退款审核面板（票 61 / ADR 0047；读面 staff-only 起于 B3 / ADR 0063）----
 // 一道只存在于 curl 里的闸门在演示现场等于不存在，所以这条要造一笔待审核退款再看面板。
 // **造数据经网关 SSE 带一个新 token**（不是用页面输入框发的）：页面发的体里没有
 // `idempotencyToken`，网关就按「租户|买家|工具|参数」派生一个**确定性** token —— 同一句
 // 退款请求在 Redis 里已存过结果，之后每次重发都命中 `IDEMPOTENT_REPLAY`，闸门再也走不到。
 // 而 `#btnDemo`（复位演示单）只重置数据库、**不重置 Redis 幂等键**，所以这条残留能跨轮复现。
 // 客户端带自己的 token 本来就是 `idempotencyToken` 的正确用法（"同一逻辑请求"由客户端定义），
-// 这里正是照它用。① 闸门必须在真实 SSE 流里可见；② 面板经代理列出它；③ 放行 / 驳回各点一次。
+// 这里正是照它用。① 闸门必须在真实 SSE 流里可见；② 未登录时抽屉给可读原因；③ 坐席登录后
+// 面板经代理列出它、且保持**只读**（round30 起审核搬去坐席工作台，这里不再点放行/驳回）。
 async function pendingRefundViaChat(orderNo, tries = 3) {
   for (let i = 0; i < tries; i++) {
     const { token } = await (await fetch(BASE + '/auth/mock-token', {
@@ -260,14 +269,54 @@ async function pendingRefundViaChat(orderNo, tries = 3) {
   return false;
 }
 
+// 模型不可用（显存被占、3B 抖动）时的确定性造数回退：直连 biz-mock 的工具边界（不是页面——
+// 页面接触 8091 的负向探针照常生效）。这一段门禁量的是**面板**，数据怎么来的不该决定它红绿。
+async function pendingRefundViaTool(orderNo) {
+  if (!INTERNAL_TOKEN) return false;
+  try {
+    const res = await fetch('http://127.0.0.1:8091/api/tools/applyRefund', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': INTERNAL_TOKEN,
+        'X-Tenant-Id': 'T001', 'X-Customer-Id': 'C001',
+        'Idempotency-Token': 'panel-tool-' + orderNo + '-' + Date.now() },
+      body: JSON.stringify({ orderNo }),
+    });
+    return res.status === 200 && /PENDING_APPROVAL/.test(await res.text());
+  } catch (unreachable) {
+    return false;
+  }
+}
+
 await page.click('#btnDemo');
 await page.waitForTimeout(1200);
-const sawPending = await pendingRefundViaChat('90001');
-check('refund request surfaces PENDING_APPROVAL in the live stream (ticket 61)', sawPending,
-  sawPending ? 'tool_result=PENDING_APPROVAL' : '(no PENDING_APPROVAL frame after 3 tries)');
+const sawPendingViaChat = await pendingRefundViaChat('90001');
+const sawPending = sawPendingViaChat || await pendingRefundViaTool('90001');
+check('refund request surfaces PENDING_APPROVAL in the live stream (ticket 61)', sawPendingViaChat,
+  sawPendingViaChat ? 'tool_result=PENDING_APPROVAL'
+    : (sawPending ? '(SSE 没拿到，回退直连工具边界造数据成功；模型路径这次没绿)'
+      : '(no PENDING_APPROVAL frame after 3 tries; 回退路径也没造出来)'));
 
+// ① 未登录：抽屉必须说清为什么要坐席身份，而不是空态或一句看不懂的失败（R9 的回归钉子）
 await page.click('#btnRefunds');
-await page.waitForSelector('#refundQueue .tk', { timeout: sawPending ? 15000 : 1500 });
+await page.waitForSelector('#refundQueue .refund-need-staff', { timeout: 5000 }).catch(() => {});
+check('未登录时退款抽屉说清要坐席身份，而不是空态（R9 回归）',
+  (await page.locator('#refundQueue').innerText().catch(() => '')).includes('坐席'),
+  (await page.locator('#refundQueue').innerText().catch(() => '(读不到抽屉)')).replace(/\s+/g, ' ').slice(0, 100));
+
+// ② 走页面上的坐席登录表单（口令来自环境；静态资源里不预填任何凭证）
+await page.fill('#agentUser', 'agent');
+await page.fill('#agentPass', DEMO_PASSWORD);
+await page.click('#btnAgentLogin');
+await page.waitForFunction(() => (document.querySelector('#agentWho')?.textContent || '').includes('当前坐席'),
+  null, { timeout: 10000 }).catch(() => {});
+check('坐席登录后页面显示当前坐席（令牌只活在内存里，刷新即失效）',
+  (await page.locator('#agentWho').innerText().catch(() => '')).includes('当前坐席'),
+  await page.locator('#agentWho').innerText().catch(() => '(没有 #agentWho)'));
+check('口令用完即清，不留在页面输入框里',
+  (await page.inputValue('#agentPass').catch(() => 'x')) === '', '输入框已清空');
+
+// ③ 登录后抽屉自动刷新（页面在登录成功时对已打开的抽屉重拉一次）
+await page.waitForSelector('#refundQueue .tk', { timeout: sawPending ? 15000 : 1500 }).catch(() => {});
 const pendingBadges = await page.$$eval('#refundQueue .badge', (els) => els.map((e) => e.textContent));
 check('refund review drawer lists the pending refund via proxy (ticket 61)',
   pendingBadges.includes('PENDING_REVIEW'), pendingBadges.join(','));
@@ -275,36 +324,12 @@ check('refund review drawer lists the pending refund via proxy (ticket 61)',
 const refundRow = await page.$$eval('#refundQueue .tk', (els) => els.map((e) => e.textContent));
 check('refund card carries the reason the reviewer needs (black-box QA fix)',
   refundRow.some((t) => t.includes('退款原因')), refundRow.join(' | ').slice(0, 120));
-const dialogsBefore = dialogs.length;
-await page.locator('#refundQueue .tk', { hasText: '90001' }).first()
-  .locator('button[data-decision="APPROVE"]').click();
-await page.waitForTimeout(1200);
-// 放行是**不可逆**的资金动作（ADR 0047）：误点不可撤销，所以面板先确认，且确认框要回显金额与订单。
-check('approving asks for confirmation and echoes what is being released (black-box QA fix)',
-  dialogs.length > dialogsBefore && /90001/.test(dialogs[dialogs.length - 1] || '')
-    && /¥/.test(dialogs[dialogs.length - 1] || ''),
-  (dialogs[dialogs.length - 1] || '(no dialog)').replace(/\n/g, ' / ').slice(0, 120));
-const afterApprove = await page.$$eval('#refundQueue .tk', (els) => els.map((e) => e.textContent));
-check('approving from the panel clears it from the queue (ticket 61)',
-  !afterApprove.some((t) => t.includes('90001')), `${afterApprove.length} rows left`);
-await page.keyboard.press('Escape');
-await page.waitForTimeout(250);
-
-// 驳回路径换一单（90002 是可退的发货单）：驳回后订单按时间戳推导回滚，这一半由 biz-mock 的
-// RefundReviewTest 在机器上钉住；这里只验面板这一趟走得通、且驳回后队列里不再有它。
-const sawPending2 = await pendingRefundViaChat('90002');
-let rejectedGone = false;
-if (sawPending2) {
-  await page.click('#btnRefunds');
-  await page.waitForSelector('#refundQueue .tk', { timeout: 15000 });
-  await page.locator('#refundQueue .tk', { hasText: '90002' }).first()
-    .locator('button[data-decision="REJECT"]').click();
-  await page.waitForTimeout(1200);
-  const afterReject = await page.$$eval('#refundQueue .tk', (els) => els.map((e) => e.textContent));
-  rejectedGone = !afterReject.some((t) => t.includes('90002'));
-}
-check('rejecting from the panel clears it from the queue (ticket 61)', rejectedGone,
-  sawPending2 ? '' : 'second refund never reached the gate after 3 tries');
+// round30 起面板只读（B3 / ADR 0063）：队列能读、但放行/驳回的按钮一个都不许有，
+// 且要明说去哪里审。放行/驳回的端到端路径由 verify-refund-approval.ps1 与工作台门禁量。
+const decisionButtons = await page.$$('#refundQueue button[data-decision]');
+check('退款面板保持只读：不放行/驳回按钮，并指向坐席工作台',
+  decisionButtons.length === 0 && refundRow.some((t) => t.includes('坐席工作台')),
+  `${decisionButtons.length} decision buttons; hint=${refundRow.some((t) => t.includes('坐席工作台'))}`);
 await page.keyboard.press('Escape');
 await page.waitForTimeout(250);
 
