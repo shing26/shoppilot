@@ -32,10 +32,10 @@ MIN_TOTAL, MIN_ADVERSARIAL_RATIO = 180, 0.30
 # 抄自 SeedRunner.java 的 CATEGORIES 与 CARRIERS，改动那边要同步这里。
 SHARED_VOCAB = {"数码配件", "生鲜果蔬", "服饰鞋包", "休闲食品", "家居日用",
                 "中通快递", "圆通速递", "顺丰速运", "韵达快递"}
-# 店名里的字与共用街道名同样不配当标记：旧 gold 的「数码」就是踩在「数码旗舰店」这个招牌词上，
+# 店名里的字与共用街道名同样不配当标记：旧 gold 的「数码」就是踩在旧店名「数码旗舰店」这个招牌词上，
 # 而 SeedRunner 把四条演示单的地址都落在文三路——只有带门牌的整串才指向单一条订单。
 # 这两份也抄自 SeedRunner.java 的 TENANTS 与 detailAddress，改动那边要同步这里。
-SHOP_NAMES = {"数码旗舰店", "生鲜超市", "服饰官方店"}
+SHOP_NAMES = {"星选生活旗舰店", "鲜果驿站", "云裳服饰旗舰店"}
 SHARED_STREETS = {"文三路"}
 
 

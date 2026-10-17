@@ -31,8 +31,27 @@ class SeedSegmentationTest {
     @Test
     @DisplayName("demo-data=false：初始化段照常播租户，演示段一条不播")
     void initSegmentRunsAndDemoSegmentSkipped() {
-        assertThat(jdbc.queryForObject("select count(*) from tenants", Integer.class)).isEqualTo(3);
+        // round32 起是 4 家：三家电商租户 + 一家非电商租户（T004）
+        assertThat(jdbc.queryForObject("select count(*) from tenants", Integer.class)).isEqualTo(4);
         assertThat(jdbc.queryForObject("select count(*) from customers", Integer.class)).isEqualTo(0);
         assertThat(jdbc.queryForObject("select count(*) from orders", Integer.class)).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("round32：非电商租户只建租户行 —— 演示段关着它也在，且它名下一条订单都没有")
+    void nonShopTenantIsATenantRowAndNothingElse() {
+        assertThat(jdbc.queryForObject("select name from tenants where id = 'T004'", String.class))
+                .isEqualTo("云栖酒店");
+        assertThat(jdbc.queryForObject("select count(*) from orders where tenant_id = 'T004'", Integer.class))
+                .isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("round32：店铺名以 knowledge/ 的店铺级语料为准，不再与语料各叫一个名字")
+    void shopNamesFollowTheKnowledgeCorpus() {
+        assertThat(jdbc.queryForObject("select name from tenants where id = 'T001'", String.class))
+                .isEqualTo("星选生活旗舰店");
+        assertThat(jdbc.queryForObject("select name from tenants where id = 'T002'", String.class))
+                .isEqualTo("鲜果驿站");
     }
 }

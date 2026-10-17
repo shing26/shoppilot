@@ -117,6 +117,8 @@ def main():
 
     ALL = names
     POLICY_PLUS = [n for n in names if n.startswith("POLICY_") or n == "ESCALATE"]
+    # 标签跟着实际意图数走（round32 加 POLICY_HOTEL 后从 10 变 11）：写死会把文档冻在旧数上。
+    ALL_LABEL = f"全 {len(ALL)} 意图（修复前）"
 
     def score_row(label, chooser, min_conf, margin):
         admitted = wrong = 0
@@ -140,13 +142,13 @@ def main():
                 "wrong_ids": wrong_ids, "action_leaked": len(leaked), "leaked_ids": leaked}
 
     grid = []
-    for label, chooser in (("全 10 意图（修复前）", lambda evidence: ALL),
+    for label, chooser in ((ALL_LABEL, lambda evidence: ALL),
                            ("按动作证据裁剪候选（已实现）", lambda evidence: ALL if evidence else POLICY_PLUS)):
         for min_conf in (0.82, 0.78, 0.75, 0.72, 0.70, 0.65, 0.60):
             for margin in (0.03, 0.02, 0.015, 0.01):
                 grid.append(score_row(label, chooser, min_conf, margin))
 
-    baseline = next(row for row in grid if row["candidates"] == "全 10 意图（修复前）"
+    baseline = next(row for row in grid if row["candidates"] == ALL_LABEL
                     and row["min_conf"] == 0.82 and row["margin"] == 0.03)
     # 选点规则（三条硬线，顺序即优先级）：
     #   1. 动作问句绝不允许被准入为政策 —— 这是正确性，不是调参问题；
@@ -167,7 +169,7 @@ def main():
              "`你们家用的哪家物流` 是 `ACTION_LOGISTICS` 0.7766），而动作意图不准入缓存——"
              "分类越保守，缓存越漏。反过来，对带 `退款`/`地址` 这类动词的句子放行政策意图，"
              "又会把「我要退款」这种该追问槽位的诉求写进政策缓存。所以规则是「"
-             "**有动作证据保留全 10 意图，无动作证据只留政策与转人工**」。", "",
+             f"**有动作证据保留全 {len(ALL)} 意图，无动作证据只留政策与转人工**」。", "",
              "## 工作点扫描", "",
              "| 候选集规则 | 置信度 | 领先差值 | 政策问句准入率 | 判错桶数/准入数 | 动作问句被准入为政策 |",
              "| --- | --- | --- | --- | --- | --- |"]

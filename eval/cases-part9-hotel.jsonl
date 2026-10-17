@@ -1,0 +1,12 @@
+{"id": "HTL-CHK-01", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "几点可以办理入住", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-CHK-02", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "退房时间是几点", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-CAN-01", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "订错了能免费取消吗", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-CAN-02", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "不可取消的房型还能退吗", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-BED-01", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "可以加床吗", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-BED-02", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "大床房和双床房有什么区别", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-EXT-01", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "延时退房要额外收费吗", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-DEP-01", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "押金什么时候退", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-BKF-01", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "早餐是几点到几点", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-ECO-01", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "提前退房要收一天的房费吗", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cited": true}}
+{"id": "HTL-REP-01", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "POLICY_HOTEL", "query": "几点可以办理入住", "expect": {"intent": "POLICY_HOTEL", "noTool": true, "cacheHit": true}}
+{"id": "HTL-ESC-01", "kind": "hotel", "channel": "web", "tenant": "T004", "intent": "ESCALATE", "query": "转人工", "expect": {"intent": "ESCALATE", "noTool": true}}

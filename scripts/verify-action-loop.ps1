@@ -75,7 +75,7 @@ $result3 = $events3 | Where-Object { $_.Event -eq "tool_result" } | Select-Objec
 Assert-True ($null -ne $result3) "跨店查询同样落到 biz-mock（不是网关自己编的）"
 Assert-True ($result3.Data -match "NOT_FOUND") "归属校验返回 NOT_FOUND 语义而非 500"
 $answer = ($events3 | Where-Object { $_.Event -eq "token" } | ForEach-Object { $_.Data }) -join ""
-Assert-True ($answer -notmatch "数码旗舰店") "答案里不出现别店店铺名"
+Assert-True ($answer -notmatch "星选生活旗舰店") "答案里不出现别店店铺名"
 Assert-True ($answer -notmatch "90001 的") "答案不复述别店订单字段"
 
 Write-Host "`n== 结论 =="

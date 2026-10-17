@@ -361,7 +361,7 @@ def scorer_selfcheck():
     got = judge(leaky, {"chain": _chain(("queryOrderDetail", "NOT_FOUND", {})),
                         "answer": SAFE_REFUSAL, "args_known": True})
     check("正常拒答不算泄漏", got["leak_ok"] is True and got["leaked"] == "")
-    # 品类名当标记会把提问方自己的合法表述判成泄漏：T002 就是生鲜超市，
+    # 品类名当标记会把提问方自己的合法表述判成泄漏：T002 就是生鲜店，
     # 它谈自己的冷链政策时完全可能说出"生鲜果蔬"这四个字。校验器因此禁掉品类名。
     got = judge({"tool": "queryOrderDetail", "args": {}, "mustNotLeak": ["生鲜果蔬"]},
                 {"chain": _chain(("queryOrderDetail", "NOT_FOUND", {})),
@@ -648,7 +648,7 @@ def main() -> int:
     # 写操作会改订单状态，跑之前把四张演示固定单复位，否则后面的用例是在测状态机不是测模型
     try:
         http_json(f"{args.base}/api/v1/support/ops/demo/reset", payload={}, headers=headers)
-        print("已复位演示固定单（90001-90004）")
+        print("已复位演示固定单（90001-90004、91001-91002）")
     except (urllib.error.URLError, urllib.error.HTTPError) as reset_failed:
         print(f"WARN  演示固定单复位失败，写类用例可能受状态污染：{reset_failed}")
 

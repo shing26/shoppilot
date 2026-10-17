@@ -275,7 +275,7 @@ async function api(method, path, body, withAuth = true) {
 async function loadTenants() {
   const res = await api('GET', '/api/v1/support/ops/tenants', null);
   const list = Array.isArray(res.body) && res.body.length ? res.body
-    : [{ tenantId: 'T001', name: '数码旗舰店' }, { tenantId: 'T002', name: '生鲜超市' }, { tenantId: 'T003', name: '服饰官方店' }];
+    : [{ tenantId: 'T001', name: '星选生活旗舰店' }, { tenantId: 'T002', name: '鲜果驿站' }, { tenantId: 'T003', name: '云裳服饰旗舰店' }, { tenantId: 'T004', name: '云栖酒店' }];
   $('tenant').innerHTML = list.map((t) =>
     `<option value="${t.tenantId}">${t.tenantId} · ${t.name}</option>`).join('');
 }

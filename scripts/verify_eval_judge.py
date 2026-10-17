@@ -340,13 +340,14 @@ def main() -> int:
                    lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["90001"]'))
     validator_fail(ledger, "防呆：标记用品类名（跨租户共享词）→ 必须 FAIL", '"id":"ACT-LOG-18"',
                    lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["服饰鞋包"]'))
-    # 这两条是本轮真实踩过的坑：旧 gold 的「数码」正是 T001 招牌「数码旗舰店」的子串。
+    # 这三条是真实踩过的坑：旧 gold 的「数码」正是旧店名「数码旗舰店」的子串。
+    # round32 换了店名，标记串跟着换成新店名——**判据形态一字不动**，换的是它引用的那份店名表。
     validator_fail(ledger, "防呆：标记用店名子串（旧「数码」同型）→ 必须 FAIL", '"id":"ACT-ORD-17"',
-                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["数码"]'))
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["星选"]'))
     validator_fail(ledger, "防呆：标记用整串店名 → 必须 FAIL", '"id":"ACT-ORD-17"',
-                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["生鲜超市"]'))
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["鲜果驿站"]'))
     validator_fail(ledger, "防呆：标记用「店名 + 更多字」的长串 → 必须 FAIL", '"id":"ACT-ORD-17"',
-                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["T001生鲜超市"]'))
+                   lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["T002鲜果驿站"]'))
     validator_fail(ledger, "防呆：标记用裸街道名（种子单共用文三路）→ 必须 FAIL", '"id":"ACT-LOG-18"',
                    lambda l: l.replace('"mustNotLeak":["演示买家","13800001234","文三路 1 号"]', '"mustNotLeak":["文三路"]'))
     validator_fail(ledger, "防呆：合格答案集为空列表 → 必须 FAIL", '"id":"ACT-ORD-09"',

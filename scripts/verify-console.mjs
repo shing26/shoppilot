@@ -78,7 +78,7 @@ check('identity claims decoded with real tenant', parsedClaims.tid === 'T001' &&
 const tenantOptions = await page.$$eval('#tenant option', (els) => els.map((e) => e.value));
 check('tenant picker populated via proxy', tenantOptions.length >= 3, tenantOptions.join(','));
 const tenantLabels = await page.$$eval('#tenant option', (els) => els.map((e) => e.textContent));
-check('tenant picker shows shop names from biz-mock', tenantLabels.some((t) => t.includes('数码旗舰店')), tenantLabels.join(' | '));
+check('tenant picker shows shop names from biz-mock', tenantLabels.some((t) => t.includes('星选生活旗舰店')), tenantLabels.join(' | '));
 
 // 票 23（ADR 0026）：这盏灯第一次有能力变红。三态各喂一份 deps 读数去断，不靠运气等一次真故障。
 // 另开一个页面打桩：主页面那条「页面无失败请求」的断言不许被 DOWN 时的 503 污染成假红。

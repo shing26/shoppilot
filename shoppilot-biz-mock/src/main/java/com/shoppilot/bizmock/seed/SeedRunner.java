@@ -28,6 +28,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -53,10 +54,27 @@ public class SeedRunner implements ApplicationRunner, Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(SeedRunner.class);
 
+    /**
+     * 电商租户（round32 与语料对齐）。名字不是随便取的：`knowledge/` 里 T001/T002 的店铺级政策
+     * 是按这两家店写的（星选生活旗舰店的十五天无理由与免费退、鲜果驿站的生鲜不退与口感发券），
+     * 而种子段以前叫「数码旗舰店 / 生鲜超市」——同两个租户 ID 在同一个仓里有两个身份，
+     * 这正是「看起来像演示、不像真店」最机械的那一层。以语料为准改这里，不改语料。
+     */
     private static final List<String[]> TENANTS = List.of(
-            new String[]{"T001", "数码旗舰店", "200"},
-            new String[]{"T002", "生鲜超市", "300"},
-            new String[]{"T003", "服饰官方店", "100"});
+            new String[]{"T001", "星选生活旗舰店", "200"},
+            new String[]{"T002", "鲜果驿站", "300"},
+            new String[]{"T003", "云裳服饰旗舰店", "100"});
+
+    /**
+     * 非电商租户（round32）：**只播租户行，不参与压测订单与买家的生成**。
+     *
+     * <p>它存在的理由是本轮那句主张——「同一套代码，换一套知识库就换一个行业」。酒店不是店，
+     * 所以它没有商品、没有订单、没有物流；它有的是自己那一套 `knowledge/hotel-*.md` 与
+     * 它自己的 `POLICY_HOTEL` 意图。把它塞进 {@link #TENANTS} 会让压测订单按四分之一摊给它，
+     * 那既不是酒店的业务，也会打乱既有三个租户的订单号分布。
+     */
+    private static final List<String[]> NON_SHOP_TENANTS = List.<String[]>of(
+            new String[]{"T004", "云栖酒店", "100"});
 
     private static final String[][] CATEGORIES = {
             {"digital", "数码配件", "SEVEN_DAY_RETURN"},
@@ -138,19 +156,38 @@ public class SeedRunner implements ApplicationRunner, Ordered {
         }
     }
 
-    /** 初始化段：租户结构是系统运作的最小前提，持久档也照常播种。 */
+    /**
+     * 初始化段：租户结构是系统运作的最小前提，持久档也照常播种。
+     *
+     * <p>逐租户「缺哪条补哪条」而不是「表非空就整段跳过」（round32）：加了酒店租户之后，
+     * 整段跳过的写法会让既有库（H2 默认档与持久档都算）永远看不到 T004，而它们的表现是
+     * 「酒店知识库进去了、检索却因为租户不可见而永远查不到」——那种故障要查很久。
+     */
     private void seedTenantsIfEmpty() {
-        Long existing = jdbcTemplate.queryForObject("select count(*) from tenants", Long.class);
-        if (existing != null && existing > 0) {
-            log.info("初始化段跳过：tenants 已有 {} 行", existing);
-            return;
-        }
-        transactionTemplate.executeWithoutResult(status -> {
-            for (String[] tenant : TENANTS) {
-                tenantRepository.save(new Tenant(tenant[0], tenant[1], Integer.parseInt(tenant[2])));
+        List<String[]> all = allTenants();
+        int created = 0;
+        for (String[] tenant : all) {
+            Integer present = jdbcTemplate.queryForObject(
+                    "select count(*) from tenants where id = ?", Integer.class, tenant[0]);
+            if (present != null && present > 0) {
+                continue;
             }
-        });
-        log.info("初始化段完成：{} 租户", TENANTS.size());
+            transactionTemplate.executeWithoutResult(status ->
+                    tenantRepository.save(new Tenant(tenant[0], tenant[1], Integer.parseInt(tenant[2]))));
+            created++;
+        }
+        if (created == 0) {
+            log.info("初始化段跳过：{} 个租户都已存在", all.size());
+        } else {
+            log.info("初始化段完成：新增 {} 个租户，共 {} 个", created, all.size());
+        }
+    }
+
+    /** 电商租户在前、非电商租户在后；压测订单只摊给前者。 */
+    private static List<String[]> allTenants() {
+        List<String[]> all = new ArrayList<>(TENANTS);
+        all.addAll(NON_SHOP_TENANTS);
+        return all;
     }
 
     /** 演示段：买家、压测订单、优惠券与演示固定单。重启不翻倍的保证沿用 orders 非空即跳过。 */
@@ -241,12 +278,18 @@ public class SeedRunner implements ApplicationRunner, Ordered {
      * 演示固定单（ticket 12/19）：随机造数的下单时间是 0~30 天均匀分布，
      * "订单是否还在 7 天退款窗内"会随启动时刻漂移，演示脚本今天能跑明天就可能被状态校验拒掉。
      * 这四单把四种业务状态各钉死一个，且时间相对 now 计算，任何时刻起栈都成立。
+     *
+     * <p><b>round32 新增 91001/91002</b>：门面场景是「鲜果驿站的死蟹理赔」，它要的是一条
+     * **签收后仍在生鲜理赔窗口内**的单，以及一条**已经超窗**的单——窗口是六小时，所以这两单的
+     * 签收时刻必须相对 now 算，不能让它们随进程启动时间漂出窗口。它们归 T002，与上面四单的店铺一致
+     * （90003 那单本来就属于生鲜店之外的品类，故不改它：它是状态夹具，不是品类夹具）。
      */
-    private static final List<String> DEMO_ORDER_NOS = List.of("90001", "90002", "90003", "90004");
+    private static final List<String> DEMO_ORDER_NOS =
+            List.of("90001", "90002", "90003", "90004", "91001", "91002");
 
     /**
      * 演示前复位：删掉固定单产生的退款单、改址流水与物流节点，再按初始状态重建。
-     * 只碰这四单，随机造数与真实业务数据不受影响。
+     * 只碰这几单，随机造数与真实业务数据不受影响。
      */
     public void resetDemoFixtures() {
         if (!running.compareAndSet(false, true)) {
@@ -270,40 +313,55 @@ public class SeedRunner implements ApplicationRunner, Ordered {
 
     private void seedDemoFixtures() {
         Instant now = Instant.now();
-        record Fixture(String orderNo, String status, Instant createdAt, String categoryCode, String categoryName,
-                       String serviceFlag) {
+        record Fixture(String tenantId, String orderNo, String status, Instant createdAt, String categoryCode,
+                       String categoryName, String serviceFlag, Instant shippedAt, Instant deliveredAt) {
         }
         List<Fixture> fixtures = List.of(
-                new Fixture("90001", "PAID", now.minus(Duration.ofDays(2)), "fresh", "生鲜果蔬", "FRESH_GUARANTEE"),
-                new Fixture("90002", "SHIPPED", now.minus(Duration.ofDays(3)), "digital", "数码配件", "SEVEN_DAY_RETURN"),
-                new Fixture("90003", "DELIVERED", now.minus(Duration.ofDays(20)), "apparel", "服饰鞋包", "SEVEN_DAY_RETURN"),
-                new Fixture("90004", "CREATED", now.minus(Duration.ofHours(3)), "home", "家居日用", "SEVEN_DAY_RETURN"));
-        TenantContextHolder.set("T001", DEMO_CUSTOMER);
-        transactionTemplate.executeWithoutResult(status -> {
-            for (Fixture fixture : fixtures) {
-                Order order = new Order(fixture.orderNo(), "T001", DEMO_CUSTOMER, 19900L,
-                        OrderStatus.valueOf(fixture.status()), fixture.categoryCode(), fixture.categoryName(),
-                        fixture.createdAt());
-                order.setReceiverName("演示买家");
-                order.setReceiverPhone("13800001234");
-                order.setProvince("浙江省");
-                order.setCity("杭州市");
-                order.setDistrict("西湖区");
-                order.setDetailAddress("文三路 1 号");
-                order.setServiceFlags(List.of(fixture.serviceFlag()));
-                if (order.getStatus() != OrderStatus.CREATED) {
-                    order.setPaidAt(fixture.createdAt().plusSeconds(600));
+                // T001 星选生活旗舰店：四种业务状态各一单（ticket 12/19 起的既有夹具，原样保留）
+                new Fixture("T001", "90001", "PAID", now.minus(Duration.ofDays(2)), "fresh", "生鲜果蔬",
+                        "FRESH_GUARANTEE", null, null),
+                new Fixture("T001", "90002", "SHIPPED", now.minus(Duration.ofDays(3)), "digital", "数码配件",
+                        "SEVEN_DAY_RETURN", now.minus(Duration.ofDays(3)).plusSeconds(3600 * 12), null),
+                new Fixture("T001", "90003", "DELIVERED", now.minus(Duration.ofDays(20)), "apparel", "服饰鞋包",
+                        "SEVEN_DAY_RETURN", now.minus(Duration.ofDays(20)).plusSeconds(3600 * 12),
+                        now.minus(Duration.ofDays(20)).plusSeconds(3600 * 60)),
+                new Fixture("T001", "90004", "CREATED", now.minus(Duration.ofHours(3)), "home", "家居日用",
+                        "SEVEN_DAY_RETURN", null, null),
+                // T002 鲜果驿站：门面场景的两张单——一张签收 2 小时（六小时理赔窗口内），一张签收 28 小时（已超窗）
+                new Fixture("T002", "91001", "DELIVERED", now.minus(Duration.ofHours(8)), "fresh", "生鲜果蔬",
+                        "FRESH_GUARANTEE", now.minus(Duration.ofHours(7)), now.minus(Duration.ofHours(2))),
+                new Fixture("T002", "91002", "DELIVERED", now.minus(Duration.ofHours(34)), "fresh", "生鲜果蔬",
+                        "FRESH_GUARANTEE", now.minus(Duration.ofHours(33)), now.minus(Duration.ofHours(28))));
+        for (String tenantId : List.of("T001", "T002")) {
+            TenantContextHolder.set(tenantId, DEMO_CUSTOMER);
+            List<Fixture> owned = fixtures.stream().filter(f -> f.tenantId().equals(tenantId)).toList();
+            transactionTemplate.executeWithoutResult(status -> {
+                for (Fixture fixture : owned) {
+                    Order order = new Order(fixture.orderNo(), tenantId, DEMO_CUSTOMER, 19900L,
+                            OrderStatus.valueOf(fixture.status()), fixture.categoryCode(), fixture.categoryName(),
+                            fixture.createdAt());
+                    order.setReceiverName("演示买家");
+                    order.setReceiverPhone("13800001234");
+                    order.setProvince("浙江省");
+                    order.setCity("杭州市");
+                    order.setDistrict("西湖区");
+                    order.setDetailAddress("文三路 1 号");
+                    order.setServiceFlags(List.of(fixture.serviceFlag()));
+                    if (order.getStatus() != OrderStatus.CREATED) {
+                        order.setPaidAt(fixture.createdAt().plusSeconds(600));
+                    }
+                    if (fixture.shippedAt() != null) {
+                        order.setShippedAt(fixture.shippedAt());
+                        seedLogistics(tenantId, fixture.orderNo(), fixture.shippedAt(), new Random(7), 4);
+                    }
+                    if (fixture.deliveredAt() != null) {
+                        order.setDeliveredAt(fixture.deliveredAt());
+                    }
+                    orderRepository.save(order);
                 }
-                if (order.getStatus() == OrderStatus.SHIPPED || order.getStatus() == OrderStatus.DELIVERED) {
-                    order.setShippedAt(fixture.createdAt().plusSeconds(3600 * 12));
-                    seedLogistics("T001", fixture.orderNo(), order.getShippedAt(), new Random(7), 4);
-                }
-                if (order.getStatus() == OrderStatus.DELIVERED) {
-                    order.setDeliveredAt(fixture.createdAt().plusSeconds(3600 * 60));
-                }
-                orderRepository.save(order);
-            }
-        });
+            });
+        }
+        TenantContextHolder.clear();
         log.info("演示固定单就绪：{}（买家 {}）", fixtures.stream().map(Fixture::orderNo).toList(), DEMO_CUSTOMER);
     }
 

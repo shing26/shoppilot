@@ -9,6 +9,14 @@ public enum Intent {
     POLICY_SHIPPING,
     POLICY_PROMO,
     POLICY_FRESH,
+    /**
+     * 酒店入住与退改规则咨询（round32）。
+     *
+     * <p>它不是电商域的一个子类，是**另一个行业**：本仓用它证明「换一套知识库就换一个场景」
+     * 这句话有实例支撑。代价照登——每接一个新行业要改的四处（本枚举、T0 词表、
+     * 入库前缀映射、评测集）见 {@code docs/round32-two-runnable-scenarios.md} 与 ADR 0066。
+     */
+    POLICY_HOTEL,
     ACTION_ORDER,
     ACTION_LOGISTICS,
     ACTION_ADDRESS,
