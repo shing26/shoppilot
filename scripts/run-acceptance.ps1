@@ -106,6 +106,11 @@ $steps = [ordered]@{
     style     = @{ Kind = 'ps1'; Cmd = 'scripts\verify-style.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('风格验收') }
     feedback  = @{ Kind = 'ps1'; Cmd = 'scripts\verify-feedback.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('反馈闭环验收') }
     plansteps = @{ Kind = 'ps1'; Cmd = 'scripts\verify-plan.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('计划验收') }
+    # 2026-10-17 跨店同问同答修复的机器护栏（add-only，28 → 29 步）：门店细则必须在场、
+    # 顺序效应不串答案、空召回确定性转人工、无门店细则的意图仍跨店共享。四条断言全看
+    # 确定性字段（引用出处/缓存层/降级出口），不看模型文风，因此 perf 与 local 档同判。
+    # 排在 plansteps 之后：它自己有 4~6 次请求会打到模型，压进浏览器形状断言之前会给门禁制造假红。
+    isolation = @{ Kind = 'py'; Cmd = 'scripts\verify-store-isolation.py'; Arg = @(); Need = $true; Skip = $false; Expect = @('STORE ISOLATION OK') }
     demo      = @{ Kind = 'ps1'; Cmd = 'scripts\demo.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('演示结束') }
     # PLAN 第 16 行的验收动作写的是"冒烟后跑完整集"，完整集要 dev 模式与真实 key，
     # 冒烟这一半却是机器现在就能覆盖的：24 条按意图轮流取（--limit 已改成分层抽样，
