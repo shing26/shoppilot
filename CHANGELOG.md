@@ -75,6 +75,10 @@
 - SSE 响应头显式声明 `charset=UTF-8`：未声明时按区域嗅探的客户端（Chromium CDP）会按系统区域解码产生双重编码乱码。
 - 「转人工」情绪门回归（ADR 0042）、退款审核读回、追问无取消出口、`/auth/login` 缺 `username`、`up.ps1` 运行中打包换瘦包等活体验收抓出的产品缺陷。
 - **跨店同问同答**（round34 / ADR 0068）：平台缓存桶的共享前提从「引用全为平台条款」收紧为「本行业该意图不存在店铺级条款」（`ShopRuleIndex` 探针，读写同源、失败 fail-closed）——修掉「先有人问过，别家门店细则就永不生效、甚至本店答案被顶掉」；同批修空召回把模型自由发挥当答案（政策意图 0 条且未降级 → 确定性转人工 + 工单），以及 `citationDetails` 命中路径缺出处两处契约错位。新增活体门禁 `verify-store-isolation.py`（矩阵 29 步）。
+- **B3 审计「谁放的钱」在 Redis 流路径丢失**（round34 补记 / 票 132）：`RedisAuditChannel.toMap` 漏写 `actorAuthenticated`、`fromMap` 回落旧构造，凡走流的审计事件一律落成「未认证」——资金动作的责任人查询面分不出来；补字段 + 十参构造 + 线路往返测试（活体直证修复前 `auth=False` → 修复后 `auth=True`）。
+- 验收工装三处漂移（round34 补记 / 票 133）：`verify-refund-approval.ps1` 的默认口令/审计端点/PS7 数组形状/action 名、`verify-workspace.mjs` 的旧选择器；`console` 的 staff-only 读面缺口登记待裁定。
+
+新增：**两店交替压测参数组**（`storemix`：`--tenants/--tenant-mode` + locust `alternate` 逐请求轮转）——稳态命中率无差异、代价在足迹（两店 26 vs 21 个 L1 key，+24%），口径边界见 `docs/EVIDENCE.md`。
 
 ### Performance
 
