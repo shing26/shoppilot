@@ -113,7 +113,14 @@ public class RedisAuditChannel implements AuditChannel {
         }
     }
 
-    private Map<String, String> toMap(AuditEvent event) {
+    /**
+     * 事件 → 流字段。**加字段必须两边同时加**：{@link #fromMap} 是唯一的重建点，
+     * 漏一格的后果是把一条语义静默降级成旧构造的默认值——{@code actorAuthenticated}
+     * 就这样丢过一轮（2026-10-18：资金动作的审计全部落成"未认证"，而 JVM 用例走内存通道、
+     * 对象直传不过序列化边界，一个都没红）。包级可见同 {@code HybridRetriever.rrf()} 的先例：
+     * 让线格式的往返能被测试直接钉住。
+     */
+    Map<String, String> toMap(AuditEvent event) {
         Map<String, String> fields = new HashMap<>();
         fields.put("eventId", event.eventId());
         fields.put("schemaVersion", String.valueOf(event.schemaVersion()));
@@ -124,14 +131,23 @@ public class RedisAuditChannel implements AuditChannel {
         fields.put("actor", event.actor());
         fields.put("detail", event.detail() == null ? "" : event.detail());
         fields.put("occurredAt", event.occurredAt().toString());
+        fields.put("actorAuthenticated", String.valueOf(event.actorAuthenticated()));
         return fields;
     }
 
-    private AuditEvent fromMap(Map<Object, Object> fields) {
+    /**
+     * 流字段 → 事件。缺 {@code actorAuthenticated} 的只有换代期留在流里的旧消息，
+     * 按十参构造落下时会缺格——对它取"未认证"是 fail-closed 的正确方向（ADR 0058 的缺省取向），
+     * 不能让一条老格式的消息把未认证的名字读成认证过的。
+     */
+    AuditEvent fromMap(Map<Object, Object> fields) {
         try {
             if (fields == null || fields.get("eventId") == null) {
                 return null;
             }
+            boolean authenticated = "true".equalsIgnoreCase(
+                    fields.get("actorAuthenticated") == null ? null
+                            : String.valueOf(fields.get("actorAuthenticated")).trim());
             return new AuditEvent(
                     String.valueOf(fields.get("eventId")),
                     Integer.parseInt(String.valueOf(fields.get("schemaVersion"))),
@@ -142,7 +158,8 @@ public class RedisAuditChannel implements AuditChannel {
                     String.valueOf(fields.get("actor")),
                     fields.get("detail") == null || String.valueOf(fields.get("detail")).isEmpty()
                             ? null : String.valueOf(fields.get("detail")),
-                    Instant.parse(String.valueOf(fields.get("occurredAt"))));
+                    Instant.parse(String.valueOf(fields.get("occurredAt"))),
+                    authenticated);
         } catch (RuntimeException malformed) {
             log.warn("审计消息形状不认识，留在 pending 里等人看: {}", malformed.getMessage());
             return null;
