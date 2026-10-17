@@ -8,7 +8,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
 [![ADR](https://img.shields.io/badge/Architecture-65%20ADRs-blueviolet)](docs/adr/)
-[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-536-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
+[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-547-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
 [![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
 **10** 态有界状态机 · **2** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
@@ -301,7 +301,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 * **Part 7 Style & Feedback**：话术风格注入与反馈回流完整性
 * **Part 8 Task**：复合业务长链路端到端完成率
 
-**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **536 条** JVM 测试（tool-api 10 + biz-mock 69 + ticket 45 + gateway 412）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 28 步全量验收（含活体中间件、浏览器与一键演示）。
+**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **547 条** JVM 测试（tool-api 10 + biz-mock 69 + ticket 45 + gateway 423）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
 
 ---
 
@@ -584,7 +584,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 <summary>🔁 复现：压测、评测与验收命令</summary>
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（四模块 10 + 69 + 412 + 45 = 536 项）
+# 单元、架构与主链路 JVM 集成测试（四模块 10 + 69 + 423 + 45 = 547 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
@@ -616,7 +616,7 @@ pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1            # 干跑：查�
 pwsh -NoProfile -File scripts/run-dev-guardcheck.ps1 -Run       # 真复核七道防线
 ```
 
-**验收矩阵**：`scripts/run-acceptance.ps1` 一条命令跑完语法门到评测全部步骤，分 daily / live / full 三档（档位切的是**步骤集合**，判据逐字相同）。矩阵由脚本自己落盘（`logs/acceptance-run-<时间戳>.log`，`logs/` 整目录在 `.gitignore` 里，干净克隆中没有），并记**开跑时**的工作树状态。门禁要求工作树干净才能开跑；`polarity` / `l2` 两步在向量服务不可用按「前置不成立」exit 3 处理——那一步红不代表防线失效。`report` 步验的是"README 表格由脚本生成"这句话本身：产物缺一份、生成文档与 CSV 对不上，都在这一步红掉。逐轮落点与 22→28 步的扩步史见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。
+**验收矩阵**：`scripts/run-acceptance.ps1` 一条命令跑完语法门到评测全部步骤，分 daily / live / full 三档（档位切的是**步骤集合**，判据逐字相同）。矩阵由脚本自己落盘（`logs/acceptance-run-<时间戳>.log`，`logs/` 整目录在 `.gitignore` 里，干净克隆中没有），并记**开跑时**的工作树状态。门禁要求工作树干净才能开跑；`polarity` / `l2` 两步在向量服务不可用按「前置不成立」exit 3 处理——那一步红不代表防线失效。`report` 步验的是"README 表格由脚本生成"这句话本身：产物缺一份、生成文档与 CSV 对不上，都在这一步红掉。逐轮落点与 22→29 步的扩步史见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。
 
 **逐 ticket 验收动作 → 覆盖命令**：PLAN.md 的 20 行动作都有机器可执行的落点，顺序、退出码、日志位置由 `run-acceptance.ps1` 固定；逐行映射表见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)。压测与标定脚本要一份独立 venv（起栈与三条演示不需要它）：`python -m venv .venv-loadtest` 后 `pip install -r loadtest/requirements.txt`。`verify-console.mjs` 需要 Playwright，本机装在 `<repo>\.tools\node_modules`（不入库），跑之前设 `NODE_PATH` 指过去即可。
 
