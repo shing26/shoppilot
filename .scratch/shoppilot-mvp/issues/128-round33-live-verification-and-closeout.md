@@ -40,11 +40,13 @@ git diff --check; git status --short
   离线 rescore `cases=180 files=6 tool_diff=4`、`eval_suites` `ok=30`、`verify_onepager` `failures=0`、
   `eval_task` `ok=14`、`retrieval_gate` `ok cases=10`、`check_coverage` `modules=4` 全 OK。
   `RETRIEVAL_FIXTURE_SHA256` 随语料修正换代。
-- **收口审计（2026-10-17 实跑，`logs/round33-audit.out` 不入库）**：`PASS 73 / FAIL 13 / SKIP 10 / 共 96 项`
-  （`G6_EXPECT` 换代 `[10, 69, 391, 45]` → `[10, 69, 408, 45]`）。**先修掉审计自己的两处崩溃**：
+- **收口审计（2026-10-17 实跑，`logs/round33-audit.out` 不入库）**：`PASS 74 / FAIL 12 / SKIP 10 / 共 96 项`
+  （提交后复跑；`A2` 工作树 clean 转绿，`A1` 未推送仍红）
+  （`G6_EXPECT` 换代 `[10, 69, 391, 45]` → `[10, 69, 412, 45]`；412 含 HTL-BKF-01 回归修复的 +4）。
+  **先修掉审计自己的两处崩溃**：
   round31 删了 `docs/interview-qa.md` 却留着 E5/E5b 与两处 `DOC_GLOBS` 读它，审计自 round31 起
   `FileNotFoundError` 崩在半路、根本跑不到底；本轮把 E5/E5b 改成前置不成立判 SKIP、`DOC_GLOBS` 里
-  不存在的文档跳过引用核对，**判据本身一字未动**。13 条红的性质逐条照登：`A1/A2` 是「未提交/未推送」；
+  不存在的文档跳过引用核对，**判据本身一字未动**。12 条红的性质逐条照登：`A1` 是「未推送」（`A2` 提交后已转绿）；
   `B7` 命中 `scripts/verify_eval_judge.py`（round23 以来窗口内的既有红）；`G6` 是「常数 532 ≠ 日志 448」——
   那两份 `logs/acceptance/{build,unit}.log` 仍是 2026-10-05 的清场日落点，**本轮没重跑带 build/unit 的
   活体矩阵**；`E2/E6b/E6c/F1c/H5b/H8/H8b/H10` 都是**先前轮次留下的文档漂移**（本轮 README diff 不碰这些行，
