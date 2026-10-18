@@ -1,7 +1,8 @@
 # round35 开轮依据：agent 自主性升级（4 轮有界工具循环 + 反思重试）
 
-Date: 2026-10-19　Status: **proposed（开轮依据已写足；执行闸门 = 所有者点头，见 Consequences）**
-Owner basis: round23 共识（2026-10-01）确认六决策方向；2026-10-18 所有者指令「走 `/wayfinder` 先画调查票」。
+Date: 2026-10-19　Status: **Accepted**（2026-10-19 所有者点头：指令「等推送完进行 `/to-tickets` 建 143-150」）
+Owner basis: round23 共识（2026-10-01）确认六决策方向；2026-10-18 所有者指令「走 `/wayfinder` 先画调查票」；
+2026-10-19 所有者批准开轮并建票。
 Tickets: 调查票 136-142（[map 135](../../.scratch/shoppilot-mvp/issues/135-wayfinder-agent-autonomy-map.md)，零代码改动）→ 实现票 143-150（拆票表见
 [`agent-autonomy-spec-v2.md`](../../.scratch/shoppilot-mvp/agent-autonomy-spec-v2.md) §4；票面由 `/to-tickets` 建）。
 
@@ -146,6 +147,6 @@ Consequences:
   `docs/EVIDENCE.md`（part10 行与预算值随 148/149 落地）。
 - **未达成照登**：local 3B 出不了两步链（`plansteps` 0/7 已登记），4 步只会更红——**照登、判据一字不动**
   （round20 家法）；part10 的读数归因 = v1.2.0（与 v1.1.0 不可混比）；「转人工路径未逐条量计费」照旧。
-- **执行闸门**：**所有者点头**。本 ADR 记录开轮依据，不代替那次裁定——不批则本 ADR 与 spec v2
-  只作决策记录（map 135 的 destination「到可 `/to-tickets` 为止」已经达成，这件事不受影响），
-  frontier 不亮、票面不建。
+- **开轮已获批准（2026-10-19）**：所有者指令「等推送完进行 `/to-tickets` 建 143-150」；实现票 143-150 已按本 ADR
+  与 spec v2 §4 的拆票表建面（`ready-for-agent`），**frontier = {143, 146, 147}**。依据快照、判据红线与
+  拆票顺序不因批准改变；执行按本仓「一次一票」纪律走。

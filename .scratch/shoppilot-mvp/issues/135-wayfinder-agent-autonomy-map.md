@@ -66,4 +66,5 @@
 | [142 轮次切分与开轮依据 ADR（0069）](142-round-scoping-and-adr-0069.md) | grilling | 收敛票：ADR 落稿 + 拆票顺序 + spec v2 定稿 | 136-141 全部 |
 
 **七张全部收口**（136-142，零代码改动；142 收口于 2026-10-19）。destination（spec v2 + 开轮依据 ADR 0069 + 拆票表）达成；
-**开轮执行仍待所有者点头**（ADR 0069 的 Status = proposed）。
+**开轮已获批（2026-10-19 所有者点头）**：ADR 0069 Status = **Accepted**，实现票 **143-150** 已建（`ready-for-agent`，
+frontier = {143, 146, 147}）。

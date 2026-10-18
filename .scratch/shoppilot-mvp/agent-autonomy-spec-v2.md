@@ -2,7 +2,8 @@
 
 > 状态：**定稿（2026-10-19）**。取代 v1（[`agent-autonomy-spec.md`](agent-autonomy-spec.md)，六决策原文保留、加换代指针）。
 > 本文件同时是 **round35 的 spec**；开轮依据 = [`docs/adr/0069-round35-agent-autonomy-upgrade-reopen-basis.md`](../../docs/adr/0069-round35-agent-autonomy-upgrade-reopen-basis.md)。
-> **执行闸门 = 所有者点头**：不批则本 spec 与 ADR 0069 只作决策记录，票面不建、frontier 不亮。
+> **开轮已获批准（2026-10-19，所有者点头）**：实现票 143-150 已建（`ready-for-agent`，见 §4）；
+> 本 spec 与 ADR 0069 自即日起是 round35 的依据，执行按本仓「一次一票」纪律走。
 > v1 → v2 的三处换代：① 落点从三服务前结构重锚到当前四服务结构（`Domain` 行业门 / 审批闸 / 空召回出口 / part4-10 评测体系）；
 > ② 七张调查票 136-142 的裁定全部吸收（本文即收敛产物）；③ 计划轮廓的失效项换代（「ADR 0052」→0069、「票号 69 起」→143 起、「round23」→round35）。
 
@@ -157,4 +158,5 @@ README「枚举 10 / 降级 9」/ EVIDENCE / architecture-faq 零同步；降级
 - [x] 深层架构探讨结束，不推翻本文范围——round23-34 的结构换代已完成，本文即重锚结果（136-142 全部收口）。
 - [x] ADR 0069 落稿（覆盖 ADR 0008/0036 的依据写足；既有 ADR 原文一字未改，换代指针落本 spec / ADR 0069 / tracker）。
 - [x] `.env` 预算抬幅经试跑实测（票 140 AFK 实测三轮，读数与命令在票内）。
-- [ ] 拆票走 `/to-tickets`，票号 **143** 起——这是**下一步**：本 spec §4 即拆票表，票面待所有者点头后建。
+- [x] 拆票走 `/to-tickets`，票号 **143** 起——**2026-10-19 已完成**：票面 143-150 已建（`ready-for-agent`），
+  frontier = {143, 146, 147}；本 spec §4 与票面逐条对应。
