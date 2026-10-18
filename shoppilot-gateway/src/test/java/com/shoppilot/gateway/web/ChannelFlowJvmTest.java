@@ -80,7 +80,7 @@ class ChannelFlowJvmTest {
 
     private static AgentResult answer(String reply) {
         return new AgentResult(reply, Intent.POLICY_RETURN, "T1", CacheService.Layer.NONE, List.of("R-1"), List.of(),
-                null, null, false, 3, 5, false, false, "v1.1.0", List.of(),
+                null, null, false, 3, 5, false, false, "v1.2.0", List.of(),
                 AgentResult.ContextComposition.NONE, List.of());
     }
 
@@ -96,7 +96,7 @@ class ChannelFlowJvmTest {
                 .andExpect(jsonPath("$.channel").value("app"))
                 .andExpect(jsonPath("$.streaming").value(false))
                 .andExpect(jsonPath("$.answer").value("签收后七天内可以申请退货"))
-                .andExpect(jsonPath("$.promptVersion").value("v1.1.0"));
+                .andExpect(jsonPath("$.promptVersion").value("v1.2.0"));
 
         assertTrue(registry.get("shoppilot_channel_requests_total").tag("channel", "app").counter().count() == 1.0d);
     }

@@ -498,7 +498,7 @@ class GatewayMainPathJvmTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fallbackReason").value("EMOTION_ESCALATION"))
                 .andExpect(jsonPath("$.ticketId").value("T-901"))
-                .andExpect(jsonPath("$.promptVersion").value("v1.1.0"));
+                .andExpect(jsonPath("$.promptVersion").value("v1.2.0"));
 
         // 情绪升级发生在 TRIAGE 之前：判定不出意图、不进缓存、答案话术先安抚
         verify(fallback).escalate(eq(FallbackReason.EMOTION_ESCALATION), anyString(), anyString(), eq("high"));

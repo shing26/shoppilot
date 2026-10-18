@@ -10,6 +10,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,10 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PromptCatalogTest {
 
     @Test
-    @DisplayName("生产资源：加载 v1.1.0，11 条规则结构不变")
+    @DisplayName("生产资源：加载 v1.2.0，11 条规则结构不变")
     void loadsProductionResources() {
         PromptCatalog catalog = new PromptCatalog();
-        assertEquals("v1.1.0", catalog.version());
+        assertEquals("v1.2.0", catalog.version());
         var rulePattern = Pattern.compile("(?m)^\\d+\\.");
         assertEquals(11, rulePattern.matcher(catalog.systemPrompt()).results().count(),
                 "11 条规则一条都不能少：多一条或少一条都是行为语义变更，必须走新版本文件");
@@ -40,6 +41,30 @@ class PromptCatalogTest {
                 + "底座必须是行业无关的客服人设，行业差异由语料与工具表决定，不写死在提示词里");
         assertTrue(prompt.contains("没有任何可用工具"), "纯咨询行业（酒店）没有办理工具，"
                 + "底座必须给模型一条明确的兜底：办不了就说明并转人，不能凭空承诺已经办理");
+    }
+
+    @Test
+    @DisplayName("票 147 / ADR 0069 §五：v1.2.0 的实质改动只有第 4 条一处，其余 10 条与 v1.1.0 逐字相同")
+    void v12DiffersFromV11ByRuleFourOnly() {
+        String previous = classpath("prompts/agent-system/v1.1.0.md");
+        String current = new PromptCatalog().systemPrompt();
+        String tail = "如果系统随后给了失败上下文，换一种做法（换工具或换参数）再试一次，仍然失败就照实说明并建议转人工。";
+
+        assertTrue(current.contains(tail), "反思配合折进第 4 条（141 的裁定）：模型要知道拿到失败上下文后该怎么办");
+        assertEquals(previous.replace("（dev 评测实测漏过两次）。", "（dev 评测实测漏过两次）。" + tail), current,
+                "v1.2.0 只扩写第 4 条尾句——多改一条就是行为语义变更，版本说明与钉子都得跟着重写；"
+                        + "历史版本 v1.1.0 在此处作对照基线，所以它只增不删（ADR 0037）");
+        assertFalse(current.contains("4 轮") || current.contains("4 步"),
+                "预算数字不进提示词：SHOPPILOT_AGENT_MAX_TOOL_ROUNDS 是唯一源，env 调档时提示词不漂移");
+    }
+
+    private static String classpath(String location) {
+        try (var in = PromptCatalogTest.class.getClassLoader().getResourceAsStream(location)) {
+            assertNotNull(in, "classpath 缺 " + location);
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (java.io.IOException broken) {
+            throw new IllegalStateException("读取 " + location + " 失败", broken);
+        }
     }
 
     @Test
