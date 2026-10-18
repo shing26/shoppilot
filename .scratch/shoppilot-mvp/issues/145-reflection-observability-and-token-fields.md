@@ -81,6 +81,11 @@ git diff --check; git status --short
 - 口径：README:402 指标名 55/57 → **56/58**（现场 grep 现算：三模块 56、四模块 58），EVIDENCE 同步；
   `FallbackReason` 不 +1、「枚举 10 / 降级 9」/ architecture-faq 零同步。
 
+**复审修正（2026-10-19，Reviewer 轮）**：
+
+- **F1（真缺陷，已修）**：入口层**调过模型之后**才 fail-open 的三条路（分类正文为空 / 不是 JSON / 标签不认识）此前带回 0/0 的 token——dev 档问一句词典未命中的话、分类器回散文、请求随后命中缓存，响应字段就报 0 而账上已经花掉（正是 R12 要杀的低报形态）。修法：`SentimentGate` 新增 `uncertainPaid(source, reply)`，三条路把这一跳的用量带回；新用例 `paidFailOpensKeepTheirTokenUsage` + `unmodelledVerdictsReportZeroTokens`（**变异对照实测**：把三条路改回 `uncertain(...)` → 前者恰 1 条红）。
+- **F3（语义收窄，已修一半、余下如实登记）**：反思印记按「同一工具的下一枪」消费——模型**换工具**重试时，`plan[]` 里没有任何一步带 `reflection=true`（三态仍读作「触发」：counter 与 trace 两处载体都在，`eval_autonomy.py` 的 `attempt_ok` 记**未观测**而不是判负）。已修的是反方向的假印记：反思没回到同一工具时待办作废，同一工具后来一次无关的正常调用不会被标成 `reflection=true`（新用例 `reflectionMarkIsNotCarriedOverToAnUnrelatedCall`）。**边界照登**：换工具重试的「未观测」是刻意的——票 139 的 `attempt` 定义就是「按工具出现次数」，换路那一枪在目标工具上确实不是第 2 次。
+
 **三个现场追问**：
 
 1. 为什么 `attempt` 要把失败针算进去、而 `plan[]` 又不收失败针？——两者服务不同的读者：

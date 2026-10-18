@@ -116,12 +116,12 @@ public class SentimentGate {
 
     private Verdict fromClassification(LlmTypes.Reply reply) {
         if (reply == null || reply.content() == null || reply.content().isBlank()) {
-            return Verdict.uncertain("empty-classification");
+            return Verdict.uncertainPaid("empty-classification", reply);
         }
         String content = reply.content();
         Matcher object = JSON_OBJECT.matcher(content);
         if (!object.find()) {
-            return Verdict.uncertain("unparsable-classification");
+            return Verdict.uncertainPaid("unparsable-classification", reply);
         }
         try {
             JsonNode root = mapper.readTree(object.group());
@@ -129,14 +129,14 @@ public class SentimentGate {
             try {
                 emotion = Emotion.valueOf(root.path("emotion").asText("").toUpperCase());
             } catch (IllegalArgumentException unknownLabel) {
-                return Verdict.uncertain("unknown-emotion-label");
+                return Verdict.uncertainPaid("unknown-emotion-label", reply);
             }
             double confidence = root.path("confidence").asDouble(0.0d);
             boolean escalated = emotion.escalates(confidence);
             return new Verdict(emotion, confidence, escalated, "llm",
                     reply.promptTokens(), reply.completionTokens());
         } catch (IOException malformed) {
-            return Verdict.uncertain("unparsable-classification");
+            return Verdict.uncertainPaid("unparsable-classification", reply);
         }
     }
 
@@ -169,7 +169,7 @@ public class SentimentGate {
     public record Verdict(Emotion emotion, double confidence, boolean escalated, String source,
                           int promptTokens, int completionTokens) {
 
-        /** 不调模型的两条路（词典层定案 / fail-open）：token 记 0。 */
+        /** **调模型之前**就收口的形态（词典层定案 / 档位不启用第二层）：token 照实记 0。 */
         public Verdict(Emotion emotion, double confidence, boolean escalated, String source) {
             this(emotion, confidence, escalated, source, 0, 0);
         }
@@ -180,6 +180,16 @@ public class SentimentGate {
 
         static Verdict uncertain(String source) {
             return new Verdict(Emotion.UNCERTAIN, 0.0d, false, source);
+        }
+
+        /**
+         * **模型已经调过**、只是结论没法用（分类正文为空 / 不是 JSON / 标签不认识）的 fail-open：
+         * 这一跳的钱照付，token 必须跟着结论走——否则缓存命中那类"没有别的模型调用"的请求会
+         * 上报 0 而账上已经花掉（round35 票 145 / R12 要杀的就是这个形态）。
+         */
+        static Verdict uncertainPaid(String source, LlmTypes.Reply reply) {
+            return new Verdict(Emotion.UNCERTAIN, 0.0d, false, source,
+                    reply == null ? 0 : reply.promptTokens(), reply == null ? 0 : reply.completionTokens());
         }
     }
 }

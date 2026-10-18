@@ -172,7 +172,54 @@ class SentimentGateTest {
         verify(llm).complete(any());
     }
 
+    /**
+     * round35 票 145 / R12：**调过模型之后**才 fail-open 的三条路（分类正文为空 / 不是 JSON /
+     * 标签不认识）必须把这一跳的 token 带回去——这一跳的钱已经花了，结论不可用不等于没付费。
+     *
+     * <p>反例形态：dev 档问一句词典未命中的话 → 分类器回散文 → 请求随后命中缓存（没有再调模型）
+     * → 响应 token 字段上报 0，而计费口径记着一笔。这正是 R12 要杀的低报形态。
+     */
+    @Test
+    @DisplayName("调过模型的 fail-open 也带 token：空正文 / 非 JSON / 不认识的情绪标签")
+    void paidFailOpensKeepTheirTokenUsage() {
+        when(llm.mode()).thenReturn("dev");
+        when(llm.complete(any())).thenReturn(
+                reply("", 400, 12),
+                reply("这不是 JSON", 401, 13),
+                reply("{\"emotion\":\"BEWILDERED\",\"confidence\":0.9}", 402, 14));
+
+        SentimentGate.Verdict empty = gate.evaluate("帮我查一下订单什么状态了");
+        SentimentGate.Verdict prose = gate.evaluate("快递到哪了");
+        SentimentGate.Verdict unknown = gate.evaluate("这个能退吗");
+
+        assertEquals("empty-classification", empty.source());
+        assertEquals(400, empty.promptTokens());
+        assertEquals(12, empty.completionTokens());
+        assertEquals("unparsable-classification", prose.source());
+        assertEquals(401, prose.promptTokens());
+        assertEquals(13, prose.completionTokens());
+        assertEquals("unknown-emotion-label", unknown.source());
+        assertEquals(402, unknown.promptTokens());
+        assertEquals(14, unknown.completionTokens());
+    }
+
+    /** 调模型**之前**就收口的两条路（词典层定案 / local·perf 不启用第二层）照实记 0。 */
+    @Test
+    @DisplayName("没调模型的形态照实记 0：词典层与 local 档的 UNCERTAIN")
+    void unmodelledVerdictsReportZeroTokens() {
+        assertEquals(0, gate.evaluate("你们就是骗子！订单拖了半个月不退款，我要投诉到底").promptTokens());
+        when(llm.mode()).thenReturn("local");
+        SentimentGate.Verdict verdict = gate.evaluate("帮我查一下订单什么状态了");
+        assertEquals("local-lexicon-only", verdict.source());
+        assertEquals(0, verdict.promptTokens());
+        assertEquals(0, verdict.completionTokens());
+    }
+
     private static LlmTypes.Reply reply(String content) {
         return LlmTypes.Reply.text(content);
+    }
+
+    private static LlmTypes.Reply reply(String content, int promptTokens, int completionTokens) {
+        return new LlmTypes.Reply(content, List.of(), promptTokens, completionTokens, null);
     }
 }

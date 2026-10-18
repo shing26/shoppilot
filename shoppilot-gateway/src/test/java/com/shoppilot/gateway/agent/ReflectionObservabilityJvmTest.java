@@ -181,6 +181,38 @@ class ReflectionObservabilityJvmTest {
         assertFalse(traceHas(result, "reflection="));
     }
 
+    @Test
+    @DisplayName("反思后模型换了路：那笔反思印记作废——同一工具后来的另一次正常调用不许被打上 reflection")
+    void reflectionMarkIsNotCarriedOverToAnUnrelatedCall() {
+        // 第一枪 90001 超时 → 反思；第二枪模型换了工具（提示词明说允许），第三枪才回头查 QOD 的另一单
+        when(llm.complete(any())).thenReturn(
+                toolCall("call-1", ToolName.QUERY_ORDER_DETAIL, "90001"),
+                toolCall("call-2", ToolName.QUERY_LOGISTICS, "90001"),
+                toolCall("call-3", ToolName.QUERY_ORDER_DETAIL, "90002"),
+                LlmTypes.Reply.text("两单都在路上"));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("两单都在路上"));
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any()))
+                .thenReturn(outcome(ToolStatus.TIMEOUT, "业务系统响应超时"),
+                        new BizMockClient.Outcome(ToolStatus.OK, "{\"status\":\"OK\",\"message\":\"已发货\"}", false));
+        when(bizMock.call(eq(ToolName.QUERY_LOGISTICS), anyMap(), any()))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK, "{\"status\":\"OK\",\"message\":\"运输中\"}",
+                        false));
+
+        AgentResult result = machine(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true))
+                .run("90001 先看下，那个 90002 也一起查一下", null, EventSink.NOOP);
+
+        assertEquals(2, result.plan().size());
+        assertEquals("queryLogistics", result.plan().get(0).tool());
+        assertFalse(result.plan().get(0).reflection());
+        AgentResult.PlanStep secondOrder = result.plan().get(1);
+        assertEquals("queryOrderDetail", secondOrder.tool());
+        assertEquals(2, secondOrder.attempt(), "失败的那一枪仍算这一工具的第 1 枪");
+        assertFalse(secondOrder.reflection(), "模型换了路，这笔反思印记必须作废——它不是同工具的反思重试");
+        // 三态仍读作「触发」：counter 与 trace 两处载体都在（plan[] 的印记如实缺席）
+        assertEquals(1.0d, reflectionCounter("triggered"));
+        assertTrue(traceHas(result, "reflection=queryOrderDetail attempt=2"));
+    }
+
     // ---------- 脚手架 ----------
 
     private AgentStateMachine machine(TriageResult triage) {
@@ -215,7 +247,11 @@ class ReflectionObservabilityJvmTest {
     }
 
     private static LlmTypes.Reply toolCall(String id, ToolName tool) {
-        return new LlmTypes.Reply("", List.of(new LlmTypes.ToolCall(id, tool.apiName(), Map.of("orderNo", "90001"))),
+        return toolCall(id, tool, "90001");
+    }
+
+    private static LlmTypes.Reply toolCall(String id, ToolName tool, String orderNo) {
+        return new LlmTypes.Reply("", List.of(new LlmTypes.ToolCall(id, tool.apiName(), Map.of("orderNo", orderNo))),
                 10, 2, null);
     }
 

@@ -495,11 +495,17 @@ public class AgentStateMachine {
                         query, dispatch.json(), styleTier, usage));
             }
             stepResults.add(dispatch.json());
+            // 反思印记按「同一工具的下一枪」消费（票 139：reflection = 本步是反思重试）。模型要是换了路
+            // （换工具的反思是提示词明说允许的），这笔待办就作废——否则同一工具后来一次无关的正常调用
+            // 会被打上 reflection=true / attempt=2 的假印记。
+            boolean reflectionRetry = pendingReflections.remove(dispatch.tool());
+            if (!reflectionRetry) {
+                pendingReflections.clear();
+            }
             planSteps.add(new AgentResult.PlanStep(
                     dispatch.tool() == null ? call.name() : dispatch.tool().apiName(),
                     dispatch.status() == null ? "UNKNOWN" : dispatch.status().name(),
-                    dispatchMillis, resolution.arguments(), attempt,
-                    pendingReflections.remove(dispatch.tool())));
+                    dispatchMillis, resolution.arguments(), attempt, reflectionRetry));
             if (dispatch.status() == ToolStatus.PENDING_APPROVAL) {
                 // 受理即收尾（ADR 0047 票 59）：资金动作已受理、等待人工审核，不打第二跳模型。
                 // 受理不是失败，不走 fallback 出口——落工单会污染「降级 9」的口径与 ADR 0009 的语义。
