@@ -333,13 +333,14 @@ class GatewayMainPathJvmTest {
     }
 
     @Test
-    @DisplayName("轮次上限：预算检查后模型仍要工具 → 超限 FALLBACK 落工单，只有两次真实派发（票 41）")
+    @DisplayName("轮次上限：预算检查后模型仍要工具 → 超限 FALLBACK 落工单，只有四次真实派发（票 41 / 票 143 按 4 轮重钉）")
     void toolRoundsExhaustedFallsBackWithTicket() throws Exception {
         LlmGateway llm = mock(LlmGateway.class);
         LlmTypes.ToolCall queryOrder = new LlmTypes.ToolCall("call-round-1", ToolName.QUERY_ORDER_DETAIL.apiName(),
                 Map.of("orderNo", "90001"));
         LlmTypes.Reply alwaysWantsTool = new LlmTypes.Reply("", List.of(queryOrder), 12, 3, null);
-        when(llm.complete(any())).thenReturn(alwaysWantsTool, alwaysWantsTool, alwaysWantsTool);
+        when(llm.complete(any())).thenReturn(alwaysWantsTool, alwaysWantsTool, alwaysWantsTool, alwaysWantsTool,
+                alwaysWantsTool);
 
         BizMockClient bizMock = mock(BizMockClient.class);
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
@@ -362,21 +363,21 @@ class GatewayMainPathJvmTest {
                 .andExpect(jsonPath("$.ticketId").value("T-801"))
                 .andExpect(jsonPath("$.answer").value(containsString("工单号 T-801")));
 
-        // 两次工具轮真实派发；第三次 complete 是预算检查，模型仍要工具即超限，不再派发、不再流式总结
-        verify(bizMock, times(2)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
-        verify(llm, times(3)).complete(any());
+        // 四次工具轮真实派发；第五次 complete 是预算检查，模型仍要工具即超限，不再派发、不再流式总结
+        verify(bizMock, times(4)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
+        verify(llm, times(5)).complete(any());
         verify(llm, never()).stream(any(), any());
         assertEquals(1.0d, registry.get("shoppilot_tool_round_exhausted_total").counter().count());
     }
 
     @Test
-    @DisplayName("预算检查后模型不再要工具：两轮链照常出答案，不落工单（ADR 0008「2 轮覆盖真实链式调用」）")
+    @DisplayName("预算检查后模型不再要工具：四轮链照常出答案，不落工单（票 143：ADR 0008 的边界按 4 轮重钉）")
     void budgetCheckWithoutFurtherToolNeedAnswersFromThePlan() throws Exception {
         LlmGateway llm = mock(LlmGateway.class);
         LlmTypes.ToolCall queryOrder = new LlmTypes.ToolCall("call-chain-1", ToolName.QUERY_ORDER_DETAIL.apiName(),
                 Map.of("orderNo", "90001"));
         LlmTypes.Reply toolPlan = new LlmTypes.Reply("", List.of(queryOrder), 12, 3, null);
-        when(llm.complete(any())).thenReturn(toolPlan, toolPlan,
+        when(llm.complete(any())).thenReturn(toolPlan, toolPlan, toolPlan, toolPlan,
                 LlmTypes.Reply.text("您的订单已发货，物流正在配送途中"));
 
         BizMockClient bizMock = mock(BizMockClient.class);
@@ -396,21 +397,21 @@ class GatewayMainPathJvmTest {
                 .andExpect(jsonPath("$.toolUsed").value(true))
                 .andExpect(jsonPath("$.fallbackReason").doesNotExist());
 
-        verify(bizMock, times(2)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
+        verify(bizMock, times(4)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
         // 预算检查那轮的正文就是最终答案：不再额外打一次流式总结
-        verify(llm, times(3)).complete(any());
+        verify(llm, times(5)).complete(any());
         verify(llm, never()).stream(any(), any());
         assertEquals(0.0d, registry.get("shoppilot_tool_round_exhausted_total").counter().count());
     }
 
     @Test
-    @DisplayName("写动作轮次内没办成：预算用尽直接 FALLBACK，不给口头承诺收尾留门（票 41 守卫）")
+    @DisplayName("写动作轮次内没办成：预算用尽直接 FALLBACK，不给口头承诺收尾留门（票 41 守卫 / 票 143 按 4 轮重钉）")
     void writePendingAtBudgetExhaustionFallsBackWithoutAnotherPlanCall() throws Exception {
         LlmGateway llm = mock(LlmGateway.class);
         LlmTypes.ToolCall queryOrder = new LlmTypes.ToolCall("call-refund-1", ToolName.QUERY_ORDER_DETAIL.apiName(),
                 Map.of("orderNo", "90001"));
         LlmTypes.Reply readToolPlan = new LlmTypes.Reply("", List.of(queryOrder), 12, 3, null);
-        when(llm.complete(any())).thenReturn(readToolPlan, readToolPlan);
+        when(llm.complete(any())).thenReturn(readToolPlan, readToolPlan, readToolPlan, readToolPlan);
 
         BizMockClient bizMock = mock(BizMockClient.class);
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
@@ -432,9 +433,9 @@ class GatewayMainPathJvmTest {
                 .andExpect(jsonPath("$.fallbackReason").value("TOOL_ROUNDS_EXHAUSTED"))
                 .andExpect(jsonPath("$.ticketId").value("T-802"));
 
-        // 两轮都花在读工具上、applyRefund 没执行：直接转人工，连预算检查那次规划调用都不该有
-        verify(bizMock, times(2)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
-        verify(llm, times(2)).complete(any());
+        // 四轮都花在读工具上、applyRefund 没执行：直接转人工，连预算检查那次规划调用都不该有
+        verify(bizMock, times(4)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
+        verify(llm, times(4)).complete(any());
         verify(llm, never()).stream(any(), any());
     }
 
@@ -601,6 +602,8 @@ class GatewayMainPathJvmTest {
                 Map.of("orderNo", "90001"));
         LlmTypes.Reply toolPlan = new LlmTypes.Reply("", List.of(queryOrder), 12, 3, null);
         when(llm.complete(any())).thenReturn(toolPlan, toolPlan, LlmTypes.Reply.text("您的订单已发货"));
+        // 票 143 后默认 4 轮：这一枪不再撞轮次上限，收尾照常走一次流式总结
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("您的订单已发货"));
 
         BizMockClient bizMock = mock(BizMockClient.class);
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
@@ -615,7 +618,7 @@ class GatewayMainPathJvmTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"query\":\"我的订单90001到哪了\"}"))
                 .andExpect(status().isOk())
-                // 两步链＝两次真实派发，与 ADR 0036「有序步骤 ≤ 2」是同一条边界
+                // 两步链＝两次真实派发（ADR 0036 的有序步骤边界在票 143 后是 ≤4，语义不变）
                 .andExpect(jsonPath("$.plan.length()").value(2))
                 .andExpect(jsonPath("$.plan[0].tool").value("queryOrderDetail"))
                 .andExpect(jsonPath("$.plan[0].status").value("OK"))
@@ -1077,7 +1080,9 @@ class GatewayMainPathJvmTest {
 
     private static GatewayProperties properties() {
         GatewayProperties properties = mock(GatewayProperties.class);
-        when(properties.agent()).thenReturn(new GatewayProperties.Agent(2, 2,
+        // round35 票 143：默认工具轮 2 → 4（生产 yml 的默认值，见 ConfigValidationTest）。
+        // 本类里凡按轮数计账的桩（派发次数 / 规划次数）都跟着这个数走。
+        when(properties.agent()).thenReturn(new GatewayProperties.Agent(4, 2,
                 Duration.ofMinutes(30), 4));
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("perf", "http://127.0.0.1:1",
                 "unused", "perf-mock", 0.0d, Duration.ofSeconds(1), Duration.ofSeconds(1),

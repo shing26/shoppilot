@@ -91,7 +91,8 @@ class PlanExecutionTest {
         SentimentGate gate = mock(SentimentGate.class);
         when(gate.evaluate(any())).thenReturn(new SentimentGate.Verdict(Emotion.CALM, 0.9d, false, "llm"));
         GatewayProperties properties = mock(GatewayProperties.class);
-        when(properties.agent()).thenReturn(new GatewayProperties.Agent(2, 2, Duration.ofMinutes(30), 4));
+        // round35 票 143：生产默认工具轮已是 4（见 ConfigValidationTest 的默认值断言）。
+        when(properties.agent()).thenReturn(new GatewayProperties.Agent(4, 2, Duration.ofMinutes(30), 4));
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("dev", "http://127.0.0.1:1", "k", "qwen-plus",
                 0.0d, Duration.ofSeconds(5), Duration.ofSeconds(5), 0L, null, null, null, null, 1024));
         return new AgentStateMachine(triage, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
@@ -134,7 +135,9 @@ class PlanExecutionTest {
     void twoStepPlanResolvesPriorStepReference() throws Exception {
         when(llm.complete(any())).thenReturn(
                 toolCall("call-1", ToolName.QUERY_ORDER_DETAIL, Map.of("orderNo", "90001")),
-                toolCall("call-2", ToolName.APPLY_REFUND, Map.of("orderNo", "{steps[0].result.orderNo}")));
+                toolCall("call-2", ToolName.APPLY_REFUND, Map.of("orderNo", "{steps[0].result.orderNo}")),
+                // 两步走完模型自己收尾（票 143 后默认 4 轮，链条不需要把 4 轮铺满）
+                LlmTypes.Reply.text("已为您提交退款申请"));
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any()))
                 .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
                         "{\"status\":\"OK\",\"orderNo\":\"90001\",\"orderStatus\":\"未发货\"}", false));

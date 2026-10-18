@@ -37,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ConfigValidationTest {
 
     private static final Set<String> CONFIG_PLACEHOLDERS = Set.of(
+            "SHOPPILOT_AGENT_MAX_TOOL_ROUNDS",
             "SHOPPILOT_BIZMOCK_URL",
             "SHOPPILOT_CENTROID_CACHE",
             "SHOPPILOT_EMBED_MODEL",
@@ -125,6 +126,17 @@ class ConfigValidationTest {
     @DisplayName("工具轮次至少 1 轮")
     void maxToolRoundsMustBeAtLeastOne() {
         assertValidationFailure("shoppilot.agent.max-tool-rounds=0", "shoppilot.agent.max-tool-rounds");
+    }
+
+    @Test
+    @DisplayName("默认工具轮次 = 4（round35 票 143：从生产 application.yml 绑定，不是用例自己钉的数）")
+    void maxToolRoundsDefaultsToFour() {
+        runner().withPropertyValues("server.address=127.0.0.1").run(context -> {
+            assertThat(context).hasNotFailed();
+            // 覆盖 ADR 0008 的 2 轮（换代依据 ADR 0069 §三）。环境变量仍是调档手段：
+            // 这条断言只在没有 SHOPPILOT_AGENT_MAX_TOOL_ROUNDS 的干净环境里成立。
+            assertThat(context.getBean(GatewayProperties.class).agent().maxToolRounds()).isEqualTo(4);
+        });
     }
 
     @Test

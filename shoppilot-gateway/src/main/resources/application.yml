@@ -129,8 +129,10 @@ shoppilot:
     connect-timeout: 2s
     read-timeout: 3s
   agent:
-    # ADR 0008：工具循环硬上限
-    max-tool-rounds: 2
+    # ADR 0008 的工具循环硬上限。round35 票 143 换代：2 → 4（ADR 0069 §三；
+    # 反思占这条预算、计划步数与轮同源，不设第二个校验面）。全档统一、不降档；
+    # env 只作调档手段（ADR 0012 家法），默认值单一来源仍是这里。
+    max-tool-rounds: ${SHOPPILOT_AGENT_MAX_TOOL_ROUNDS:4}
     # ticket 11：缺槽位只追问一次
     max-slot-asks: 1
     session-ttl: 30m
