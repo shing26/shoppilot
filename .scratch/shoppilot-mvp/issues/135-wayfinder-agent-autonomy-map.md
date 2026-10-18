@@ -32,6 +32,7 @@
 - [137 安全闸清单重列](137-safety-gates-non-retryable.md) — **三段式清单**：闸 6 条（旧四类 + 审批闸「终态受理」+ 行业门「前置裁剪」——反思重试/换路即绕闸，一律走原出口）/ 循环外 6 出口登记为边界（限流·情绪门·显式转人工·请求级回放·空召回·角色拒「面外」）/ 非闸明确排除；**反思只在工具循环内、只作用于③操作性失败**。给 138 的输入：闸集 + `PENDING_APPROVAL` 不硬塞三类 + **`ToolStatus` 实为 7 成员**（票面 6 漏 `UNAVAILABLE`）。附带发现：写动作守卫没吃行业门（登记 R11，实现轮修）。
 - [138 失败三分法按当前 `ToolStatus` 全量重列](138-failure-triage-reclass.md) — **7 成员四栏映射**（①闸 3：NOT_FOUND/STATE_NOT_ALLOWED/IDEMPOTENT_REPLAY；②**空**（判据保留）；③操作性 2：TIMEOUT/UNAVAILABLE；⓪非失败 2：OK/PENDING_APPROVAL）+ **反思规则六条**：触发=读工具③失败、动作=失败事实回填重规划（占 4 轮预算）、**上限=按工具合计 1 次**（第二次按原语义 fallback）、**写工具不反思**、模型输出层错误与 LLM 失败不反思、**反思不得绕闸**。JVM 用例草单 + 变异对照两条已列；gold `PLN-ABORT-*` 形态原样保住。**三问均未获答、全部按建议值记录**（修正入口 142）。
 - [139 反思的观测面与公开口径](139-reflection-observability-and-enum.md) — **观测三件 + 口径零变动**：`PlanStep` 只增 `attempt`+`reflection`（**失败的那一枪不进 plan[]**——否则 `eval_task.py` 的 `next(tool==target)` 会把反思后成功判成没办成）+ 新 counter `shoppilot_reflection_total{outcome=triggered|exhausted}`（指标名 55/57→**56/58**）+ trace **小写头**行（gold 解析器只收大写头，写错会把工具序列判红）；**SSE 不加事件**；**`FallbackReason` 不 +1**（README「枚举 10 / 降级 9」零同步）。三态判据（触发/不触发/次数用尽）已成文。**两问均未获答、按建议值记录**。
+- [141 提示词换代：v1.1.0 → v1.2.0](141-prompt-v1-2-0.md) — **实质改动 = 第 4 条一句扩写**（「若系统随后给了失败上下文，换一种做法再试一次；仍失败照实说明并转人」，反思配合折进现条、**保持 11 条**）；**预算数字不进提示词**（配置唯一源，第 9 条「轮次有限」不动）；版本三件 = 新文件 v1.2.0 + `meta.json` + **四处钉子同步**（`PromptCatalogTest` 的版本/11 条/首尾锚点、两个 `promptVersion` 断言）；评测读数按 v1.2.0 归因（与 v1.1.0 不可混比）。**两问均获所有者裁定**。
 
 ## Not yet specified
 
