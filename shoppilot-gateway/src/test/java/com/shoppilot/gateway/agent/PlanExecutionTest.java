@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.util.List;
@@ -75,6 +76,10 @@ class PlanExecutionTest {
     }
 
     private AgentStateMachine machine() {
+        return machine(Domain.ECOMMERCE);
+    }
+
+    private AgentStateMachine machine(Domain domain) {
         TriageEngine triage = mock(TriageEngine.class);
         when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.dynamic(Intent.ACTION_REFUND, "T1", false), null));
@@ -96,16 +101,16 @@ class PlanExecutionTest {
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("dev", "http://127.0.0.1:1", "k", "qwen-plus",
                 0.0d, Duration.ofSeconds(5), Duration.ofSeconds(5), 0L, null, null, null, null, 1024));
         return new AgentStateMachine(triage, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
-                ecommerceDomains(),
+                domains(domain),
                 retriever, llm, new ToolDispatcher(bizMock, idempotencyStub(), registry), store,
                 mock(FallbackService.class), properties, mock(WriteBackPool.class), new PromptCatalog(), gate,
                 new StyleService(), registry);
     }
 
     /** round33：测试里的租户按电商登记，工具裁剪与旧行为一致（ADR 0067）。 */
-    private static TenantDomainRegistry ecommerceDomains() {
+    private static TenantDomainRegistry domains(Domain domain) {
         TenantDomainRegistry domains = mock(TenantDomainRegistry.class);
-        when(domains.resolve(anyString())).thenReturn(Domain.ECOMMERCE);
+        when(domains.resolve(anyString())).thenReturn(domain);
         return domains;
     }
 
@@ -222,6 +227,45 @@ class PlanExecutionTest {
 
         assertEquals(1.0d, stepsCounter(registry, "1"));
         assertFalse(stepsCounter(registry, "aborted") > 0);
+    }
+
+    @Test
+    @DisplayName("酒店租户（R11）：模型承诺退款也不纠偏——无工具可调时不许递「直接调用 applyRefund」")
+    void hotelTenantPromisingARefundIsNotNudged() {
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("我这就为您提交退款申请"));
+        ArgumentCaptor<LlmTypes.Request> requests = ArgumentCaptor.forClass(LlmTypes.Request.class);
+
+        AgentResult result = machine(Domain.HOTEL).run("订单90001申请退款", null, EventSink.NOOP);
+
+        // 行业门在 toolsFor 上：酒店租户的规划请求里没有工具，这是"纠偏必然诱导谎报"的前提
+        verify(llm, times(1)).complete(requests.capture());
+        assertTrue(requests.getValue().tools().isEmpty(), "酒店租户不许拿到电商工具（ADR 0067 的前置裁剪）");
+        assertEquals("我这就为您提交退款申请", result.answer(), "照实说明办不了的那句话原样回给买家");
+        assertEquals(0.0d, nudgeCounter(), "没有可调工具时纠偏不许触发（R11：守卫漏吃行业门）");
+        assertFalse(result.trace().stream().anyMatch(step -> step.detail() != null
+                        && step.detail().startsWith("corrective=")),
+                "纠偏行也不许出现——它不是「记了一笔但没生效」，而是根本不该发生");
+    }
+
+    @Test
+    @DisplayName("电商租户正对照：同一句话照旧纠偏一次（R11 修的是漏吃行业门，不动电商行为）")
+    void ecommerceTenantPromisingARefundIsStillNudged() {
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("我这就为您提交退款申请"));
+        ArgumentCaptor<LlmTypes.Request> requests = ArgumentCaptor.forClass(LlmTypes.Request.class);
+
+        machine().run("订单90001申请退款", null, EventSink.NOOP);
+
+        verify(llm, times(2)).complete(requests.capture());
+        assertFalse(requests.getValue().tools().isEmpty(), "电商租户照旧拿全套动作工具");
+        assertTrue(requests.getValue().messages().stream().anyMatch(message -> "user".equals(message.role())
+                        && message.content() != null && message.content().contains("applyRefund")),
+                "纠偏指令必须逐字保住：直接调用它、并说明理由");
+        assertEquals(1.0d, nudgeCounter());
+    }
+
+    private double nudgeCounter() {
+        var counter = registry.find("shoppilot_write_nudge_total").counter();
+        return counter == null ? 0.0d : counter.count();
     }
 
     private static <T> T eq(T value) {

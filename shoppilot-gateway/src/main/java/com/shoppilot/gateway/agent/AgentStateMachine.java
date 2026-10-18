@@ -367,8 +367,12 @@ public class AgentStateMachine {
 
         boolean toolUsed = false;
         int rounds = 0;
-        // 用户明确要求办理的写动作：状态机记得它必须真的执行过，一句文字承诺不算办完
-        ToolName expectedWrite = expectedWriteTool(intent);
+        // 用户明确要求办理的写动作：状态机记得它必须真的执行过，一句文字承诺不算办完。
+        // **行业门也管这一格**（round35 票 146 / R11）：非电商租户的 toolsFor 是空集，模型手上根本没有
+        // applyRefund / modifyDeliveryAddress 可调；这时再纠偏就是给模型递一句「直接调用 applyRefund 把它
+        // 真的办掉」，与提示词第 7 条「无工具时照实说明办不了」冲突，还诱导它谎报「已提交」。
+        // 同一道行业门在 toolsFor 与网关派生两处已经吃过，守卫这里是**漏吃**（ADR 0031 第 10 行的事实性修正）。
+        ToolName expectedWrite = domain == Domain.ECOMMERCE ? expectedWriteTool(intent) : null;
         boolean expectedWriteDone = false;
         boolean nudged = false;
         boolean answeredByBudgetCheck = false;
