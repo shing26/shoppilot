@@ -31,15 +31,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 有界 Agent 状态机（ADR 0008）。
  *
- * <p>工具循环硬上限 2 轮：脱离时延预算谈自由 agent 循环，在这个场景里是自杀式设计。
+ * <p>工具循环有硬上限（round35 票 143 起默认 4 轮；ADR 0069 §三 换代）：脱离时延预算谈自由 agent
+ * 循环，在这个场景里是自杀式设计。上限仍是硬约束——超限照旧 {@code TOOL_ROUNDS_EXHAUSTED} 落工单。
  */
 @Component
 public class AgentStateMachine {
@@ -51,6 +54,15 @@ public class AgentStateMachine {
 
     /** 单条条款注入上限：防止一次检索把 Prompt 撑爆，也保证 5 条条款可控。 */
     private static final int MAX_CLAUSE_CHARS = 600;
+
+    /**
+     * 反思的失败上下文（round35 票 144 / 票 138 规则二）。只陈述"这一枪没拿到结果"这个事实，
+     * 并给出下一步的做法；**不教模型给失败分类**——闸 / 中止 / 反思的判定全在状态机里
+     * （ADR 0069 已否决"把反思做成提示词驱动"：分类一旦进提示词，等于给模型讨价还价的空间）。
+     */
+    private static final String REFLECTION_CONTEXT =
+            "【系统提示】上一次工具调用没有拿到业务结果（临时故障，不代表订单事实）。"
+                    + "换一种做法（换工具或换参数）再试一次；也可以直接用已有信息作答。";
 
     private final TriageEngine triageEngine;
     private final CacheService cacheService;
@@ -312,6 +324,9 @@ public class AgentStateMachine {
         List<AgentResult.PlanStep> planSteps = new ArrayList<>();
         boolean planAborted = false;
         LlmTypes.Reply lastReply = null;
+        // 反思配额（round35 票 144 / 票 138 规则三）：键 = ToolName，同一工具的任何③类失败**合计 1 次**。
+        // 作用域 = 本次请求；第二次③失败（无论 TIMEOUT 还是 UNAVAILABLE）按原语义收口。
+        Set<ToolName> reflectedTools = new HashSet<>();
         while (rounds < properties.agent().maxToolRounds()) {
             step(trace, sink, AgentState.PLAN, "round=" + rounds);
             LlmTypes.Request planRequest = new LlmTypes.Request(messages, toolsFor(triage, domain),
@@ -393,6 +408,18 @@ public class AgentStateMachine {
             }
             sink.toolResult(dispatch.tool(), dispatch.status(), summarize(dispatch));
             if (dispatch.degraded()) {
+                // ③操作性失败（票 138 规则一/二）：读工具、这个工具还没用掉那次配额、且失败枪之后还有轮预算
+                // → 把失败事实回填（与上面那条 assistant 的 tool_call 配对）加一条失败上下文，进下一轮重规划。
+                // 这一枪**不进** stepResults/plan[]：plan 记的是真的办成的步（票 48 契约），也是
+                // eval_task.py「取第一个同名工具步」这条不变量成立的前提。
+                // 闸判定先于这里：①闸（NOT_FOUND / STATE_NOT_ALLOWED）、⓪受理、幂等回放、编造拦截与
+                // 模型输出层错误都在别的分支上收口——反思够不到它们，重试也照过全套闸。
+                if (reflectionEligible(dispatch.tool(), rounds, reflectedTools)) {
+                    reflectedTools.add(dispatch.tool());
+                    messages.add(LlmTypes.Message.tool(call.id(), dispatch.json()));
+                    messages.add(LlmTypes.Message.user(REFLECTION_CONTEXT));
+                    continue;
+                }
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
                         query, dispatch.json(), styleTier));
             }
@@ -485,16 +512,41 @@ public class AgentStateMachine {
                                 + " modelArgs=" + traceArgs(derivedCall.arguments()));
                 sink.toolExecuting(dispatch.tool(), dispatch.label());
                 sink.toolResult(dispatch.tool(), dispatch.status(), summarize(dispatch));
+                LlmTypes.ToolCall lastCall = derivedCall;
                 if (dispatch.degraded()) {
-                    return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
-                            FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json(), styleTier));
+                    // ③操作性失败（票 138 规则一/二）在这里的动作与主循环**同规则、不同形**：派生枪是网关
+                    // 自己的确定性一枪（模型刚刚明确没发 function call），没有"下一轮模型重规划"可言，
+                    // 所以反思 = 带上失败事实把同一读工具重试一次。占轮、按工具一次、写工具不反思三条相同；
+                    // 重试仍走同一个 dispatch（槽位 / 溯源 / 幂等 / 行业门全套照过），撞闸就走闸的原出口。
+                    if (!reflectionEligible(derived.tool(), rounds, reflectedTools)) {
+                        return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
+                                FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json(), styleTier));
+                    }
+                    reflectedTools.add(derived.tool());
+                    messages.add(LlmTypes.Message.tool(derivedCall.id(), dispatch.json()));
+                    messages.add(LlmTypes.Message.user(REFLECTION_CONTEXT));
+                    lastCall = new LlmTypes.ToolCall("gateway-derived-retry",
+                            derived.tool().apiName(), derived.slots());
+                    messages.add(LlmTypes.Message.assistant(null, List.of(lastCall)));
+                    rounds++;
+                    long retryStarted = System.nanoTime();
+                    dispatch = dispatcher.dispatch(lastCall, idempotencyToken, dialogueText(query, session));
+                    derivedMillis = (System.nanoTime() - retryStarted) / 1_000_000L;
+                    step(trace, sink, AgentState.TOOL_EXEC,
+                            "gateway-derived-retry " + dispatch.tool() + "=" + dispatch.status());
+                    sink.toolExecuting(dispatch.tool(), dispatch.label());
+                    sink.toolResult(dispatch.tool(), dispatch.status(), summarize(dispatch));
+                    if (dispatch.degraded()) {
+                        return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
+                                FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json(), styleTier));
+                    }
                 }
                 // 票 48 的契约是「plan 记的是真的执行过的步」。网关派生这一枪真的派发了，所以也要进 plan——
                 // 漏记会让 toolUsed=true 与 plan=[] 同现（票 65 的 task_done 读 plan，会因此误判）。
                 planSteps.add(new AgentResult.PlanStep(derived.tool().apiName(),
                         dispatch.status() == null ? "UNKNOWN" : dispatch.status().name(),
                         derivedMillis, derived.slots()));
-                messages.add(LlmTypes.Message.tool(derivedCall.id(), dispatch.json()));
+                messages.add(LlmTypes.Message.tool(lastCall.id(), dispatch.json()));
             }
         }
 
@@ -711,13 +763,35 @@ public class AgentStateMachine {
                     List.of());
         }
         sessionStore.save(tenantId, customerId, clearPending(session));
+        // ③操作性失败（票 138 规则一/二）：续办枪与派生枪同形——工具与槽位都是确定性得来的，没有"下一轮
+        // 模型重规划"可言，所以反思 = 同一读工具带失败事实重试一次（占轮、按工具一次、写工具不反思）。
+        // 这条路径只可能是读工具（写工具的待办在 deriveActionCall 与 askSlot 那两处就被挡下），
+        // 但读工具的判断仍走同一个 reflectionEligible，不在这里另开一套。
+        String firstFailure = null;
         if (dispatch.degraded()) {
-            return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query,
-                    dispatch.json(), styleTier);
+            Set<ToolName> reflectedTools = new HashSet<>();
+            if (!reflectionEligible(tool, 1, reflectedTools)) {
+                return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query,
+                        dispatch.json(), styleTier);
+            }
+            reflectedTools.add(tool);
+            firstFailure = dispatch.json();
+            dispatch = dispatcher.dispatch(call, idempotencyToken, dialogueText(query, session),
+                    requestFingerprint(query, idempotencyToken));
+            step(trace, sink, AgentState.TOOL_EXEC, tool + "=retry " + dispatch.status());
+            sink.toolExecuting(tool, dispatch.label());
+            sink.toolResult(tool, dispatch.status(), summarize(dispatch));
+            if (dispatch.degraded()) {
+                return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query,
+                        dispatch.json(), styleTier);
+            }
         }
         List<LlmTypes.Message> messages = new ArrayList<>();
         messages.add(LlmTypes.Message.system(systemPrompt));
-        messages.add(LlmTypes.Message.user(query + "\n\n【业务系统返回】\n" + dispatch.json()));
+        // 反思过的那一枪把两次事实都摆给模型：失败枪不是业务事实，重试结果才是（票 144 规则二）。
+        String businessResult = firstFailure == null ? dispatch.json()
+                : "【第一次调用】\n" + firstFailure + "\n【重试后】\n" + dispatch.json();
+        messages.add(LlmTypes.Message.user(query + "\n\n【业务系统返回】\n" + businessResult));
         try {
             LlmTypes.Reply reply = llm.stream(new LlmTypes.Request(messages, List.of(),
                     properties.llm().temperature()), sink::token);
@@ -793,6 +867,27 @@ public class AgentStateMachine {
     private static boolean failedStep(ToolStatus status) {
         return status == ToolStatus.NOT_FOUND || status == ToolStatus.STATE_NOT_ALLOWED
                 || status == ToolStatus.TIMEOUT || status == ToolStatus.UNAVAILABLE;
+    }
+
+    /**
+     * 反思是否触发（round35 票 144 / 票 138 规则一、三、四）。③操作性失败由调用点保证（
+     * {@link ToolDispatcher.Dispatch#degraded()}）；这里只问三件事：
+     *
+     * <p>① **是读工具**——写工具（{@code applyRefund} / {@code modifyDeliveryAddress}）的③失败一律按原语义
+     * 收口：结果不明时自动重试资金动作风险大于收益，而改参重试还会绕开两层幂等（派生 token 含参数，
+     * 新参 = 新动作）；
+     * <p>② **这个工具还没用掉那次配额**——键是 {@link ToolName}，同一工具的任何③类失败合计 1 次
+     * （比"同型失败"更严、更简单、更难绕）；
+     * <p>③ **失败的那一枪之后还有轮预算**——{@code rounds} 已经把失败枪算进去了，所以这里就是
+     * "反思还占得起一轮"的判据（反思占轮、不加轮次）。
+     *
+     * <p>闸判定不在这里：①闸、⓪非失败、幂等回放与模型输出层错误各自在原分支上收口，重试也要重过全套闸。
+     */
+    private boolean reflectionEligible(ToolName tool, int rounds, Set<ToolName> reflectedTools) {
+        return tool != null
+                && !IdempotencyService.isWrite(tool)
+                && !reflectedTools.contains(tool)
+                && rounds < properties.agent().maxToolRounds();
     }
 
     /** 包级可见只为让降级映射进用例（ticket 14）；三类模型失败必须各自映射到不同 reason。 */
