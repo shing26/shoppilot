@@ -26,14 +26,16 @@
 
 ## Decisions so far
 
-（空——charting 刚完成，尚无已解决的 ticket。）
+<!-- the index — one line per closed ticket: enough to judge relevance, then zoom the link for the detail the ticket holds -->
+
+- [136 自主度数字重锚：4 轮 / 4 步是否维持](136-autonomy-budget-and-steps.md) — **维持 4/4，只动一个数**：`max-tool-rounds` 2→4（计划步数与工具轮数同源，自动 ≤4，不设第二个校验面）；`${SHOPPILOT_AGENT_MAX_TOOL_ROUNDS:4}` 默认进 yml + 登记进 ConfigValidationTest 占位符清单；覆盖 ADR 0008/0036 的**依据 = 三账结构**（能力 / 安全 / 有界），归类**所有者政策覆盖**（交 142 落 ADR 0069）；**全档统一不降档**，local 更红照登。
 
 ## Not yet specified
 
-- **4 步链在 local 3B / 受限显存下的验证策略**（等「自主度数字」定案后才说得清）。
-- **反思与提示词的咬合细节**（等「自主度数字」与「提示词换代」两票）。
+<!-- see "Fog of war": in-scope fog you can't ticket yet; graduates as the frontier advances -->
+
+- **反思与提示词的咬合细节**（等「提示词换代」票；数字已定 4/4，见 [136](136-autonomy-budget-and-steps.md)）。
 - **预算试跑的规模设计**（等「评测集与预算」票先量出单条成本）。
-- **「4 轮导致 `plansteps` 活体更红」的登记口径写法**（等自主度数字定案；round20 家法照登）。
 
 ## Out of scope
 
