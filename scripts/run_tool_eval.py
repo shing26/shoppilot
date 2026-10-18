@@ -562,6 +562,9 @@ def main() -> int:
     parser.add_argument("--task", action="store_true",
                         help="跑 round22 票 65 的 task 级判据（eval/cases-part8-task.jsonl，判据在 "
                              "eval_task.py）：单独成列、不给总分、不并入四列")
+    parser.add_argument("--autonomy", action="store_true",
+                        help="跑 round35 票 148 的自主性评测集 part10（eval/cases-part10-autonomy.jsonl，判据在 "
+                             "eval_autonomy.py）：三态 + 步数 + 出口单独成列；用例自带 fault 诱导，跑完清零")
     args = parser.parse_args()
 
     # 量具坏了就别花钱：夹具先跑，一次 HTTP 都不发，红就直接拒绝。
@@ -602,6 +605,19 @@ def main() -> int:
             return 2
         print(f"TASK SELFCHECK ok={task_fixtures}")
         return eval_task.run(args, sys.modules[__name__])
+
+    if args.autonomy:
+        # round35 票 148：自主性评测集 part10。同样独立成模块（ADR 0050），预检与 --suite/--task 同一条
+        # 纪律：判据坏了就一次请求都不发。它比另外几个多一层环境前置——用例自带 fault 诱导（biz-mock 的
+        # 全局 failRate），由 eval_autonomy 自己挂/清，本文件只借出 HTTP 助手。
+        import eval_autonomy
+        autonomy_failures, autonomy_fixtures = eval_autonomy.selfcheck()
+        for line in autonomy_failures:
+            print("AUTONOMY CHECK FAILED  " + line)
+        if autonomy_failures:
+            return 2
+        print(f"AUTONOMY SELFCHECK ok={autonomy_fixtures}")
+        return eval_autonomy.run(args, sys.modules[__name__])
 
     cases = [json.loads(line) for line in CASES.read_text(encoding="utf-8").splitlines() if line.strip()]
     if args.only_intent:

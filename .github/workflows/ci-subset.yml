@@ -59,10 +59,15 @@ jobs:
       # round32：业务一页纸的防腐化门禁并入本步（**仍是九步**，一步做两件事不是加一步）：
       # 它只做「五个问题锚点仍在 + 文档点名的事实与代码/语料一致」，**不是语义理解、不冒充
       # 真人 cold-read**（后者是本轮的主判，另有其人）。
+      # round35 票 148：自主性评测集 part10（动态规划 4 轮/2 步 + 反思三态 + 超限收口）的夹具自检 +
+      # 用例结构校验**折进本步**（`&&` 串在套件之后）——**仍是九步**：一步里做三件事，不是加一步，
+      # 步数是 CI 成本口径（round27 票 94 的先例）。判据在 scripts/eval_autonomy.py（单独成列的
+      # 独立载体，ADR 0050），活体跑批入口是 run_tool_eval.py --autonomy。
       - name: Suite + one-pager selfcheck (0-token)
         run: |
-          python3 scripts/eval_suites.py
-          python3 scripts/verify_onepager.py
+          python3 scripts/eval_suites.py \
+            && python3 scripts/eval_autonomy.py \
+            && python3 scripts/verify_onepager.py
 
       # round22 票 65 / ADR 0050：task 级判据（「这件事最终办成了吗」）的夹具自检 + 用例结构校验。
       # 判据面只读 plan[]/context.ruleIds/fallbackReason 三个既有字段，单独成列、不给总分、
