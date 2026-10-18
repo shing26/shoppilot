@@ -5,6 +5,11 @@
 > program 的 0052-0057（见 [`system-program-customer-service.md`](system-program-customer-service.md)）。
 >
 > **换代指针（2026-10-01，同日）**：架构探讨已收敛为 [`system-program-customer-service.md`](system-program-customer-service.md)（七决策：可运行系统雏形 / 拆多服务 / 四域服务 / REST+Redis Streams / 规则分流+坐席领取 / Vite+Vue3 双入口 / 自建身份域），并裁定**系统竖切先行**。本文六决策**原样有效**，但落点改为新结构；ADR 编号让位给 program 的 0052-0057，agent 升级的 ADR 顺延。
+>
+> **换代指针（2026-10-19，142 收口）**：本文由 [`agent-autonomy-spec-v2.md`](agent-autonomy-spec-v2.md) 取代——v2 是重锚定稿（= round35 spec）：
+> 落点从三服务前结构重锚到当前四服务结构（`Domain` 行业门 / 审批闸 / 空召回出口 / part4-10 评测体系），
+> 七张调查票 136-142 的裁定全部吸收，计划轮廓的失效项换代（ADR **0069**、票号 **143** 起、round**35**）。
+> **本文 §1 的六决策原文保留不动**（§2 计划轮廓与 §4 前置检查已过时，以 v2 为准），供追溯。
 
 ## 1. 六项已确认决策
 
