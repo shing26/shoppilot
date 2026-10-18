@@ -11,6 +11,10 @@ import java.util.Map;
  *
  * @param trace 每一步状态转移，落盘后可复盘"这个答案是怎么来的"
  * @param plan 计划各步的**执行事实**（票 48）；没走工具循环时是空列表，不是 null
+ * @param promptTokens 本请求**全部 LLM 调用**的输入 token 之和（round35 票 145 / R12：含入口层情绪分类、
+ *                     规划各轮、预算检查与收尾那一跳；降级/受理/回放出口也一样回填已发生的轮次）。
+ *                     **仍然不是计费口径**——计费读 {@code shoppilot_llm_tokens_total} 或日预算计数
+ * @param completionTokens 同上，输出侧
  * @param context 这次回答用了什么上下文（票 49）；纯观测，不参与任何判定
  * @param citationDetails 引用详情（round33 / ADR 0067）：与 {@code citations} 同源同序，
  *                        多带标题与出处。**只增字段**——{@code citations} 的字符串契约一字不动，
@@ -39,15 +43,21 @@ public record AgentResult(String answer, Intent intent, String triageLayer, Cach
     }
 
     /**
-     * 计划里的一步（票 48）。
+     * 计划里的一步（票 48；round35 票 145 只增字段）。
      *
-     * <p>ADR 0036 的**执行语义一字未动**——仍是有序步骤 ≤ 2、前步失败即中止整条 Plan、串行不并行、
+     * <p>ADR 0036 的**执行语义一字未动**——仍是有序步骤、前步失败即中止整条 Plan、串行不并行、
      * 不重排。本记录只把原本仅存在于日志 {@code step(...)} 行里的执行事实变成可输出的字段。
      *
-     * <p>记的是**真的执行过**的步。被拦下的步（编造单号、缺槽位、参数表达式拒收、模型编出不存在的
-     * 工具）不进这里——它们各自有更准确的出口：{@code trace} 里的拦截行与 {@code fallbackReason}。
+     * <p>记的是**真的执行过**的步（且只记办成的那些）。被拦下的步（编造单号、缺槽位、参数表达式拒收、
+     * 模型编出不存在的工具）**与反思里失败的那一枪**都不进这里——它们各自有更准确的出口：
+     * {@code trace} 里的拦截行与 {@code fallbackReason}。这条不变量是 `eval_task.py` 的
+     * 「取第一个同名工具步」判据成立的前提：失败枪若进 plan，反思后成功的回合会被判成「没办成」。
+     *
+     * @param attempt    这是该工具的**第几枪**（1-based，含失败的那一枪）；非反思步恒为 1，反思重试成功为 2
+     * @param reflection 本步是反思重试的一枪（round35 票 144 触发、票 139 定的观测字段）
      */
-    public record PlanStep(String tool, String status, long latencyMillis, Map<String, Object> arguments) {
+    public record PlanStep(String tool, String status, long latencyMillis, Map<String, Object> arguments,
+                           int attempt, boolean reflection) {
     }
 
     /**

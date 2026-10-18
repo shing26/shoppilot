@@ -85,6 +85,8 @@ public class AgentStateMachine {
     private final Counter negativeSuppressedCounter;
     private final Counter writeNudgeCounter;
     private final Counter multiToolCallCounter;
+    private final Counter reflectionTriggeredCounter;
+    private final Counter reflectionExhaustedCounter;
 
     public AgentStateMachine(TriageEngine triageEngine, CacheService cacheService, SingleFlight singleFlight,
                              WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, TenantDomainRegistry domainRegistry,
@@ -119,6 +121,51 @@ public class AgentStateMachine {
         // 模型一次要了多个工具的次数：请求层已带 parallel_tool_calls=false（票 41），
         // 计数非零说明对面端点忽略了该字段，残余风险就靠它暴露
         this.multiToolCallCounter = Counter.builder("shoppilot_llm_multi_tool_calls_total").register(registry);
+        // 反思的三态靠一个名字的两个标签值判（round35 票 145 / 票 139）：triggered = 真的发起了
+        // 一次反思重试；exhausted = 同一工具的配额已用掉之后又一次③失败，按原语义收口落工单。
+        // 写工具与"没有轮预算"两种情况都不落在这两格里（前者不在反思范围、后者是预算边界）。
+        this.reflectionTriggeredCounter = Counter.builder("shoppilot_reflection_total")
+                .tag("outcome", "triggered").register(registry);
+        this.reflectionExhaustedCounter = Counter.builder("shoppilot_reflection_total")
+                .tag("outcome", "exhausted").register(registry);
+    }
+
+    /**
+     * 本请求已经发生的 LLM 用量（round35 票 145 / R12 登记债的触发条件）。
+     *
+     * <p>响应里的 token 字段自此是**全部调用之和**：入口层情绪分类那一跳、规划各轮、预算检查、
+     * 收尾那一跳，以及降级 / 受理 / 回放出口已经花掉的那些轮次。此前三处缺口让这个字段低报
+     * （预算检查分支只报最后一跳、fallback 与受理报 0、缓存命中报 0 而入口层照付）——
+     * 票 140 实测 4 轮用例上报 2,811 vs 计费 11,338 就是它。
+     *
+     * <p>它只服务响应字段，**不是计费口径**：计费读 {@code shoppilot_llm_tokens_total} 或日预算计数
+     * （评测的成本列也照此读，见 part10 判据）。
+     */
+    private static final class TokenUsage {
+
+        private int promptTokens;
+        private int completionTokens;
+
+        TokenUsage(int promptTokens, int completionTokens) {
+            this.promptTokens = promptTokens;
+            this.completionTokens = completionTokens;
+        }
+
+        void add(LlmTypes.Reply reply) {
+            if (reply == null) {
+                return;
+            }
+            promptTokens += reply.promptTokens();
+            completionTokens += reply.completionTokens();
+        }
+
+        int prompt() {
+            return promptTokens;
+        }
+
+        int completion() {
+            return completionTokens;
+        }
     }
 
     public AgentResult run(String query, String idempotencyToken, EventSink sink) {
@@ -142,6 +189,9 @@ public class AgentStateMachine {
         // 状态机 10 状态不扩：情绪判定发生在 INTAKE 状态内部；perf 口径下第二层 LLM 分类不启用。
         SentimentGate.Verdict sentiment = sentimentGate.evaluate(query);
         step(trace, sink, AgentState.INTAKE, "sentiment=" + sentiment.emotion() + " via " + sentiment.source());
+        // 本请求的 LLM 用量账本（票 145 / R12）：入口层这一跳先入账——它连缓存命中也要付钱，
+        // 而它在缓存查询之前，所以必须在任何出口之前就开好这本账。
+        TokenUsage usage = new TokenUsage(sentiment.promptTokens(), sentiment.completionTokens());
         // 风格档位（ADR 0038）：channel × emotion × intent → 档位，注入段拼在版本化基座之后；
         // 回答正文仍由同一次 LLM 调用产出。档位随参数穿透到各降级出口，话术选择随档位联动。
         StyleService.Tier styleTier = styleService.tierFor(ChannelContext.current(), sentiment.emotion(), null);
@@ -158,7 +208,7 @@ public class AgentStateMachine {
         if (sentiment.escalated() && !triageEngine.isExplicitEscalation(query)) {
             sink.meta(conversationId, null, CacheService.Layer.NONE);
             return fallback(AgentState.INTAKE, trace, sink, FallbackReason.EMOTION_ESCALATION, query,
-                    "emotion=" + sentiment.emotion() + " via " + sentiment.source(), styleTier);
+                    "emotion=" + sentiment.emotion() + " via " + sentiment.source(), styleTier, usage);
         }
 
         String requestFingerprint = requestFingerprint(query, idempotencyToken);
@@ -171,14 +221,15 @@ public class AgentStateMachine {
             Optional<IdempotencyService.Replay> replay =
                     dispatcher.lookupReplay(idempotencyToken.trim(), requestFingerprint);
             if (replay.isPresent()) {
-                return replayAnswer(replay.get(), session, query, sink, trace, tenantId, customerId, conversationId);
+                return replayAnswer(replay.get(), session, query, sink, trace, tenantId, customerId, conversationId,
+                        usage);
             }
         }
 
         if (session.hasPending()) {
             sink.meta(conversationId, null, CacheService.Layer.NONE);
             return resumePending(session, query, idempotencyToken, tenantId, customerId, conversationId, trace, sink,
-                    systemPrompt, styleTier);
+                    systemPrompt, styleTier, usage);
         }
 
         step(trace, sink, AgentState.TRIAGE, "开始判定");
@@ -189,7 +240,8 @@ public class AgentStateMachine {
 
         if (triage.intent() == Intent.ESCALATE) {
             sink.meta(conversationId, Intent.ESCALATE, CacheService.Layer.NONE);
-            return fallback(AgentState.TRIAGE, trace, sink, FallbackReason.USER_REQUESTED, query, null, styleTier);
+            return fallback(AgentState.TRIAGE, trace, sink, FallbackReason.USER_REQUESTED, query, null, styleTier,
+                    usage);
         }
 
         if (triage.cacheAdmissible()) {
@@ -203,10 +255,12 @@ public class AgentStateMachine {
                 sink.token(entry.answer());
                 // 票 49 的不变量「context.ruleIds 与 citations 同源同序」在命中路径同样成立：
                 // 缓存条目随带引用（ADR 0003），这里把它镜像进观测字段。另外两格照实为零——
-                // 命中路径根本没有 Prompt（零模型调用），所以没有历史轮、也没有估出来的 token 数。
+                // 命中路径没有 Prompt，所以没有历史轮、也没有估出来的 token 数。
+                // 但 token 字段**不是零**（票 145 / R12 的第三处缺口）：这一跳入口层的情绪分类已经付过钱，
+                // 账本里就记着它。
                 return new AgentResult(entry.answer(), triage.intent(), triage.layer(), lookup.layer(),
-                        entry.sourceRuleIds(), trace, null, null, false, 0, 0, false, false,
-                        promptCatalog.version(), List.of(),
+                        entry.sourceRuleIds(), trace, null, null, false, usage.prompt(), usage.completion(),
+                        false, false, promptCatalog.version(), List.of(),
                         new AgentResult.ContextComposition(List.copyOf(entry.sourceRuleIds()), 0, 0),
                         citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings(), entry.sourceDocs()));
             }
@@ -214,7 +268,7 @@ public class AgentStateMachine {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
                 step(trace, sink, AgentState.CACHE_READ, "negative-marker");
                 return fallback(AgentState.CACHE_READ, trace, sink, FallbackReason.INTENT_UNRESOLVED, query,
-                        "该问题此前已确认无对应政策条款", styleTier);
+                        "该问题此前已确认无对应政策条款", styleTier, usage);
             }
             // 穿透合并：同一 key 只放一个请求进模型（ADR 0006）
             String flightKey = "shoppilot:c:flight:" + QueryNormalizer.md5(
@@ -227,17 +281,18 @@ public class AgentStateMachine {
                 return gate.shared()
                         .map(entry -> new AgentResult(entry.answer(), triage.intent(), triage.layer(),
                                 CacheService.Layer.FLIGHT, entry.sourceRuleIds(), trace, null, null, false,
-                                0, 0, false, false, promptCatalog.version(), List.of(),
+                                usage.prompt(), usage.completion(), false, false, promptCatalog.version(),
+                                List.of(),
                                 AgentResult.ContextComposition.NONE,
                                 citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings(), entry.sourceDocs())))
                         .orElseGet(() -> fallback(AgentState.CACHE_READ, trace, sink,
-                                FallbackReason.INTENT_UNRESOLVED, query, null, styleTier));
+                                FallbackReason.INTENT_UNRESOLVED, query, null, styleTier, usage));
             }
             boolean published = false;
             try {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
                 ModelRun run = runModelPath(triage, lookup, query, idempotencyToken, tenantId, customerId,
-                        conversationId, session, epoch, domain, trace, sink, systemPrompt, styleTier);
+                        conversationId, session, epoch, domain, trace, sink, systemPrompt, styleTier, usage);
                 // 只有真的写回缓存的那条答案才广播给等待者，降级话术一律不共享（ADR 0006）
                 published = run.shareable();
                 singleFlight.publish(flightKey, run.cacheEntry());
@@ -251,7 +306,7 @@ public class AgentStateMachine {
 
         sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
         return runModelPath(triage, CacheService.Lookup.disabled(), query, idempotencyToken, tenantId, customerId,
-                conversationId, session, epoch, domain, trace, sink, systemPrompt, styleTier).result();
+                conversationId, session, epoch, domain, trace, sink, systemPrompt, styleTier, usage).result();
     }
 
     /**
@@ -273,7 +328,7 @@ public class AgentStateMachine {
                                   String query, String idempotencyToken, String tenantId, String customerId,
                                   String conversationId, SessionStore.Session session, long epoch, Domain domain,
                                   List<AgentResult.TraceStep> trace, EventSink sink, String systemPrompt,
-                                  StyleService.Tier styleTier) {
+                                  StyleService.Tier styleTier, TokenUsage usage) {
         Intent intent = triage.intent();
         List<LlmTypes.Message> messages = new ArrayList<>();
         messages.add(LlmTypes.Message.system(systemPrompt));
@@ -306,12 +361,11 @@ public class AgentStateMachine {
             }
             step(trace, sink, AgentState.RETRIEVE, "empty-recall:可见范围内无该意图条款");
             return ModelRun.solo(fallback(AgentState.RETRIEVE, trace, sink, FallbackReason.INTENT_UNRESOLVED,
-                    query, "可见范围内没有该诉求的政策条款（空召回）", styleTier));
+                    query, "可见范围内没有该诉求的政策条款（空召回）", styleTier, usage));
         }
         messages.add(LlmTypes.Message.user(composeUserMessage(query, retrieved)));
 
         boolean toolUsed = false;
-        List<LlmTypes.Reply> roundReplies = new ArrayList<>();
         int rounds = 0;
         // 用户明确要求办理的写动作：状态机记得它必须真的执行过，一句文字承诺不算办完
         ToolName expectedWrite = expectedWriteTool(intent);
@@ -327,6 +381,11 @@ public class AgentStateMachine {
         // 反思配额（round35 票 144 / 票 138 规则三）：键 = ToolName，同一工具的任何③类失败**合计 1 次**。
         // 作用域 = 本次请求；第二次③失败（无论 TIMEOUT 还是 UNAVAILABLE）按原语义收口。
         Set<ToolName> reflectedTools = new HashSet<>();
+        // 观测面的两本账（round35 票 145 / 票 139）：attempt 记「该工具的第几枪」（含失败的那一枪，
+        // 所以反思重试成功的那一步是 attempt=2）；pendingReflections 标出「下一枪是反思重试」，
+        // 供 plan[] 的 reflection 字段在那一枪落账时消费。都只读不改执行语义。
+        Map<ToolName, Integer> toolAttempts = new LinkedHashMap<>();
+        Set<ToolName> pendingReflections = new HashSet<>();
         while (rounds < properties.agent().maxToolRounds()) {
             step(trace, sink, AgentState.PLAN, "round=" + rounds);
             LlmTypes.Request planRequest = new LlmTypes.Request(messages, toolsFor(triage, domain),
@@ -335,9 +394,9 @@ public class AgentStateMachine {
                 lastReply = llm.complete(planRequest);
             } catch (LlmException failure) {
                 return ModelRun.solo(fallback(AgentState.PLAN, trace, sink, mapLlmFailure(failure), query,
-                        failure.getMessage(), styleTier));
+                        failure.getMessage(), styleTier, usage));
             }
-            roundReplies.add(lastReply);
+            usage.add(lastReply);
             if (!lastReply.wantsTool()) {
                 if (expectedWrite == null || expectedWriteDone || nudged) {
                     break;
@@ -370,7 +429,7 @@ public class AgentStateMachine {
                 registry.counter("shoppilot_plan_steps_total", "steps", "rejected").increment();
                 step(trace, sink, AgentState.PLAN, "plan-rejected expression=" + resolution.rejectedExpression());
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
-                        query, "参数表达式不合法，已拒绝执行：" + resolution.rejectedExpression(), styleTier));
+                        query, "参数表达式不合法，已拒绝执行：" + resolution.rejectedExpression(), styleTier, usage));
             }
             LlmTypes.ToolCall call = new LlmTypes.ToolCall(rawCall.id(), rawCall.name(), resolution.arguments());
             messages.add(LlmTypes.Message.assistant(lastReply.content(), List.of(call)));
@@ -381,20 +440,25 @@ public class AgentStateMachine {
             if (dispatch.unknown()) {
                 // 模型编出了不存在的工具：不拿 null 工具往下走，直接兜底
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
-                        query, "未注册的工具 " + call.name(), styleTier));
+                        query, "未注册的工具 " + call.name(), styleTier, usage));
             }
             if (dispatch.fabricated()) {
                 // 模型凭空编了一个订单号：绝不拿它去撞库，退回来向用户追问合法订单号
                 step(trace, sink, AgentState.TOOL_EXEC,
                         "fabricated-orderNo 已拦截 modelArgs=" + traceArgs(call.arguments()));
-                return ModelRun.solo(askSlot(session, tenantId, customerId, conversationId, dispatch, query, trace, sink, styleTier));
+                return ModelRun.solo(askSlot(session, tenantId, customerId, conversationId, dispatch, query, trace,
+                        sink, styleTier, usage));
             }
             if (dispatch.needsSlot()) {
                 step(trace, sink, AgentState.TOOL_EXEC,
                         dispatch.tool() + " missing=" + dispatch.missingSlots()
                                 + " modelArgs=" + traceArgs(call.arguments()));
-                return ModelRun.solo(askSlot(session, tenantId, customerId, conversationId, dispatch, query, trace, sink, styleTier));
+                return ModelRun.solo(askSlot(session, tenantId, customerId, conversationId, dispatch, query, trace,
+                        sink, styleTier, usage));
             }
+            // 走到这里这一枪真的派发了：记它是该工具的第几枪（票 145 的 attempt）。
+            // 失败的那一枪也算——否则反思重试成功的那一步会被记成 attempt=1，与「反思回合 attempt=2」对不上。
+            int attempt = toolAttempts.merge(dispatch.tool(), 1, Integer::sum);
             if (dispatch.tool() == expectedWrite) {
                 expectedWriteDone = true;
             }
@@ -416,23 +480,27 @@ public class AgentStateMachine {
                 // 模型输出层错误都在别的分支上收口——反思够不到它们，重试也照过全套闸。
                 if (reflectionEligible(dispatch.tool(), rounds, reflectedTools)) {
                     reflectedTools.add(dispatch.tool());
+                    pendingReflections.add(dispatch.tool());
+                    noteReflection(dispatch.tool(), attempt + 1, trace, sink);
                     messages.add(LlmTypes.Message.tool(call.id(), dispatch.json()));
                     messages.add(LlmTypes.Message.user(REFLECTION_CONTEXT));
                     continue;
                 }
+                noteReflectionExhausted(dispatch.tool(), reflectedTools);
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
-                        query, dispatch.json(), styleTier));
+                        query, dispatch.json(), styleTier, usage));
             }
             stepResults.add(dispatch.json());
             planSteps.add(new AgentResult.PlanStep(
                     dispatch.tool() == null ? call.name() : dispatch.tool().apiName(),
                     dispatch.status() == null ? "UNKNOWN" : dispatch.status().name(),
-                    dispatchMillis, resolution.arguments()));
+                    dispatchMillis, resolution.arguments(), attempt,
+                    pendingReflections.remove(dispatch.tool())));
             if (dispatch.status() == ToolStatus.PENDING_APPROVAL) {
                 // 受理即收尾（ADR 0047 票 59）：资金动作已受理、等待人工审核，不打第二跳模型。
                 // 受理不是失败，不走 fallback 出口——落工单会污染「降级 9」的口径与 ADR 0009 的语义。
                 return ModelRun.solo(pendingApprovalAnswer(dispatch, session, query, sink, trace, tenantId,
-                        customerId, triage.layer(), List.copyOf(planSteps)));
+                        customerId, triage.layer(), List.copyOf(planSteps), usage));
             }
             messages.add(LlmTypes.Message.tool(call.id(), dispatch.json()));
             if (failedStep(dispatch.status()) && rounds < properties.agent().maxToolRounds()) {
@@ -460,7 +528,7 @@ public class AgentStateMachine {
                 step(trace, sink, AgentState.PLAN, "tool-rounds-exhausted write-pending=" + expectedWrite.apiName());
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
                         FallbackReason.TOOL_ROUNDS_EXHAUSTED, query,
-                        "轮次上限内未能完成 " + expectedWrite.apiName(), styleTier));
+                        "轮次上限内未能完成 " + expectedWrite.apiName(), styleTier, usage));
             }
             step(trace, sink, AgentState.PLAN, "budget-check");
             LlmTypes.Request budgetRequest = new LlmTypes.Request(messages, toolsFor(triage, domain),
@@ -469,15 +537,15 @@ public class AgentStateMachine {
                 lastReply = llm.complete(budgetRequest);
             } catch (LlmException failure) {
                 return ModelRun.solo(fallback(AgentState.PLAN, trace, sink, mapLlmFailure(failure), query,
-                        failure.getMessage(), styleTier));
+                        failure.getMessage(), styleTier, usage));
             }
-            roundReplies.add(lastReply);
+            usage.add(lastReply);
             if (lastReply.wantsTool()) {
                 toolRoundExhaustedCounter.increment();
                 step(trace, sink, AgentState.PLAN, "tool-rounds-exhausted");
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
                         FallbackReason.TOOL_ROUNDS_EXHAUSTED, query,
-                        "工具请求超出 " + properties.agent().maxToolRounds() + " 轮上限", styleTier));
+                        "工具请求超出 " + properties.agent().maxToolRounds() + " 轮上限", styleTier, usage));
             }
             answeredByBudgetCheck = true;
         }
@@ -492,14 +560,15 @@ public class AgentStateMachine {
                 step(trace, sink, AgentState.TOOL_EXEC,
                         derived.tool() + " missing=" + derived.gap().missingSlots()
                                 + " modelArgs=" + traceArgs(derived.slots()));
-                return ModelRun.solo(
-                        askSlot(session, tenantId, customerId, conversationId, derived.gap(), query, trace, sink, styleTier));
+                return ModelRun.solo(askSlot(session, tenantId, customerId, conversationId, derived.gap(), query,
+                        trace, sink, styleTier, usage));
             }
             if (derived != null && derived.missing().isEmpty() && !IdempotencyService.isWrite(derived.tool())) {
                 // 读路径且槽位齐备：模型没发 function call 也要把这一枪开了，
                 // 不能因为模型偷懒让用户拿不到自己订单的事实。写路径由 deriveActionCall 挡在门外。
                 toolUsed = true;
                 rounds++;
+                int derivedAttempt = 1;
                 LlmTypes.ToolCall derivedCall = new LlmTypes.ToolCall("gateway-derived",
                         derived.tool().apiName(), derived.slots());
                 messages.add(LlmTypes.Message.assistant(null, List.of(derivedCall)));
@@ -519,16 +588,19 @@ public class AgentStateMachine {
                     // 所以反思 = 带上失败事实把同一读工具重试一次。占轮、按工具一次、写工具不反思三条相同；
                     // 重试仍走同一个 dispatch（槽位 / 溯源 / 幂等 / 行业门全套照过），撞闸就走闸的原出口。
                     if (!reflectionEligible(derived.tool(), rounds, reflectedTools)) {
+                        noteReflectionExhausted(derived.tool(), reflectedTools);
                         return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
-                                FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json(), styleTier));
+                                FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json(), styleTier, usage));
                     }
                     reflectedTools.add(derived.tool());
+                    noteReflection(derived.tool(), 2, trace, sink);
                     messages.add(LlmTypes.Message.tool(derivedCall.id(), dispatch.json()));
                     messages.add(LlmTypes.Message.user(REFLECTION_CONTEXT));
                     lastCall = new LlmTypes.ToolCall("gateway-derived-retry",
                             derived.tool().apiName(), derived.slots());
                     messages.add(LlmTypes.Message.assistant(null, List.of(lastCall)));
                     rounds++;
+                    derivedAttempt = 2;
                     long retryStarted = System.nanoTime();
                     dispatch = dispatcher.dispatch(lastCall, idempotencyToken, dialogueText(query, session));
                     derivedMillis = (System.nanoTime() - retryStarted) / 1_000_000L;
@@ -537,40 +609,37 @@ public class AgentStateMachine {
                     sink.toolExecuting(dispatch.tool(), dispatch.label());
                     sink.toolResult(dispatch.tool(), dispatch.status(), summarize(dispatch));
                     if (dispatch.degraded()) {
+                        noteReflectionExhausted(derived.tool(), reflectedTools);
                         return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink,
-                                FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json(), styleTier));
+                                FallbackReason.TOOL_UNAVAILABLE, query, dispatch.json(), styleTier, usage));
                     }
                 }
                 // 票 48 的契约是「plan 记的是真的执行过的步」。网关派生这一枪真的派发了，所以也要进 plan——
                 // 漏记会让 toolUsed=true 与 plan=[] 同现（票 65 的 task_done 读 plan，会因此误判）。
                 planSteps.add(new AgentResult.PlanStep(derived.tool().apiName(),
                         dispatch.status() == null ? "UNKNOWN" : dispatch.status().name(),
-                        derivedMillis, derived.slots()));
+                        derivedMillis, derived.slots(), derivedAttempt, derivedAttempt > 1));
                 messages.add(LlmTypes.Message.tool(lastCall.id(), dispatch.json()));
             }
         }
 
         step(trace, sink, AgentState.REPLY, "streaming");
         String answer;
-        int promptTokens = 0;
-        int completionTokens = 0;
         if (lastReply != null && !lastReply.wantsTool() && lastReply.content() != null
                 && (rounds == 0 || answeredByBudgetCheck)) {
-            // 首轮就给出内容，或预算检查后模型明确不再要工具：直接把它按打字机切块推出去，不再多打一次模型
+            // 首轮就给出内容，或预算检查后模型明确不再要工具：直接把它按打字机切块推出去，不再多打一次模型。
+            // token 字段照旧走总账（票 145 / R12 的第一处缺口：这里此前只报这一跳，4 轮用例因此上报 2,811 vs 计费 11,338）
             answer = lastReply.content();
-            promptTokens = lastReply.promptTokens();
-            completionTokens = lastReply.completionTokens();
             emitChunked(answer, sink);
         } else {
             try {
                 LlmTypes.Reply finalReply = llm.stream(new LlmTypes.Request(messages, List.of(),
                         properties.llm().temperature()), sink::token);
+                usage.add(finalReply);
                 answer = finalReply.content();
-                promptTokens = sum(roundReplies, true) + finalReply.promptTokens();
-                completionTokens = sum(roundReplies, false) + finalReply.completionTokens();
             } catch (LlmException failure) {
                 return ModelRun.solo(fallback(AgentState.REPLY, trace, sink, mapLlmFailure(failure), query,
-                        failure.getMessage(), styleTier));
+                        failure.getMessage(), styleTier, usage));
             }
         }
 
@@ -581,7 +650,7 @@ public class AgentStateMachine {
         // 避免改动 README 的「枚举 10 / 降级 9」公开口径。
         if (answer == null || answer.isBlank()) {
             return ModelRun.solo(fallback(AgentState.REPLY, trace, sink, FallbackReason.LLM_CIRCUIT_OPEN, query,
-                    "模型未产出正文且未派发工具（空答案）", styleTier));
+                    "模型未产出正文且未派发工具（空答案）", styleTier, usage));
         }
 
         sessionStore.save(tenantId, customerId, sessionStore.appendTurn(clearPending(session), query, answer));
@@ -635,7 +704,7 @@ public class AgentStateMachine {
         }
 
         return new ModelRun(new AgentResult(answer, intent, triage.layer(), CacheService.Layer.NONE, citations, trace,
-                null, null, false, promptTokens, completionTokens, toolUsed, false, promptCatalog.version(),
+                null, null, false, usage.prompt(), usage.completion(), toolUsed, false, promptCatalog.version(),
                 List.copyOf(planSteps), contextComposition(retrieved, session, messages),
                 citationDetailsOf(retrieved)), written);
     }
@@ -643,11 +712,12 @@ public class AgentStateMachine {
     /** 缺槽位：追问一次，仍缺则转人工。绝不猜（ADR 0008、ticket 11）。 */
     private AgentResult askSlot(SessionStore.Session session, String tenantId, String customerId,
                                 String conversationId, ToolDispatcher.Dispatch dispatch, String query,
-                                List<AgentResult.TraceStep> trace, EventSink sink, StyleService.Tier styleTier) {
+                                List<AgentResult.TraceStep> trace, EventSink sink, StyleService.Tier styleTier,
+                                TokenUsage usage) {
         int asks = session.slotAskCount() + 1;
         if (asks > properties.agent().maxSlotAsks()) {
             return fallback(AgentState.SLOT_ASK, trace, sink, FallbackReason.SLOT_UNRESOLVED, query,
-                    "已追问 " + session.slotAskCount() + " 次仍缺槽位", styleTier);
+                    "已追问 " + session.slotAskCount() + " 次仍缺槽位", styleTier, usage);
         }
         String slot = dispatch.missingSlots().get(0);
         String question = dispatcher.question(dispatch.tool(), dispatch.missingSlots());
@@ -656,7 +726,7 @@ public class AgentStateMachine {
         sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
                 dispatch.tool().apiName(), new LinkedHashMap<>(Map.of("askedSlot", slot)), asks));
         return new AgentResult(question, dispatch.tool().intent(), "SLOT", CacheService.Layer.NONE, List.of(), trace,
-                null, null, true, 0, 0, false, false, promptCatalog.version(), List.of(),
+                null, null, true, usage.prompt(), usage.completion(), false, false, promptCatalog.version(), List.of(),
                 AgentResult.ContextComposition.NONE, List.of());
     }
 
@@ -723,13 +793,13 @@ public class AgentStateMachine {
     private AgentResult resumePending(SessionStore.Session session, String query, String idempotencyToken,
                                       String tenantId, String customerId, String conversationId,
                                       List<AgentResult.TraceStep> trace, EventSink sink, String systemPrompt,
-                                      StyleService.Tier styleTier) {
+                                      StyleService.Tier styleTier, TokenUsage usage) {
         step(trace, sink, AgentState.SLOT_ASK, "合并补充信息");
         ToolName tool = ToolName.fromApiName(session.pendingTool());
         if (tool == null) {
             sessionStore.save(tenantId, customerId, clearPending(session));
             return fallback(AgentState.SLOT_ASK, trace, sink, FallbackReason.INTENT_UNRESOLVED, query,
-                    "待办工具已失效", styleTier);
+                    "待办工具已失效", styleTier, usage);
         }
         Map<String, Object> arguments = extractSlots(tool, query);
         List<String> missing = dispatcher.missingSlots(tool, arguments);
@@ -739,14 +809,14 @@ public class AgentStateMachine {
             int asks = session.slotAskCount() + 1;
             if (asks > properties.agent().maxSlotAsks()) {
                 return fallback(AgentState.SLOT_ASK, trace, sink, FallbackReason.SLOT_UNRESOLVED, query, null,
-                        styleTier);
+                        styleTier, usage);
             }
             sink.slotAsk(slot, question);
             sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
                     tool.apiName(), arguments, asks));
             return new AgentResult(question, tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(), trace,
-                    null, null, true, 0, 0, false, false, promptCatalog.version(), List.of(),
-                    AgentResult.ContextComposition.NONE, List.of());
+                    null, null, true, usage.prompt(), usage.completion(), false, false, promptCatalog.version(),
+                    List.of(), AgentResult.ContextComposition.NONE, List.of());
         }
         LlmTypes.ToolCall call = new LlmTypes.ToolCall("resumed", tool.apiName(), arguments);
         ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken, dialogueText(query, session),
@@ -760,7 +830,7 @@ public class AgentStateMachine {
         sink.toolResult(tool, dispatch.status(), summarize(dispatch));
         if (dispatch.status() == ToolStatus.PENDING_APPROVAL) {
             return pendingApprovalAnswer(dispatch, session, query, sink, trace, tenantId, customerId, "SESSION",
-                    List.of());
+                    List.of(), usage);
         }
         sessionStore.save(tenantId, customerId, clearPending(session));
         // ③操作性失败（票 138 规则一/二）：续办枪与派生枪同形——工具与槽位都是确定性得来的，没有"下一轮
@@ -771,19 +841,22 @@ public class AgentStateMachine {
         if (dispatch.degraded()) {
             Set<ToolName> reflectedTools = new HashSet<>();
             if (!reflectionEligible(tool, 1, reflectedTools)) {
+                noteReflectionExhausted(tool, reflectedTools);
                 return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query,
-                        dispatch.json(), styleTier);
+                        dispatch.json(), styleTier, usage);
             }
             reflectedTools.add(tool);
             firstFailure = dispatch.json();
+            noteReflection(tool, 2, trace, sink);
             dispatch = dispatcher.dispatch(call, idempotencyToken, dialogueText(query, session),
                     requestFingerprint(query, idempotencyToken));
             step(trace, sink, AgentState.TOOL_EXEC, tool + "=retry " + dispatch.status());
             sink.toolExecuting(tool, dispatch.label());
             sink.toolResult(tool, dispatch.status(), summarize(dispatch));
             if (dispatch.degraded()) {
+                noteReflectionExhausted(tool, reflectedTools);
                 return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query,
-                        dispatch.json(), styleTier);
+                        dispatch.json(), styleTier, usage);
             }
         }
         List<LlmTypes.Message> messages = new ArrayList<>();
@@ -795,19 +868,21 @@ public class AgentStateMachine {
         try {
             LlmTypes.Reply reply = llm.stream(new LlmTypes.Request(messages, List.of(),
                     properties.llm().temperature()), sink::token);
+            usage.add(reply);
             sessionStore.save(tenantId, customerId,
                     sessionStore.appendTurn(clearPending(session), query, reply.content()));
             return new AgentResult(reply.content(), tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(),
-                    trace, null, null, false, reply.promptTokens(), reply.completionTokens(), true, false,
+                    trace, null, null, false, usage.prompt(), usage.completion(), true, false,
                     promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE, List.of());
         } catch (LlmException failure) {
             return fallback(AgentState.REPLY, trace, sink, mapLlmFailure(failure), query, failure.getMessage(),
-                    styleTier);
+                    styleTier, usage);
         }
     }
 
     private AgentResult fallback(AgentState from, List<AgentResult.TraceStep> trace, EventSink sink,
-                                 FallbackReason reason, String query, String detail, StyleService.Tier styleTier) {
+                                 FallbackReason reason, String query, String detail, StyleService.Tier styleTier,
+                                 TokenUsage usage) {
         step(trace, sink, AgentState.FALLBACK, reason.name() + (detail == null ? "" : " " + detail));
         // 情绪升级单进人工队列时带 high 优先级（ADR 0034）；其余降级按原口径排队
         Optional<String> ticket = reason == FallbackReason.EMOTION_ESCALATION
@@ -818,9 +893,11 @@ public class AgentStateMachine {
         String answer = styleService.fallbackPrefix(styleTier) + reason.userMessage()
                 + ticket.map(id -> "（工单号 " + id + "）").orElse("");
         sink.token(answer);
+        // 降级出口也回填已经花掉的轮次（票 145 / R12 的第二处缺口）：此前恒报 0，
+        // 而"办了 4 轮最后降级"的请求其实已经付过钱了。
         return new AgentResult(answer, Intent.ESCALATE, "FALLBACK", CacheService.Layer.NONE, List.of(), trace,
-                reason, ticket.orElse(null), false, 0, 0, false, true, promptCatalog.version(), List.of(),
-                AgentResult.ContextComposition.NONE, List.of());
+                reason, ticket.orElse(null), false, usage.prompt(), usage.completion(), false, true,
+                promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE, List.of());
     }
 
     /**
@@ -888,6 +965,32 @@ public class AgentStateMachine {
                 && !IdempotencyService.isWrite(tool)
                 && !reflectedTools.contains(tool)
                 && rounds < properties.agent().maxToolRounds();
+    }
+
+    /**
+     * 反思的观测面（round35 票 145 / 票 139 的字段清单）：counter 的 {@code triggered} 格 + trace 的小写头行。
+     *
+     * <p>**头必须小写**：gold 的 {@code executed_tools} 只收「大写且无空格」的头（{@code corrective=} 同例），
+     * 写成大写会把工具序列判红。{@code attempt} 记的是**这一枪重试的序号**（失败枪 + 1），
+     * 与 {@code PlanStep.attempt} 同一个数法——所以反思重试成功的那一步能读到 attempt=2 且 reflection=true。
+     *
+     * <p>挂 {@link AgentState#PLAN}：反思是系统在规划层做的动作，不是又一次工具执行。
+     */
+    private void noteReflection(ToolName tool, int attempt, List<AgentResult.TraceStep> trace, EventSink sink) {
+        reflectionTriggeredCounter.increment();
+        step(trace, sink, AgentState.PLAN, "reflection=" + tool.apiName() + " attempt=" + attempt);
+    }
+
+    /**
+     * 配额用尽那一格（票 139 的三态判据：同工具第二次③失败）：counter 的 {@code exhausted} +1。
+     *
+     * <p>写工具与"没有轮预算"两种情况**都不计数**——前者不在反思范围内（票 138 规则四），
+     * 后者是预算边界、不是配额用尽，两格都不该被它们灌进来。
+     */
+    private void noteReflectionExhausted(ToolName tool, Set<ToolName> reflectedTools) {
+        if (tool != null && !IdempotencyService.isWrite(tool) && reflectedTools.contains(tool)) {
+            reflectionExhaustedCounter.increment();
+        }
     }
 
     /** 包级可见只为让降级映射进用例（ticket 14）；三类模型失败必须各自映射到不同 reason。 */
@@ -1052,7 +1155,7 @@ public class AgentStateMachine {
      */
     private AgentResult replayAnswer(IdempotencyService.Replay replay, SessionStore.Session session, String query,
                                      EventSink sink, List<AgentResult.TraceStep> trace, String tenantId,
-                                     String customerId, String conversationId) {
+                                     String customerId, String conversationId, TokenUsage usage) {
         Intent intent = replay.tool().intent();
         String answer = ReplayReply.render(replay.tool(), replay.resultJson());
         sink.meta(conversationId, intent, CacheService.Layer.NONE);
@@ -1060,8 +1163,9 @@ public class AgentStateMachine {
         sink.duplicateSubmit(replay.tool(), answer);
         sessionStore.save(tenantId, customerId, sessionStore.appendTurn(clearPending(session), query, answer));
         sink.token(answer);
+        // 回放不打模型，但入口层那一跳照付（票 145 / R12）：照实回填，不假报 0。
         return new AgentResult(answer, intent, "replay", CacheService.Layer.NONE, List.of(), trace, null, null,
-                false, 0, 0, true, false, promptCatalog.version(), List.of(),
+                false, usage.prompt(), usage.completion(), true, false, promptCatalog.version(), List.of(),
                 AgentResult.ContextComposition.NONE, List.of());
     }
 
@@ -1075,15 +1179,16 @@ public class AgentStateMachine {
     private AgentResult pendingApprovalAnswer(ToolDispatcher.Dispatch dispatch, SessionStore.Session session,
                                               String query, EventSink sink, List<AgentResult.TraceStep> trace,
                                               String tenantId, String customerId, String layer,
-                                              List<AgentResult.PlanStep> planSteps) {
+                                              List<AgentResult.PlanStep> planSteps, TokenUsage usage) {
         registry.counter("shoppilot_refund_pending_total").increment();
         String answer = ReplayReply.pendingApproval(dispatch.tool(), dispatch.json());
         step(trace, sink, AgentState.REPLY, "pending-approval=" + dispatch.tool().apiName());
         sessionStore.save(tenantId, customerId, sessionStore.appendTurn(clearPending(session), query, answer));
         sink.token(answer);
+        // 受理即收尾，但受理之前那次规划调用已经花掉了（票 145 / R12 的第二处缺口）。
         return new AgentResult(answer, dispatch.tool().intent(), layer, CacheService.Layer.NONE, List.of(), trace,
-                null, null, false, 0, 0, true, false, promptCatalog.version(), planSteps,
-                AgentResult.ContextComposition.NONE, List.of());
+                null, null, false, usage.prompt(), usage.completion(), true, false, promptCatalog.version(),
+                planSteps, AgentResult.ContextComposition.NONE, List.of());
     }
 
     private static String dialogueText(String query, SessionStore.Session session) {
@@ -1096,14 +1201,6 @@ public class AgentStateMachine {
             }
         }
         return text.toString();
-    }
-
-    private static int sum(List<LlmTypes.Reply> replies, boolean prompt) {
-        int total = 0;
-        for (LlmTypes.Reply reply : replies) {
-            total += prompt ? reply.promptTokens() : reply.completionTokens();
-        }
-        return total;
     }
 
     private static String summarize(ToolDispatcher.Dispatch dispatch) {

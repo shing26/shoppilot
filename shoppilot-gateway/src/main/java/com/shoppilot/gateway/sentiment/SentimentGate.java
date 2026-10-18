@@ -133,7 +133,8 @@ public class SentimentGate {
             }
             double confidence = root.path("confidence").asDouble(0.0d);
             boolean escalated = emotion.escalates(confidence);
-            return new Verdict(emotion, confidence, escalated, "llm");
+            return new Verdict(emotion, confidence, escalated, "llm",
+                    reply.promptTokens(), reply.completionTokens());
         } catch (IOException malformed) {
             return Verdict.uncertain("unparsable-classification");
         }
@@ -160,8 +161,18 @@ public class SentimentGate {
     /**
      * 一次情绪判定的结论。{@code source} 说明判定来自哪一层：lexicon / llm / 各类 fail-open 形态，
      * 评测与验收脚本按这个词做 0 token 定案断言。
+     *
+     * <p>第二层真的调了模型时，两个 token 字段带回这次调用的用量（round35 票 145 / R12）：
+     * 入口层这一跳连缓存命中的请求也要付钱，不记进响应字段的话「响应 token 求全部调用之和」
+     * 这条口径对命中路径恒为 0。词典层与 fail-open 形态不调模型，照实记 0。
      */
-    public record Verdict(Emotion emotion, double confidence, boolean escalated, String source) {
+    public record Verdict(Emotion emotion, double confidence, boolean escalated, String source,
+                          int promptTokens, int completionTokens) {
+
+        /** 不调模型的两条路（词典层定案 / fail-open）：token 记 0。 */
+        public Verdict(Emotion emotion, double confidence, boolean escalated, String source) {
+            this(emotion, confidence, escalated, source, 0, 0);
+        }
 
         static Verdict lexicon(Emotion emotion) {
             return new Verdict(emotion, 1.0d, true, "lexicon");

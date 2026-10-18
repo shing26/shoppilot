@@ -58,7 +58,7 @@ class SseEventSinkTest {
                 List.of(new AgentResult.CitationDetail("return-01-7day-basic", "七天无理由退货的适用起点",
                         "return-01-7day-basic")),
                 120, 30,
-                List.of(new AgentResult.PlanStep("queryOrderDetail", "OK", 12L, Map.of("orderNo", "90001"))),
+                List.of(new AgentResult.PlanStep("queryOrderDetail", "OK", 12L, Map.of("orderNo", "90001"), 2, true)),
                 new AgentResult.ContextComposition(List.of("return-01-7day-basic"), 2, 88));
 
         ArgumentCaptor<SseEmitter.SseEventBuilder> captured = ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
@@ -69,6 +69,9 @@ class SseEventSinkTest {
         assertEquals("queryOrderDetail", done.path("plan").get(0).path("tool").asText());
         assertEquals("OK", done.path("plan").get(0).path("status").asText());
         assertEquals("90001", done.path("plan").get(0).path("arguments").path("orderNo").asText());
+        // round35 票 145：反思观测的两个新字段通过 done 帧出去（SSE 不加事件，字段随 plan[] 走）
+        assertEquals(2, done.path("plan").get(0).path("attempt").asInt());
+        assertEquals(true, done.path("plan").get(0).path("reflection").asBoolean());
         assertEquals(2, done.path("context").path("historyTurns").asInt());
         assertEquals("return-01-7day-basic", done.path("context").path("ruleIds").get(0).asText());
         // round33：citations 保持字符串（反馈账本依赖它），详情走新字段

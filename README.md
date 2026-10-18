@@ -399,7 +399,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 
 **这张表逐条写"怎么量的"**。所有数字来自 `loadtest/results/` 下的产物，表格由 `python scripts/build_loadtest_report.py` 生成，本文不誊写第二个数字。吞吐与延迟类指标衡量的是**网关编排层**，生成侧是固定延迟的 Mock，不含模型推理（ADR 0001）。
 
-当前 **55 个唯一 `shoppilot_*` 指标名**（三模块 `src/main` 源码口径；`shoppilot-ticket` 从 round23 起不在其中，四模块口径是 57，两个数一起摆着）。
+当前 **56 个唯一 `shoppilot_*` 指标名**（三模块 `src/main` 源码口径；`shoppilot-ticket` 从 round23 起不在其中，四模块口径是 58，两个数一起摆着）。round35 票 145 新增的是 `shoppilot_reflection_total{outcome=triggered|exhausted}`（反思三态：触发 / 不触发 / 次数用尽）。
 
 | 指标 | 判据 | 实测 | 口径 | 证据 |
 | --- | --- | --- | --- | --- |
