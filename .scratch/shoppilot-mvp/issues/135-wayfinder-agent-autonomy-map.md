@@ -29,6 +29,7 @@
 <!-- the index — one line per closed ticket: enough to judge relevance, then zoom the link for the detail the ticket holds -->
 
 - [136 自主度数字重锚：4 轮 / 4 步是否维持](136-autonomy-budget-and-steps.md) — **维持 4/4，只动一个数**：`max-tool-rounds` 2→4（计划步数与工具轮数同源，自动 ≤4，不设第二个校验面）；`${SHOPPILOT_AGENT_MAX_TOOL_ROUNDS:4}` 默认进 yml + 登记进 ConfigValidationTest 占位符清单；覆盖 ADR 0008/0036 的**依据 = 三账结构**（能力 / 安全 / 有界），归类**所有者政策覆盖**（交 142 落 ADR 0069）；**全档统一不降档**，local 更红照登。
+- [137 安全闸清单重列](137-safety-gates-non-retryable.md) — **三段式清单**：闸 6 条（旧四类 + 审批闸「终态受理」+ 行业门「前置裁剪」——反思重试/换路即绕闸，一律走原出口）/ 循环外 6 出口登记为边界（限流·情绪门·显式转人工·请求级回放·空召回·角色拒「面外」）/ 非闸明确排除；**反思只在工具循环内、只作用于③操作性失败**。给 138 的输入：闸集 + `PENDING_APPROVAL` 不硬塞三类 + **`ToolStatus` 实为 7 成员**（票面 6 漏 `UNAVAILABLE`）。附带发现：写动作守卫没吃行业门（登记 R11，实现轮修）。
 
 ## Not yet specified
 
