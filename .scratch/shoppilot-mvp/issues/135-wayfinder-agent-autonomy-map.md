@@ -33,13 +33,15 @@
 - [138 失败三分法按当前 `ToolStatus` 全量重列](138-failure-triage-reclass.md) — **7 成员四栏映射**（①闸 3：NOT_FOUND/STATE_NOT_ALLOWED/IDEMPOTENT_REPLAY；②**空**（判据保留）；③操作性 2：TIMEOUT/UNAVAILABLE；⓪非失败 2：OK/PENDING_APPROVAL）+ **反思规则六条**：触发=读工具③失败、动作=失败事实回填重规划（占 4 轮预算）、**上限=按工具合计 1 次**（第二次按原语义 fallback）、**写工具不反思**、模型输出层错误与 LLM 失败不反思、**反思不得绕闸**。JVM 用例草单 + 变异对照两条已列；gold `PLN-ABORT-*` 形态原样保住。**三问均未获答、全部按建议值记录**（修正入口 142）。
 - [139 反思的观测面与公开口径](139-reflection-observability-and-enum.md) — **观测三件 + 口径零变动**：`PlanStep` 只增 `attempt`+`reflection`（**失败的那一枪不进 plan[]**——否则 `eval_task.py` 的 `next(tool==target)` 会把反思后成功判成没办成）+ 新 counter `shoppilot_reflection_total{outcome=triggered|exhausted}`（指标名 55/57→**56/58**）+ trace **小写头**行（gold 解析器只收大写头，写错会把工具序列判红）；**SSE 不加事件**；**`FallbackReason` 不 +1**（README「枚举 10 / 降级 9」零同步）。三态判据（触发/不触发/次数用尽）已成文。**两问均未获答、按建议值记录**。
 - [141 提示词换代：v1.1.0 → v1.2.0](141-prompt-v1-2-0.md) — **实质改动 = 第 4 条一句扩写**（「若系统随后给了失败上下文，换一种做法再试一次；仍失败照实说明并转人」，反思配合折进现条、**保持 11 条**）；**预算数字不进提示词**（配置唯一源，第 9 条「轮次有限」不动）；版本三件 = 新文件 v1.2.0 + `meta.json` + **四处钉子同步**（`PromptCatalogTest` 的版本/11 条/首尾锚点、两个 `promptVersion` 断言）；评测读数按 v1.2.0 归因（与 v1.1.0 不可混比）。**两问均获所有者裁定**。
+- [140 评测集与预算](140-eval-suite-and-dev-budget.md) — **AFK 实测三轮**（dev qwen-plus 活体，45 条请求、0 × 429；花掉当日额度 176,117 token）：**实测单跑 ≈ 29 万 token / 30 条（均值 ≈ 9.6k，spec 的 10–20 万预估按实修正）**；每请求另有 ≈ 0.43k 入口层调用、每轮工具轮边际 ≈ 1.9–2.4k；**响应 token 字段三处缺口**（预算检查分支只报最后一跳 / fallback 与审批路径报 0 / 缓存命中报 0）→ 登记 **R12**、成本列改读 `shoppilot_llm_tokens_total` 增量。裁定（未获答按建议值）：**part10 / `kind: autonomy` / 30 条 = 15-10-5 / 新模块 `eval_autonomy.py` 单独成列（ADR 0050）且不并 `eval_suites.py` / 不进 `GOLD_CASE_FILES` / 日预算 260000 → 600000（闸门保留；只批单跑则 400000）**。**修正入口 142**。
 
 ## Not yet specified
 
 <!-- see "Fog of war": in-scope fog you can't ticket yet; graduates as the frontier advances -->
 
-- **反思与提示词的咬合细节**（等「提示词换代」票；数字已定 4/4，见 [136](136-autonomy-budget-and-steps.md)）。
-- **预算试跑的规模设计**（等「评测集与预算」票先量出单条成本）。
+- **（已清空）** 原先两条 fog——「反思与提示词的咬合细节」（[141](141-prompt-v1-2-0.md) 收口）与
+  「预算试跑的规模设计」（[140](140-eval-suite-and-dev-budget.md) 实测收口）——都已升级为各自票的
+  decision 记录，不再是雾。剩下的 [142](142-round-scoping-and-adr-0069.md) 是收敛票，不再 graduation。
 
 ## Out of scope
 
