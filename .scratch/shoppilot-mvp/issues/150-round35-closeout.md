@@ -57,7 +57,7 @@ git diff --check; git status --short
    `CHANGELOG.md`（round16–round35、ADR 编号 0001-0069、新增/变更/修复各一条）；`DELIVERY.md`（状态段换代到 2026-10-19 + 漂移表新增一行）。
    **既有 ADR 一字未改**（换代指针都在 ADR 0069 / spec v2 / tracker）。
 4. **台账**：`registered-debt.md` 的 **R11 / R12 已在票 145/146 挪进「已关闭」，本票只做复核**（两条措辞与票面一致，未改）；
-   已关闭 8 条、活跃登记项 R1-R8/R10、未达成 U1-U8/U10——`DELIVERY.md` 与 tracker Round 表的计数已同步（R13 于收口当日经所有者裁定后关闭，见下「收口后追加」）。tracker：Round 表 round35 → **done**、
+   已关闭 9 条、活跃登记项 R1-R8/R10/R14、未达成 U1-U5/U7-U8/U10/U11——`DELIVERY.md` 与 tracker Round 表的计数已同步（R13 经所有者裁定后关闭、U6 随 2026-10-19 清场日矩阵补跑关闭；R14/U11 为矩阵新发现，见下「收口后追加」）。tracker：Round 表 round35 → **done**、
    索引 150 → `implemented`、frontier **清空**（`ready-for-agent` 为空）。
 
 **验证落点**：
@@ -98,3 +98,8 @@ git diff --check; git status --short
   网关已停、读不到活体额度）；**推送后复跑 `PASS 83 / FAIL 3 / SKIP 11`**（A1 转绿；3 红 = `B7` 窗口 + `F1c` 历史 + `G6` 未重跑矩阵，零新增）。`.\mvnw.cmd -B -ntp verify` 复跑四模块
   **`10 + 73 + 449 + 45 = 577`** 全绿（3:32）；CI：`db24556` run `39188609583` **success**、
   `65ad83d`（R13 裁定）run `39206998285` **success**。
+- **清场日全量矩阵（2026-10-19，收口后）**：full 档 29 步首跑 **20 绿 / 9 红（1242s）**；补跑后 `build`
+  （fork 崩溃 → 停栈重跑双绿，G6 常数 **536 → 577**）、`refund`、`workspace` 12/12、`buyer` 9/9 转绿，
+  `console` 43/44 为已登记方差；仍红 `feedback`/`plansteps`（既有登记）与两个新发现——**R14**
+  （反思吞掉读工具失败：`degraded=false`、无 fallback/工单）与 **U11**（极性守卫 L2 前置不稳定）。
+  落点与逐条归因见 `docs/EVIDENCE.md` 的 2026-10-19 行与 `registered-debt.md`。

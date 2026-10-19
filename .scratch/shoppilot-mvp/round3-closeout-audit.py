@@ -117,12 +117,14 @@ _DEF_LANDED = 0
 # 相对上一格 `[10, 69, 391, 45] = 515`（round32）：+21 全在 gateway——票 125 Domain 维度与
 # `EsRestClientWireTest`、票 126 T0 行业门与动作优先（另含酒店活体跑批暴露的 HTL-BKF-01
 # 早餐词表回归修复 +4）、票 127 提示词/引用/语料一致性。
-# **注意这一格现在必然读红**：它读的是 logs/acceptance/{build,unit}.log，而那两份日志仍是
-# 2026-10-05 的清场日落点（`10 + 57 + 342 + 39 = 448`），比本常数旧。也就是说，跑本审计会得到一条
-# 「常数 536 ≠ 日志 448」的红——那**不是防线失效、而是「本轮没有重跑带 build/unit 的活体矩阵」**，
-# 与上面那条「中途加票时不要动它」是同一回事的另一面。**不许为消这条红把常数改回 448**：本常数
-# 表达的是当前真实测试数（`.\mvnw.cmd -B -ntp verify` 实测），日志追上它是矩阵下次重跑时的事。
-G6_EXPECT = [10, 69, 412, 45]
+# 换代（2026-10-19 清场日 full 档补跑，round35 收口后的 U6/G6）：`10 + 73 + 449 + 45 = 577`。
+# biz-mock 69 → 73（round34 的 `RedisAuditChannelWireTest` 4 条）；gateway 412 → 449
+# （round34 +11、round35 反思/观测/写守卫等 +26）。落点 `logs/acceptance-run-20261019-204618.log`
+# （首跑 20 绿 / 9 红；build 是一次 surefire fork 崩溃，非测试失败）与
+# `logs/acceptance-run-20261019-205822.log`（停栈后 `-Only build,unit` 重跑双绿）。
+# 两份逐 step 日志 `logs/acceptance/{build,unit}.log` 均已刷新为 577，本常数与它们逐字对齐；
+# 判据形状（读哪两份日志、比什么）一字未动，动的只有这一格常数。
+G6_EXPECT = [10, 73, 449, 45]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))
 
