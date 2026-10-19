@@ -124,7 +124,8 @@ _DEF_LANDED = 0
 # `logs/acceptance-run-20261019-205822.log`（停栈后 `-Only build,unit` 重跑双绿）。
 # 两份逐 step 日志 `logs/acceptance/{build,unit}.log` 均已刷新为 577，本常数与它们逐字对齐；
 # 判据形状（读哪两份日志、比什么）一字未动，动的只有这一格常数。
-# R7（2026-10-20）新增 12 条（T0RuleLayerTest +11、GatewayMainPathJvmTest +1）→ 真实数 589；
+# R7 + R14（2026-10-20）新增 14 条（T0RuleLayerTest +11、GatewayMainPathJvmTest +1、
+# ReflectionLoopJvmTest +2）→ 真实数 591；
 # 本常数与 logs 仍停在 2026-10-19 落点 577——**中途加票不动它，下次重跑带 build/unit 的矩阵时再换代**。
 G6_EXPECT = [10, 73, 449, 45]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(

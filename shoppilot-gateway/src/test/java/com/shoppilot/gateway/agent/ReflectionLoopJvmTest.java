@@ -230,6 +230,53 @@ class ReflectionLoopJvmTest {
     }
 
     @Test
+    @DisplayName("R14-A：反思后模型不再调工具、直接作答 → 失败不许被吞，强制 TOOL_UNAVAILABLE + 工单")
+    void unansweredReflectionFallsBackInsteadOfAnswering() {
+        when(llm.complete(any())).thenReturn(
+                toolCall("call-1", ToolName.QUERY_ORDER_DETAIL, "90001"),
+                LlmTypes.Reply.text("系统暂时查不到，请联系人工"));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("系统暂时查不到，请联系人工"));
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any()))
+                .thenReturn(outcome(ToolStatus.TIMEOUT, "业务系统响应超时"));
+        when(fallback.escalate(eq(FallbackReason.TOOL_UNAVAILABLE), anyString(), anyString()))
+                .thenReturn(Optional.of("T-902"));
+
+        AgentResult result = machine(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true))
+                .run("我的订单90001到哪了", null, EventSink.NOOP);
+
+        assertEquals(FallbackReason.TOOL_UNAVAILABLE, result.fallbackReason(),
+                "失败没有被成功重试解决，模型正文不能把它写成普通回答");
+        assertEquals("T-902", result.ticketId());
+        verify(bizMock, times(1)).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any());
+        verify(llm, times(2)).complete(any());
+        // 不许进 REPLY：一旦进收尾轮，这段正文就会以 degraded=false 的身份发给买家
+        verify(llm, never()).stream(any(), any());
+        verify(fallback).escalate(eq(FallbackReason.TOOL_UNAVAILABLE), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("R14-A 正对照：失败后换工具成功（反思允许的补救）→ 正常作答，不误伤为降级")
+    void successfulWorkaroundAfterFailureKeepsTheAnswer() {
+        when(llm.complete(any())).thenReturn(
+                toolCall("call-1", ToolName.QUERY_LOGISTICS, "90001"),
+                toolCall("call-2", ToolName.QUERY_ORDER_DETAIL, "90001"),
+                LlmTypes.Reply.text("物流查不到，但订单显示已发货"));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("物流查不到，但订单显示已发货"));
+        when(bizMock.call(eq(ToolName.QUERY_LOGISTICS), anyMap(), any()))
+                .thenReturn(outcome(ToolStatus.TIMEOUT, "业务系统响应超时"));
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any()))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
+
+        AgentResult result = machine(TriageResult.dynamic(Intent.ACTION_ORDER, "T1", true))
+                .run("我的订单90001到哪了", null, EventSink.NOOP);
+
+        assertNull(result.fallbackReason(), "换工具成功属于提示词明说允许的补救，不该落降级");
+        assertEquals(List.of("queryOrderDetail"), toolsInPlan(result));
+        verify(fallback, never()).escalate(any(), any(), any());
+    }
+
+    @Test
     @DisplayName("③反思重试撞闸：走该闸原出口（plan-aborted），不再第二次反思（票 144 七格之一）")
     void reflectionRetryHittingGateAbortsWithoutSecondReflection() {
         when(llm.complete(any())).thenReturn(

@@ -395,6 +395,10 @@ public class AgentStateMachine {
         // 供 plan[] 的 reflection 字段在那一枪落账时消费。都只读不改执行语义。
         Map<ToolName, Integer> toolAttempts = new LinkedHashMap<>();
         Set<ToolName> pendingReflections = new HashSet<>();
+        // R14-A（2026-10-19 矩阵发现；所有者裁定 A）：读工具③失败进入反思后，若模型**不再调工具、
+        // 直接作答**，失败会被吞成普通正文（实测 degraded=false、无 fallback、无工单）。这个标记在
+        // 失败时置位、之后任何一次成功派发时清除；收尾前仍为真就强制 TOOL_UNAVAILABLE + 工单。
+        boolean unresolvedToolFailure = false;
         while (rounds < properties.agent().maxToolRounds()) {
             step(trace, sink, AgentState.PLAN, "round=" + rounds);
             LlmTypes.Request planRequest = new LlmTypes.Request(messages, toolsFor(triage, domain),
@@ -490,6 +494,7 @@ public class AgentStateMachine {
                 if (reflectionEligible(dispatch.tool(), rounds, reflectedTools)) {
                     reflectedTools.add(dispatch.tool());
                     pendingReflections.add(dispatch.tool());
+                    unresolvedToolFailure = true;
                     noteReflection(dispatch.tool(), attempt + 1, trace, sink);
                     messages.add(LlmTypes.Message.tool(call.id(), dispatch.json()));
                     messages.add(LlmTypes.Message.user(REFLECTION_CONTEXT));
@@ -499,6 +504,8 @@ public class AgentStateMachine {
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
                         query, dispatch.json(), styleTier, usage));
             }
+            // R14-A：失败之后只要有一枪成功（含换工具的成功补救），失败就不再悬空。
+            unresolvedToolFailure = false;
             stepResults.add(dispatch.json());
             // 反思印记按「同一工具的下一枪」消费（票 139：reflection = 本步是反思重试）。模型要是换了路
             // （换工具的反思是提示词明说允许的），这笔待办就作废——否则同一工具后来一次无关的正常调用
@@ -636,6 +643,14 @@ public class AgentStateMachine {
                         derivedMillis, derived.slots(), derivedAttempt, derivedAttempt > 1));
                 messages.add(LlmTypes.Message.tool(lastCall.id(), dispatch.json()));
             }
+        }
+
+        // R14-A：反思已触发、但模型不再调工具、直接给出正文——失败不允许被吞成普通回答。
+        // 只要失败之后没有任何一次成功派发，就按原语义收口（TOOL_UNAVAILABLE + 可查工单，ADR 0009）。
+        if (unresolvedToolFailure) {
+            step(trace, sink, AgentState.TOOL_EXEC, "tool-failure-unresolved");
+            return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
+                    query, "读工具失败后模型直接作答、没有成功重试", styleTier, usage));
         }
 
         step(trace, sink, AgentState.REPLY, "streaming");
