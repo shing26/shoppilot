@@ -36,6 +36,7 @@ EDITS = [
 ]
 
 fails = 0
+obsolete = 0
 applied = 0
 skipped = 0
 for path, old, new in EDITS:
@@ -56,6 +57,15 @@ for path, old, new in EDITS:
         skipped += 1
         continue
     n = txt.count(old)
+    # 四态（R13，2026-10-19 所有者裁定后加）：old 一次都没命中且 new 也不在 = 这段目标文本已经被后续重写**
+    # 有意删除**（本批跑器是 round3 的一次性补丁记录，README 在 round31 门面化时删掉了 4 段历史、本票的 2 处引用
+    # 也被后来的换代重锚取代）——此时重跑无物可做，判「已作废」而不是「漂移 FAIL」：FAIL 的语义是
+    # 「文档漂到了跑器不认识的形状，停下来查」，而这里不是不认识、是那段整段没了。**歧义（old 命中 ≥2）仍然 FAIL**，
+    # 「绝不对着形状可疑的文档动手」这条安全性质一字未变。
+    if n == 0:
+        print(f"skip 已作废（目标段落已被后续重写删除）  {path}  <<{old[:50]}>>")
+        obsolete += 1
+        continue
     if n != 1:
         print(f"FAIL 漂移：old 命中 {n} 次且 new 不在文中  {path}  <<{old[:50]}>>")
         fails += 1
@@ -69,5 +79,5 @@ for path, old, new in EDITS:
     if new not in io.open(path, encoding="utf-8", newline="").read().replace("\r\n", "\n"):
         print(f"FAIL 替换后 new 不在文中（自我矛盾）  {path}")
         fails += 1
-print(f"共 {len(EDITS)} 处：新应用 {applied}、已应用跳过 {skipped}、失败 {fails}")
+print(f"共 {len(EDITS)} 处：新应用 {applied}、已应用跳过 {skipped}、已作废 {obsolete}、失败 {fails}")
 sys.exit(1 if fails else 0)

@@ -541,10 +541,30 @@ print("E. 文档读数自洽（大小写敏感）")
 print("=" * 78)
 
 readme = read(REPO / "README.md")
+
+# R13（2026-10-19 所有者裁定，选项②为主）：这一族的断言面从「README 必须含」改成
+# 「**正统文档里至少一处含**」——事实归属按 AGENTS.md 的 Source of Truth 表：产品与交付说明在 README，
+# 证据与逐轮台账在 `docs/EVIDENCE.md` / tracker / ticket 20。README 在 round31 门面化（`2ad6ade`，-872 行）
+# 之后**有意**不再承担逐轮年表，所以检查跟着文档架构走。
+# **没有放宽「这个事实必须被照登且可 grep」这一半**，只换了「它登在哪」；旁边有 R13b 对照组钉住
+# 「无处可 grep 时必须红」，防止它变成恒绿。
+FACT_DOCS = ["README.md", "docs/EVIDENCE.md", ".scratch/shoppilot-mvp/README.md",
+             ".scratch/shoppilot-mvp/issues/20-action-order-attribution.md"]
+FACT_TEXT = {doc: read(REPO / doc) for doc in FACT_DOCS}
+
+
+def fact_missing(needles):
+    """这些事实有没有**在哪一处正统文档里**照登（R13 后的断言面）。返回缺的那些。"""
+    return [n for n in needles if not any(n in text for text in FACT_TEXT.values())]
 both = [i for i, l in enumerate(readme.splitlines(), 1) if "93.3%" in l and "95.6%" in l]
 check("E1 README 有 93.3%+95.6% 并列的行 >= 3", len(both) >= 3, f"行号 {both}")
-missing = [i for i in dual if i not in readme]
-check("E2 对偶 8 个 id 在 README 可 grep", not missing, f"缺 {missing}")
+missing = fact_missing(dual)
+check("E2 对偶 8 个 id 照登（README / EVIDENCE / tracker / ticket 20 至少一处）", not missing, f"缺 {missing}")
+# R13b 对照组：断言面换过之后必须**仍然能红**——拿一个仓内不该有的串探一次。
+_R13_PROBE = "__r13_对照组_仓内不该有的串__"
+check("R13b 对照组：事实无处可 grep 时 fact_missing 必须报缺",
+      fact_missing([_R13_PROBE]) == [_R13_PROBE],
+      f"对不存在的事实返回 {fact_missing([_R13_PROBE])}")
 for banned in ["57/60", "95.0%", "168/180 = 95.6%", "172/180 = 93.3%"]:
     check(f"E3 README 无假读数 `{banned}`", banned not in readme)
 # E4：第五轮双轴审查判这条**恒绿**——原先只问「合并」「否决」两个词在不在 43k 字的 README 里，
@@ -606,11 +626,12 @@ ticket20 = read(REPO / ".scratch" / "shoppilot-mvp" / "issues" / "20-action-orde
 check("E6a 让位轮 185608 在 ticket 20 留痕", "185608" in ticket20,
       f"README {readme.count('185608')} 处，ticket20 {ticket20.count('185608')} 处")
 for s in ["200038", "201808"]:
-    check(f"E6b 未全绿那一轮 `{s}` 在 README 与 ticket 20 都可 grep 到",
-          s in readme and s in ticket20,
-          f"README {readme.count(s)} 处，ticket20 {ticket20.count(s)} 处")
-check("E6c 落点轮 212011 在 README 与 ticket 20 都在",
-      "212011" in readme and "212011" in ticket20)
+    check(f"E6b 未全绿那一轮 `{s}` 照登（README / EVIDENCE / tracker / ticket 20 至少一处）",
+          not fact_missing([s]),
+          f"正统文档四处都没有：README {readme.count(s)} 处，ticket20 {ticket20.count(s)} 处")
+check("E6c 落点轮 212011 照登（README / EVIDENCE / tracker / ticket 20 至少一处）",
+      not fact_missing(["212011"]),
+      f"正统文档四处都没有：README {readme.count('212011')} 处")
 
 print()
 print("=" * 78)
@@ -1032,8 +1053,13 @@ check("H5 取证面口径与磁盘一致：logs/ 整目录不入库，docs/conso
       not any(p.startswith("logs/") for p in tracked_set) and "docs/console.png" in tracked_set,
       f"logs 在库 {sum(1 for p in tracked_set if p.startswith('logs/'))} 个（应为 0）；"
       f"console.png 在库={'docs/console.png' in tracked_set}")
+# R13（2026-10-19）：这条原先钉的是**字面串**「干净克隆里没有」，而 README 在门面化后写的是
+# 「干净克隆中**没有**」（第 622 行附近）与「`git clone` 后不存在」（第 637 行附近）——**事实一直都在、写着两遍**，
+# 红的是措辞（里/中一字之差）。谓词改成认这一组等价说法；口径本身一个字没放宽。
+_LOGS_CAVEAT = ("干净克隆里没有", "干净克隆中没有", "git clone 后不存在")
 check("H5b README 把『门禁日志干净克隆里没有』这条口径写出来了",
-      "干净克隆里没有" in readme)
+      any(phrase in readme for phrase in _LOGS_CAVEAT),
+      "README 里三种等价措辞一个都没有：" + " / ".join(_LOGS_CAVEAT))
 
 # H6：计划开头的计数口径与实际步数一致；P9 的标题不得停在已经作废的"待用户处置"
 n_steps = len(re.findall(r"(?m)^### P\d", plan))
@@ -1163,13 +1189,15 @@ try:
 finally:
     _rm_force(_crlf_dir2)
 
+# R13（2026-10-19）：跑器加了第四态「已作废」（目标段落被后续重写有意删除）——下面两个读数正则把该组写成可选，
+# 两种末行格式都认；「处数一致性」这条判据一字未改。
 # H10：文档里"跑器替换 N 处"这个数，必须等于两支一次性跑器**自己末行打印的**处数之和。
 #      第四轮原先写的是「17 处 = 16 跑器 + 1 手工」，而 pass2 那 3 处从没进过任何一格的账；
 #      这里不重新解析脚本源码（那是第二把尺子），直接用跑器自己打的读数当唯一真值。
 _pass_tot = [int(m.group(1)) for m in
-             re.finditer(r"共 (\d+) 处：新应用 (\d+)、已应用跳过 (\d+)、失败 (\d+)", out1 + "\n" + out2)]
+             re.finditer(r"共 (\d+) 处：新应用 (\d+)、已应用跳过 (\d+)、(?:已作废 \d+、)?失败 (\d+)", out1 + "\n" + out2)]
 _pass_fail = [int(m.group(1)) for m in
-              re.finditer(r"共 \d+ 处：新应用 \d+、已应用跳过 \d+、失败 (\d+)", out1 + "\n" + out2)]
+              re.finditer(r"共 \d+ 处：新应用 \d+、已应用跳过 \d+、(?:已作废 \d+、)?失败 (\d+)", out1 + "\n" + out2)]
 _runner_total = sum(_pass_tot)
 _doc_stated = sorted({int(m.group(1)) for m in re.finditer(r"(\d+) 处跑器替换", readme + plan + ticket20)})
 check("H10 文档自述的跑器替换处数 == 两支跑器末行实打处数之和",
