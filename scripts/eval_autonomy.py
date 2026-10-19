@@ -435,13 +435,24 @@ def _delta(before, after):
     return int(after - before)
 
 
+def _ops_headers(args):
+    """运维面的两个头缺一不可：先过 `AuthFilter` 的 bearer，再过运维凭证那一条守卫。
+
+    内置假 runner 不跑真链路，所以这个 401 只有活体首跑才暴露（票 149 首跑实测：
+    `/api/v1/support/ops/circuit` 只带 `X-Ops-Token` → `401 missing bearer token`）。
+    """
+    return {"X-Ops-Token": args.ops_token,
+            "Authorization": "Bearer " + getattr(args, "bearer_token", "")}
+
+
 def _set_fault(runner, args, base, fail_rate):
     """挂/清故障面。**绝不抛异常**：一次运维调用失败把整批掀翻，代价是一整轮预算；
     没挂上/没清干净由调用方记 `induction` 并打警告，读的人看得见（这比静默更值钱）。
     """
     try:
+        # `/ops/fault` 是 PUT（GET 读、PUT 写，`OpsController`）：POST 会吃 405 而假 runner 看不出来。
         runner.http_json(f"{base}/api/v1/support/ops/fault", {"failRate": fail_rate},
-                         {"X-Ops-Token": args.ops_token})
+                         _ops_headers(args), method="PUT")
         return True
     except Exception:  # noqa: BLE001
         return False
@@ -505,8 +516,10 @@ def run(parser_args, runner) -> int:
         return 2
     token = runner.mock_token(parser_args.base, "T001", "C001")
     headers = {"Authorization": "Bearer " + token}
+    # ops 面的两个头（见 _ops_headers）：活体首跑实测只带 X-Ops-Token 会被 AuthFilter 401。
+    parser_args.bearer_token = token
     circuit = runner.http_json(f"{parser_args.base}/api/v1/support/ops/circuit",
-                               headers={"X-Ops-Token": parser_args.ops_token})
+                               headers=_ops_headers(parser_args))
     print(f"模式={circuit.get('llmMode')} 模型={circuit.get('llmModel')} 样本={len(cases)} 节流={PACE_SECONDS}s")
     if not _set_fault(runner, parser_args, parser_args.base, 0.0):   # 起跑前先确认故障面是干净的
         print("  WARN  起跑前清故障面失败：读数可能被上一轮的残留故障污染，请照登")
@@ -514,7 +527,7 @@ def run(parser_args, runner) -> int:
     # 而不是测模型（与 gold 路径同一条纪律）。这一条也是"复跑必须能复现"的前提（票 149 要跑两遍）。
     try:
         runner.http_json(f"{parser_args.base}/api/v1/support/ops/demo/reset", {},
-                         {"X-Ops-Token": parser_args.ops_token})
+                         _ops_headers(parser_args))
         print("已复位演示固定单（90001-90004、91001-91002）")
     except Exception as reset_failed:  # noqa: BLE001
         print(f"WARN  演示固定单复位失败，写类用例可能受状态污染：{reset_failed}")
@@ -523,6 +536,14 @@ def run(parser_args, runner) -> int:
     for index, case in enumerate(cases):
         if index:
             time.sleep(PACE_SECONDS)
+            # 票 149 的口径：**每条前复位**演示数据——写类用例会改演示固定单（90001 的退款受理、
+            # 90004 的改址），上一例留下的状态不该成为下一例的输入。复位是 ops 调用、不打模型、
+            # 不进成本列（实测 0.03s）；失败只警告不掀翻整批（一次烧掉的是整轮预算）。
+            try:
+                runner.http_json(f"{parser_args.base}/api/v1/support/ops/demo/reset", {},
+                                 _ops_headers(parser_args))
+            except Exception as reset_each:  # noqa: BLE001
+                print(f"  WARN  {case['id']} 前置复位失败，该例可能受状态污染：{reset_each}")
         fault = case.get("fault") or {}
         before_counters = _counters(runner, parser_args.base)
         before_tokens = _used_tokens(runner, parser_args, circuit)
@@ -613,7 +634,7 @@ def _used_tokens(runner, args, circuit):
     """
     try:
         live = runner.http_json(f"{args.base}/api/v1/support/ops/circuit",
-                                headers={"X-Ops-Token": args.ops_token})
+                                headers=_ops_headers(args))
         return int(live.get("tokensUsedToday") or 0)
     except Exception:  # noqa: BLE001
         return int(circuit.get("tokensUsedToday") or 0)

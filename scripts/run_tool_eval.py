@@ -56,9 +56,11 @@ RUN_ID = dt.datetime.now().strftime("%m%d%H%M%S")
 HARD_FAIL_INTENT = 0.80
 
 
-def http_json(url, payload=None, headers=None, timeout=240):
+def http_json(url, payload=None, headers=None, timeout=240, method=None):
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
-    request = urllib.request.Request(url, data=body, method="POST" if body else "GET")
+    # method 只在显式给的时候覆盖（票 149 首跑实测：`/ops/fault` 是 PUT，POST 会吃 405）；
+    # 默认仍是"有 body 就 POST、没有就 GET"，既有调用方的行为一字不变。
+    request = urllib.request.Request(url, data=body, method=method or ("POST" if body else "GET"))
     for key, value in (headers or {}).items():
         request.add_header(key, value)
     if body:

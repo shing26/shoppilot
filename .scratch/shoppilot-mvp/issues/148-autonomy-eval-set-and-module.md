@@ -106,3 +106,18 @@ python scripts/run_tool_eval.py --autonomy --base http://127.0.0.1:8082 --ops-to
 - 逐条 0.25s 节流（≈4 QPS，低于默认 `customer-qps=5`）；8 条注入故障（5 窗口 + 3 持久）、18 条不注入。
 - 明细落 `eval/results/tool-eval-<stamp>-dev-autonomy.csv`（`billed_tokens`/`latency_ms`/`induction`/`state` 都在里面）。
 - **读数归因 `promptVersion=v1.2.0`**（与 v1.1.0 不可混比）；详细读数与 EVIDENCE 行是**票 149** 的交付。
+
+## 票 149 实测登记（2026-10-19，不改本票状态）
+
+- **传输面三处只有活体才暴露的**（已在票 149 修掉，判据未动）：① ops 调用必须**同时**带 bearer 与 `X-Ops-Token`
+  （`AuthFilter` 对非静态路径一律要 bearer；内置假 runner 不跑真链路，所以这个 401 一直没被看见）；
+  ② `/ops/fault` 是 **PUT**（共享 HTTP 助手只会 POST/GET → 405）；③ 按票 149 口径补了**逐条前置复位**。
+- **集子隔离的一处缺口（未修，登记）**：`AUT-REFL-08`（写工具不反思档）要求「写工具③失败 → 立即降级 + 落工单」，
+  但同一批里更早的 `AUT-PLAN-05` / `AUT-PLAN-11` 已经用**同一单同一参数**提交过退款，而派生幂等 token 只看
+  `tenantId|customerId|tool|参数`、与措辞无关 → 该用例拿到的是 `IDEMPOTENT_REPLAY`
+  （trace 原文 `APPLY_REFUND=IDEMPOTENT_REPLAY modelArgs={"orderNo":"90001"}`），**工具没真的执行、故障面也就无处生效**。
+  演示复位只清 biz-mock 的库、**不清 Redis 回放索引**（6 h TTL；round21 票 61 同源陷阱）。
+  修法二选一：写类用例换不同单号；或演示复位连回放索引一起清。**在修之前，这一档在单轮里不可观测。**
+- **「用尽」档的可达性**：`AUT-REFL-09/10` 要求「同一工具第二次③失败」，而 prompt 第 4 条教的是
+  「换一种做法（换工具或换参数）」——dev 档实测模型要么直接收尾、要么换工具，`state_exhausted=0`。
+  要这一档稳定可观测，得改集子（改由 JVM 桩承载）或改提示词口径；本轮按「口径张力」登记，判据未动。
