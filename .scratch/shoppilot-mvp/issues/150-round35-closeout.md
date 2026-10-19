@@ -45,7 +45,8 @@ git diff --check; git status --short
 **关键决策**：
 
 1. **验证双件都实跑**：`.\mvnw.cmd -B -ntp verify` 四模块 **`10 + 73 + 449 + 45 = 577` 全绿**（3:37）；
-   收口审计实跑 **`PASS 73 / FAIL 13 / SKIP 10 / 共 96`**（提交前；提交后 `A2` 转绿即 `PASS 74 / FAIL 12`）。
+   收口审计实跑：提交前 **`PASS 73 / FAIL 13 / SKIP 10 / 共 96`**，**推送后复跑 `PASS 74 / FAIL 12 / SKIP 10`**
+   （`A1` `A2` 双双转绿；落点 `logs/audit-150-postpush.log`，本机证据不入库）。
    **与基线逐条对照：11 条既有红逐条相同、零新增**；多出的两条是 `A2`（提交前工作树，提交后转绿）与
    **`A3`「本轮零额度」为假**——本轮为票 149 的 dev 活体跑真花了 **470,037** 额度，按 round20 先例如实登记、不摘红。
 2. **一条被本轮改动带红的检查，已修**：票 149 给 `run_tool_eval.py` 的 `http_json` 加了可选 `method=` 参数（+2 行），
@@ -62,12 +63,13 @@ git diff --check; git status --short
 **验证落点**：
 
 - `.\mvnw.cmd -B -ntp verify` → **577 绿**（本轮无 Java 代码改动，跑它是为了确认共享 Python 工装与文档换代没有连带）。
-- `python .scratch/shoppilot-mvp/round3-closeout-audit.py` → `PASS 73 / FAIL 13 / SKIP 10`（提交前）/ `PASS 74 / FAIL 12`（提交后）。
+- `python .scratch/shoppilot-mvp/round3-closeout-audit.py` → `PASS 73 / FAIL 13 / SKIP 10`（提交前）/ **`PASS 74 / FAIL 12 / SKIP 10`（推送后，A1/A2 转绿）**。
 - 0 token 门禁：`eval_autonomy.py` → `ok=15`、`run_tool_eval.py --selfcheck` → `ok=16`、`eval_suites.py` → `ok=30`、
   `eval_task.py` → `ok=14`、`verify_eval_judge.py` → **40/40**、`verify_onepager.py` → `failures=0`。
 - **CI**：`eea7861`（票 149）首跑**红**——`LogbackRotationTest.rollsOnSizeAndHonoursAppName` 一条（logback 轮转的 Linux 时序竞态，
   该用例在 round15/票 32 就登记过同族竞态）；**`gh run rerun` 后同一提交转绿**（run `39184195494` attempt 2，2m33s）。
   这是**间歇红、不是回归**（本轮零 Java 改动，本机同套件两次全绿）；照登。
+  收口提交 `c6cbe25` 的 CI run **`39185290434` 一次绿**（2m 内），`eea7861` 那个红只在 attempt 1 上出现过。
 
 **三个现场追问**：
 
