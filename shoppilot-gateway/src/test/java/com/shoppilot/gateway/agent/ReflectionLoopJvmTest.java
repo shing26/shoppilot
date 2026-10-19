@@ -337,7 +337,7 @@ class ReflectionLoopJvmTest {
 
     private AgentStateMachine machine(TriageResult triage, IdempotencyService idempotency, SessionStore store) {
         TriageEngine triageEngine = mock(TriageEngine.class);
-        when(triageEngine.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(triage, null));
+        when(triageEngine.triage(anyString(), any(), any())).thenReturn(new TriageEngine.Outcome(triage, null));
         KbEpoch epoch = mock(KbEpoch.class);
         when(epoch.current()).thenReturn(7L);
         HybridRetriever retriever = mock(HybridRetriever.class);

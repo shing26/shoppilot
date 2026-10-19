@@ -333,6 +333,24 @@ class GatewayMainPathJvmTest {
     }
 
     @Test
+    @DisplayName("R7：T002 定责诉求走 policy-human 出口——落 INTENT_UNRESOLVED 并建单，不是普通回答")
+    void policyHumanEscalationUsesIntentUnresolved() throws Exception {
+        FallbackService fallback = mock(FallbackService.class);
+        when(fallback.escalate(eq(FallbackReason.INTENT_UNRESOLVED), eq("死蟹了，算谁的责任"), eq(null)))
+                .thenReturn(Optional.of("T-902"));
+
+        MockMvc mvc = mockMvc(TriageResult.policyEscalation("T0"),
+                mock(CacheService.class), mock(LlmGateway.class), mock(ToolDispatcher.class), fallback);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"死蟹了，算谁的责任\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fallbackReason").value("INTENT_UNRESOLVED"))
+                .andExpect(jsonPath("$.ticketId").value("T-902"));
+    }
+
+    @Test
     @DisplayName("轮次上限：预算检查后模型仍要工具 → 超限 FALLBACK 落工单，只有四次真实派发（票 41 / 票 143 按 4 轮重钉）")
     void toolRoundsExhaustedFallsBackWithTicket() throws Exception {
         LlmGateway llm = mock(LlmGateway.class);
@@ -514,7 +532,7 @@ class GatewayMainPathJvmTest {
         when(feedbackService.recordExplicit(eq("conv-integration-1"), eq("DOWN"), any()))
                 .thenReturn(new FeedbackService.Ack("FB-9", true, "T-901", List.of("POLICY-RETURN-01")));
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d), null));
         CacheService cache = mock(CacheService.class);
         RateLimitService rateLimit = mock(RateLimitService.class);
@@ -550,7 +568,7 @@ class GatewayMainPathJvmTest {
         when(calmGate.evaluate(any())).thenReturn(
                 new SentimentGate.Verdict(com.shoppilot.gateway.sentiment.Emotion.CALM, 0.9d, false, "llm"));
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.dynamic(Intent.POLICY_RETURN, "T1", false), null));
         WriteBackPolicy policy = mock(WriteBackPolicy.class);
         when(policy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(false, "style-test"));
@@ -1022,7 +1040,7 @@ class GatewayMainPathJvmTest {
                             ToolDispatcher dispatcher, FallbackService fallback, SentimentGate gate,
                             HybridRetriever.Result retrieved, SessionStore sessionStore) {
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(triageResult, null));
+        when(triage.triage(anyString(), any(), any())).thenReturn(new TriageEngine.Outcome(triageResult, null));
         // 显式转人工谓词走真实现（纯词表、0 token）：mock 若默认返回 false，ADR 0042 的优先级
         // 在这条缝上就永远不生效，回归用例会变成一条恒绿假防线。
         when(triage.isExplicitEscalation(anyString()))

@@ -37,6 +37,42 @@ class T0RuleLayerTest {
         assertThat(result.layer()).isEqualTo("T0");
     }
 
+    // ---- R7：T002 门店细则的「看照片不能定责」升级 -------------------------------------------
+
+    @ParameterizedTest
+    @CsvSource({
+            "T002, 死蟹了，算谁的责任",
+            "T002, 死蟹了赔不赔",
+            "T002, 大闸蟹到货死了，是不是你们的责任",
+            "T002, 死蟹能按只补偿吗",
+            "T002, 90001 这单死蟹了，你们负责吗",
+    })
+    @DisplayName("R7：T002 的活鲜定责诉求在 T0 定案为 policy-human 升级（不查单、不调模型）")
+    void t002LiabilityRequestsArePolicyHumanEscalations(String tenant, String query) {
+        var result = layer.classify(query, Domain.ECOMMERCE, tenant).orElseThrow();
+
+        assertThat(result.intent()).isEqualTo(Intent.ESCALATE);
+        assertThat(result.policyHuman()).isTrue();
+        assertThat(result.cacheAdmissible()).isFalse();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "T002, 死蟹赔付标准是什么",
+            "T002, 死蟹怎么申请赔付",
+            "T002, 冻品化冻了算谁的责任",
+            "T002, 水果变质了要提供照片吗",
+            "T001, 冻品化冻了算谁的责任",
+            "T001, 死蟹了，算谁的责任",
+    })
+    @DisplayName("R7 反证：政策/流程问法与非 T002 租户不升级——gold 的 T001 判定面不变，规则不越界")
+    void nonLiabilityOrOtherTenantsStayPolicy(String tenant, String query) {
+        var result = layer.classify(query, Domain.ECOMMERCE, tenant);
+
+        assertThat(result.filter(r -> r.intent() == Intent.ESCALATE)).isEmpty();
+        assertThat(result.filter(TriageResult::policyHuman)).isEmpty();
+    }
+
     @Test
     @DisplayName("round33：酒店租户的酒店问句即使带第一人称也判政策（行业门在实体/第一人称之前）")
     void hotelWordsWinOverPossessiveSoNoShopToolsAreAttached() {

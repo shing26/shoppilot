@@ -51,7 +51,7 @@ public class TriageEngine {
 
     /** 默认按电商口径判定：给不关心行业的调用方保持旧行为。 */
     public Outcome triage(String query) {
-        return triage(query, Domain.ECOMMERCE);
+        return triage(query, Domain.ECOMMERCE, null);
     }
 
     /**
@@ -59,7 +59,14 @@ public class TriageEngine {
      *               电商的政策/动作词表在那一支里不成立。
      */
     public Outcome triage(String query, Domain domain) {
-        Optional<TriageResult> byRules = t0.classify(query, domain);
+        return triage(query, domain, null);
+    }
+
+    /**
+     * @param tenantId 租户：R7 的定责升级按门店细则收口（仅 T002），null 时不生效。
+     */
+    public Outcome triage(String query, Domain domain, String tenantId) {
+        Optional<TriageResult> byRules = t0.classify(query, domain, tenantId);
         if (byRules.isPresent()) {
             earlyExitCounter.increment();
             return new Outcome(byRules.get(), null);

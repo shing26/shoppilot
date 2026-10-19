@@ -233,14 +233,19 @@ public class AgentStateMachine {
         }
 
         step(trace, sink, AgentState.TRIAGE, "开始判定");
-        TriageEngine.Outcome outcome = triageEngine.triage(query, domain);
+        TriageEngine.Outcome outcome = triageEngine.triage(query, domain, tenantId);
         TriageResult triage = outcome.result();
         step(trace, sink, AgentState.TRIAGE,
                 "layer=" + triage.layer() + " intent=" + triage.intent() + " admissible=" + triage.cacheAdmissible());
 
         if (triage.intent() == Intent.ESCALATE) {
             sink.meta(conversationId, Intent.ESCALATE, CacheService.Layer.NONE);
-            return fallback(AgentState.TRIAGE, trace, sink, FallbackReason.USER_REQUESTED, query, null, styleTier,
+            // R7：门店细则判定的转人（policyHuman）用 INTENT_UNRESOLVED——系统无法自动判定，
+            // 与买家主动喊人工（USER_REQUESTED）区分；两者都落可查工单。
+            FallbackReason reason = triage.policyHuman()
+                    ? FallbackReason.INTENT_UNRESOLVED
+                    : FallbackReason.USER_REQUESTED;
+            return fallback(AgentState.TRIAGE, trace, sink, reason, query, null, styleTier,
                     usage);
         }
 

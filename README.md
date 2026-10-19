@@ -8,7 +8,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
 [![ADR](https://img.shields.io/badge/Architecture-68%20ADRs-blueviolet)](docs/adr/)
-[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-577-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
+[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-589-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
 [![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
 **10** 态有界状态机 · **4** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
@@ -303,7 +303,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 * **Part 8 Task**：复合业务长链路端到端完成率
 * **Part 10 Autonomy**：4 轮链 / 2 步链、反思三态（触发 / 不触发 / 次数用尽）与超限出口（单独成列，不给总分；dev 档 30 条，票 148/149）
 
-**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **577 条** JVM 测试（tool-api 10 + biz-mock 73 + ticket 45 + gateway 449）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
+**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **589 条** JVM 测试（tool-api 10 + biz-mock 73 + ticket 45 + gateway 461）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
 
 ---
 
@@ -587,7 +587,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 <summary>🔁 复现：压测、评测与验收命令</summary>
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（四模块 10 + 73 + 449 + 45 = 577 项）
+# 单元、架构与主链路 JVM 集成测试（四模块 10 + 73 + 461 + 45 = 589 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟

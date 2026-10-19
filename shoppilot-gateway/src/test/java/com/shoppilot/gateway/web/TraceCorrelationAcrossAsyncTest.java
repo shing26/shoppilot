@@ -201,7 +201,7 @@ class TraceCorrelationAcrossAsyncTest {
     private AgentStateMachine machine(CacheService cache, WriteBackPool writeBack) {
         TriageEngine triage = mock(TriageEngine.class);
         // dynamic：cacheAdmissible=false，直接走模型路径，写回判定仍在末尾
-        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.dynamic(Intent.POLICY_RETURN, "T3", false), null));
         WriteBackPolicy policy = mock(WriteBackPolicy.class);
         when(policy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(true, "单元测试放行写回"));

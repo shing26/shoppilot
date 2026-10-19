@@ -80,7 +80,7 @@ class PlanExecutionTest {
 
     private AgentStateMachine machine(Domain domain) {
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.dynamic(Intent.ACTION_REFUND, "T1", false), null));
         KbEpoch epoch = mock(KbEpoch.class);
         when(epoch.current()).thenReturn(7L);

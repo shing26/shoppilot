@@ -93,16 +93,43 @@ public class T0RuleLayer {
     /** 否定词只看关键词前这么长的窗口，单位是字符。2 足够覆盖"不想/不要/别再/别"。 */
     private static final int ESCALATE_NEGATION_WINDOW = 2;
 
+    /**
+     * R7：门店细则要求「看照片不能定责」的租户（`fresh-08` 是 T002 门店细则）。
+     *
+     * <p>**必须按租户收口**：平台 `fresh-06` 反而要求商家在照片可辨识的范围内按死亡只数折算；
+     * 而 gold 的 T001 用例里 P-FRS-03「冻品化冻了算谁的责任」期望 {@code POLICY_FRESH}。
+     * 这条规则只对 T002 的**活鲜定责诉求**生效，不是行业级规则。
+     */
+    private static final java.util.Set<String> POLICY_HUMAN_TENANTS = java.util.Set.of("T002");
+    /** 活鲜主体词：只有这类商品才落到 `fresh-08` 的定责规则。 */
+    private static final List<String> POLICY_HUMAN_SUBJECTS = List.of(
+            "死蟹", "死虾", "死鱼", "活鲜", "大闸蟹", "螃蟹", "到货死", "开箱死");
+    /** 定责判断词：需要人工结合影像给出结论的诉求。 */
+    private static final List<String> POLICY_HUMAN_JUDGEMENTS = List.of(
+            "定责", "责任", "算谁", "谁负责", "谁的错", "你们负责", "你负责", "谁承担",
+            "赔不赔", "能不能赔", "该不该赔", "给不给赔", "认不认", "按只补偿", "赔我", "给我赔");
+    /** 纯政策/流程问法：答案在条款里，不因出现「责任/照片」就转人。 */
+    private static final List<String> POLICY_HUMAN_PROCESS = List.of(
+            "标准", "流程", "怎么", "如何", "政策", "规定", "时限", "比例", "需要什么", "材料", "多久", "多少");
+
     /** 默认按电商口径判定：给不关心行业的调用方（测试、离线脚本）保持旧行为。 */
     public Optional<TriageResult> classify(String query) {
-        return classify(query, Domain.ECOMMERCE);
+        return classify(query, Domain.ECOMMERCE, null);
     }
 
     /**
      * 行业感知的 T0 判定（round33 / ADR 0067）。顺序：
-     * 显式转人工 → 行业门 → 实体/第一人称动作 → 显式办理动作 → 酒店词表 → 电商政策词表。
+     * 显式转人工 → **门店定责升级（R7，仅 T002）** → 行业门 → 实体/第一人称动作 → 显式办理动作 →
+     * 酒店词表 → 电商政策词表。
      */
     public Optional<TriageResult> classify(String query, Domain domain) {
+        return classify(query, domain, null);
+    }
+
+    /**
+     * @param tenantId 租户（R7 的定责升级按门店细则收口；传 null 时该规则不生效）
+     */
+    public Optional<TriageResult> classify(String query, Domain domain, String tenantId) {
         if (query == null || query.isBlank()) {
             return Optional.empty();
         }
@@ -110,10 +137,24 @@ public class T0RuleLayer {
             // 先于实体与第一人称判定："90001 这单搞错了，转人工" 要的是人，不是订单查询
             return Optional.of(TriageResult.dynamic(Intent.ESCALATE, "T0", false));
         }
+        if (policyHumanEscalation(query, tenantId)) {
+            // R7：fresh-08「看照片不能定责，必须转人工并留可查询工单」。规则在实体分支之前：
+            // 「90001 这单死蟹了，你们负责吗」要的是人工结论，不是先查订单。
+            return Optional.of(TriageResult.policyEscalation("T0"));
+        }
         if (domain == Domain.HOTEL) {
             return classifyHotel(query);
         }
         return classifyEcommerce(query);
+    }
+
+    /** R7 定责升级的完整谓词：租户 + 活鲜主体 + 定责判断词，且不是纯政策/流程问法。 */
+    private static boolean policyHumanEscalation(String query, String tenantId) {
+        return tenantId != null
+                && POLICY_HUMAN_TENANTS.contains(tenantId)
+                && containsAny(query, POLICY_HUMAN_SUBJECTS)
+                && containsAny(query, POLICY_HUMAN_JUDGEMENTS)
+                && !containsAny(query, POLICY_HUMAN_PROCESS);
     }
 
     /**

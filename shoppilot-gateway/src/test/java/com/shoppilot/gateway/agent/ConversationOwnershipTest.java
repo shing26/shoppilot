@@ -273,7 +273,7 @@ class ConversationOwnershipTest {
 
     private AgentStateMachine stateMachine(LlmGateway llm, ToolDispatcher dispatcher) {
         TriageEngine triage = mock(TriageEngine.class);
-        when(triage.triage(anyString(), any())).thenReturn(new TriageEngine.Outcome(
+        when(triage.triage(anyString(), any(), any())).thenReturn(new TriageEngine.Outcome(
                 TriageResult.dynamic(Intent.ACTION_ADDRESS, "T0", true), null));
         WriteBackPolicy policy = mock(WriteBackPolicy.class);
         when(policy.evaluate(any())).thenReturn(new WriteBackPolicy.Verdict(false, "单元测试不外写缓存"));
