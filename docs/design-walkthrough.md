@@ -17,7 +17,7 @@
 | 2 | 意图三级级联 | `triage/TriageEngine.java`、`T0RuleLayer.java`、`T1CentroidLayer.java` | T0 字面规则 / T1 向量质心 / T2 模型，仅不确定时升级；字面「转人工」在 T0 定案，向量服务挂了也转得出去（ADR 0017） |
 | 3 | 两级缓存与穿透合并 | `cache/CacheService.java`、`L1Cache.java`、`L2SemanticCache.java`、`PolarityGuard.java`、`SingleFlight.java` | 缓存后置的代价与收益；命中 P99 22 ms；0.95 工作点之外加词法极性守卫（反义对 8/8 不互命中）；冷缓存 35264 → 18 次远程 embedding |
 | 4 | 检索与入库 | `knowledge/HybridRetriever.java`、`EmbeddingClient.java`、`ingest/MarkdownChunker.java` | Qdrant dense + ES BM25 双引擎、RRF(k=60) 融合；幂等入库；检索失败与空结果是两件事（ADR 0018 的 60 秒负缓存） |
-| 5 | Agent 编排与工具 | `agent/AgentStateMachine.java`、`ToolDispatcher.java`、`shoppilot-tool-api/` | 10 状态显式枚举；工具循环 2 轮硬上限；涉资操作只出草案（PENDING_APPROVAL），放行必须是已验签坐席（ADR 0063） |
+| 5 | Agent 编排与工具 | `agent/AgentStateMachine.java`、`ToolDispatcher.java`、`shoppilot-tool-api/` | 10 状态显式枚举；工具循环 **4 轮**硬上限（round35 / ADR 0069，原 2 轮）；读工具③操作性失败一次反思重试（占轮、不绕闸）；涉资操作只出草案（PENDING_APPROVAL），放行必须是已验签坐席（ADR 0063） |
 | 6 | 业务中台与隔离 | `bizmock/service/BizMockService.java`、`repo/`、`domain/` | 独立进程 + 跨进程内部凭证（ADR 0002）；行级租户隔离；工单统一实体四来源同表（ADR 0055） |
 | 7 | 降级、限流、可观测 | `agent/FallbackService.java`、`ratelimit/RateLimitService.java`、`config/RuntimeStateMetrics.java` | 9 种降级 reason 各落可查工单；readiness / deps / 总健康三个运维口径各管一件事（ADR 0026） |
 | 8 | 量化与门禁 | `scripts/run-acceptance.ps1`、`run_loadtest.py`、`build_loadtest_report.py`、`docs/EVIDENCE.md` | 压测报告由脚本从产物直读生成；CI 九步与 0 token 门禁；红值保留不改分母 |
@@ -27,7 +27,7 @@
 1. **定位**：面向电商大促的智能客服与业务网关，单机可复现的运行时原型，不宣称生产部署。
 2. **四个问题**：热点不进模型、对话真的落业务、语义缓存不串号、依赖故障可解释降级。
 3. **主链路**：鉴权与上下文 → 限流 → 意图级联 → L1/L2 缓存 → Hybrid 检索 → 有界 Agent → 工具或 fallback → SSE / 写回。
-4. **三个取舍**：缓存后置；工具循环最多 2 轮；0.95 阈值之外再加极性守卫。
+4. **三个取舍**：缓存后置；工具循环最多 **4 轮**（round35 / ADR 0069，原 2 轮）；0.95 阈值之外再加极性守卫。
 5. **正向数字**：命中路径 P99 22 ms；Token 节约 62.4%；虚拟线程 400-800 并发收益 +64-65%。每个数字都带模式、并发和作用域。
 6. **红值**：拦截率 74-78% 对判据 80%；吞吐 1013 QPS 对判据 1200；未命中 TTFT 690-1499 ms 对判据 500 ms。先讲差距，再讲归因和限制。
 7. **踩坑**：冷缓存雪崩把远程 embedding 从 35264 次压到 18 次，靠进程内向量缓存、穿透合并和检索失败语义一起收口。

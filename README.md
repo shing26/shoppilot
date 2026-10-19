@@ -7,11 +7,11 @@
 [![Java](https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/projects/loom/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
-[![ADR](https://img.shields.io/badge/Architecture-65%20ADRs-blueviolet)](docs/adr/)
+[![ADR](https://img.shields.io/badge/Architecture-68%20ADRs-blueviolet)](docs/adr/)
 [![JVM Tests](https://img.shields.io/badge/JVM%20Tests-577-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
 [![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
-**10** 态有界状态机 · **2** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
+**10** 态有界状态机 · **4** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
 
 <p align="center">
 <a href="#-架构与工程验证索引">核心索引</a> •
@@ -49,7 +49,7 @@
 
 | 评估维度 | 依据路径 | 关键设计考量与实测读数 |
 | :--- | :--- | :--- |
-| **架构决策演进** | [`docs/adr/`](docs/adr/) | 66 个编号 / 65 篇成文（ADR-0022 有意预留未占用），包含完整选型权衡、备选方案与后果推演。 |
+| **架构决策演进** | [`docs/adr/`](docs/adr/) | 69 个编号 / 68 篇成文（ADR-0022 有意预留未占用），包含完整选型权衡、备选方案与后果推演。 |
 | **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求实打 bge-m3 为 24–65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平。 |
 | **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0-token 判据抓出三个静默缺陷。 |
 | **全套技术栈本地运行** | [快速开始](#-快速开始一条命令) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |
@@ -517,7 +517,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 | :--- | :--- | :--- |
 | Redis Streams 会话总线（十万级并发会话） | SessionStore 已是 Redis；并发已实测到 800 档 0 错误，十万级是拓扑问题——单实例上换数据结构不改变任何结论 | EmailAdapter 等渠道被迫同步等待长任务，或出现第二实例部署 |
 | 多工具并行 / DAG 编排 | 两个工具 + 22 ms 缓存命中的世界里，并行收益低于归属校验与幂等语义的复杂化成本；ADR 0008 的时延预算论证仍成立 | 出现真实"三步以上且步间无依赖"的意图，且工具 P99 > 500 ms |
-| 真实渠道集成（微信 / IMAP） | 外部凭据与外网可达性违反单机边界；渠道维度已由 ChannelAdapter 的契约级接入覆盖（ADR 0035） | 项目定位变更，WebhookAdapter 契约被真实方消费 |
+| 真实渠道集成（微信 / IMAP / 多平台） | **飞书单聊已真连**（ADR 0065），但多平台与真实第三方凭据仍不做（ADR 0060；票 99 定死对外措辞）；渠道维度由 ChannelAdapter 的契约级接入覆盖（ADR 0035） | 出现第二个平台的真实需求，且所有者按政策覆盖开轮（ADR 0060 的多平台非目标不因定位变更自动放开） |
 | 满意度自动回流再训练 | 无训练管线与数据规模；反馈闭环只到"人工复核队列 →（触发条件下）知识库修订 → kb_epoch 递增"（ADR 0039） | 出现可寻址的离线训练环境与真实语料积累 |
 
 </details>

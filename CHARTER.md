@@ -4,7 +4,7 @@
 
 **架构定位**：融合"静态政策 RAG + 动态微服务 Tool Calling + 多级语义缓存"的工业级智能客服对话网关，解决大促瞬时并发冲击与复杂业务闭环问题。
 
-> 本文件为原始任务书，保留以追溯。经 2026-09-08 grilling 会话细化后的可执行版本见 [PLAN.md](./PLAN.md)，逐条决策理由见 [docs/adr/](./docs/adr/)，术语定义见 [CONTEXT.md](./CONTEXT.md)。任务书中与细化结论冲突之处（缓存前置、同进程反射调用 JPA、QPS 与 embedding 吞吐矛盾、租户未定义）以 PLAN.md 为准。
+> 本文件为原始任务书，保留以追溯。**当前定位与交付现状以 [ADR 0052](./docs/adr/0052-reposition-as-runnable-service-system-prototype.md) 与 [DELIVERY.md](./DELIVERY.md) 为准**；[PLAN.md](./PLAN.md) 是 2026-09-08 的原始实施计划（已被后续轮次取代，仅作追溯）。逐条决策理由见 [docs/adr/](./docs/adr/)，术语定义见 [CONTEXT.md](./CONTEXT.md)。任务书中与细化结论冲突之处（缓存前置、同进程反射调用 JPA、QPS 与 embedding 吞吐矛盾、租户未定义）以当前 ADR 与 DELIVERY 为准。
 
 ---
 
