@@ -48,7 +48,7 @@ start http://127.0.0.1:8082
 - **重开依据分两段，别混着说**：round17 – round22 六轮是[显式的政策覆盖](docs/adr/0046-round21-reopen-for-the-last-mile.md)（依次为 [0033](docs/adr/0033-round17-reopen-for-architecture-completeness.md) / [0041](docs/adr/0041-round18-reopen-for-scoring-dimension-completeness.md) / 0044 / 0045 / 0046 / 0048），**不满足 ADR 0031 的触发条件**，均已诚实记录为覆盖、**不自动续期**；round23 – round27 五轮的依据换成 **[ADR 0052](docs/adr/0052-reposition-as-runnable-service-system-prototype.md) 的定位改写**——所有者授权的 program（"客服系统化演进"，七决策 2026-10-01 确认），所以那一段不是政策越过而是**换了一个被授权的 source of truth**
 - **三条未达标红线**（缓存拦截率、吞吐峰值、未命中 TTFT）**照挂不摘**，判据与归因见 `RELEASE.md`。**不通过改口径、阈值或 Mock 参数刷绿**
 - **未覆盖项同样照登**：**gold 180 条活体重跑仍未做**——注意**预算闸门已不是障碍**（round35 票 149 把日预算抬到 `600000`，够 180 条所需的 40-60 万），未做的原因是「重跑 gold」是**独立裁定**（U7，ADR 0069 明写不并入 round35），不是预算不成立；**round22 票 64 不闭合 round19 登记第 5 项**（录放门只守排序确定性与四个常数，不覆盖活体 hit@5——`docs/retrieval-quality-metrics.md` 那张表走的是录制夹具，仍不是活体）；收口审计唯一一红 `F1c` 是 round20 那次被误删的本机日志（不可逆，判据未动未豁免）
-- **欠账有一张总账**：`.scratch/shoppilot-mvp/registered-debt.md`（已关闭 **7** / 登记项 R1-R8、R10 / 未达成 U1-U7、U10；round35 把 R11（写守卫行业门）与 R12（响应 token 字段）双双挪进已关闭），每笔要么有触发条件、要么有「永不做」的裁决——**没有第三种状态**
+- **欠账有一张总账**：`.scratch/shoppilot-mvp/registered-debt.md`（已关闭 **8** / 登记项 R1-R8、R10 / 未达成 U1-U8、U10；round35 把 R11（写守卫行业门）、R12（响应 token 字段）双双挪进已关闭，R13（README 门面化后的 8 条审计红）经所有者裁定「重锚检查为主」后同批关闭——审计项数 96 → 97），每笔要么有触发条件、要么有「永不做」的裁决——**没有第三种状态**
 
 ---
 

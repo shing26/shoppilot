@@ -169,7 +169,7 @@
 | **round29** | **B2：凭据生产态 + 按库用户隔离 + 备份恢复演练**（票 104-107） | [`round29-spec-b2-credentials-and-backup.md`](round29-spec-b2-credentials-and-backup.md)；**ADR 0062** | **done**（票 104-107 全部收口；演练 14/14；Redis 不备份/R5/TLS 带触发条件登记） |
 | **round30** | **B3：资金动作不可抵赖**（票 108-112） | [`round30-spec-b3-non-repudiation.md`](round30-spec-b3-non-repudiation.md)；**ADR 0063** | **done**（票 108-112 全部收口；JVM 466） |
 | **IM 主线** | **IM 平台接入：契约先行，真连待可行性考察**（票 96-99） | [`im-platform-line-spec.md`](im-platform-line-spec.md)；ADR **0060**、**0064**（考察）、**0065**（开线裁定） | **A、B 段均已落地**（A 段 2026-10-07 票 96/97：两格派生 + 飞书录放门；B 段 2026-10-09 round31：长连接客户端 + 凭据守卫 + wss 握手 + 全链路活体）；**主线收口已完成（票 99，2026-10-18：对外措辞定死 + README 飞书段换代）** |
-| **欠账** | **已登记不执行 / 未达成的总清单**（R1-R4 登记项、U1-U5 未达成） | [`registered-debt.md`](registered-debt.md) | **建立于 2026-10-05**（此前散落各处，无人能给出一张总账） |
+| **欠账** | **已登记不执行 / 未达成的总清单**（2026-10-19 计数：已关闭 8；登记项 R1-R8、R10；未达成 U1-U8、U10） | [`registered-debt.md`](registered-debt.md) | **建立于 2026-10-05**（此前散落各处，无人能给出一张总账） |
 | **plan** | **program 剩下三块的升级计划**（结果回流 / 买家端 / 知识服务化） | [`program-remaining-blocks.md`](program-remaining-blocks.md)；ADR **0059** | **三块全部有结局**（2026-10-04 计划；结果回流 round26 / 买家端 round27 已落地；**知识服务化 2026-10-18 票 91 裁定「不做 + 登记偏离」**，触发条件见 R1） |
 | round26 | **结果回流买家**：工单结单 → 渠道出站（票 86-90） | [`round26-spec-result-delivery.md`](round26-spec-result-delivery.md)；ADR 0059、0054、0053 | **done**（票 86-90 全部收口；**投递门禁未实跑，照登**） |
 | **program** | **客服系统化演进**（跨多轮）：定位改为可运行的多租户客服系统雏形 | [`system-program-customer-service.md`](system-program-customer-service.md)；ADR **0052-0057** | **主线三块已全部有结局**（工单竖切 round23 / 身份域 round25 / 渠道出站 round26 / 买家端 round27 落地；**知识服务化 2026-10-18 裁定不做**）；**唯一顺延项 = agent 自主性升级**（六决策未锚定到新结构，见 `agent-autonomy-spec.md`） |

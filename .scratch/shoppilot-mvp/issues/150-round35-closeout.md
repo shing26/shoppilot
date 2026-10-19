@@ -57,7 +57,7 @@ git diff --check; git status --short
    `CHANGELOG.md`（round16–round35、ADR 编号 0001-0069、新增/变更/修复各一条）；`DELIVERY.md`（状态段换代到 2026-10-19 + 漂移表新增一行）。
    **既有 ADR 一字未改**（换代指针都在 ADR 0069 / spec v2 / tracker）。
 4. **台账**：`registered-debt.md` 的 **R11 / R12 已在票 145/146 挪进「已关闭」，本票只做复核**（两条措辞与票面一致，未改）；
-   已关闭 7 条、活跃登记项 R1-R8/R10、未达成 U1-U7/U10——`DELIVERY.md` 的计数已同步。tracker：Round 表 round35 → **done**、
+   已关闭 8 条、活跃登记项 R1-R8/R10、未达成 U1-U8/U10——`DELIVERY.md` 与 tracker Round 表的计数已同步（R13 于收口当日经所有者裁定后关闭，见下「收口后追加」）。tracker：Round 表 round35 → **done**、
    索引 150 → `implemented`、frontier **清空**（`ready-for-agent` 为空）。
 
 **验证落点**：
@@ -81,3 +81,20 @@ git diff --check; git status --short
 3. **叙事换代为什么改了 README 的 552？**——那是**过期读数**：round35 机制层收口后本机 verify 实读 **577**
    （`10 + 73 + 449 + 45`），badge、CI 段与复现段三处都还写着 552/424。这类「改了代码没更新对外读数」是本仓反复登记过的毛病
    （round34 的 552 vs 551 同族），按收口职责换代并保留历史落点（README 的 round14 历史不动）。
+
+**收口后追加（2026-10-19，收尾复核）**：
+
+- **part10 写用例隔离缺口已修**（票 148 面，`fa7c77a` + `49275f7`）：`AUT-REFL-08` 换单号（90001→90002）、`AUT-RD-05`
+  的退款目标换 90003；`eval_autonomy.py` 的 `validate_cases` 新增**写用例隔离规则**（机器钉住，上线当场抓到 RD-05
+  那处同族问题），`AUTONOMY SELFCHECK ok=15` 不变。
+- **台账 R13 补登记 → 所有者裁定并关闭**（`c40954c` → `65ad83d`，CI run `39206998285` 绿）：README 门面化
+  （`2ad6ade`）之后 8 条审计检查指向的 README 内容已不存在；裁定 = **重锚检查为主、补 README 为例外**
+  （E2/E6b×2/E6c 断言面改成「README / EVIDENCE / tracker / ticket 20 至少一处含」；H5b 认三种等价说法；
+  两支一次性跑器加「已作废」第四态），另加 **R13b 对照组**防自证；审计项数 **96 → 97**，R13 移入「已关闭」。
+  本票的台账计数、`DELIVERY.md` 与 tracker Round 表三处随之校正（已关闭 8；R13 不入「登记项」；U8 补进
+  「未达成」枚举——它是 round34 就入账的，此前三处枚举都漏了它）。
+- **收尾复核读数**：`python .scratch/shoppilot-mvp/round3-closeout-audit.py`（97 项口径）→ 提交前
+  `PASS 82 / FAIL 4 / SKIP 11`（4 红 = `A1` 未推送 + `B7` 窗口 + `F1c` 历史 + `G6` 未重跑矩阵；`A3` 为 SKIP——
+  网关已停、读不到活体额度）；**推送后复跑见紧随其后的补记提交**。`.\mvnw.cmd -B -ntp verify` 复跑四模块
+  **`10 + 73 + 449 + 45 = 577`** 全绿（3:32）；CI：`db24556` run `39188609583` **success**、
+  `65ad83d`（R13 裁定）run `39206998285` **success**。
