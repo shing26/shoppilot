@@ -45,6 +45,7 @@
 import csv
 import datetime as dt
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -56,6 +57,13 @@ RESULTS = REPO / "eval" / "results"
 CASES = REPO / "eval" / "cases-part10-autonomy.jsonl"
 
 KIND = "autonomy"
+# 写用例的隔离（票 149 实测登记、2026-10-19 起机器钉住）：派生幂等 token 只看
+# `tenantId|customerId|tool|参数`、与措辞无关，而演示复位只清 biz-mock 的库、**不清 Redis 回放索引**（6 h TTL）。
+# 退款这条写路径的参数几乎只有单号（原因走默认值），所以「同单号 ⇒ 同 token」：
+# 需要看见这笔写自己结局的用例（要求写工具真的失败 / 要求它仍未办成）必须用更早用例没碰过的单号，
+# 否则拿到的是 `IDEMPOTENT_REPLAY`——工具没真的执行、故障面无处生效，这一档会静默不可观测。
+REFUND_INTENT = "ACTION_REFUND"
+ORDER_NO = re.compile(r"\b9[01]\d{3}\b")
 ZONES = ("plan", "reflection", "rounds")
 STATES = ("triggered", "none", "exhausted")
 
@@ -85,6 +93,7 @@ def validate_cases(cases):
     """结构 + 分区形状 + 措辞唯一，全部 0 token、无网关可跑。"""
     problems = []
     seen_ids, seen_queries = set(), {}
+    refund_orders = {}   # 单号 → 最早用它做退款目标的用例（见文件头的写用例隔离说明）
     for index, case in enumerate(cases, start=1):
         cid = case.get("id") or f"<第 {index} 行无 id>"
         if cid in seen_ids:
@@ -122,6 +131,20 @@ def validate_cases(cases):
                 problems.append(f"{cid}：超限区必须声明 expect.exit=TOOL_ROUNDS_EXHAUSTED")
             if "writePending" not in expect:
                 problems.append(f"{cid}：超限区必须声明 expect.writePending（读超限与写挂起超限的路径不同）")
+        # 退款目标 = 「退款」之前最后一个单号（本集里四种措辞都满足这条；抽不到就跳过，不猜）。
+        target = None
+        if case.get("intent") == REFUND_INTENT and "退款" in query:
+            before = query[:query.index("退款")]
+            found = ORDER_NO.findall(before)
+            target = found[-1] if found else None
+        if target:
+            needs_own_write = (expect.get("exit") == "TOOL_UNAVAILABLE"
+                               or (zone == "rounds" and expect.get("writePending") is True))
+            if needs_own_write and target in refund_orders:
+                problems.append(f"{cid}：这一档要看见这笔退款自己的结局，但单号 {target} 已被更早的 "
+                                f"{refund_orders[target]} 用作退款目标——同单号派生同一个幂等 token，"
+                                "会命中 IDEMPOTENT_REPLAY、写工具不会真的执行")
+            refund_orders.setdefault(target, cid)
         fault = case.get("fault")
         if fault and fault.get("mode") not in ("persistent", "window"):
             problems.append(f"{cid}：fault.mode 未知（{fault.get('mode')!r}）")
