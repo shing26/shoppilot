@@ -95,6 +95,6 @@ git diff --check; git status --short
   「未达成」枚举——它是 round34 就入账的，此前三处枚举都漏了它）。
 - **收尾复核读数**：`python .scratch/shoppilot-mvp/round3-closeout-audit.py`（97 项口径）→ 提交前
   `PASS 82 / FAIL 4 / SKIP 11`（4 红 = `A1` 未推送 + `B7` 窗口 + `F1c` 历史 + `G6` 未重跑矩阵；`A3` 为 SKIP——
-  网关已停、读不到活体额度）；**推送后复跑见紧随其后的补记提交**。`.\mvnw.cmd -B -ntp verify` 复跑四模块
+  网关已停、读不到活体额度）；**推送后复跑 `PASS 83 / FAIL 3 / SKIP 11`**（A1 转绿；3 红 = `B7` 窗口 + `F1c` 历史 + `G6` 未重跑矩阵，零新增）。`.\mvnw.cmd -B -ntp verify` 复跑四模块
   **`10 + 73 + 449 + 45 = 577`** 全绿（3:32）；CI：`db24556` run `39188609583` **success**、
   `65ad83d`（R13 裁定）run `39206998285` **success**。
