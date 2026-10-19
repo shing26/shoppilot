@@ -958,8 +958,9 @@ check("H2b README 里那句全称否定只许以撤回形式出现（对照组�
 #     但文档必须自己点名是哪个 commit，否则读者无从复核——这条口径写进本票第 11 条。
 CITE_PAT = re.compile(r"([A-Za-z0-9_\-]+\.(?:py|ps1|java)):(\d+)")
 EXPECT_CITE = {
-    "run_tool_eval.py": {"156": ("tool_ok = ", None), "160": ("tool_ok = ", None),
-                         "421": ("def rescore_details", None)},
+    # 票 149 给 http_json 加了可选 method= 参数（+2 行），三处引用按磁盘行重锚 156/160/421 -> 158/162/423。
+    "run_tool_eval.py": {"158": ("tool_ok = ", None), "162": ("tool_ok = ", None),
+                         "423": ("def rescore_details", None)},
     "up.ps1": {"58": ("throw 'Ollama 未监听 11434", "e7c19ad^"),  # 订正前那份；订正后同一句在第 68 行
                "66": ("Start-ShoppilotService", None), "68": ("throw 'Ollama 未监听 11434", None),
                "71": ("ollama list", None)},

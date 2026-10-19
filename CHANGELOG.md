@@ -5,7 +5,7 @@
 | 索引 | 位置 |
 | --- | --- |
 | 逐轮台账与实现单元 | [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md) |
-| 决策记录 | [`docs/adr/`](docs/adr/)（编号 0001-0065，0022 有意预留未占用） |
+| 决策记录 | [`docs/adr/`](docs/adr/)（编号 0001-0069，0022 有意预留未占用） |
 | 指标证据与未达成项 | [`docs/EVIDENCE.md`](docs/EVIDENCE.md) |
 | 发布声明与冻结策略 | [`RELEASE.md`](RELEASE.md) |
 
@@ -13,7 +13,7 @@
 
 ## [Unreleased]
 
-`v1.0.0` 之后的工作（round16 – round31，逐轮依据见 [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) 的冻结策略与 [`.scratch/shoppilot-mvp/`](.scratch/shoppilot-mvp/README.md) 台账）。
+`v1.0.0` 之后的工作（round16 – round35，逐轮依据见 [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) 的冻结策略与 [`.scratch/shoppilot-mvp/`](.scratch/shoppilot-mvp/README.md) 台账）。
 
 ### Added
 
@@ -26,6 +26,7 @@
 - 涉资动作不可抵赖：模型只有草案权（`PENDING_APPROVAL`），放行必须是已验签坐席账号并落审计（ADR 0047/0063）。
 - 极性守卫：语义缓存命中的词法反义复核，反义对 8/8 不互命中（ADR 0016）。
 - 检索融合 0 token 录放回归门：由录制序重算融合比对 top-K（ADR 0049）。
+- **有界工具循环 2 → 4 轮 + 读工具一次反思重试**（round35 / ADR 0069）：上限是硬上限（超限照旧 `TOOL_ROUNDS_EXHAUSTED` 落工单），读工具的③操作性失败（超时/不可用）由系统把失败事实回填、让模型换一种做法再试一次——占同一份轮次预算、按工具合计 1 次、写工具不反思、**任何闸都先于反思判定**；三态（触发 / 不触发 / 次数用尽）可枚举可判（`plan[].attempt` / `reflection` + `shoppilot_reflection_total{outcome}` + trace 的 `reflection=<tool> attempt=<n>` 行）。
 
 **业务域与多租户**
 
@@ -65,7 +66,8 @@
 - 定位改写：从「面试作品」到「可运行的客服系统雏形」（ADR 0052；范围红线继承自 ADR 0024）。
 - 四服务拆分：gateway / biz-mock / ticket / 共享 tool-api，跨进程 HTTP 边界带内部凭证（ADR 0002/0053）。
 - CI 门禁从五步扩到九步（+task 判据 / +检索录放门 / +告警规则测试 / +两个前端产物校验），0 token 不变。
-- 指标名计数换代 41 → 55；token 计量加 `source=provider|estimate` 标签（名字不变 → 计数不变）。
+- 指标名计数换代 41 → 55 → **56/58**（round35 票 145 新增 `shoppilot_reflection_total{outcome}`；三模块 56 / 四模块 58）；token 计量加 `source=provider|estimate` 标签（名字不变 → 计数不变）；`shoppilot_plan_steps_total{steps}` 值域随 4 轮出现 `3`/`4`。
+- dev 档 token 日预算 260000 → **600000**（round35 票 149；闸门本体保留，ADR 0012 一字未改）。
 - 验证判据持续收紧：覆盖率棘轮、告警规则 `promtool test rules` 两侧断言、套件夹具门。
 
 ### Fixed
@@ -74,6 +76,8 @@
 - **静默失败三连**：事件骨干从未在真 Redis 上跑通而门禁全绿——`MONITOR` 取证定位配置缺失/写死/流名当组名三个缺陷；新增 0 token 配置一致性判据（首次运行即抓到第三缺陷）。
 - SSE 响应头显式声明 `charset=UTF-8`：未声明时按区域嗅探的客户端（Chromium CDP）会按系统区域解码产生双重编码乱码。
 - 「转人工」情绪门回归（ADR 0042）、退款审核读回、追问无取消出口、`/auth/login` 缺 `username`、`up.ps1` 运行中打包换瘦包等活体验收抓出的产品缺陷。
+- **写动作守卫漏吃行业门**（round35 票 146 / 台账 R11）：非电商租户的办理类诉求会触发纠偏一枪、还给模型「直接调用 `applyRefund` 把它真的办掉」的指令（与 prompt 第 7 条冲突、有诱导谎报风险）——`expectedWrite` 在非电商租户置空，纠偏与「写挂起超限」两条路径一并吃上门。
+- **响应 token 字段不是全量**（round35 票 145 / 台账 R12）：预算检查后收尾只报最后一跳、`fallback()` 与受理出口恒 0、缓存命中不记入口层——逐请求 `TokenUsage` 总账一次收口（响应字段仍不是计费口径，成本读指标增量）。
 - **跨店同问同答**（round34 / ADR 0068）：平台缓存桶的共享前提从「引用全为平台条款」收紧为「本行业该意图不存在店铺级条款」（`ShopRuleIndex` 探针，读写同源、失败 fail-closed）——修掉「先有人问过，别家门店细则就永不生效、甚至本店答案被顶掉」；同批修空召回把模型自由发挥当答案（政策意图 0 条且未降级 → 确定性转人工 + 工单），以及 `citationDetails` 命中路径缺出处两处契约错位。新增活体门禁 `verify-store-isolation.py`（矩阵 29 步）。
 - **B3 审计「谁放的钱」在 Redis 流路径丢失**（round34 补记 / 票 132）：`RedisAuditChannel.toMap` 漏写 `actorAuthenticated`、`fromMap` 回落旧构造，凡走流的审计事件一律落成「未认证」——资金动作的责任人查询面分不出来；补字段 + 十参构造 + 线路往返测试（活体直证修复前 `auth=False` → 修复后 `auth=True`）。
 - 验收工装三处漂移（round34 补记 / 票 133）：`verify-refund-approval.ps1` 的默认口令/审计端点/PS7 数组形状/action 名、`verify-workspace.mjs` 的旧选择器；`console` 的 staff-only 读面缺口登记待裁定。
