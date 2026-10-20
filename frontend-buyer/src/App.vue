@@ -258,21 +258,23 @@ function clearStoredSession() {
         <h2>我的工单</h2>
         <p v-if="ticketError" class="err">{{ ticketError }}</p>
         <p v-if="ticketsLoading" class="empty">正在读取…</p>
-        <table v-if="tickets.length">
-          <thead>
-            <tr><th>工单号</th><th>我问了什么</th><th>状态</th><th>优先级</th><th>预计时限</th><th>处理人</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="t in tickets" :key="t.id">
-              <td class="mono">{{ t.id }}</td>
-              <td class="query">{{ t.userQuery }}</td>
-              <td :class="{ done: t.status === 'RESOLVED' }">{{ STATUS_LABEL[t.status] ?? t.status }}</td>
-              <td :class="{ urgent: t.priority === 'high' }">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</td>
-              <td :class="{ overdue: !!t.escalatedAt }">{{ slaText(t) }}</td>
-              <td>{{ t.assignee ?? '待分配' }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div v-if="tickets.length" class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>工单号</th><th>我问了什么</th><th>状态</th><th>优先级</th><th>预计时限</th><th>处理人</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="t in tickets" :key="t.id">
+                <td class="mono">{{ t.id }}</td>
+                <td class="query">{{ t.userQuery }}</td>
+                <td :class="{ done: t.status === 'RESOLVED' }">{{ STATUS_LABEL[t.status] ?? t.status }}</td>
+                <td :class="{ urgent: t.priority === 'high' }">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</td>
+                <td :class="{ overdue: !!t.escalatedAt }">{{ slaText(t) }}</td>
+                <td>{{ t.assignee ?? '待分配' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <p v-else-if="!ticketError && !ticketsLoading" class="empty">你还没有需要人工处理的工单</p>
       </section>
     </template>
@@ -302,8 +304,10 @@ h2 { font-size: 15px; margin: 24px 0 8px; }
 .typing::after { content: '…'; }
 .warn { color: #b54708; font-size: 13px; margin: 6px 0 0; }
 .cites { color: #666; font-size: 13px; padding-left: 18px; margin: 6px 0 0; text-align: left; }
-.mono { font-family: ui-monospace, monospace; margin-right: 6px; }
-table { border-collapse: collapse; width: 100%; }
+.mono { font-family: ui-monospace, monospace; margin-right: 6px; overflow-wrap: anywhere; }
+/* 窄屏（round36 / 票 151）：宽表格在容器内横向滚动，页面本身不横向溢出 */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 560px; }
 th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; vertical-align: top; }
 .query { max-width: 320px; }
 .overdue { color: #b42318; }

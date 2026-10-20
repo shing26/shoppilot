@@ -320,42 +320,44 @@ function clearStoredSession() {
     <p v-if="loadError" class="err">{{ loadError }}</p>
     <p v-if="actionNote" class="note">{{ actionNote }}</p>
 
-    <table v-if="sorted.length">
-      <thead>
-        <tr><th>工单号</th><th>来源</th><th>队列</th><th>优先级</th><th>诉求</th><th>SLA</th><th>状态</th><th>操作</th></tr>
-      </thead>
-      <tbody>
-        <template v-for="t in sorted" :key="t.id">
-          <tr>
-            <td class="mono">{{ t.id }}</td>
-            <td>{{ SOURCE_LABEL[t.source ?? ''] ?? t.source ?? '—' }}</td>
-            <td>{{ QUEUE_LABEL[t.queue ?? ''] ?? t.queue ?? '—' }}</td>
-            <td :class="{ urgent: t.priority === 'high' }">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</td>
-            <td class="query">{{ t.userQuery }}</td>
-            <td :class="{ overdue: !!t.escalatedAt }">{{ slaText(t) }}</td>
-            <td>{{ STATUS_LABEL[t.status] ?? t.status }}<span v-if="t.assignee"> / {{ t.assignee }}</span></td>
-            <td class="ops">
-              <button type="button" @click="expandedId = expandedId === t.id ? '' : t.id">
-                {{ expandedId === t.id ? '收起' : '详情' }}
-              </button>
-              <button type="button" :disabled="!!inFlight" @click="run(t, 'claim')">领取</button>
-              <button type="button" :disabled="!!inFlight || t.status === 'OPEN'" @click="run(t, 'release')">释放</button>
-              <button type="button" :disabled="!!inFlight || t.status === 'RESOLVED'" @click="openResolve(t)">处理完成</button>
-            </td>
-          </tr>
-          <!-- 会话原文（round36 / 票 151）：默认收起，展开后限高滚动——单张单可达 8000 字。 -->
-          <tr v-if="expandedId === t.id" class="detail-row">
-            <td colspan="8">
-              <div class="detail">
-                <div class="detail-cap">会话原文</div>
-                <pre v-if="t.transcript">{{ t.transcript }}</pre>
-                <p v-else class="empty">这张单没有可显示的会话原文</p>
-              </div>
-            </td>
-          </tr>
-        </template>
-      </tbody>
-    </table>
+    <div v-if="sorted.length" class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>工单号</th><th>来源</th><th>队列</th><th>优先级</th><th>诉求</th><th>SLA</th><th>状态</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <template v-for="t in sorted" :key="t.id">
+            <tr>
+              <td class="mono">{{ t.id }}</td>
+              <td>{{ SOURCE_LABEL[t.source ?? ''] ?? t.source ?? '—' }}</td>
+              <td>{{ QUEUE_LABEL[t.queue ?? ''] ?? t.queue ?? '—' }}</td>
+              <td :class="{ urgent: t.priority === 'high' }">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</td>
+              <td class="query">{{ t.userQuery }}</td>
+              <td :class="{ overdue: !!t.escalatedAt }">{{ slaText(t) }}</td>
+              <td>{{ STATUS_LABEL[t.status] ?? t.status }}<span v-if="t.assignee"> / {{ t.assignee }}</span></td>
+              <td class="ops">
+                <button type="button" @click="expandedId = expandedId === t.id ? '' : t.id">
+                  {{ expandedId === t.id ? '收起' : '详情' }}
+                </button>
+                <button type="button" :disabled="!!inFlight" @click="run(t, 'claim')">领取</button>
+                <button type="button" :disabled="!!inFlight || t.status === 'OPEN'" @click="run(t, 'release')">释放</button>
+                <button type="button" :disabled="!!inFlight || t.status === 'RESOLVED'" @click="openResolve(t)">处理完成</button>
+              </td>
+            </tr>
+            <!-- 会话原文（round36 / 票 151）：默认收起，展开后限高滚动——单张单可达 8000 字。 -->
+            <tr v-if="expandedId === t.id" class="detail-row">
+              <td colspan="8">
+                <div class="detail">
+                  <div class="detail-cap">会话原文</div>
+                  <pre v-if="t.transcript">{{ t.transcript }}</pre>
+                  <p v-else class="empty">这张单没有可显示的会话原文</p>
+                </div>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
     <p v-if="loading" class="empty">正在读取…</p>
     <p v-else-if="!loadError" class="empty">这一档队列里没有待处理工单</p>
 
@@ -365,25 +367,27 @@ function clearStoredSession() {
       <p class="hint">资金动作的责任人必须是已验签账号（ADR 0063）。放行/驳回都会记进审计。</p>
       <p v-if="refundError" class="err">{{ refundError }}</p>
       <p v-if="refundNote" class="note">{{ refundNote }}</p>
-      <table v-if="refunds.length">
-        <thead>
-          <tr><th>退款号</th><th>订单号</th><th>店铺</th><th>金额</th><th>理由</th><th>状态</th><th>操作</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="r in refunds" :key="r.refundId">
-            <td class="mono">{{ r.refundId }}</td>
-            <td class="mono">{{ r.orderNo }}</td>
-            <td>{{ r.tenantId }}</td>
-            <td>{{ (r.amountFen / 100).toFixed(2) }} 元</td>
-            <td class="query">{{ r.reason }}</td>
-            <td>{{ r.status }}</td>
-            <td class="ops">
-              <button type="button" :disabled="!!refundInFlight" @click="runRefundReview(r, 'APPROVE')">放行</button>
-              <button type="button" :disabled="!!refundInFlight" @click="runRefundReview(r, 'REJECT')">驳回</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-if="refunds.length" class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>退款号</th><th>订单号</th><th>店铺</th><th>金额</th><th>理由</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in refunds" :key="r.refundId">
+              <td class="mono">{{ r.refundId }}</td>
+              <td class="mono">{{ r.orderNo }}</td>
+              <td>{{ r.tenantId }}</td>
+              <td>{{ (r.amountFen / 100).toFixed(2) }} 元</td>
+              <td class="query">{{ r.reason }}</td>
+              <td>{{ r.status }}</td>
+              <td class="ops">
+                <button type="button" :disabled="!!refundInFlight" @click="runRefundReview(r, 'APPROVE')">放行</button>
+                <button type="button" :disabled="!!refundInFlight" @click="runRefundReview(r, 'REJECT')">驳回</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p v-else-if="!refundError" class="empty">当前没有待审核的退款申请</p>
     </section>
 
@@ -422,7 +426,10 @@ h1 { font-size: 20px; margin: 0 0 4px; }
 .hint { color: #666; font-weight: 400; margin-left: 6px; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; vertical-align: top; }
-.mono { font-family: ui-monospace, monospace; }
+.mono { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+/* 窄屏（round36 / 票 151）：宽表格在容器内横向滚动，页面本身不横向溢出 */
+.table-wrap { overflow-x: auto; }
+table { min-width: 720px; }
 .query { max-width: 320px; }
 .overdue { color: #b42318; }
 .urgent { color: #b42318; font-weight: 600; }

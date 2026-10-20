@@ -1,43 +1,15 @@
+import { messageOf, request, type ApiResult } from 'frontend-shared'
 import type { Citation, CitationDetail, Session, Ticket } from './types'
 
 /**
- * 与另两个前端同一套失败口径（`scripts/verify-console.mjs` 之外那份家法的第三份实现）。
+ * 请求封装与失败出口在 `frontend-shared`（round36 / 票 151）：网络级失败（fetch reject）
+ * 收进同一个出口，返回 `status: 0` 加一句为什么，不留下未捕获的 `Failed to fetch`。
  *
- * <p>网络级失败（fetch 自己 reject）**必须**收进同一个出口：返回 `status: 0` 加一句为什么，
- * 让所有调用方走它们既有的失败分支，而不是留下未捕获的 `Failed to fetch`
- * （调试台那轮修过的坑，见 `RestErrorEnvelopeTest` 的注释）。
- *
- * <p>三个出口各有一句话，不混：0 = 网关不可达；401 = 登录失效；403 = 没有这个买家数据的权限。
+ * <p>本文件只保留买家自己的路径与失败文案：0 = 网关不可达；401 = 登录失效；
+ * 403 = 没有这个买家数据的权限。这三个出口各有一句话，不混。
  */
-export interface ApiResult<T> {
-  status: number
-  body: T | { message?: string }
-}
-
-export async function request<T>(
-  path: string,
-  opts: { method?: string; token?: string; body?: unknown; raw?: string } = {},
-): Promise<ApiResult<T>> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (opts.token?.trim()) headers.Authorization = `Bearer ${opts.token.trim()}`
-  let res: Response
-  try {
-    res = await fetch(path, {
-      method: opts.method ?? 'GET',
-      headers,
-      body: opts.raw ?? (opts.body === undefined ? undefined : JSON.stringify(opts.body)),
-    })
-  } catch (unreachable) {
-    const reason = unreachable instanceof Error ? unreachable.message : 'network error'
-    return { status: 0, body: { message: `网关不可达（${reason}）` } }
-  }
-  const text = await res.text()
-  try {
-    return { status: res.status, body: (text ? JSON.parse(text) : {}) as T }
-  } catch (badJson) {
-    return { status: res.status, body: { message: text || '响应不是 JSON' } }
-  }
-}
+export { messageOf }
+export type { ApiResult }
 
 /** 登录换令牌（round25 的 `/auth/login`，`AuthFilter` 对 `/auth/` 整体放行）。 */
 export function login(tenantId: string, username: string, password: string): Promise<ApiResult<Session>> {
@@ -177,14 +149,6 @@ function asObject(parsed: unknown): Record<string, unknown> {
 }
 
 /** 取下游那句话；页面各处直接展示，不要各自写一遍 if。 */
-export function messageOf(body: unknown): string | null {
-  if (body && typeof body === 'object' && 'message' in body) {
-    const message = (body as { message?: unknown }).message
-    return typeof message === 'string' && message ? message : null
-  }
-  return null
-}
-
 /** 三种失败各有各的说法，混成一句「加载失败」正是调试台修掉的那个毛病。 */
 export function describe(result: ApiResult<unknown>, fallback: string): string {
   if (result.status === 0) return messageOf(result.body) ?? '网关不可达'

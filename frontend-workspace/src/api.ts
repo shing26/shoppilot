@@ -1,21 +1,19 @@
+import { messageOf, request, type ApiResult } from 'frontend-shared'
 import type { Ticket } from './types'
 
 /**
  * 与运维调试台同一套失败口径（`index.html` 的 `api()`，票 61 修过的那条）。
  *
- * <p>网络级失败（fetch 自己 reject）**必须**收进同一个出口：以前这里是直接抛出去，
- * 于是读数格冻结在初始的「-」、抽屉停在「尚未拉取」，还留下未捕获的 `Failed to fetch`。
- * 所以返回 `status: 0` 加一句为什么，让所有调用方走它们既有的失败分支。
+ * <p>round36 / 票 151 起请求封装下沉到 `frontend-shared`：网络级失败（fetch reject）收进
+ * 同一个出口，返回 `status: 0` 加一句为什么，不留下未捕获的 `Failed to fetch`。
  *
  * <p>票据 83 起**只有一种凭证**：坐席账号登录换来的令牌。
  * 此前这一层要同时带 {@code X-Ops-Token} 与自报坐席名——而自报的那个名字在网关侧
  * 会被令牌里的账号覆盖，页面上那个输入框其实已经不起作用了（ADR 0058 第 4 条）。
  * 留着它只会让人以为「改个名字就能换个人」。
  */
-export interface ApiResult<T> {
-  status: number
-  body: T | { message?: string }
-}
+export { messageOf }
+export type { ApiResult }
 
 const BASE = '/api/v1/support/ops'
 
@@ -28,26 +26,8 @@ export interface Session {
   customerId: string | null
 }
 
-export async function api<T>(method: string, path: string, opts: { token?: string; body?: unknown } = {}): Promise<ApiResult<T>> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (opts.token?.trim()) headers.Authorization = `Bearer ${opts.token.trim()}`
-  let res: Response
-  try {
-    res = await fetch(BASE + path, {
-      method,
-      headers,
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-    })
-  } catch (unreachable) {
-    const reason = unreachable instanceof Error ? unreachable.message : 'network error'
-    return { status: 0, body: { message: `网关不可达（${reason}）` } }
-  }
-  const text = await res.text()
-  try {
-    return { status: res.status, body: (text ? JSON.parse(text) : {}) as T }
-  } catch (badJson) {
-    return { status: res.status, body: { message: text || '响应不是 JSON' } }
-  }
+export function api<T>(method: string, path: string, opts: { token?: string; body?: unknown } = {}): Promise<ApiResult<T>> {
+  return request<T>(BASE + path, { ...opts, method })
 }
 
 /**
@@ -109,14 +89,6 @@ export async function login(tenantId: string, username: string, password: string
  * <p>单独一个函数而不是让每个调用点 cast：body 是 `T | { message? }`，
  * 散着写就会出现三处各写一遍的类型断言——那种地方迟早漏一处，而漏的那处编译不出来。
  */
-export function messageOf(body: unknown): string | null {
-  if (body && typeof body === 'object' && 'message' in body) {
-    const message = (body as { message?: unknown }).message
-    return typeof message === 'string' && message ? message : null
-  }
-  return null
-}
-
 /** 把一次动作的结果翻成人话。调用方直接展示，不要各自写一遍 if。 */
 export function describe(result: ApiResult<unknown>, done: string): string {
   if (result.status === 0) return messageOf(result.body) ?? '网关不可达'

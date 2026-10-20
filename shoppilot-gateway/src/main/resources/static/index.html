@@ -99,6 +99,10 @@
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button[aria-pressed=true] { background: var(--ink); color: #fff; }
   .val { font-family: var(--mono); font-size: 11px; min-width: 44px; color: var(--ink-2); }
+  /* 产品入口链接（round36 / 票 151）：外观跟页脚按钮同族，但它是导航不是动作。 */
+  a.entry { font-size: 12px; color: var(--ink); text-decoration: none; border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 9px; background: #fff; }
+  a.entry:hover { border-color: var(--ink-3); }
   /* 抽屉从 header 下沿开始（49px 与上面 header 的声明高度同源）：压在 header 之上时，
      「工单队列」那颗按钮会被抽屉自己盖住，点开之后就再也关不掉了（走查第 11 项）。 */
   aside.drawer { position: fixed; inset: 49px 0 0 auto; width: min(520px,92vw); background: var(--panel);
@@ -211,6 +215,13 @@
   <div class="ctl"><span class="val" id="agentWho"></span></div>
   <div class="ctl"><button class="sm" id="btnRefunds">退款审核</button></div>
   <div class="ctl"><span class="t">circuit</span><span class="val" id="circuit">-</span><span class="t">refunds</span><span class="val" id="refunds">-</span></div>
+  <!-- 产品入口（round36 票 151 / ADR 0070）：导航是单向的——调试台能到产品页，产品页不回链运维面。
+       放页脚而不是 header：header 高度 49px 被抽屉 inset 钉死，且 390px 页脚不溢出断言（verify-console）
+       量的是 footer 的 flex-wrap。 -->
+  <div class="ctl"><span class="t">入口</span>
+    <a class="entry" href="/buyer/">买家端</a>
+    <a class="entry" href="/workspace/">坐席工作台</a>
+  </div>
 </footer>
 <div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer">

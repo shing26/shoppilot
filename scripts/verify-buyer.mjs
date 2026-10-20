@@ -171,6 +171,16 @@ check(
   `user 气泡 ${await page.locator('.msg.user').count()} 条`,
 );
 
+// 窄屏（round36 / 票 151）：宽表格进容器内滚动，页面本身不横向溢出。
+await page.setViewportSize({ width: 390, height: 780 });
+await page.waitForTimeout(200);
+const overflow = await page.evaluate(() => ({
+  doc: document.documentElement.scrollWidth,
+  view: window.innerWidth,
+}));
+check('窄屏 390px 不横向溢出', overflow.doc <= overflow.view + 1, JSON.stringify(overflow));
+await page.setViewportSize({ width: 1280, height: 900 });
+
 check('没有未捕获的页面异常', pageErrors.length === 0, pageErrors.join(' | '));
 
 await browser.close();

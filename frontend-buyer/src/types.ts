@@ -1,28 +1,20 @@
 /**
- * 前端契约镜像（round27 票 93）。
+ * 买家端契约镜像（round27 票 93；round36 票 151 与坐席端共用 `frontend-shared`）。
  *
- * <p>字段与 `com.shoppilot.tool.view.TicketView` 逐项对齐——那份是契约的唯一来源，
- * 这里只是它在前端的样子；多一个少一个都会把「读不到」变成「读错」。
+ * <p>共用字段与标签映射已下沉到 `frontend-shared`（`TicketSummary` / `STATUS_LABEL` /
+ * `PRIORITY_LABEL` / `minutesLeft`），这里只保留买家侧特有的部分。
  *
- * <p>⚠️ 买家这一份**没有 `transcript`**（票 92 的 `toBuyerView` 刻意少那一格）：
- * 坐席与买家之间的会话原文不是给买家看的。留着这一格会让「前端多一个字段」
- * 看起来像无害，而它其实是一条数据可见性的承诺。
+ * <p>⚠️ 买家视角**没有 `transcript`**：`WorkItemService.toBuyerView` 刻意置空。
+ * 它不是在共用类型上「少写一格」——共用类型里本来就没有这一格，坐席视角在自己的
+ * `frontend-workspace/src/types.ts` 里扩展它。
  */
-export interface Ticket {
-  id: string
-  tenantId: string
-  customerId: string
-  reason: string
-  userQuery: string
-  status: string
-  priority: string | null
-  createdAt: string
-  source: string | null
-  queue: string | null
-  assignee: string | null
-  slaDeadline: string | null
-  escalatedAt: string | null
-}
+import type { TicketSummary } from 'frontend-shared'
+
+export type { TicketSummary }
+export { PRIORITY_LABEL, STATUS_LABEL, minutesLeft } from 'frontend-shared'
+
+/** 买家看到的工单：共用字段的全集，没有坐席专属的 transcript。 */
+export type Ticket = TicketSummary
 
 /** 一条引用（政策条款），与网关 `citations` 同形。 */
 export interface Citation {
@@ -54,24 +46,4 @@ export interface Session {
   tenantId: string
   customerId: string | null
   displayName: string | null
-}
-
-/** 状态的买家视角说法。领域枚举是 TicketStatus 的 OPEN/ASSIGNED/RESOLVED。 */
-export const STATUS_LABEL: Record<string, string> = {
-  OPEN: '等待处理',
-  ASSIGNED: '处理中',
-  RESOLVED: '已处理完成',
-}
-
-/** 优先级的可读名：存储字面量 high/money/normal 在页面上对齐成一处。 */
-export const PRIORITY_LABEL: Record<string, string> = {
-  high: '紧急',
-  money: '资金',
-  normal: '普通',
-}
-
-/** SLA 剩余分钟数；已超时为负（前端据此显示「已超时」，但不改状态）。 */
-export function minutesLeft(deadline: string | null, now: number): number | null {
-  if (!deadline) return null
-  return Math.round((new Date(deadline).getTime() - now) / 60000)
 }

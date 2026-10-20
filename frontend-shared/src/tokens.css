@@ -1,0 +1,92 @@
+/**
+ * 两个产品入口共用的设计令牌与基础控件样式（round36 票 151 / ADR 0070）。
+ *
+ * <p>只放「两边必须一致」的东西：颜色、字号、圆角、按钮/输入/表格的基线。
+ * 页面级布局仍留在各自的 `App.vue` 里——共享层不该替某一页决定它长什么样。
+ *
+ * <p>令牌值取自调试台（它此前是三个前端里唯一有成套设计令牌的一页）；
+ * 产品页不再各写一份 `#b42318` 之类的散色。
+ */
+:root {
+  --bg: #f2f3f5;
+  --panel: #fff;
+  --ink: #14161a;
+  --ink-2: #5c636e;
+  --ink-3: #6b7280;
+  --line: #dfe2e7;
+  --line-2: #eceef1;
+  --teal: #0f766e;
+  --amber: #b45309;
+  --rose: #be123c;
+  --green: #15803d;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: var(--font);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--ink-3);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+input,
+select,
+textarea {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  background: var(--panel);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line-2);
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+}

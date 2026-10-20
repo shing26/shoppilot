@@ -404,6 +404,16 @@ check('narrow footer wraps instead of running off the screen',
 await page.setViewportSize({ width: 1440, height: 900 });
 await page.waitForTimeout(200);
 
+// 产品入口（round36 / 票 151）：两个产品页必须能从运维页到达，且产品页不回链这里。
+const entries = await page.$$eval('footer a.entry', (els) =>
+  els.map((a) => ({ text: a.textContent.trim(), href: a.getAttribute('href') })));
+check(
+  '两个产品入口可从调试台到达（买家端 / 坐席工作台）',
+  entries.some((e) => e.text.includes('买家') && e.href === '/buyer/')
+    && entries.some((e) => e.text.includes('坐席') && e.href === '/workspace/'),
+  JSON.stringify(entries),
+);
+
 // 截图放在换身份那两格**之前**：那两格量的是「换买家把整段对话作废」，跑完 #chat 与 #timeline 是空的，
 // 入仓那张 docs/console.png 就会变成一张空台子的照片——它作为「这一轮的调试台长什么样」的证据就没用了。
 await page.screenshot({ path: 'docs/console.png', fullPage: false });
