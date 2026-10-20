@@ -124,14 +124,28 @@ if (new Set(ranks).size >= 2) {
 }
 
 // 处理完成是不可逆的一步，必须有人点一次确认（票 61 在退款面板上踩过这个坑）。
-let confirmShown = false;
-page.on('dialog', (dialog) => {
-  confirmShown = true;
-  void dialog.dismiss();
-});
+// round36 / 票 151：确认从原生 confirm 换成带意见文本框的对话框——原来那条 confirm 只证明
+// 「有人拦了一下」，而意见框证明的是「结论真的会被填进去」（ADR 0059 的结果回流正文）。
 await page.locator('button:has-text("处理完成")').first().click({ noWaitAfter: true }).catch(() => {});
-await page.waitForTimeout(400);
-check('处理完成会先确认，不是一键生效', confirmShown, confirmShown ? '对话框已弹出并被脚本取消' : '没弹出确认框');
+await page.waitForTimeout(300);
+const dialogShown = await page.locator('.dialog').isVisible().catch(() => false);
+check('处理完成先打开确认对话框，不是一键生效', dialogShown);
+
+let emptyNoteBlocked = false;
+if (dialogShown) {
+  await page.locator('.dialog button:has-text("确认结单")').click({ noWaitAfter: true }).catch(() => {});
+  await page.waitForTimeout(200);
+  emptyNoteBlocked = await page.locator('.dialog .err').isVisible().catch(() => false);
+}
+check('结单意见为空时提交被拦（意见是结果回流的正文）', emptyNoteBlocked);
+
+let dialogClosed = false;
+if (dialogShown) {
+  await page.locator('.dialog button:has-text("取消")').click().catch(() => {});
+  await page.waitForTimeout(200);
+  dialogClosed = !(await page.locator('.dialog').isVisible().catch(() => false));
+}
+check('取消后对话框关闭，不留下半截操作', dialogClosed);
 
 // 防连点：一次只允许一个动作在飞。
 // 领取：真点一次，并看它是否进了「已领取」那一档（领取人的名字出现在该行）。

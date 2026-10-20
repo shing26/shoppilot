@@ -168,9 +168,9 @@ public class WorkItemService {
      * 本服务不再从任何请求参数里读它（ADR 0005 防线一）。租户由 {@link TenantContextHolder} 给，
      * 与本类其余查询同一口径。
      *
-     * <p><b>买家这一侧刻意少一格</b>：{@link TicketView} 带 transcript（坐席看的会话原文），
-     * 而 {@link #toBuyerView} 不带。买家看自己的诉求、状态、优先级与处理结论就够了，
-     * 坐席与买家之间那些来回不是给他看的。
+     * <p><b>买家这一侧刻意少两格</b>：{@link TicketView} 带 transcript（坐席看的会话原文）与 contact
+     * （投递目标），而 {@link #toBuyerView} 两格都置空。买家看自己的诉求、状态、优先级与处理结论就够了，
+     * 坐席与买家之间那些来回不是给他看的，投递目标也不该回到他手里。
      */
     @Transactional(readOnly = true)
     public List<TicketView> listOwn(String customerId) {
@@ -180,12 +180,12 @@ public class WorkItemService {
                 .toList();
     }
 
-    /** 买家视角的视图：与坐席同一形状，只少 {@code transcript} 一格。 */
+    /** 买家视角的视图：与坐席同一形状，{@code contact} 与 {@code transcript} 两格置空。 */
     private static TicketView toBuyerView(Ticket ticket) {
         return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
                 ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt(),
                 ticket.getSource(), ticket.getQueue(), ticket.getAssignee(), ticket.getSlaDeadline(),
-                ticket.getPayload(), ticket.getEscalatedAt(), ticket.getChannel(), null);
+                ticket.getPayload(), ticket.getEscalatedAt(), ticket.getChannel(), null, null);
     }
 
     /**
@@ -271,6 +271,7 @@ public class WorkItemService {
         return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
                 ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt(),
                 ticket.getSource(), ticket.getQueue(), ticket.getAssignee(), ticket.getSlaDeadline(),
-                ticket.getPayload(), ticket.getEscalatedAt(), ticket.getChannel(), ticket.getContact());
+                ticket.getPayload(), ticket.getEscalatedAt(), ticket.getChannel(), ticket.getContact(),
+                ticket.getTranscript());
     }
 }

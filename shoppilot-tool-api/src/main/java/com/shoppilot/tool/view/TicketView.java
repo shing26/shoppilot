@@ -32,13 +32,27 @@ public record TicketView(
         /** 买家当初问的渠道（web/app/miniapp/webhook/email）；null = 这张单没有渠道。 */
         String channel,
         /** 投递目标（邮箱或 webhook 回调地址）；null = 无处可投。**它不是身份，也不是隔离依据。 */
-        String contact) {
+        String contact,
+        // round36 票 151 / ADR 0070：坐席需要的会话原文。追加在尾部以免改动既有反序列化契约。
+        /**
+         * 坐席与买家之间的会话原文；**买家视角恒为 null**（`WorkItemService.toBuyerView` 刻意置空）。
+         * 它不是身份，也不是隔离依据——隔离仍由租户上下文与 `customerId` 承担。
+         */
+        String transcript) {
 
     /** 票 86 之前的十三参构造，落到「无渠道、无目标」。 */
     public TicketView(String id, String tenantId, String customerId, String reason, String userQuery, String status,
                       String priority, Instant createdAt, String source, String queue, String assignee,
                       Instant slaDeadline, String payload, Instant escalatedAt) {
         this(id, tenantId, customerId, reason, userQuery, status, priority, createdAt, source, queue, assignee,
-                slaDeadline, payload, escalatedAt, null, null);
+                slaDeadline, payload, escalatedAt, null, null, null);
+    }
+
+    /** 票 151 之前的十六参构造，落到「无会话原文」——坐席若需要它必须显式传。 */
+    public TicketView(String id, String tenantId, String customerId, String reason, String userQuery, String status,
+                      String priority, Instant createdAt, String source, String queue, String assignee,
+                      Instant slaDeadline, String payload, Instant escalatedAt, String channel, String contact) {
+        this(id, tenantId, customerId, reason, userQuery, status, priority, createdAt, source, queue, assignee,
+                slaDeadline, payload, escalatedAt, channel, contact, null);
     }
 }

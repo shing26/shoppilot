@@ -26,6 +26,31 @@ export interface Ticket {
 
 export const QUEUES = ['ALL', 'ESCALATION', 'REFUND', 'REVIEW', 'REPLY', 'DEFAULT'] as const
 
+/** 队列的可读名（round36 / 票 151）。未知值原样透出，不吞。 */
+export const QUEUE_LABEL: Record<string, string> = {
+  ALL: '全部',
+  ESCALATION: '转人工',
+  REFUND: '退款',
+  REVIEW: '复核',
+  REPLY: '回复',
+  DEFAULT: '默认',
+}
+
+/** 状态的坐席视角说法；与买家端同一口径（`frontend-buyer/src/types.ts`）。 */
+export const STATUS_LABEL: Record<string, string> = {
+  OPEN: '等待处理',
+  ASSIGNED: '处理中',
+  RESOLVED: '已处理完成',
+}
+
+/** 工单来源（`TicketSource`）的可读名；未知值原样透出。 */
+export const SOURCE_LABEL: Record<string, string> = {
+  DEGRADE: '降级转人工',
+  FEEDBACK_REVIEW: '点踩复核',
+  REFUND_APPROVAL: '退款审批',
+  CHANNEL_RECEIPT: '渠道回执',
+}
+
 /** 优先级的可读名：领域名（TicketPriority）与存储字面量（high/money/normal）在页面上对齐成一处。 */
 export const PRIORITY_LABEL: Record<string, string> = {
   high: '紧急',

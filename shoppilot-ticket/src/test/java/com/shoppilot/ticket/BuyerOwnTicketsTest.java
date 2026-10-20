@@ -68,15 +68,22 @@ class BuyerOwnTicketsTest {
     }
 
     @Test
-    @DisplayName("买家视角少一格：不返回 transcript（坐席看的会话原文不是给他看的）")
-    void buyerViewOmitsTranscript() throws Exception {
+    @DisplayName("坐席拿得到会话原文、买家拿不到：两臂同测，避免真空断言")
+    void opsSeesTranscriptButBuyerDoesNot() throws Exception {
         String mine = createTicket("C001", "我这条要找客服");
 
-        JsonNode first = firstOf(getMine("C001"));
-        assertThat(first.path("id").asText()).isEqualTo(mine);
-        assertThat(first.has("transcript")).as("买家不该拿到会话原文").isFalse();
-        assertThat(first.path("userQuery").asText()).as("诉求原文要给，那是买家自己说的").isEqualTo("我这条要找客服");
-        assertThat(first.path("status").asText()).isEqualTo("OPEN");
+        // 先证「坐席这一臂真的带 transcript」——只断买家拿不到的话，两边都没有该字段时它也会绿
+        // （round36 / 票 151 修掉的正是这条真空断言）。
+        JsonNode ops = JSON.readTree(getTicket(mine, "T001").getBody());
+        assertThat(ops.path("transcript").asText())
+                .as("坐席必须拿得到会话原文")
+                .isEqualTo("坐席与买家之间的原文");
+
+        JsonNode buyer = firstOf(getMine("C001"));
+        assertThat(buyer.path("id").asText()).isEqualTo(mine);
+        assertThat(buyer.hasNonNull("transcript")).as("买家不该拿到会话原文").isFalse();
+        assertThat(buyer.path("userQuery").asText()).as("诉求原文要给，那是买家自己说的").isEqualTo("我这条要找客服");
+        assertThat(buyer.path("status").asText()).isEqualTo("OPEN");
     }
 
     @Test
@@ -101,6 +108,12 @@ class BuyerOwnTicketsTest {
 
     private ResponseEntity<String> getMine(String customerId) {
         return getMine(customerId, null, "T001");
+    }
+
+    /** 坐席视角的按号读取（票 151 起用它证明 transcript 真的被带出来）。 */
+    private ResponseEntity<String> getTicket(String ticketId, String tenantId) {
+        return rest.exchange("/api/tickets/" + ticketId, HttpMethod.GET,
+                new HttpEntity<>(headers(tenantId, "C001")), String.class);
     }
 
     private ResponseEntity<String> getMine(String customerId, String query, String tenantId) {

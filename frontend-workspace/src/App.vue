@@ -27,7 +27,7 @@ import {
   type RefundItem,
   type Session,
 } from './api'
-import { PRIORITY_LABEL, QUEUES, minutesLeft, priorityRank, type Ticket } from './types'
+import { QUEUE_LABEL, PRIORITY_LABEL, QUEUES, SOURCE_LABEL, STATUS_LABEL, minutesLeft, priorityRank, type Ticket } from './types'
 
 /**
  * 登录态放 sessionStorage 而不是 localStorage。
@@ -49,6 +49,16 @@ const loadError = ref('')
 const actionNote = ref('')
 const inFlight = ref<string>('')
 const now = ref(Date.now())
+
+// 详情展开（round36 / 票 151）：会话原文在 TicketView 里，默认收起——一张 8000 字的原文
+// 摊在表格里会把队列读面挤没。
+const expandedId = ref('')
+
+// 结单意见（round36 / 票 151 / ADR 0059）：note 会同时进审计与出站正文，空串等于让买家
+// 收到一句「已处理完成」。所以结单改成带文本框的对话框，空意见在提交前拦住。
+const resolveTarget = ref<Ticket | null>(null)
+const resolveNote = ref('')
+const resolveError = ref('')
 
 // ── 退款审核（B3 / ADR 0063）────────────────────────────────────────────────
 const refunds = ref<RefundItem[]>([])
@@ -96,6 +106,10 @@ function signOut() {
   tickets.value = []
   loadError.value = ''
   actionNote.value = ''
+  expandedId.value = ''
+  resolveTarget.value = null
+  resolveNote.value = ''
+  resolveError.value = ''
   refunds.value = []
   refundError.value = ''
   refundNote.value = ''
@@ -128,23 +142,60 @@ async function refresh() {
   tickets.value = result.body
 }
 
-async function run(ticket: Ticket, kind: 'claim' | 'release' | 'resolve') {
+async function run(ticket: Ticket, kind: 'claim' | 'release') {
   if (!session.value || inFlight.value) return // 防连点：一次只允许一个动作在飞
-  // 处理完成是不可逆的一步（谁结的它是责任链的终点证据），所以要人点一次确认。
-  if (kind === 'resolve' && !window.confirm(`确认处理完 ${ticket.id}？\n结单后不能再流转，且会记进审计。`)) {
-    return
-  }
   inFlight.value = `${ticket.id}:${kind}`
   actionNote.value = ''
   const result =
     kind === 'claim'
       ? await claimTicket(ticket.id, session.value)
-      : kind === 'release'
-        ? await releaseTicket(ticket.id, session.value)
-        : await resolveTicket(ticket.id, session.value, '')
-  actionNote.value = describe(result, { claim: '已领取', release: '已释放', resolve: '已处理完成' }[kind])
+      : await releaseTicket(ticket.id, session.value)
+  actionNote.value = describe(result, { claim: '已领取', release: '已释放' }[kind])
   inFlight.value = ''
   await refresh()
+}
+
+/** 打开结单对话框。真正的确认在 `confirmResolve`，不在浏览器原生 confirm 里。 */
+function openResolve(ticket: Ticket) {
+  if (!session.value || inFlight.value) return
+  resolveTarget.value = ticket
+  resolveNote.value = ''
+  resolveError.value = ''
+}
+
+function closeResolve() {
+  if (inFlight.value) return
+  resolveTarget.value = null
+  resolveNote.value = ''
+  resolveError.value = ''
+}
+
+/**
+ * 结单：意见必填。
+ *
+ * <p>空串不是「没写」这么简单——`WorkItemService.resolve` 拿它当审计说明与出站正文，
+ * ADR 0059 承诺的「结单结论送回原渠道」正落在这段文字上。
+ */
+async function confirmResolve() {
+  const ticket = resolveTarget.value
+  if (!ticket || !session.value || inFlight.value) return
+  const note = resolveNote.value.trim()
+  if (!note) {
+    resolveError.value = '请填写处理结论——它会随结果回流送到买家'
+    return
+  }
+  inFlight.value = `${ticket.id}:resolve`
+  resolveError.value = ''
+  const result = await resolveTicket(ticket.id, session.value, note)
+  inFlight.value = ''
+  if (result.status >= 200 && result.status < 300) {
+    resolveTarget.value = null
+    resolveNote.value = ''
+    actionNote.value = '已处理完成，结论已进入结果回流'
+    await refresh()
+    return
+  }
+  resolveError.value = describe(result, '')
 }
 
 // ── 退款审核（B3 / ADR 0063）────────────────────────────────────────────────
@@ -232,7 +283,7 @@ function clearStoredSession() {
   <main class="wrap">
     <header>
       <h1>坐席工作台</h1>
-      <p class="sub">工单与坐席服务（round23 票 72）· 凭证形态：坐席账号登录（票 83 / ADR 0056）</p>
+      <p class="sub">待处理工单与资金审核 · 署名取自登录账号，所有动作记进审计</p>
     </header>
 
     <section v-if="!session" class="ctl">
@@ -253,7 +304,7 @@ function clearStoredSession() {
       <span class="who">当前身份：{{ who }}<span class="hint">（署名取自登录令牌，页面上不能改）</span></span>
       <label>队列
         <select v-model="queue" @change="refresh">
-          <option v-for="q in QUEUES" :key="q" :value="q">{{ q }}</option>
+          <option v-for="q in QUEUES" :key="q" :value="q">{{ QUEUE_LABEL[q] ?? q }}</option>
         </select>
       </label>
       <button type="button" @click="refresh">刷新</button>
@@ -269,20 +320,35 @@ function clearStoredSession() {
         <tr><th>工单号</th><th>来源</th><th>队列</th><th>优先级</th><th>诉求</th><th>SLA</th><th>状态</th><th>操作</th></tr>
       </thead>
       <tbody>
-        <tr v-for="t in sorted" :key="t.id">
-          <td class="mono">{{ t.id }}</td>
-          <td>{{ t.source }}</td>
-          <td>{{ t.queue }}</td>
-          <td :class="{ urgent: t.priority === 'high' }">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</td>
-          <td class="query">{{ t.userQuery }}</td>
-          <td :class="{ overdue: !!t.escalatedAt }">{{ slaText(t) }}</td>
-          <td>{{ t.status }}<span v-if="t.assignee"> / {{ t.assignee }}</span></td>
-          <td class="ops">
-            <button type="button" :disabled="!!inFlight" @click="run(t, 'claim')">领取</button>
-            <button type="button" :disabled="!!inFlight || t.status === 'OPEN'" @click="run(t, 'release')">释放</button>
-            <button type="button" :disabled="!!inFlight || t.status === 'RESOLVED'" @click="run(t, 'resolve')">处理完成</button>
-          </td>
-        </tr>
+        <template v-for="t in sorted" :key="t.id">
+          <tr>
+            <td class="mono">{{ t.id }}</td>
+            <td>{{ SOURCE_LABEL[t.source ?? ''] ?? t.source ?? '—' }}</td>
+            <td>{{ QUEUE_LABEL[t.queue ?? ''] ?? t.queue ?? '—' }}</td>
+            <td :class="{ urgent: t.priority === 'high' }">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</td>
+            <td class="query">{{ t.userQuery }}</td>
+            <td :class="{ overdue: !!t.escalatedAt }">{{ slaText(t) }}</td>
+            <td>{{ STATUS_LABEL[t.status] ?? t.status }}<span v-if="t.assignee"> / {{ t.assignee }}</span></td>
+            <td class="ops">
+              <button type="button" @click="expandedId = expandedId === t.id ? '' : t.id">
+                {{ expandedId === t.id ? '收起' : '详情' }}
+              </button>
+              <button type="button" :disabled="!!inFlight" @click="run(t, 'claim')">领取</button>
+              <button type="button" :disabled="!!inFlight || t.status === 'OPEN'" @click="run(t, 'release')">释放</button>
+              <button type="button" :disabled="!!inFlight || t.status === 'RESOLVED'" @click="openResolve(t)">处理完成</button>
+            </td>
+          </tr>
+          <!-- 会话原文（round36 / 票 151）：默认收起，展开后限高滚动——单张单可达 8000 字。 -->
+          <tr v-if="expandedId === t.id" class="detail-row">
+            <td colspan="8">
+              <div class="detail">
+                <div class="detail-cap">会话原文</div>
+                <pre v-if="t.transcript">{{ t.transcript }}</pre>
+                <p v-else class="empty">这张单没有可显示的会话原文</p>
+              </div>
+            </td>
+          </tr>
+        </template>
       </tbody>
     </table>
     <p v-else-if="!loadError" class="empty">这一档队列里没有待处理工单</p>
@@ -314,6 +380,29 @@ function clearStoredSession() {
       </table>
       <p v-else-if="!refundError" class="empty">当前没有待审核的退款申请</p>
     </section>
+
+    <!-- 结单对话框（round36 / 票 151）：原生 confirm 装不下意见文本框，而意见是结果回流的正文。 -->
+    <div v-if="resolveTarget" class="scrim" @click.self="closeResolve">
+      <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="resolve-title">
+        <h2 id="resolve-title">处理完成</h2>
+        <p class="dialog-sub">
+          工单 <span class="mono">{{ resolveTarget.id }}</span> ·
+          {{ resolveTarget.userQuery }}
+        </p>
+        <label class="dialog-field">
+          处理结论（必填，会随结果回流送到买家）
+          <textarea v-model="resolveNote" rows="4" placeholder="例如：已核实商品破损，按实付金额退款，3 个工作日内到账" />
+        </label>
+        <p v-if="resolveError" class="err">{{ resolveError }}</p>
+        <p class="hint">结单后不能再流转，操作会记进审计，责任人是当前登录账号。</p>
+        <div class="dialog-actions">
+          <button type="button" :disabled="!!inFlight" @click="closeResolve">取消</button>
+          <button type="button" class="primary" :disabled="!!inFlight" @click="confirmResolve">
+            {{ inFlight ? '正在提交…' : '确认结单' }}
+          </button>
+        </div>
+      </section>
+    </div>
   </main>
 </template>
 
@@ -339,4 +428,25 @@ th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; v
 .refund-panel { margin-top: 32px; }
 .refund-panel h2 { font-size: 16px; margin: 0 0 4px; }
 .refund-panel .hint { color: #666; margin: 0 0 12px; }
+
+/* 会话原文：限高滚动，避免一张 8000 字的单把队列读面挤走 */
+.detail-row td { background: #fafafa; }
+.detail { max-height: 320px; overflow: auto; }
+.detail-cap { font-size: 12px; color: #666; margin-bottom: 4px; }
+.detail pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.55 ui-monospace, monospace; }
+
+/* 结单对话框 */
+.scrim { position: fixed; inset: 0; background: rgba(20, 22, 26, .38); display: flex; align-items: center;
+  justify-content: center; padding: 16px; z-index: 30; }
+.dialog { background: #fff; border-radius: 10px; padding: 20px; width: min(520px, 100%);
+  box-shadow: 0 18px 48px rgba(20, 22, 26, .22); }
+.dialog h2 { font-size: 17px; margin: 0 0 6px; }
+.dialog-sub { color: #444; margin: 0 0 14px; overflow-wrap: anywhere; }
+.dialog-field { display: block; font-size: 13px; color: #444; }
+.dialog-field textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font: inherit;
+  border: 1px solid #cfd3d9; border-radius: 6px; resize: vertical; box-sizing: border-box; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.dialog-actions .primary { background: #14161a; color: #fff; border: 1px solid #14161a; border-radius: 6px;
+  padding: 6px 14px; cursor: pointer; }
+.dialog-actions button { padding: 6px 14px; cursor: pointer; }
 </style>
