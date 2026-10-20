@@ -215,8 +215,9 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
 ├── shoppilot-ticket/          # 工单流转服务：SLA 路由规则、涉资操作审核队列、出站通知
 ├── shoppilot-biz-mock/        # 下游电商业务基座：多租户行级隔离、身份域、审计流
 ├── shoppilot-tool-api/        # 工具规范抽象：JSON Schema 自动派生、ToolStatus 契约定义
-├── frontend-buyer/            # 买家交互端应用 (Vue 3 + Vite)
-├── frontend-workspace/        # 客服审核工作台 (Vue 3 + Vite)
+├── frontend-buyer/            # 买家交互端应用 (Vue 3 + Vite)：对话流、我的工单
+├── frontend-workspace/        # 客服审核工作台 (Vue 3 + Vite)：队列、领取、结单、退款审核
+├── frontend-shared/           # 两个产品入口共用的设计令牌、契约类型与请求封装
 ├── loadtest/                  # locust 流量模型与压测产物（ladder-*.csv / env-*.json）
 ├── knowledge/                 # 30 篇政策语料（ingest 入库后推进 kb_epoch）
 ├── docs/                      # 架构决策记录 (ADR)、双曲线压测、真实事故复盘与架构走读
@@ -393,7 +394,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | 模型依赖 | dev / local / perf 三模式 | 数字归属清晰：吞吐类指标只算编排层，推理成本另开一条曲线（ADR 0001）；dev 口径下每请求多一跳情绪分类调用，token 成本随口径登记 |
 | **身份与责任** | 自建轻量身份域（`users` 表 + BCrypt + 三角色），落在 biz-mock（ADR 0056、0058） | 退款放行是不可逆的资金动作，它的责任人曾经是一个请求头。现在登录换来的令牌带角色，工单动作与退款审核要 `AGENT`/`ADMIN`（或运维凭证），审计事件的 actor 带着「这个名字是否来自已验签令牌」一起落库。登录面 `/auth/login` `/auth/register` `/auth/me` 在网关；账号数据在 biz-mock。密码策略只做到演示口径：BCrypt cost 10、最短 8 位、无失败锁定、无 refresh token（ADR 0056 的非目标） |
 | **结果回流** | 工单结单 → `channel.outbound`（Redis Streams）→ 网关消费端投递（ADR 0059、0054） | 买家问 → 转人工落单 → 坐席处理若干分钟到若干小时 → **结论送回原渠道**：这是 program 主线的最后一格。**「送达」的定义是目标返回 2xx**，不是「发出去了」；至少一次投递所以消费端按 `event_id` 幂等；送不到落 `CHANNEL_RECEIPT` 工单而不是丢。email 不真发（无 SMTP 依赖），web 渠道不发出站 |
-| **三个前端入口** | `/` 运维调试台、`/workspace/` 坐席工作台、`/buyer/` 买家中心（Vite+Vue3，各自独立工程、产物入库、CI 逐字节校验） | 买家中心能登录、问、看**自己**的工单（买家号只从已验签身份取，同店另一买家的单一条都不出现）。三个入口的静态放行面由 `StaticEntryExemptionTest` 一次钉住（ADR 0057、0005） |
+| **三个前端入口** | `/` 运维调试台、`/workspace/` 坐席工作台、`/buyer/` 买家中心（两个 Vite+Vue3 工程 + 共享层 `frontend-shared`；产物入库、CI 逐字节校验） | 买家中心能登录、连续提问（对话流保留历史）、看**自己**的工单（买家号只从已验签身份取，同店另一买家的单一条都不出现）；坐席能看到会话原文并填写结单结论（结论随结果回流送到买家）。三个入口的静态放行面由 `StaticEntryExemptionTest` 一次钉住，调试台页脚提供两个产品入口（ADR 0057、0005、0070） |
 
 </details>
 

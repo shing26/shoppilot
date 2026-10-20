@@ -5,7 +5,7 @@
 | 索引 | 位置 |
 | --- | --- |
 | 逐轮台账与实现单元 | [`.scratch/shoppilot-mvp/README.md`](.scratch/shoppilot-mvp/README.md) |
-| 决策记录 | [`docs/adr/`](docs/adr/)（编号 0001-0069，0022 有意预留未占用） |
+| 决策记录 | [`docs/adr/`](docs/adr/)（编号 0001-0070，0022 有意预留未占用） |
 | 指标证据与未达成项 | [`docs/EVIDENCE.md`](docs/EVIDENCE.md) |
 | 发布声明与冻结策略 | [`RELEASE.md`](RELEASE.md) |
 
@@ -13,7 +13,7 @@
 
 ## [Unreleased]
 
-`v1.0.0` 之后的工作（round16 – round35，逐轮依据见 [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) 的冻结策略与 [`.scratch/shoppilot-mvp/`](.scratch/shoppilot-mvp/README.md) 台账）。
+`v1.0.0` 之后的工作（round16 – round36，逐轮依据见 [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) 的冻结策略与 [`.scratch/shoppilot-mvp/`](.scratch/shoppilot-mvp/README.md) 台账）。
 
 ### Added
 
@@ -41,6 +41,10 @@
 - 坐席工作台 `/workspace/`：真账号登录、工单队列、领取/处理/释放、退款审核面板（ADR 0057）。
 - 买家中心 `/buyer/`：登录 + SSE 会话 + 我的工单；买家自己的工单端点只认买家 JWT。
 - 两个前端构建产物入库，CI 逐字节校验（改源码必须重建提交）。
+- **产品面履约（round36 / 票 151 / ADR 0070）**：坐席端补会话原文（`TicketView` 尾部追加 `transcript`，
+  买家视角仍为 null 且隔离测试改成两臂同测）、结单结论必填（恢复 ADR 0059 的「结论送回原渠道」）、
+  状态/来源/队列可读名；买家端换成对话流（连续提问保留历史）、店铺码走 URL、加载态与空态分开；
+  新建 `frontend-shared`（设计令牌 + 契约类型 + 请求封装），调试台页脚提供两个产品入口，产品页不回链。
 
 **身份与凭据治理**
 

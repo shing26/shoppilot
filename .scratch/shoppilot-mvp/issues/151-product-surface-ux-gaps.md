@@ -1,6 +1,6 @@
 # 151 产品面履约：两个产品入口从「验收夹具」到可用的界面
 
-**Status:** ready-for-agent（2026-10-20 开轮：round36，[ADR 0070](../../../docs/adr/0070-round36-product-surface-completion-reopen-basis.md)）
+**Status:** implemented（2026-10-20；A+B+C 三段全部落地，浏览器门禁未实跑照登）
 
 **Claimed by:** zcode session 2026-10-20（round36 实现：A+B+C 三段）
 
@@ -182,4 +182,59 @@ git diff --check; git status --short
 
 ## Handoff notes
 
-（未开工。开工前先完成「开工前置」裁定并补 `Claimed by`；收口时补关键决策、验证落点与三个现场追问。）
+**关键决策**：
+
+1. **三段分三次提交**：`c46f97a`（A）/ `2fd890f`（B）/ `cd5be1f`（C）。A 段可独立回退；开轮文档是 `7156e2a`。
+2. **A2 契约**：`TicketView` **尾部追加** `transcript`，保留 14 参与 16 参兼容构造器；`toView` 传真实值、
+   `toBuyerView` 显式传 `null`。真空断言改成**两臂同测**（先证坐席拿得到，再证买家拿不到）。
+   **变异对照实测为真**：把 `toBuyerView` 的 transcript 从 `null` 改成 `ticket.getTranscript()`，
+   `opsSeesTranscriptButBuyerDoesNot` 当场红；还原后绿。
+3. **A1 结单意见**：原生 `confirm` 换成自建对话框（否决 `window.prompt`：不可样式化、不可测非阻塞交互）。
+   口径 = **前端必填、后端维持宽容**——`resolve` 的 `note` 早已同时进审计与出站正文
+   （`ResolvePublishesOutboundTest` 覆盖），本票补的是「不填就提交」那条产品路径。
+4. **A3/A4**：工作台补 `STATUS_LABEL` / `SOURCE_LABEL` / `QUEUE_LABEL`（未知值原样透出）；
+   页头副标题去掉票号/ADR 编号。
+5. **B1 对话流**：`messages` 数组 + SSE 增量写入**最后一条的索引**。
+   **实现坑**：`push` 进去的是裸对象，直接 `assistant.text += chunk` 不触发渲染（没有走代理 set），
+   必须 `messages.value[index].text += chunk`。
+6. **B2 店铺入口**：取 URL 店铺码 `/buyer/?store=T001`；登录后用 `/api/v1/support/ops/tenants`
+   取店名显示；缺 `store` 时给可读说明并禁用登录（不猜、不退回内部 id 输入框）。**否决新增公开端点**
+   （登录前无令牌，新增未鉴权面要连带限流/枚举/跨店探测的安全复核）。
+7. **B3 加载态**：两个产品页都加 `loading`，读取中显示「正在读取…」；空态只在读取成功后出现。
+8. **C1 共享层**：`frontend-shared/` 以 `file:../frontend-shared` 接入两个工程，导出
+   `tokens.css`、`request` / `ApiResult` / `messageOf`、`TicketSummary` / 标签 / SLA 计算。
+   **否决根 npm workspaces**（要改两处 `npm ci` 的位置与 lockfile 结构，收益只是去重）。
+9. **C2 导航**：只在调试台页脚加「买家端 / 坐席工作台」两个入口；产品页**不回链**运维台。
+   入口放页脚而不是 header：header 49px 被抽屉 `inset` 钉死，且 390px 页脚溢出断言会红。
+10. **C3 窄屏**：两个产品页的宽表格进 `.table-wrap` 容器内滚，页面级 `scrollWidth <= innerWidth`。
+11. **门禁改动（只改引导方式，不改所量的东西）**：
+    - `verify-workspace.mjs`：`window.confirm` → 自建对话框，改量「对话框出现 / 空意见被拦 / 取消后关闭」
+      （3 格）；领取、释放、无页面异常原样。
+    - `verify-buyer.mjs`：入口带 `?store=T001`；新增「加载态不冒充空态」「店铺码从 URL 生效」
+      「连续提问保留历史」「390px 不横向溢出」（4 格）；跨买家隔离承重格原样。
+    - `verify-console.mjs`：新增「两个产品入口存在且 href 正确」（1 格）；390px 页脚断言原样。
+
+**验证落点**：
+
+- `bash ./mvnw -B -ntp verify` → 四模块全绿 **`10 + 73 + 463 + 45 = 591`**（本票未增删 JVM 用例，
+  只改了 `BuyerOwnTicketsTest` 一条用例的断言面）。
+- 两个前端 `npm run typecheck` + `npm run build` 全绿；**`npm ci` 干净安装实测**（各 53 包）后重建，
+  `git status` 对 `static/buyer` / `static/workspace` **逐字节无差异**（CI 第九步等价）。
+- 390px 静态渲染实测：`console doc=390/view=390/foot=390/390`（两个入口 href 正确）、
+  `buyer doc=390/view=390`、`workspace doc=390/view=390`。
+- **未实跑照登**：三个 Playwright 活体门禁（需网关 + 工单 + 身份 + 模型）本轮**未跑**，
+  所以「页面交互真的能用」仍只有 typecheck/build/静态布局三层证据；
+  `docs/console.png` **未重拍**（视觉变化只有页脚两个入口，重拍要活体跑 `verify-console`；
+  该脚本会重写这张图，下次清场日跑门禁时一并换代）。
+- **判据面零触碰**：gold 180 / 阈值 / 分母 / `judge()` / 既有验收判据一字未动。
+
+**三个现场追问**：
+
+1. **为什么 A1 后端不改必填？**——`resolve` 对空 `note` 的宽容是既有契约（空 → 「未填说明」/
+   「已处理完成」），改必填会动 API 语义与既有测试口径；把「不填就能点结单」堵在 UI 上，
+   既恢复 ADR 0059 的结论语义，又不扩大后端变更面。
+2. **为什么 B2 不新增公开店铺端点？**——登录前没有令牌；新增公开面要为一次 UI 改动连带做
+   限流、枚举与跨店探测的复核。URL 店铺码是同类产品常规入口，且不扩任何暴露面。
+3. **为什么 transcript 追加在尾部而不是新 DTO？**——`@JsonIgnoreProperties(ignoreUnknown = true)`
+   + 尾部追加 + 兼容构造器能保住既有反序列化契约（票 86 先例）；新 DTO 会让网关、工单、前端
+   各长一份镜像，正是 C1 要收掉的那种重复。
