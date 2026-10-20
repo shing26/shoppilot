@@ -17,7 +17,8 @@ import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');
 
 const BASE = process.env.SHOPPILOT_GATEWAY_BASE || 'http://127.0.0.1:8082';
-const PAGE = `${BASE}/buyer/`;
+// round36 / 票 151：店铺码走 URL（ADR 0070 B2），页面不再有「店铺编号」输入框。
+const PAGE = `${BASE}/buyer/?store=${encodeURIComponent(process.env.SHOPPILOT_IDENTITY_TENANT || 'T001')}`;
 const TENANT = process.env.SHOPPILOT_IDENTITY_TENANT || 'T001';
 const BUYER = process.env.SHOPPILOT_IDENTITY_AGENT || 'buyer';
 const PASSWORD = process.env.SHOPPILOT_IDENTITY_DEMO_PASSWORD;
@@ -102,15 +103,35 @@ check(
 );
 
 // 真走一遍登录表单：直接往 sessionStorage 塞令牌会跳过「登录面能用」这件事。
-await page.fill('input[placeholder="店铺编号，如 T001"]', TENANT);
+// round36 / 票 151：店铺码从 URL 来，先拦慢一拍「我的工单」，让加载态可观测——
+// 「读取中」不能被渲染成「你还没有需要人工处理的工单」。
+await page.route('**/api/v1/support/ops/tickets/mine', async (route) => {
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  await route.continue();
+});
 await page.fill('input[placeholder="买家账号"]', BUYER);
 await page.fill('input[placeholder="口令"]', PASSWORD);
 await page.locator('button:has-text("登录")').click();
-await page.waitForTimeout(800);
+
+const loadingSeen = await page.waitForSelector('text=正在读取…', { timeout: 5000 }).then(() => true).catch(() => false);
+const loadingText = await page.locator('.tickets').innerText().catch(() => '');
+check(
+  '读取工单时先说「正在读取」，不冒充空态',
+  loadingSeen && loadingText.includes('正在读取') && !loadingText.includes('你还没有'),
+  loadingText.replace(/\s+/g, ' ').slice(0, 80),
+);
+
+await page.waitForSelector('tbody tr', { timeout: 12000 }).catch(() => {});
 check(
   '登录后页面显示当前身份（署名取自令牌，页面上不能改）',
   (await page.locator('.who').innerText().catch(() => '')).length > 0,
   await page.locator('.who').innerText().catch(() => '(没有 .who)'),
+);
+check(
+  '店铺码从 URL 生效、页面上不再要求输入店铺编号',
+  (await page.locator('input[placeholder="店铺编号，如 T001"]').count()) === 0
+    && (await page.locator('.store').innerText().catch(() => '')).length > 0,
+  (await page.locator('.store').innerText().catch(() => '(没有店名/店铺码)')),
 );
 
 // --- 我的工单 --------------------------------------------------------------------------------
@@ -124,13 +145,31 @@ check(
   `另一个买家的工单号 ${otherTicketId}`,
 );
 
-// --- 提问 --------------------------------------------------------------------------------------
+// --- 提问（round36 / 票 151：对话流，不是只显示最后一条） --------------------------------------
 
-await page.fill('input[placeholder="七天无理由退货怎么操作"]', '七天无理由退货怎么操作');
-await page.locator('button:has-text("提问")').click();
-await page.waitForTimeout(2500);
-const answerText = await page.locator('.answer').innerText().catch(() => '');
-check('提问后有回答或一句说清为什么的降级说明', answerText.length > 0, answerText.replace(/\s+/g, ' ').slice(0, 60));
+const ask = async (question) => {
+  await page.fill('input[placeholder="七天无理由退货怎么操作"]', question);
+  await page.locator('button:has-text("提问")').click();
+  await page
+    .waitForFunction(() => {
+      const bubbles = document.querySelectorAll('.msg.assistant .bubble');
+      const last = bubbles[bubbles.length - 1];
+      return Boolean(last && last.textContent.trim().length > 10);
+    }, null, { timeout: 20000 })
+    .catch(() => {});
+};
+
+await ask('七天无理由退货怎么操作');
+const firstAnswer = await page.locator('.msg.assistant .bubble').last().innerText().catch(() => '');
+check('提问后有回答或一句说清为什么的降级说明', firstAnswer.length > 0, firstAnswer.replace(/\s+/g, ' ').slice(0, 60));
+
+await ask('订单 90002 到哪了');
+const threadText = await page.locator('.thread').innerText().catch(() => '');
+check(
+  '连续提问保留历史（对话流不是只显示最后一条）',
+  (await page.locator('.msg.user').count()) >= 2 && threadText.includes('七天无理由退货怎么操作'),
+  `user 气泡 ${await page.locator('.msg.user').count()} 条`,
+);
 
 check('没有未捕获的页面异常', pageErrors.length === 0, pageErrors.join(' | '));
 

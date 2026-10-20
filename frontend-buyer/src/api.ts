@@ -44,6 +44,23 @@ export function login(tenantId: string, username: string, password: string): Pro
   return request<Session>('/auth/login', { method: 'POST', body: { tenantId, username, password } })
 }
 
+/** 店铺清单：登录后把内部租户号换成店名（round36 / 票 151）。 */
+export interface StoreInfo {
+  tenantId: string
+  name: string
+  rateLimitQps?: number
+}
+
+/**
+ * 店铺清单读面（网关 `/api/v1/support/ops/tenants` → biz-mock `/api/admin/tenants`）。
+ *
+ * <p>它在鉴权面内，所以只能**登录后**调用——这也是 B2 选 URL 店铺码而不是新增公开端点的原因
+ * （ADR 0070）。取不到就继续显示店铺码，不编名字。
+ */
+export function stores(token: string): Promise<ApiResult<StoreInfo[]>> {
+  return request<StoreInfo[]>('/api/v1/support/ops/tenants', { token })
+}
+
 /**
  * 我的工单（票 92）。
  *

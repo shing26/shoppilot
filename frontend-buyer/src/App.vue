@@ -1,40 +1,56 @@
 <script setup lang="ts">
 /**
- * 买家中心（round27 票 93 / ADR 0057）。
+ * 买家中心（round27 票 93 / ADR 0057；round36 票 151 产品化）。
  *
- * <p>三条口径，与另两个前端同族：
+ * <p>三条口径不变，与另两个前端同族：
  * <ol>
- *   <li><b>失败不冻结</b>：读不到就写清「读不到 + 为什么」，不留空态、不抛未捕获 Promise
- *       （调试台那轮修过的坑）；</li>
- *   <li><b>登录态在 sessionStorage</b>：关掉标签页就登出。令牌只有 30 分钟 TTL，
- *       而 localStorage 里的令牌活到有人手清缓存为止；</li>
+ *   <li><b>失败不冻结</b>：读不到就写清「读不到 + 为什么」，不留空态、不抛未捕获 Promise；</li>
+ *   <li><b>登录态在 sessionStorage</b>：关掉标签页就登出（令牌 30 分钟 TTL）；</li>
  *   <li><b>口令登录完立刻清掉</b>，不落任何存储。</li>
  * </ol>
  *
- * <p>本页面**只读**：它不触发投递、不改工单状态——「处理完成 → 结论送出站」那条链的
- * 终点在网关消费端（round26），不在这里。
+ * <p>round36 的三处产品化：
+ * <ul>
+ *   <li><b>对话流</b>：消息数组而不是单个 `answer`——此前每次提问先清空，页面永远只有最后一轮；</li>
+ *   <li><b>店铺入口</b>：不再要求买家输入内部租户号，店铺码走 URL（`?store=T001`），
+ *       登录后用店名显示（ADR 0070 取 (a) 方案，不新增未鉴权端点）；</li>
+ *   <li><b>加载态</b>：读取中不再渲染成「你还没有需要人工处理的工单」。</li>
+ * </ul>
+ *
+ * <p>本页面**只读**工单：它不触发投递、不改工单状态。
  */
 import { computed, onMounted, ref } from 'vue'
-import { describe, login, messageOf, myTickets, streamAnswer } from './api'
+import { describe, login, messageOf, myTickets, streamAnswer, stores } from './api'
 import { PRIORITY_LABEL, STATUS_LABEL, minutesLeft, type CitationDetail, type Session, type Ticket } from './types'
 
 const STORAGE_KEY = 'shoppilot.buyer.session'
 
-const tenant = ref('T001')
+/** 店铺码来自 URL；缺省时不猜、也不退回内部 id 输入框（ADR 0070 B2）。 */
+const STORE_CODE = (new URLSearchParams(window.location.search).get('store') ?? '').trim()
+
+const tenant = ref(STORE_CODE)
+const storeName = ref('')
 const username = ref('')
 const password = ref('')
 const session = ref<Session | null>(readStoredSession())
 const loginError = ref('')
 
 const query = ref('')
-const answer = ref('')
-// round33 / ADR 0067：网关的 `citations` 是字符串数组，只带 ruleId；标题与出处在新字段
-// `citationDetails` 里。页面优先读详情，否则引用列表会退化成一条条「政策条款」。
-const citations = ref<CitationDetail[]>([])
-const fallbackNote = ref('')
 const asking = ref(false)
 
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  text: string
+  pending?: boolean
+  /** 本轮的降级说明；只挂在它所属的那条回答上，不串到下一轮。 */
+  note?: string
+  citations?: CitationDetail[]
+}
+
+const messages = ref<ChatMessage[]>([])
+
 const tickets = ref<Ticket[]>([])
+const ticketsLoading = ref(false)
 const ticketError = ref('')
 const now = ref(Date.now())
 let conversation = ''
@@ -43,8 +59,21 @@ const who = computed(() =>
   session.value ? `${session.value.displayName ?? session.value.username}（${session.value.role}）` : '',
 )
 
+/** 登录后把内部租户号换成店名；取不到就继续显示店铺码，不编一个名字。 */
+async function loadStoreName() {
+  if (!session.value) return
+  const result = await stores(session.value.token)
+  if (result.status !== 200 || !Array.isArray(result.body)) return
+  const found = result.body.find((s) => s.tenantId === session.value?.tenantId)
+  if (found?.name) storeName.value = found.name
+}
+
 async function doLogin() {
   loginError.value = ''
+  if (!tenant.value.trim()) {
+    loginError.value = '缺少店铺码：请通过店铺链接进入（例如 /buyer/?store=T001）'
+    return
+  }
   const result = await login(tenant.value.trim(), username.value.trim(), password.value)
   if (result.status !== 200) {
     loginError.value = result.status === 0
@@ -57,7 +86,7 @@ async function doLogin() {
   session.value = result.body as Session
   password.value = ''
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result.body))
-  await refreshTickets()
+  await Promise.all([refreshTickets(), loadStoreName()])
 }
 
 function signOut() {
@@ -65,18 +94,23 @@ function signOut() {
   clearStoredSession()
   tickets.value = []
   ticketError.value = ''
-  answer.value = ''
-  citations.value = []
+  messages.value = []
+  conversation = ''
+  asking.value = false
 }
 
+/** 三态分开：读取中不得渲染成空态（round36 / 票 151）。 */
 async function refreshTickets() {
   ticketError.value = ''
   if (!session.value) {
     ticketError.value = '先登录买家账号——工单列表要买家身份才能读'
     tickets.value = []
+    ticketsLoading.value = false
     return
   }
+  ticketsLoading.value = true
   const result = await myTickets(session.value.token)
+  ticketsLoading.value = false
   if (result.status !== 200 || !Array.isArray(result.body)) {
     ticketError.value = describe(result, '')
     tickets.value = []
@@ -86,25 +120,35 @@ async function refreshTickets() {
 }
 
 async function ask() {
-  if (!session.value || asking.value || !query.value.trim()) return
+  const text = query.value.trim()
+  if (!session.value || asking.value || !text) return
   asking.value = true
-  fallbackNote.value = ''
-  citations.value = []
-  answer.value = ''
+  query.value = ''
   if (!conversation) conversation = `buyer-${Date.now()}`
-  const result = await streamAnswer(session.value.token, query.value.trim(), conversation, (chunk) => {
-    answer.value += chunk
+
+  messages.value.push({ role: 'user', text })
+  const index = messages.value.push({ role: 'assistant', text: '', pending: true }) - 1
+
+  const result = await streamAnswer(session.value.token, text, conversation, (chunk) => {
+    // 必须穿过数组代理写，直接改 push 进去的原对象不会触发渲染
+    messages.value[index].text += chunk
   })
   asking.value = false
+  messages.value[index].pending = false
+
   if (result.status !== 200) {
-    answer.value = describe(result, '')
+    messages.value[index].text = describe(result, '')
     return
   }
-  const body = result.body as { ticketId: string | null; citationDetails: CitationDetail[]; fallbackReason: string | null }
-  citations.value = body.citationDetails ?? []
+  const body = result.body as {
+    ticketId: string | null
+    citationDetails: CitationDetail[]
+    fallbackReason: string | null
+  }
+  messages.value[index].citations = body.citationDetails ?? []
   // 降级也是一种结局：说清楚发生了什么，并给出工单号，而不是给一句「稍后」
   if (body.fallbackReason) {
-    fallbackNote.value = body.ticketId
+    messages.value[index].note = body.ticketId
       ? `这次没能直接答出来，已经转人工，工单号 ${body.ticketId}（在下方「我的工单」里能看到进度）`
       : '这次没能直接答出来，已经转人工处理'
   }
@@ -115,6 +159,7 @@ async function ask() {
 
 onMounted(() => {
   void refreshTickets()
+  void loadStoreName()
   now.value = Date.now()
   window.setInterval(() => {
     now.value = Date.now()
@@ -148,22 +193,26 @@ function clearStoredSession() {
   <main class="wrap">
     <header>
       <h1>买家中心</h1>
-      <p class="sub">对话与售后进度 · 工单由人工处理，结论会回到你问的那个渠道</p>
+      <p class="sub">
+        <span v-if="storeName || STORE_CODE" class="store">{{ storeName || STORE_CODE }}</span>
+        对话与售后进度 · 工单由人工处理，结论会回到你问的那个渠道
+      </p>
     </header>
 
     <section v-if="!session" class="ctl">
-      <label>店铺 <input v-model="tenant" type="text" placeholder="店铺编号，如 T001" /></label>
       <label>账号 <input v-model="username" type="text" placeholder="买家账号" /></label>
       <label>口令 <input v-model="password" type="password" placeholder="口令" @keyup.enter="doLogin" /></label>
-      <button type="button" @click="doLogin">登录</button>
+      <button type="button" :disabled="!STORE_CODE" @click="doLogin">登录</button>
     </section>
 
     <!--
-      未登录时「我的工单」整段不渲染（没有身份就没有「我的」），但**必须说清为什么**，
-      否则页面看上去像坏了。工作台那页的同类提示写在登录守卫**之外**，这里第一版写在守卫
-      **之内**，于是两页行为不一致——清场日实跑门禁时才发现「等 5 秒也等不到那句话」。
+      未登录时「我的工单」整段不渲染（没有身份就没有「我的」），但**必须说清为什么**。
+      店铺码缺失是另一种「为什么」，单独说，别让页面看上去像坏了。
     -->
-    <p v-if="!session" class="notice">登录后这里会显示你的工单与售后进度</p>
+    <p v-if="!STORE_CODE" class="notice">
+      缺少店铺码：请通过店铺链接进入（例如 <span class="mono">/buyer/?store=T001</span>）
+    </p>
+    <p v-else-if="!session" class="notice">登录后这里会显示你的工单与售后进度</p>
 
     <section v-else class="ctl">
       <span class="who">当前身份：{{ who }}<span class="hint">（@ {{ session.tenantId }}）</span></span>
@@ -187,20 +236,28 @@ function clearStoredSession() {
         </button>
       </section>
 
-      <section v-if="answer || fallbackNote" class="answer">
-        <p v-if="fallbackNote" class="warn">{{ fallbackNote }}</p>
-        <p v-if="answer" class="body">{{ answer }}</p>
-        <ul v-if="citations.length" class="cites">
-          <li v-for="(c, i) in citations" :key="c.ruleId || i">
-            <span class="mono">{{ c.ruleId }}</span>
-            <span>{{ c.heading || c.doc || '政策条款' }}</span>
-          </li>
-        </ul>
+      <!-- 对话流：每条回答带自己的引用与降级说明，不串到下一轮。 -->
+      <section v-if="messages.length" class="thread">
+        <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
+          <div class="msg-who">{{ m.role === 'user' ? '我' : '客服' }}</div>
+          <div class="bubble">
+            <span v-if="m.pending && !m.text" class="typing">正在回答</span>
+            <template v-else>{{ m.text }}</template>
+          </div>
+          <p v-if="m.note" class="warn">{{ m.note }}</p>
+          <ul v-if="m.citations?.length" class="cites">
+            <li v-for="(c, j) in m.citations" :key="c.ruleId || j">
+              <span class="mono">{{ c.ruleId }}</span>
+              <span>{{ c.heading || c.doc || '政策条款' }}</span>
+            </li>
+          </ul>
+        </div>
       </section>
 
       <section class="tickets">
         <h2>我的工单</h2>
         <p v-if="ticketError" class="err">{{ ticketError }}</p>
+        <p v-if="ticketsLoading" class="empty">正在读取…</p>
         <table v-if="tickets.length">
           <thead>
             <tr><th>工单号</th><th>我问了什么</th><th>状态</th><th>优先级</th><th>预计时限</th><th>处理人</th></tr>
@@ -216,7 +273,7 @@ function clearStoredSession() {
             </tr>
           </tbody>
         </table>
-        <p v-else-if="!ticketError" class="empty">你还没有需要人工处理的工单</p>
+        <p v-else-if="!ticketError && !ticketsLoading" class="empty">你还没有需要人工处理的工单</p>
       </section>
     </template>
   </main>
@@ -227,16 +284,24 @@ function clearStoredSession() {
 h1 { font-size: 20px; margin: 0 0 4px; }
 h2 { font-size: 15px; margin: 24px 0 8px; }
 .sub { color: #666; margin: 0 0 16px; }
+.store { color: #14161a; font-weight: 600; margin-right: 8px; }
 .ctl { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
 .ctl input, .ask input { padding: 4px 6px; }
 .who { font-weight: 600; }
 .hint { color: #666; font-weight: 400; margin-left: 6px; }
 .ask { display: flex; gap: 12px; align-items: center; margin: 8px 0; }
 .ask input { flex: 1; }
-.answer { border-left: 3px solid #d0d0d0; padding-left: 12px; margin: 12px 0; }
-.answer .body { margin: 4px 0; white-space: pre-wrap; }
-.warn { color: #b54708; }
-.cites { color: #666; font-size: 13px; padding-left: 18px; }
+.thread { margin: 16px 0; display: flex; flex-direction: column; gap: 14px; }
+.msg { max-width: 86%; }
+.msg.user { align-self: flex-end; text-align: right; }
+.msg-who { font-size: 12px; color: #666; margin-bottom: 3px; }
+.bubble { border: 1px solid #e0e3e7; border-radius: 10px; padding: 8px 11px; white-space: pre-wrap;
+  overflow-wrap: anywhere; background: #fff; text-align: left; }
+.msg.user .bubble { background: #f2f4f7; border-color: #f2f4f7; }
+.typing { color: #666; }
+.typing::after { content: '…'; }
+.warn { color: #b54708; font-size: 13px; margin: 6px 0 0; }
+.cites { color: #666; font-size: 13px; padding-left: 18px; margin: 6px 0 0; text-align: left; }
 .mono { font-family: ui-monospace, monospace; margin-right: 6px; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; vertical-align: top; }

@@ -46,6 +46,8 @@ const loginError = ref('')
 const queue = ref<string>('ALL')
 const tickets = ref<Ticket[]>([])
 const loadError = ref('')
+// 加载态（round36 / 票 151）：读取中不能渲染成「这一档队列里没有待处理工单」。
+const loading = ref(false)
 const actionNote = ref('')
 const inFlight = ref<string>('')
 const now = ref(Date.now())
@@ -121,9 +123,12 @@ async function refresh() {
   if (!session.value) {
     loadError.value = '先登录坐席账号——工单队列要坐席身份才能读'
     tickets.value = []
+    loading.value = false
     return
   }
+  loading.value = true
   const result = await listTickets(queue.value, session.value)
+  loading.value = false
   if (result.status === 0) {
     loadError.value = messageOf(result.body) ?? '网关不可达'
     tickets.value = []
@@ -351,6 +356,7 @@ function clearStoredSession() {
         </template>
       </tbody>
     </table>
+    <p v-if="loading" class="empty">正在读取…</p>
     <p v-else-if="!loadError" class="empty">这一档队列里没有待处理工单</p>
 
     <!-- 退款审核面板（B3 / ADR 0063） -->
