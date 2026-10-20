@@ -9,9 +9,12 @@ import type { TicketSummary } from 'frontend-shared'
 
 export { PRIORITY_LABEL, STATUS_LABEL, minutesLeft, priorityRank } from 'frontend-shared'
 
-/** 坐席看到的工单：共用字段 + 会话原文 + 上游记录指回。 */
+/** 坐席看到的工单：共用字段 + 转人工上下文 + 上游记录指回。 */
 export interface Ticket extends TicketSummary {
-  /** 会话原文；契约里恒有该字段（买家视角为 null），长度上限 8000。 */
+  /**
+   * 转人工上下文（失败/升级说明）；显式转人工的单可能为空。
+   * 它是降级出口写下的 `detail`，不是完整对话记录——页面按这个口径展示。
+   */
   transcript: string
   /** 有上游记录时指回上游 id 的 JSON；自包含来源为 null。 */
   payload: string | null

@@ -246,9 +246,9 @@ function clearStoredSession() {
           </div>
           <p v-if="m.note" class="warn">{{ m.note }}</p>
           <ul v-if="m.citations?.length" class="cites">
-            <li v-for="(c, j) in m.citations" :key="c.ruleId || j">
-              <span class="mono">{{ c.ruleId }}</span>
-              <span>{{ c.heading || c.doc || '政策条款' }}</span>
+            <li v-for="(c, j) in m.citations" :key="c.ruleId || j" :title="c.ruleId">
+              <span class="cite-h">{{ c.heading || c.doc || '政策条款' }}</span>
+              <span v-if="c.doc" class="cite-doc">{{ c.doc }}</span>
             </li>
           </ul>
         </div>
@@ -304,6 +304,9 @@ h2 { font-size: 15px; margin: 24px 0 8px; }
 .typing::after { content: '…'; }
 .warn { color: #b54708; font-size: 13px; margin: 6px 0 0; }
 .cites { color: #666; font-size: 13px; padding-left: 18px; margin: 6px 0 0; text-align: left; }
+/* 引用主文本是标题，出处是 slug；ruleId 是内容哈希，只留在 title 里供溯源。 */
+.cite-h { color: var(--ink-2); }
+.cite-doc { color: var(--ink-3); margin-left: 6px; font-family: var(--mono); font-size: 12px; }
 .mono { font-family: ui-monospace, monospace; margin-right: 6px; overflow-wrap: anywhere; }
 /* 窄屏（round36 / 票 151）：宽表格在容器内横向滚动，页面本身不横向溢出 */
 .table-wrap { overflow-x: auto; }

@@ -64,7 +64,11 @@ ADR 0030/0031 的任何触发），开轮依据、逐项裁决与红线写在
   - 把 `BuyerOwnTicketsTest` 改成真断言，并做变异对照：让 `toBuyerView` 也带 transcript → 该用例必须红。
   - 工作台渲染：表格行可展开或右侧详情抽屉，`pre-wrap` 限高滚动（字段长 8000，`Ticket.transcript` 的上限）。
     买家端**不渲染**。
-- 验收：工作台能看到一张单的会话原文；买家端 `/mine` 响应里 `transcript` 为 `null`；变异对照实测为真。
+  - **round36 实跑发现（2026-10-20）**：这一格的内容是 `AgentStateMachine.fallback` 写入的失败/升级说明
+    （`detail`），不是完整对话记录；显式转人工的单为空。页面因此按「**转人工上下文**」展示，
+    契约注释同步改准——要真会话原文是另一笔改动（agent 不保留逐轮历史）。
+- 验收：工作台能看到一张单的转人工上下文（空时给出可读说明）；买家端 `/mine` 响应里 `transcript` 为 `null`；
+  变异对照实测为真。
 
 **A3. 枚举可读化**
 
@@ -189,6 +193,10 @@ git diff --check; git status --short
    `toBuyerView` 显式传 `null`。真空断言改成**两臂同测**（先证坐席拿得到，再证买家拿不到）。
    **变异对照实测为真**：把 `toBuyerView` 的 transcript 从 `null` 改成 `ticket.getTranscript()`，
    `opsSeesTranscriptButBuyerDoesNot` 当场红；还原后绿。
+   **活体走查（2026-10-20 18:0x）修正了字段语义**：这一格写的是 `fallback(..., detail)` 的失败/升级说明
+   （例如 `{"tool":"queryLogistics","status":"UNAVAILABLE",...}`），不是完整对话；显式转人工为空。
+   页面文案改为「转人工上下文」，契约注释同步改准。要真会话原文是另一笔改动（agent 不保留逐轮历史），
+   本票不夹带。
 3. **A1 结单意见**：原生 `confirm` 换成自建对话框（否决 `window.prompt`：不可样式化、不可测非阻塞交互）。
    口径 = **前端必填、后端维持宽容**——`resolve` 的 `note` 早已同时进审计与出站正文
    （`ResolvePublishesOutboundTest` 覆盖），本票补的是「不填就提交」那条产品路径。
@@ -213,6 +221,10 @@ git diff --check; git status --short
     - `verify-buyer.mjs`：入口带 `?store=T001`；新增「加载态不冒充空态」「店铺码从 URL 生效」
       「连续提问保留历史」「390px 不横向溢出」（4 格）；跨买家隔离承重格原样。
     - `verify-console.mjs`：新增「两个产品入口存在且 href 正确」（1 格）；390px 页脚断言原样。
+12. **活体走查的两处展示修正（2026-10-20 18:0x，不改契约、不改门禁）**：
+    - 买家端引用主文本改成「标题 + 出处 slug」——`ruleId` 是 64 位内容哈希，铺在页面上不可读；
+      哈希只留在 `title` 里供溯源。
+    - 坐席端的 `transcript` 文案改成「转人工上下文」（理由见决策 2 的活体发现）。
 
 **验证落点**：
 

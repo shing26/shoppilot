@@ -348,9 +348,9 @@ function clearStoredSession() {
             <tr v-if="expandedId === t.id" class="detail-row">
               <td colspan="8">
                 <div class="detail">
-                  <div class="detail-cap">会话原文</div>
+                  <div class="detail-cap">转人工上下文</div>
                   <pre v-if="t.transcript">{{ t.transcript }}</pre>
-                  <p v-else class="empty">这张单没有可显示的会话原文</p>
+                  <p v-else class="empty">这张单没有记录失败/升级上下文</p>
                 </div>
               </td>
             </tr>

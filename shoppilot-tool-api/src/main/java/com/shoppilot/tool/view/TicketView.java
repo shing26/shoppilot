@@ -35,7 +35,9 @@ public record TicketView(
         String contact,
         // round36 票 151 / ADR 0070：坐席需要的会话原文。追加在尾部以免改动既有反序列化契约。
         /**
-         * 坐席与买家之间的会话原文；**买家视角恒为 null**（`WorkItemService.toBuyerView` 刻意置空）。
+         * 转人工上下文：由降级出口写入失败/升级说明（`AgentStateMachine.fallback` 的 `detail`），
+         * **不是完整对话记录**——显式转人工的单这一格可能为空。
+         * **买家视角恒为 null**（`WorkItemService.toBuyerView` 刻意置空）。
          * 它不是身份，也不是隔离依据——隔离仍由租户上下文与 `customerId` 承担。
          */
         String transcript) {
