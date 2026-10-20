@@ -1,0 +1,63 @@
+{
+  "mode": "dev",
+  "model": "z-ai/glm-5.3-flash",
+  "llmBaseUrl": "https://integrate.api.nvidia.com/v1",
+  "promptVersion": "v1.2.0",
+  "cases": 3,
+  "limit": 3,
+  "promptTokens": 13159,
+  "completionTokens": 1306,
+  "estimatedPerCaseTokens": 426,
+  "dailyTokenBudget": 600000,
+  "tokensUsedBeforeRun": 0,
+  "concurrency": 2,
+  "startedAt": "20261020-085630",
+  "requestErrors": 0,
+  "summary": {
+    "ACTION_ADDRESS": {
+      "intent": "ACTION_ADDRESS",
+      "cases": 1,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "100.0%",
+      "args_scored_cases": 1,
+      "args_comparable": 1,
+      "args_uncomparable": 0,
+      "status_not_observed": 0,
+      "leaked_cases": 0,
+      "unverifiable_cases": 0,
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "ACTION_LOGISTICS": {
+      "intent": "ACTION_LOGISTICS",
+      "cases": 1,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "100.0%",
+      "args_scored_cases": 1,
+      "args_comparable": 1,
+      "args_uncomparable": 0,
+      "status_not_observed": 0,
+      "leaked_cases": 0,
+      "unverifiable_cases": 0,
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    },
+    "ACTION_ORDER": {
+      "intent": "ACTION_ORDER",
+      "cases": 1,
+      "tool_accuracy": "100.0%",
+      "args_accuracy": "100.0%",
+      "args_scored_cases": 1,
+      "args_comparable": 1,
+      "args_uncomparable": 0,
+      "status_not_observed": 0,
+      "leaked_cases": 0,
+      "unverifiable_cases": 0,
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "100.0%"
+    }
+  }
+}

@@ -1,0 +1,4 @@
+intent,cases,tool_accuracy,args_accuracy,args_scored_cases,args_comparable,args_uncomparable,status_not_observed,leaked_cases,unverifiable_cases,slotask_accuracy,fabricated_cases,overall_accuracy
+ACTION_ADDRESS,1,100.0%,100.0%,1,1,0,0,0,0,100.0%,0,100.0%
+ACTION_LOGISTICS,1,100.0%,100.0%,1,1,0,0,0,0,100.0%,0,100.0%
+ACTION_ORDER,1,100.0%,100.0%,1,1,0,0,0,0,100.0%,0,100.0%
