@@ -3,793 +3,169 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ShopPilot 调试台</title>
+<title>ShopPilot · 多租户智能客服</title>
 <style>
   :root {
-    /* --ink-3 从 #8b929d（白底 2.9:1）换到 #6b7280（4.8:1）：走查第 12 项量的就是这一族小字，
-       label / .dim / #mode / .empty / .ctl .t 全挂在它上面，改一个令牌比逐处补颜色少一分漏改。 */
-    --bg: #f2f3f5; --panel: #fff; --ink: #14161a; --ink-2: #5c636e; --ink-3: #6b7280;
-    --line: #dfe2e7; --line-2: #eceef1;
-    --teal: #0f766e; --amber: #b45309; --rose: #be123c; --violet: #6d28d9;
-    --sky: #0369a1; --green: #15803d;
-    --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+    --bg: #f4f6f5;
+    --panel: #ffffff;
+    --ink: #14161a;
+    --ink-2: #5c636e;
+    --ink-3: #6b7280;
+    --line: #dfe2e7;
+    --teal: #0f766e;
+    --teal-soft: #eef8f6;
+    --amber: #b45309;
+    --green: #15803d;
   }
   * { box-sizing: border-box; }
-  /* 竖向改成 flex 分配：原先 main 的高度是 calc(100vh - 49px - 62px)，把页脚按死 62px，
-     窄屏一页脚一换行就盖住内容。现在 footer 自然高、main 吃剩余。 */
-  body { margin: 0; background: var(--bg); color: var(--ink); height: 100dvh; display: flex; flex-direction: column;
-    font: 13px/1.55 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif; }
-  header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-    background: var(--panel); border-bottom: 1px solid var(--line); height: 49px; flex: none;
-    position: relative; z-index: 21; }
-  header h1 { font-size: 14px; margin: 0 10px 0 0; font-weight: 650; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); display: inline-block; }
-  .dot.bad { background: var(--rose); }
-  /* 读不到读数时的第三态。灰既不承诺"还能应答"，也不冒充"别再给它流量"：
-     原先只有绿红两档，取不到读数时页面只能落在绿上，那盏灯从此不可能说谎，也不可能说真话。 */
-  .dot.unknown { background: var(--ink-3); }
-  .grow { flex: 1; }
-  main { display: grid; grid-template-columns: 250px minmax(0,1fr) 400px;
-    flex: 1; min-height: 0; gap: 1px; background: var(--line); }
-  section { background: var(--panel); min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-  section > h2 { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3);
-    margin: 0; padding: 9px 12px 7px; border-bottom: 1px solid var(--line-2); font-weight: 650; }
-  .body { padding: 12px; overflow: auto; min-height: 0; }
-  label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
-    color: var(--ink-3); margin: 12px 0 4px; font-weight: 650; }
-  label:first-child { margin-top: 0; }
-  input, select, button { font: inherit; color: inherit; }
-  input[type=text], select { width: 100%; padding: 5px 7px; border: 1px solid var(--line);
-    border-radius: 6px; background: #fff; }
-  button { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
-  button:hover { border-color: var(--ink-3); }
-  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
-  button.sm { padding: 2px 7px; font-size: 11px; border-radius: 5px; }
-  .row { display: flex; gap: 6px; align-items: center; }
-  .claims { font-family: var(--mono); font-size: 11px; background: var(--line-2); border-radius: 6px;
-    padding: 7px 8px; overflow-wrap: anywhere; color: var(--ink-2); }
-  #chat { flex: 1; overflow: auto; padding: 12px; min-height: 0; }
-  .msg { margin-bottom: 12px; }
-  .msg .who { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 3px; }
-  .msg .bubble { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap;
-    overflow-wrap: anywhere; background: #fff; }
-  .msg.user .bubble { background: var(--line-2); border-color: var(--line-2); }
-  .msg .cite { margin-top: 5px; font-family: var(--mono); font-size: 10px; color: var(--ink-3); overflow-wrap: anywhere; }
-  .msg details.cite { margin-top: 5px; font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
-  .msg details.cite > summary { cursor: pointer; list-style: none; color: var(--teal); }
-  .msg details.cite > summary::-webkit-details-marker { display: none; }
-  .msg details.cite ul { margin: 4px 0 0; padding-left: 16px; overflow-wrap: anywhere; }
-  .composer { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line-2); }
-  .composer input { flex: 1; }
-  /* 空输入提交不再静默：一句可见的回显，role=status 让它同时进可读区。 */
-  .hint { padding: 0 12px 8px; font-size: 12px; color: var(--amber); min-height: 0; }
-  .hint:empty { display: none; }
-  /* 首字延迟期间的进行态：走查第 2 项量到 11.6 s 里界面是空的，那段时间必须有个「正在」。 */
-  .typing { color: var(--ink-3); }
-  .typing::after { content: '…'; }
-  #timeline { flex: 1; overflow: auto; min-height: 0; }
-  .ev { display: grid; grid-template-columns: 78px minmax(0,1fr); gap: 8px; padding: 5px 10px;
-    border-bottom: 1px solid var(--line-2); font-size: 12px; }
-  .ev .k { font-family: var(--mono); font-size: 10px; font-weight: 700; padding-top: 2px; }
-  .ev .v { min-width: 0; overflow-wrap: anywhere; }
-  .dim { color: var(--ink-3); }
-  .ev.status .k { color: var(--ink-3); }
-  .ev.meta .k { color: var(--sky); }
-  .ev.tool_executing .k, .ev.tool_result .k { color: var(--violet); }
-  .ev.slot_ask .k { color: var(--amber); }
-  .ev.fallback .k, .ev.rate_limited .k, .ev.duplicate_submit .k { color: var(--rose); }
-  .ev.done .k { color: var(--green); }
-  .ev.token .k { color: var(--teal); }
-  .ev.ops .k { color: var(--ink-2); }
-  .ev.ops.ok .v { color: var(--green); }
-  .ev.ops.bad .v { color: var(--rose); }
-  .chips { display: flex; flex-wrap: wrap; gap: 2px; }
-  .chip { font-family: var(--mono); font-size: 11px; background: #ecfdf8; border: 1px solid #a7f3d0;
-    border-radius: 4px; padding: 0 3px; }
-  footer { background: var(--panel); border-top: 1px solid var(--line); display: flex; align-items: center;
-    flex-wrap: wrap; gap: 9px 13px; padding: 9px 12px; min-height: 62px;
-    /* 页脚抬到抽屉(20)与遮罩(19)之上：退款审核抽屉原先会把页脚自己的入口按钮与 circuit/refunds
-       两个读数格一起盖住——而审核时正要看那两个数（黑盒 QA 实测）。header 是 21，页脚取 22。 */
-    position: relative; z-index: 22; }
-  .ctl { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
-  .ctl .t { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); font-weight: 650; }
-  input[type=range] { width: 104px; accent-color: var(--teal); }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; padding: 4px 9px; font-size: 11px; background: #fff; }
-  .seg button + button { border-left: 1px solid var(--line); }
-  .seg button[aria-pressed=true] { background: var(--ink); color: #fff; }
-  .val { font-family: var(--mono); font-size: 11px; min-width: 44px; color: var(--ink-2); }
-  /* 产品入口链接（round36 / 票 151）：外观跟页脚按钮同族，但它是导航不是动作。 */
-  a.entry { font-size: 12px; color: var(--ink); text-decoration: none; border: 1px solid var(--line);
-    border-radius: 6px; padding: 3px 9px; background: #fff; }
-  a.entry:hover { border-color: var(--ink-3); }
-  /* 抽屉从 header 下沿开始（49px 与上面 header 的声明高度同源）：压在 header 之上时，
-     「工单队列」那颗按钮会被抽屉自己盖住，点开之后就再也关不掉了（走查第 11 项）。 */
-  aside.drawer { position: fixed; inset: 49px 0 0 auto; width: min(520px,92vw); background: var(--panel);
-    border-left: 1px solid var(--line); box-shadow: -12px 0 28px rgba(20,22,26,.10);
-    transform: translateX(100%); transition: transform .18s ease; display: flex; flex-direction: column; z-index: 20; }
-  aside.drawer.open { transform: none; }
-  #tickets { flex: 1; overflow: auto; }
-  .tk { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; padding: 9px 12px;
-    border-bottom: 1px solid var(--line-2); align-items: start; }
-  .tk .id { font-family: var(--mono); font-size: 11px; color: var(--ink-2); overflow-wrap: anywhere; }
-  .tk .q { overflow-wrap: anywhere; }
-  .badge { font-size: 10px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
-  .badge.OPEN { color: var(--amber); border-color: #fcd34d; background: #fffbeb; }
-  .badge.ASSIGNED { color: var(--sky); border-color: #7dd3fc; background: #f0f9ff; }
-  .badge.RESOLVED { color: var(--green); border-color: #86efac; background: #f0fdf4; }
-  /* 退款审核态（票 61 / ADR 0047）：待审是"等"，放行是"资金在走"，驳回是中性终态 */
-  .badge.PENDING_REVIEW { color: var(--amber); border-color: #fcd34d; background: #fffbeb; }
-  .badge.PROCESSING { color: var(--sky); border-color: #7dd3fc; background: #f0f9ff; }
-  .badge.REJECTED { color: var(--ink-3); border-color: var(--line); background: #f8fafc; }
-  .empty { color: var(--ink-3); padding: 14px; }
-  /* 运维回执与问答事件流分家（走查第 10 项）：ops 的行落在 #opslog 里，
-     它不再是每轮 clearTimeline() 的清场对象，也不再混进 .ev 的序列。 */
-  .opslog { border-top: 1px solid var(--line); background: var(--line-2); max-height: 34%; overflow: auto; }
-  .opslog > .cap { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--ink-2);
-    padding: 7px 10px 1px; letter-spacing: .04em; }
-  .ops { display: grid; grid-template-columns: 78px minmax(0,1fr); gap: 8px; padding: 4px 10px; font-size: 12px; }
-  .ops .k { font-family: var(--mono); font-size: 10px; font-weight: 700; padding-top: 2px; color: var(--ink-2); }
-  .ops .v { min-width: 0; overflow-wrap: anywhere; }
-  .ops.ok .v { color: var(--green); }
-  .ops.bad .v { color: var(--rose); }
-  /* 这一格坐在 line-2 的浅灰底上：同一支 --ink-3 在白底是 4.83:1，落在这里只有 4.16:1，
-     走查第 12 项量的正是「同一族小字」，不是只量白底那几处。深一档到 --ink-2 即 5.5:1 起。 */
-  .opslog .empty { padding: 6px 10px; color: var(--ink-2); }
-  /* 遮罩压在抽屉下面、内容上面；抽屉从 header 下沿开始，不再盖住那颗「工单队列」按钮。 */
-  .scrim { position: fixed; inset: 49px 0 0 0; background: rgba(20,22,26,.28); z-index: 19; }
-  .scrim[hidden] { display: none; }
-  /* 窄屏不再整块藏时间线（走查第 7 项）：换成横跨两列的一条，位置看得见、内容还在。 */
-  @media (max-width: 1100px) {
-    main { grid-template-columns: 200px minmax(0,1fr); grid-template-rows: minmax(0,1fr) minmax(140px,34%); }
-    #pane-events { grid-column: 1 / -1; }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background:
+      radial-gradient(1200px 500px at 10% -10%, #dff0ec 0%, transparent 60%),
+      radial-gradient(900px 400px at 100% 0%, #e8eef7 0%, transparent 55%),
+      var(--bg);
+    color: var(--ink);
+    font: 15px/1.65 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+  }
+  .shell { max-width: 1120px; margin: 0 auto; padding: 28px 20px 40px; }
+  header { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 38px; height: 38px; border-radius: 11px; background: var(--teal); color: #fff;
+    display: grid; place-items: center; font-weight: 750; font-size: 18px; }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .01em; }
+  header .tag { margin-left: auto; font-size: 12px; color: var(--teal); background: var(--teal-soft);
+    border: 1px solid #b7ddd8; border-radius: 999px; padding: 3px 10px; }
+  .hero { margin: 54px 0 34px; max-width: 760px; }
+  .hero h2 { font-size: clamp(28px, 4.4vw, 46px); line-height: 1.18; margin: 0 0 16px; letter-spacing: -.02em; }
+  .hero h2 em { font-style: normal; color: var(--teal); }
+  .hero p { color: var(--ink-2); font-size: 16px; margin: 0; max-width: 640px; }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px;
+    display: flex; flex-direction: column; min-height: 240px; box-shadow: 0 1px 0 rgba(20,22,26,.03); }
+  .card .kicker { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+    font-weight: 650; }
+  .card h3 { font-size: 20px; margin: 8px 0 8px; }
+  .card p { color: var(--ink-2); font-size: 14px; margin: 0; }
+  .card .actions { margin-top: auto; padding-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none; border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600;
+    border: 1px solid var(--line); color: var(--ink); background: #fff; transition: .15s ease; }
+  .btn:hover { border-color: var(--teal); color: var(--teal); transform: translateY(-1px); }
+  .btn.primary { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .btn.primary:hover { background: #0b5f59; color: #fff; }
+  .store-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .store { font-size: 13px; border: 1px solid #d7dbe1; background: #fff; color: var(--ink);
+    border-radius: 999px; padding: 5px 11px; text-decoration: none; }
+  .store:hover { border-color: var(--teal); color: var(--teal); }
+  .hero-card { grid-column: span 3; min-height: 0; flex-direction: row; align-items: center; gap: 24px;
+    background: linear-gradient(110deg, #0f766e, #115e59 62%, #134e4a); border: 0; color: #fff; }
+  .hero-card .txt { flex: 1; }
+  .hero-card h3 { color: #fff; margin-top: 2px; }
+  .hero-card p { color: #cde9e4; }
+  .hero-card .btn { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.35); color: #fff; }
+  .hero-card .btn:hover { background: rgba(255,255,255,.2); color: #fff; }
+  .art { width: 150px; height: 96px; border-radius: 14px; background: rgba(255,255,255,.1);
+    border: 1px solid rgba(255,255,255,.25); display: grid; place-items: center; flex: none; }
+  .art span { font-size: 40px; filter: saturate(.4); }
+  footer { margin-top: 28px; display: flex; align-items: center; gap: 10px; color: var(--ink-3); font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); display: inline-block; }
+  .dot.up { background: var(--green); }
+  .dot.down { background: #be123c; }
+  footer .sep { color: var(--line); }
+  @media (max-width: 860px) {
+    .grid { grid-template-columns: 1fr; }
+    .hero-card { grid-column: span 1; flex-direction: column; align-items: flex-start; }
+    .art { display: none; }
+    .hero { margin-top: 38px; }
   }
 </style>
 </head>
 <body>
-<header>
-  <span class="dot" id="health"></span>
-  <h1>ShopPilot 调试台</h1>
-  <span class="dim" id="mode">mode -</span>
-  <span class="grow"></span>
-  <div class="ctl"><span class="t">ops</span><input type="text" id="opsToken" size="14" placeholder="运维令牌"></div>
-  <button id="btnTickets">工单队列</button>
-</header>
-<main>
-  <section id="pane-id">
-    <h2>身份</h2>
-    <div class="body">
-      <label>店铺 tenant</label><select id="tenant"></select>
-      <label>买家 customer</label>
-      <!-- 买家 id 要有个上限（走查那轮的次一级项）：一千多字符的 id 会把 claims 那格撑爆，
-           而它本来就不是合法 id。32 与演示/验收在用的 id 形状相符，超出的字符根本进不来。 -->
-      <input type="text" id="customer" value="C001" maxlength="32" autocomplete="off">
-      <div class="row" style="margin-top:10px">
-        <button class="primary sm" id="btnLogin">换身份</button>
-        <button class="sm" id="btnNewConv">新会话</button>
+<div class="shell">
+  <header>
+    <div class="logo">S</div>
+    <h1>ShopPilot</h1>
+    <span class="tag">本机演示栈</span>
+  </header>
+
+  <section class="hero">
+    <h2>从买家提问，到坐席结单，<br><em>一条能跑通的客服链路</em>。</h2>
+    <p>多租户隔离、政策检索、工具办理、降级落单与结果回流都在同一条链路上。先选一个入口，不用登录也能开聊。</p>
+  </section>
+
+  <main class="grid">
+    <article class="hero-card card">
+      <div class="txt">
+        <div class="kicker" style="color:#a7d8d1">Buyer experience</div>
+        <h3>买家端 · 免登录直接开聊</h3>
+        <p>选一家店进入，自动以访客身份开始对话；店铺名片、快捷问题、政策引用与我的工单都在同一页。</p>
+        <div class="store-row">
+          <a class="store" href="/buyer/?store=T001">星选生活旗舰店</a>
+          <a class="store" href="/buyer/?store=T002">鲜果驿站</a>
+          <a class="store" href="/buyer/?store=T003">云裳服饰旗舰店</a>
+          <a class="store" href="/buyer/?store=T004">云栖酒店</a>
+        </div>
       </div>
-      <label>当前 claims</label><div class="claims" id="claims">未签发</div>
-      <label>会话 id</label><div class="claims" id="conv"></div>
-    </div>
-  </section>
-  <section id="pane-chat">
-    <h2>对话</h2>
-    <div id="chat"></div>
-    <div class="composer">
-      <input type="text" id="q" value="生鲜坏了怎么赔" placeholder="向客服提问">
-      <button class="primary" id="btnSend">发送</button>
-    </div>
-    <div class="hint" id="hint" role="status" aria-live="polite"></div>
-  </section>
-  <section id="pane-events">
-    <h2>事件时间线</h2>
-    <div id="timeline"><div class="empty">尚无事件</div></div>
-    <div class="opslog" id="opslog">
-      <div class="cap">运维回执</div>
-      <div class="empty" id="opslogEmpty">尚无运维动作</div>
-    </div>
-  </section>
-</main>
-<footer>
-  <div class="ctl"><span class="t">biz delay</span><input type="range" id="delay" min="0" max="4000" step="100" value="0"><span class="val" id="delayV">0 ms</span></div>
-  <div class="ctl"><span class="t">fail rate</span><input type="range" id="failRate" min="0" max="1" step="0.05" value="0"><span class="val" id="failRateV">0.00</span></div>
-  <div class="ctl"><span class="t">llm</span><div class="seg" id="llmSeg">
-    <button data-mode="none" aria-pressed="true">none</button><button data-mode="timeout">timeout</button><button data-mode="unavailable">unavailable</button><button data-mode="budget">budget</button>
-  </div></div>
-  <div class="ctl"><button class="sm" id="btnApply">注入</button><button class="sm" id="btnClear">清除</button>
-    <button class="sm" id="btnFlush">清缓存</button><button class="sm" id="btnDemo">复位演示单</button></div>
-  <!-- 退款审核入口放页脚：header 高度被抽屉 inset 钉死在 49px，往里塞按钮要动那处几何；
-       页脚本来就 flex-wrap，加一颗按钮只是多一行，不动任何既有布局。 -->
-  <!-- 坐席登录也放页脚，同一条理由，且是被门禁实测逼过来的：先放进 header 时 390px 视口下
-       整页被撑宽到 554（header 不换行），narrow-footer 那条断言当场红。它服务的是紧邻的
-       「退款审核」抽屉——队列读面是 staff-only（B3 / ADR 0063），要读它必须有坐席账号这条路
-       （2026-10-18 / R9：在那之前面板恒 403，是对运维面关死的抽屉）。
-       令牌只活在页面内存里、口令用完即清，不落 localStorage/sessionStorage：
-       这是调试台，关标签页即登出就是它该有的形态。 -->
-  <div class="ctl"><span class="t">坐席</span><input type="text" id="agentUser" size="8" placeholder="坐席账号">
-    <input type="password" id="agentPass" size="10" placeholder="口令">
-    <button class="sm" id="btnAgentLogin">登录</button></div>
-  <!-- 身份显示单独一格：.ctl 是 white-space:nowrap 的整块，把「当前坐席：x」并进去会让
-       390px 视口下的 footer 单行超宽（实测 404 > 390，narrow-footer 断言当场红）。
-       拆开后 footer 的 flex-wrap 才有地方可换行。 -->
-  <div class="ctl"><span class="val" id="agentWho"></span></div>
-  <div class="ctl"><button class="sm" id="btnRefunds">退款审核</button></div>
-  <div class="ctl"><span class="t">circuit</span><span class="val" id="circuit">-</span><span class="t">refunds</span><span class="val" id="refunds">-</span></div>
-  <!-- 产品入口（round36 票 151 / ADR 0070）：导航是单向的——调试台能到产品页，产品页不回链运维面。
-       放页脚而不是 header：header 高度 49px 被抽屉 inset 钉死，且 390px 页脚不溢出断言（verify-console）
-       量的是 footer 的 flex-wrap。 -->
-  <div class="ctl"><span class="t">入口</span>
-    <a class="entry" href="/buyer/">买家端</a>
-    <a class="entry" href="/workspace/">坐席工作台</a>
-  </div>
-</footer>
-<div class="scrim" id="scrim" hidden></div>
-<aside class="drawer" id="drawer">
-  <h2 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:0;padding:13px 12px;border-bottom:1px solid var(--line-2);font-weight:650" class="row">
-    <span class="grow">工单队列</span><button class="sm" id="btnCloseTickets">关闭</button></h2>
-  <div id="tickets"><div class="empty">尚未拉取</div></div>
-</aside>
-<aside class="drawer" id="refundDrawer">
-  <h2 style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:0;padding:13px 12px;border-bottom:1px solid var(--line-2);font-weight:650" class="row">
-    <span class="grow">退款审核队列</span><button class="sm" id="btnCloseRefunds">关闭</button></h2>
-  <div id="refundQueue"><div class="empty">尚未拉取</div></div>
-</aside>
+      <div class="art"><span>💬</span></div>
+    </article>
+
+    <article class="card">
+      <div class="kicker">Agent workspace</div>
+      <h3>坐席工作台</h3>
+      <p>工单队列、客户会话原文、结单意见与退款审批。本机演示可一键体验坐席或管理员。</p>
+      <div class="actions">
+        <a class="btn primary" href="/workspace/">进入工作台</a>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="kicker">Operations</div>
+      <h3>运维调试台</h3>
+      <p>状态机时间线、故障注入、缓存与模型读数。它是工程师的工具，不是产品首页。</p>
+      <div class="actions">
+        <a class="btn" href="/console.html">打开调试台</a>
+        <a class="btn" href="/admin/debug">/admin/debug</a>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="kicker">Runtime</div>
+      <h3>服务状态</h3>
+      <p id="status-line">正在读取网关就绪状态…</p>
+      <div class="actions">
+        <a class="btn" href="/actuator/health/readiness" target="_blank" rel="noreferrer">readiness</a>
+        <a class="btn" href="/actuator/prometheus" target="_blank" rel="noreferrer">metrics</a>
+      </div>
+    </article>
+  </main>
+
+  <footer>
+    <span class="dot" id="status-dot"></span>
+    <span id="status-text">网关状态读取中</span>
+    <span class="sep">|</span>
+    <span>产品入口不依赖调试台；两者共用同一套网关与身份面</span>
+  </footer>
+</div>
 <script>
-const $ = (id) => document.getElementById(id);
-const state = { token: '', tenant: 'T001', customer: 'C001', conv: crypto.randomUUID(), busy: false,
-  // 坐席令牌（只读退款队列用）：内存一份，刷新即失效——调试台不做持久登录态
-  staffToken: '', staffUser: '' };
-
-function newConv() {
-  state.conv = crypto.randomUUID();
-  $('conv').textContent = state.conv;
-}
-
-// 换身份时整段作废：会话 id 换一个，对话区与时间线一并清掉。
-// 服务端已经不认上一位买家的会话了（ADR 0025），页面留着那些气泡就是替别人复述对话。
-function resetConversation() {
-  $('chat').innerHTML = '';
-  clearTimeline();
-  newConv();
-}
-
-// ---- SSE 帧解析：与 ticket 05 同一套，EventSource 不支持 POST，只能手解 ----
-async function readSse(response, onFrame) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-    let cut;
-    while ((cut = buf.indexOf('\n\n')) >= 0) {
-      const frame = buf.slice(0, cut);
-      buf = buf.slice(cut + 2);
-      let name = 'message';
-      let data = '';
-      for (const line of frame.split('\n')) {
-        if (line.startsWith('event:')) name = line.slice(6).trim();
-        else if (line.startsWith('data:')) data += line.slice(5).trim();
-      }
-      onFrame(name, data);
+  (async () => {
+    const dot = document.getElementById('status-dot')
+    const text = document.getElementById('status-text')
+    const line = document.getElementById('status-line')
+    try {
+      const res = await fetch('/actuator/health/readiness')
+      const body = await res.json()
+      const up = body && body.status === 'UP'
+      dot.classList.add(up ? 'up' : 'down')
+      text.textContent = up ? '网关就绪' : '网关未就绪'
+      line.textContent = up
+        ? '网关已就绪。模型、检索与下游依赖的健康分项以 readiness 详情为准。'
+        : '网关可达但未就绪：先看 readiness 的失败分项，再进调试台。'
+    } catch (err) {
+      dot.classList.add('down')
+      text.textContent = '网关不可达'
+      line.textContent = '读不到网关：确认服务已启动（默认 127.0.0.1:8082）。'
     }
-  }
-}
-
-async function api(method, path, body, withAuth = true, tokenOverride = '') {
-  const headers = { 'Content-Type': 'application/json' };
-  // tokenOverride 只给 staff-only 的读面用（退款队列）：那里的身份是坐席账号，不是页面的
-  // buyer 会话令牌——把两具身份混成一支，就会回到 R9 那种"拿错令牌恒 403"的局面。
-  const bearer = tokenOverride || state.token;
-  if (withAuth && bearer) headers.Authorization = 'Bearer ' + bearer;
-  // 运维凭证随每个请求带上：只有 ops 端点会读它，其余端点忽略
-  headers['X-Ops-Token'] = $('opsToken').value.trim();
-  // 网络级失败（fetch 自己 reject）也走同一支笔：以前这里会直接抛出去，调用方只判 res.status，
-  // 于是读数格停在初始的 "-"、抽屉停在「尚未拉取」，还留下未捕获的 "Failed to fetch"。
-  // 返回 status:0 让所有调用方走它们既有的失败分支（那分支本来就写着「读不到 + 为什么」）。
-  let res;
-  try {
-    res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  } catch (unreachable) {
-    return { status: 0, body: { message: '网关不可达（' + (unreachable && unreachable.message ? unreachable.message : 'network error') + '）' } };
-  }
-  const text = await res.text();
-  let parsed = null;
-  try { parsed = text ? JSON.parse(text) : null; } catch (e) { parsed = { raw: text }; }
-  return { status: res.status, body: parsed };
-}
-
-// ---- 身份 ----
-async function loadTenants() {
-  const res = await api('GET', '/api/v1/support/ops/tenants', null);
-  const list = Array.isArray(res.body) && res.body.length ? res.body
-    : [{ tenantId: 'T001', name: '星选生活旗舰店' }, { tenantId: 'T002', name: '鲜果驿站' }, { tenantId: 'T003', name: '云裳服饰旗舰店' }, { tenantId: 'T004', name: '云栖酒店' }];
-  $('tenant').innerHTML = list.map((t) =>
-    `<option value="${t.tenantId}">${t.tenantId} · ${t.name}</option>`).join('');
-}
-
-async function login() {
-  // 下拉可能还没被代理数据填上（首次签发就发生在拉取店铺清单之前），此时用默认值而不是空串：
-  // 空 tenantId 签出来的 token 会让整条链路以"无租户"身份跑下去，症状是流式端点悄悄不出 done 帧。
-  const tenant = $('tenant').value || state.tenant;
-  const customer = $('customer').value.trim() || 'C001';
-  const res = await api('POST', '/auth/mock-token', { tenantId: tenant, customerId: customer }, false);
-  if (res.status !== 200) { $('claims').textContent = '签发失败 ' + res.status; return; }
-  // 只在身份真的变了时清屏：同一个人重签一次不该把对话抹掉。
-  if (tenant !== state.tenant || customer !== state.customer) resetConversation();
-  state.tenant = tenant;
-  state.customer = customer;
-  state.token = res.body.token;
-  $('claims').textContent = JSON.stringify(decodeJwt(state.token), null, 1);
-}
-
-function decodeJwt(jwt) {
-  const part = jwt.split('.')[1];
-  return JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
-}
-
-// ---- 对话 ----
-function bubble(cls, who, text) {
-  const wrap = document.createElement('div');
-  wrap.className = 'msg ' + cls;
-  if (who) {
-    const head = document.createElement('div');
-    head.className = 'who';
-    head.textContent = who;
-    wrap.appendChild(head);
-  }
-  const body = document.createElement('div');
-  body.className = 'bubble';
-  body.textContent = text || '';
-  wrap.appendChild(body);
-  $('chat').appendChild(wrap);
-  $('chat').scrollTop = $('chat').scrollHeight;
-  return body;
-}
-
-// ---- 事件时间线 ----
-function clearTimeline() { $('timeline').innerHTML = ''; }
-
-/** 空输入那类「你先敲点什么」的回显：写在 composer 下面那一行，不混进对话气泡。 */
-function showHint(text) { $('hint').textContent = text || ''; }
-
-/** 首字到达之前挂在对话区末尾的一行；调用方拿到的是它自己，remove() 幂等。 */
-function typingRow() {
-  const row = document.createElement('div');
-  row.className = 'msg bot';
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble typing';
-  bubble.textContent = '正在等模型首字';
-  row.appendChild(bubble);
-  $('chat').appendChild(row);
-  $('chat').scrollTop = $('chat').scrollHeight;
-  return row;
-}
-
-/** 4xx 的报文里票 25 起有 message，能显就显；显不了至少还是那句状态码，不假装有内容。 */
-async function rejectionText(res) {
-  let message = '';
-  try {
-    const body = await res.json();
-    message = body && body.message ? String(body.message) : '';
-  } catch (notJson) { message = ''; }
-  return message ? `请求被拒绝：${res.status} ${message}` : `请求被拒绝：${res.status}`;
-}
-
-function ev(name, html) {
-  const row = document.createElement('div');
-  row.className = 'ev ' + name;
-  const k = document.createElement('div');
-  k.className = 'k';
-  k.textContent = name;
-  const v = document.createElement('div');
-  v.className = 'v';
-  v.innerHTML = html;
-  row.append(k, v);
-  $('timeline').appendChild(row);
-  $('timeline').scrollTop = $('timeline').scrollHeight;
-  return v;
-}
-
-const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-
-async function ask() {
-  if (state.busy) return;
-  const query = $('q').value.trim();
-  if (!query) {
-    // 走查第 3 项：这里原先直接 return，点发送什么也没发生，用户只能怀疑按钮坏了
-    showHint('先输入一个问题，再点发送');
-    $('q').focus();
-    return;
-  }
-  showHint('');
-  if (!state.token) await login();
-  state.busy = true;
-  $('btnSend').disabled = true;
-  bubble('user', '买家 ' + state.customer, query);
-  const answerEl = bubble('bot', '客服');
-  // 走查第 2 项：首字实测最慢 11.6 s，这期间气泡是空的，界面像卡死。进行态单独一行，
-  // 不塞进气泡里——气泡靠 textContent 累加 token，混进去就把「正在」两个字复述进答案了。
-  const pending = typingRow();
-  clearTimeline();
-  const started = performance.now();
-  let tokens = 0;
-  let tokenRow = null;
-  let chips = null;
-  try {
-    const res = await fetch('/api/v1/support/chat/stream', {
-      method: 'POST',
-      signal: AbortSignal.timeout(90000),
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream',
-        Authorization: 'Bearer ' + state.token, 'X-Conversation-Id': state.conv },
-      body: JSON.stringify({ query })
-    });
-    if (!res.ok) {
-      pending.remove();
-      ev('fallback', 'HTTP ' + res.status);
-      // 走查第 4 项的前端那一半：票 25 之后 400 的报文里有 message，回显它，而不是只剩一个状态码
-      answerEl.textContent = await rejectionText(res);
-      return;
-    }
-    await readSse(res, (name, raw) => {
-      let d = {};
-      try { d = JSON.parse(raw); } catch (e) { d = { text: raw }; }
-      if (typeof d === 'string') d = { text: d };
-      const text = d.text ?? raw;
-      if (name === 'token') {
-        pending.remove();
-        tokens++;
-        answerEl.textContent += text;
-        if (!tokenRow) {
-          chips = document.createElement('div');
-          chips.className = 'chips';
-          tokenRow = ev('token', '');
-          tokenRow.appendChild(chips);
-        }
-        const chip = document.createElement('span');
-        chip.className = 'chip';
-        chip.textContent = text;
-        chips.appendChild(chip);
-        $('chat').scrollTop = $('chat').scrollHeight;
-        return;
-      }
-      if (name === 'status') { ev('status', esc(d.label) + ' <span class="dim">' + esc(d.detail || '') + '</span>'); return; }
-      if (name === 'meta') {
-        ev('meta', `intent <b>${esc(d.intent) || '-'}</b> · cache <b>${esc(d.cacheLayer)}</b>`
-          + (d.cacheHit ? ' <span class="dim">命中：一次性下发</span>' : ' <span class="dim">未命中：打字机</span>'));
-        return;
-      }
-      if (name === 'tool_executing') { ev('tool_executing', esc(d.tool) + ' <span class="dim">' + esc(d.label || '') + '</span>'); return; }
-      if (name === 'tool_result') { ev('tool_result', esc(d.tool) + ' <b>' + esc(d.status) + '</b>'); return; }
-      if (name === 'duplicate_submit') { ev('duplicate_submit', esc(d.tool) + ' <span class="dim">' + esc(d.message) + '</span>'); return; }
-      if (name === 'slot_ask') { ev('slot_ask', esc(d.slot) + ' <span class="dim">' + esc(d.question) + '</span>'); return; }
-      if (name === 'fallback') { ev('fallback', `<b>${esc(d.reason)}</b> 工单 <span class="dim">${esc(d.ticketId || '-')}</span>`); return; }
-      if (name === 'rate_limited') { ev('rate_limited', esc(d.message) + ' <span class="dim">retry ' + esc(d.retryAfterMs) + 'ms</span>'); return; }
-      if (name === 'done') {
-        const ms = Math.round(performance.now() - started);
-        const cites = d.citations || [];
-        ev('done', `引用 ${cites.length} · token ${d.usage ? d.usage.promptTokens + '/' + d.usage.completionTokens : '-'}`
-          + ` · <span class="dim">${ms}ms / ${tokens} 帧</span>`);
-        // 规则 id 是 40 位哈希，摊在答案下面会把答案本身挤没；默认收成一行，点开再看
-        if (cites.length) {
-          const box = document.createElement('details');
-          box.className = 'cite';
-          const summary = document.createElement('summary');
-          summary.textContent = `依据条款 ${cites.length} 条`;
-          const list = document.createElement('ul');
-          list.innerHTML = cites.map((c) => `<li>${esc(c)}</li>`).join('');
-          box.append(summary, list);
-          answerEl.parentElement.appendChild(box);
-        }
-      }
-    });
-  } catch (failure) {
-    pending.remove();
-    ev('fallback', 'stream error <span class="dim">' + esc(failure.message) + '</span>');
-  } finally {
-    pending.remove();
-    state.busy = false;
-    $('btnSend').disabled = false;
-    // 每一轮答完补一次依赖读数：这一轮是齐的还是降级的，答案本身答不了，得让灯跟着这一轮走。
-    // 不 await——读数慢不许把输入框锁在这一轮之后。
-    refreshHealth();
-  }
-}
-
-// ---- 故障注入（全部经网关运维代理，页面不接触 biz-mock 内部凭证）----
-function setLlmMode(mode) {
-  [...$('llmSeg').children].forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
-}
-
-async function applyFaults() {
-  const delayMs = Number($('delay').value);
-  const failRate = Number($('failRate').value);
-  const biz = await api('PUT', '/api/v1/support/ops/fault', { delayMs, failRate });
-  const mode = [...$('llmSeg').children].find((b) => b.getAttribute('aria-pressed') === 'true').dataset.mode;
-  const llm = await api('PUT', '/api/v1/support/ops/llm-fault', { mode });
-  report(biz.status === 200 && llm.status === 200,
-    biz.status === 200 && llm.status === 200 ? `已注入 delay=${delayMs}ms fail=${failRate} llm=${mode}`
-      : '注入被拒绝：' + JSON.stringify(biz.body) + ' ' + JSON.stringify(llm.body));
-  await refreshOps();
-}
-
-async function clearFaults() {
-  $('delay').value = 0; $('failRate').value = 0; syncSliders(); setLlmMode('none');
-  await api('PUT', '/api/v1/support/ops/fault', { delayMs: 0, failRate: 0 });
-  await api('PUT', '/api/v1/support/ops/llm-fault', { mode: 'none' });
-  report(true, '故障已清除');
-  await refreshOps();
-}
-
-/** 读数格只经由这里写：失败路径与成功路径共用同一支笔，才不会再出现「失败时留在上一格」。 */
-function setGauge(id, text, stale) {
-  const el = $(id);
-  el.textContent = text;
-  el.dataset.state = stale ? 'stale' : 'live';
-}
-
-/** 失败时要说出是哪一种失败：票 25 之后 403 的报文自带 code，没报文就退回状态码；网络级失败（status 0）单独说。 */
-function failureReason(res) {
-  if (res.status === 0) return '网关不可达';
-  return res.body && res.body.code ? String(res.body.code) : 'HTTP ' + res.status;
-}
-
-async function refreshOps() {
-  // 走查第 9 项：这一格原先只在成功时写字，失败时 footer 上留的还是上一次的成功值——
-  // 指标没撒谎，但它装死。现在失败就把「读不到 + 为什么」写上去。
-  const circuit = await api('GET', '/api/v1/support/ops/circuit', null, true);
-  if (circuit.status === 200 && circuit.body) {
-    setGauge('circuit', circuit.body.circuitState + ' / ' + circuit.body.llmMode, false);
-    setGauge('mode', 'mode ' + circuit.body.llmMode, false);
-  } else {
-    setGauge('circuit', '读不到：' + failureReason(circuit), true);
-    setGauge('mode', 'mode 读不到', true);
-  }
-  // stats 是运维凭证守护的端点，令牌框空着去读必然吃一发 403（票 21 起页面不再预填令牌，
-  // ADR 0029）。没凭证就是「没得看」而不是「出错了」：这里不发那一枪，浏览器控制台才不会
-  // 每次开页面都留下红字，验收里「页面无失败请求」那条断言量的才是真失败。
-  if (!$('opsToken').value.trim()) {
-    setGauge('refunds', '未填令牌', true);
-    return;
-  }
-  const stats = await api('GET', '/api/v1/support/ops/stats', null, true);
-  if (stats.status === 200) {
-    setGauge('refunds', String(stats.body.refunds), false);
-  } else {
-    setGauge('refunds', '读不到：' + failureReason(stats), true);
-  }
-}
-
-// ---- 健康灯：读 deps 组，不读 readiness（ADR 0026）----
-// 三态各有各的判据：不挂 class = 三格齐；bad = 至少一格 DOWN，即「还能应答但已经缺一条路」；
-// unknown = 这个读数本身取不到。就绪门里只有 readinessState，拿它当灯就是恒绿的那半个成因，
-// 所以这里读 /actuator/health/deps —— 它的 DOWN 不摘流量，只负责让人看见。
-// 颜色之外另留一个 data-state：验收脚本要断的是「灯知道自己该是什么色」，不该去猜 computed style。
-async function refreshHealth() {
-  const dot = $('health');
-  dot.classList.remove('bad');
-  dot.classList.remove('unknown');
-  dot.dataset.state = '';
-  dot.title = '依赖状态：读数加载中';
-  let body = null;
-  try {
-    // DOWN 时 Spring Boot 把这一格映射成 503，但响应体仍是合法读数：只认 body.status，
-    // 不拿 HTTP 码当健康判据（拿码当判据等于把 503 又读成「读不到」）。
-    const res = await fetch('/actuator/health/deps');
-    body = await res.json();
-  } catch (e) {
-    body = null;
-  }
-  if (!body || !body.status) {
-    dot.classList.add('unknown');
-    dot.dataset.state = 'unknown';
-    dot.title = '依赖状态：读不到 /actuator/health/deps';
-    return;
-  }
-  const components = body.components || {};
-  const names = Object.keys(components);
-  const down = names.filter((n) => components[n].status !== 'UP');
-  // 有成员明细时按成员点名；被人把 show-components 关掉时退回整体状态，总之不许在 DOWN 上留绿。
-  const degraded = down.length > 0 || (names.length === 0 && body.status !== 'UP');
-  if (degraded) {
-    dot.classList.add('bad');
-    dot.dataset.state = 'bad';
-    dot.title = down.length ? '依赖降级：' + down.join('、') + ' 不为 UP' : '依赖整体 ' + body.status;
-  } else {
-    dot.dataset.state = 'ok';
-    dot.title = names.length ? '向量、词法、语料三格齐 UP' : '依赖整体 UP';
-  }
-}
-
-function report(ok, message) {
-  // 走查第 10 项：运维回执原先混在问答事件流里，既被每轮 clearTimeline() 清掉，
-  // 又让「.ev.done 表示这一轮答完了」那条判据有机会读到自己写的行。现在它另起一条流。
-  const row = document.createElement('div');
-  row.className = 'ops ' + (ok ? 'ok' : 'bad');
-  row.innerHTML = `<div class="k">ops</div><div class="v">${esc(message)}</div>`;
-  $('opslog').appendChild(row);
-  if ($('opslogEmpty')) $('opslogEmpty').remove();
-  $('opslog').scrollTop = $('opslog').scrollHeight;
-}
-
-// ---- 工单抽屉 ----
-/** 走查第 11 项：抽屉原先盖住 header，那颗「工单队列」按钮被自己的抽屉挡住，
- *  跑器在第二次点它时超时 30 s 崩过。现在抽屉从 header 下沿开始，另配一层可点的遮罩。 */
-function openDrawer() {
-  $('drawer').classList.add('open');
-  $('scrim').hidden = false;
-  loadTickets();
-}
-
-function closeDrawer() {
-  $('drawer').classList.remove('open');
-  $('scrim').hidden = true;
-}
-
-/** 工单卡片带时间戳（次一级项）：坐席排队列先看的是「这单挂了多久」。 */
-function fmtTime(raw) {
-  if (!raw && raw !== 0) return '-';
-  const when = new Date(raw);
-  return Number.isNaN(when.getTime()) ? String(raw)
-    : when.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-async function loadTickets() {
-  const res = await api('GET', '/api/v1/support/ops/tickets', null, true);
-  if (res.status !== 200) { $('tickets').innerHTML = '<div class="empty">拉取失败 ' + res.status + '</div>'; return; }
-  if (!res.body.length) { $('tickets').innerHTML = '<div class="empty">当前店铺暂无工单</div>'; return; }
-  $('tickets').innerHTML = res.body.map((t) => `
-    <div class="tk">
-      <div><div class="id">${esc(t.id)} · ${esc(t.reason)} · ${esc(t.customerId)} · ${esc(fmtTime(t.createdAt))}</div>
-        <div class="q">${esc(t.userQuery)}</div>
-        <div class="row" style="margin-top:6px">
-          <button class="sm" data-tk="${esc(t.id)}" data-to="ASSIGNED">认领</button>
-          <button class="sm" data-tk="${esc(t.id)}" data-to="RESOLVED">结单</button>
-        </div></div>
-      <span class="badge ${esc(t.status)}">${esc(t.status)}</span>
-    </div>`).join('');
-  $('tickets').querySelectorAll('button[data-to]').forEach((btn) => {
-    btn.onclick = async () => {
-      const group = Array.from(btn.parentElement.querySelectorAll('button[data-to]'));
-      group.forEach((b) => { b.disabled = true; });
-      try {
-        const r = await api('PATCH', '/api/v1/support/ops/tickets/' + btn.dataset.tk + '/status', { status: btn.dataset.to });
-        report(r.status === 200, r.status === 200 ? `${btn.dataset.tk} -> ${btn.dataset.to}`
-          : `流转被拒（${esc(failureReason(r))}）：${esc((r.body && r.body.message) || btn.dataset.tk)}`);
-      } finally {
-        loadTickets();
-      }
-    };
-  });
-}
-
-// ---- 退款审核抽屉（票 61 / ADR 0047）----
-// 一道只存在于 curl 里的闸门在演示现场等于不存在，所以审核必须端上可演示。
-function openRefundDrawer() {
-  closeDrawer();
-  $('refundDrawer').classList.add('open');
-  $('scrim').hidden = false;
-  loadRefunds();
-}
-
-function closeRefundDrawer() {
-  $('refundDrawer').classList.remove('open');
-  $('scrim').hidden = true;
-}
-
-async function loadRefunds() {
-  // 读面先判身份：没有坐席令牌时给一句可读的原因，而不是打一发注定 403 的请求再显示
-  // 一句看不懂的失败（R9 的现场形态就是"面板永远空着，没人知道为什么"）。
-  if (!state.staffToken) {
-    $('refundQueue').innerHTML =
-      '<div class="empty refund-need-staff">退款队列要坐席身份才能读：用页脚的坐席账号登录后重开本抽屉（B3 / ADR 0063）</div>';
-    return;
-  }
-  $('refundQueue').innerHTML = '<div class="empty">加载中…</div>';
-  const res = await api('GET', '/api/v1/support/ops/refunds/pending', null, true, state.staffToken);
-  if (res.status !== 200) {
-    $('refundQueue').innerHTML = '<div class="empty">拉取失败：' + esc(failureReason(res)) + '</div>';
-    return;
-  }
-  if (!res.body.length) { $('refundQueue').innerHTML = '<div class="empty">当前店铺暂无待审核退款</div>'; return; }
-  // B3 起（ADR 0063）：资金动作的责任人必须是已验签账号。调试台用 ops token，
-  // 不能用于退款审核，所以这里只读展示，审核去坐席工作台操作。
-  $('refundQueue').innerHTML = res.body.map((f) => `
-    <div class="tk">
-      <div><div class="id">申请 ${esc(f.refundId)} · 订单 ${esc(f.orderNo)} · ${esc(fmtTime(f.createdAt))}</div>
-        <div class="q">退款金额 ¥${(Number(f.amountFen) / 100).toFixed(2)}</div>
-        <div class="q dim">退款原因：${esc(f.reason || '（买家未填）')}</div>
-        <div class="q dim" style="margin-top:4px">审核请去坐席工作台（B3 / ADR 0063）</div>
-      </div>
-      <span class="badge ${esc(f.status)}">${esc(f.status)}</span>
-    </div>`).join('');
-}
-
-function syncSliders() {  $('delayV').textContent = $('delay').value + ' ms';
-  $('failRateV').textContent = Number($('failRate').value).toFixed(2);
-}
-
-// ---- 坐席登录（只服务退款队列这条 staff-only 读面）----
-// 与工作台同一套后端契约（/auth/login，用户名按 (租户, 用户名) 唯一）。这里刻意不复用
-// login()：那是 buyer 的 mock 身份领取口，两具身份各有各的用途，混成一支就会回到 R9。
-async function loginStaff() {
-  const tenant = $('tenant').value || state.tenant;
-  const user = $('agentUser').value.trim();
-  const pass = $('agentPass').value;
-  if (!user || !pass) { report(false, '坐席登录需要账号与口令'); return; }
-  const res = await api('POST', '/auth/login', { tenantId: tenant, username: user, password: pass }, false);
-  if (res.status !== 200 || !res.body || !res.body.token) {
-    state.staffToken = ''; state.staffUser = '';
-    $('agentWho').textContent = '';
-    // 口令错与「这个账号没有坐席权限」在登录这一步是同一句话（后端只说用户名或口令不对），
-    // 照实转述，不替它编原因。
-    report(false, '坐席登录失败：' + failureReason(res));
-    return;
-  }
-  state.staffToken = res.body.token;
-  state.staffUser = res.body.username || user;
-  $('agentPass').value = '';                       // 口令不留痕
-  $('agentWho').textContent = '当前坐席：' + state.staffUser;
-  report(true, '坐席已登录（' + tenant + ' / ' + state.staffUser + '）');
-  if ($('refundDrawer').classList.contains('open')) loadRefunds();
-}
-
-// ---- 装配 ----
-$('btnLogin').onclick = login;
-$('btnAgentLogin').onclick = loginStaff;
-$('agentPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') loginStaff(); });
-$('btnNewConv').onclick = newConv;
-$('btnSend').onclick = ask;
-$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
-$('delay').oninput = syncSliders;
-$('failRate').oninput = syncSliders;
-$('llmSeg').querySelectorAll('button').forEach((b) => { b.onclick = () => setLlmMode(b.dataset.mode); });
-$('btnApply').onclick = applyFaults;
-$('btnClear').onclick = clearFaults;
-// 令牌是人敲进来的，敲完顺手把运维读数补上（不然 refunds 会一直停在初始值）
-// 令牌是人敲进来（多半是粘进来）的，粘完不挪鼠标就去点别的按钮，是这台调试台的常态。
-// 挂在 change 上等于要等失焦才补读数，那一眼里 footer 上还是上一次的值。改成输入后去抖 400ms：
-// 粘贴生效即读数，又不至于每敲一个字符就打一发 ops 请求。
-let opsTokenTimer = 0;
-$('opsToken').oninput = () => { clearTimeout(opsTokenTimer); opsTokenTimer = setTimeout(refreshOps, 400); };
-$('btnFlush').onclick = async () => {
-  const r = await api('POST', '/api/v1/support/ops/cache/flush', {});
-  report(r.status === 200, '清缓存 ' + JSON.stringify(r.body));
-};
-$('btnDemo').onclick = async () => {
-  const r = await api('POST', '/api/v1/support/ops/demo/reset', {});
-  report(r.status === 200, '演示单复位 ' + JSON.stringify(r.body));
-  refreshOps();
-};
-$('btnTickets').onclick = openDrawer;
-$('btnCloseTickets').onclick = closeDrawer;
-$('btnRefunds').onclick = openRefundDrawer;
-$('btnCloseRefunds').onclick = closeRefundDrawer;
-// 两个抽屉共用一层遮罩：点遮罩或按 Esc 都应把**当前打开的那个**关掉（发票抽屉打开时
-// 工单抽屉本就被 openRefundDrawer 关掉了，所以这里两个都关是安全的）。
-$('scrim').onclick = () => { closeDrawer(); closeRefundDrawer(); };
-// Esc 关抽屉：键盘用户不该只能去找那颗鼠标才看得见的关闭按钮
-document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape') return;
-  if ($('drawer').classList.contains('open')) closeDrawer();
-  if ($('refundDrawer').classList.contains('open')) closeRefundDrawer();
-});
-
-(async function boot() {
-  newConv();
-  syncSliders();
-  // 先签一个身份再拉店铺清单：租户下拉是运维代理端点，没身份会被 AuthFilter 401，
-  // 于是静默退化成页面里那份兜底名单——那正是"写死名单会和后端分家"的起点。
-  await login();
-  await loadTenants();
-  $('tenant').value = state.tenant;
-  // 灯要自己会说话：deps 不鉴权，开页即读一次。它红了不影响这一页问答，
-  // 影响的只是「这一轮的降级是已知的，不是被恒绿盖住的」。
-  await refreshHealth();
-  await refreshOps();
-})();
+  })()
 </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // GIF 1 采集：极性守卫（PolarityGuard）现场——同桶反义问法为什么拿不到上一条答案。
 //
-// 两栏都是真的：左栏是调试台（http://127.0.0.1:8082/）的真实操作与真实事件时间线，
+// 两栏都是真的：左栏是调试台（http://127.0.0.1:8082/console.html）的真实操作与真实事件时间线，
 // 右栏是网关日志文件里的原始行 + /actuator 计数器的前后读数。本脚本只做点击与截图，
 // 不生成任何画面内容。
 //
@@ -163,7 +163,7 @@ if (!flush.ok()) {
 }
 
 console.log('1/5 打开调试台');
-await consolePage.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+await consolePage.goto(`${BASE}/console.html`, { waitUntil: 'domcontentloaded' });
 await consolePage.waitForSelector('#btnSend', { timeout: 30000 });
 // 调试台自己会去签 mock-token；等它签完（claims 那格有东西）再截图，否则身份栏是空的。
 await consolePage.waitForFunction(

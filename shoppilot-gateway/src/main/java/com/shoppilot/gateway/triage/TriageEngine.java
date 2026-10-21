@@ -49,6 +49,19 @@ public class TriageEngine {
         return T0RuleLayer.explicitEscalation(query);
     }
 
+    /**
+     * 政策形状兜底（round37）：意图是 UNKNOWN 时，用 T0 词表判断它是否仍像政策问题。
+     * 零模型调用；只决定要不要检索与空召回出口，不改变意图或缓存准入。
+     */
+    public boolean looksPolicyShaped(String query) {
+        return t0.looksPolicyShaped(query);
+    }
+
+    /** 政策形状命中后用于检索分区的具体意图；拿不到时返回 null（可见范围内检索）。 */
+    public com.shoppilot.tool.Intent policyHintIntent(String query) {
+        return t0.policyHintIntent(query);
+    }
+
     /** 默认按电商口径判定：给不关心行业的调用方保持旧行为。 */
     public Outcome triage(String query) {
         return triage(query, Domain.ECOMMERCE, null);

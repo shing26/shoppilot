@@ -335,8 +335,8 @@ class DependencyHealthTest {
     }
 
     private static String servedPage() throws Exception {
-        try (InputStream in = DependencyHealthTest.class.getResourceAsStream("/static/index.html")) {
-            return new String(Objects.requireNonNull(in, "静态页在 classpath：/static/index.html")
+        try (InputStream in = DependencyHealthTest.class.getResourceAsStream("/static/console.html")) {
+            return new String(Objects.requireNonNull(in, "静态页在 classpath：/static/console.html")
                     .readAllBytes(), StandardCharsets.UTF_8);
         }
     }

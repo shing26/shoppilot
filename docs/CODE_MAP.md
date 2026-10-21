@@ -23,7 +23,8 @@
 | `ingest` | Markdown 政策切块与离线入库 | `MarkdownChunker`、`IngestRunner` |
 | `llm` | local/dev/perf 三种模型实现、超时/预算、显式输出上限与 LLM 故障注入 | `LlmGateway`、`OllamaLlmClient`、`OpenAiCompatibleLlmClient`、`MockLlmClient`、`TokenBudget` |
 | `agent` | 10 状态编排、工具派发、会话、幂等、fallback 与工单；计划步骤与上下文组成的观测出口（ADR 0044 票 48/49）；**请求级幂等回放**（模型之前，ADR 0046 票 58）与**退款受理出口**（ADR 0047 票 59） | `AgentStateMachine`、`AgentResult`、`ToolDispatcher`、`BizMockClient`、`FallbackService`、`IdempotencyService`、`ReplayReply` |
-| `web` | 同步/SSE 聊天入口、运维接口、错误信封、调试台事件出口 | `ChatController`、`SseEventSink`、`OpsController`、`ApiErrorWriter` |
+| `store` | 按已验签 `tenantId` 提供对话层店铺资料（店名/主营/本店承诺），拼进系统提示词（round37 / ADR 0071） | `StoreProfileProperties`（配置 `shoppilot.store-profiles`）、`StoreProfileService`；读面 `web/StoreProfileController` |
+| `web` | 同步/SSE 聊天入口、运维接口、错误信封、调试台事件出口；店铺资料只读端点与调试台入口重定向 | `ChatController`、`SseEventSink`、`OpsController`、`StoreProfileController`、`DebugEntryController`、`ApiErrorWriter` |
 | `config` | 配置绑定/校验、健康组、dev 默认值、线程与 HTTP 客户端、运行时指标 | `GatewayProperties`、`ValidatedServerProperties`、`DevDefaultsPolicy`、`RuntimeStateMetrics` |
 
 ## Biz-Mock 与 Tool Contract
@@ -56,12 +57,12 @@
 | 模型计划 | `llm/LlmGateway`、`llm/LlmClient`、`llm/LlmTypes` |
 | 状态机与工具循环 | `agent/AgentStateMachine`、`agent/AgentState`、`agent/ToolDispatcher` |
 | 业务调用 | `agent/BizMockClient` -> `bizmock/web/ToolController` -> `bizmock/service/BizMockService` |
-| 退款审核（人工闸门） | `bizmock/web/RefundReviewController` -> `bizmock/service/BizMockService.reviewRefund`；网关代理 `web/OpsController`（`/ops/refunds/*`，B3 起 `reviewRefund` 与 `refundReviewQueue()` 均为 `staff()`-only）；调试台面板 `static/index.html`（B3 起只读）；坐席工作台 `static/workspace/`（B3 起可审核） |
+| 退款审核（人工闸门） | `bizmock/web/RefundReviewController` -> `bizmock/service/BizMockService.reviewRefund`；网关代理 `web/OpsController`（`/ops/refunds/*`，B3 起 `reviewRefund` 与 `refundReviewQueue()` 均为 `staff()`-only）；调试台面板 `static/console.html`（B3 起只读；round37 前是 `static/index.html`）；坐席工作台 `static/workspace/`（B3 起可审核） |
 | SSE 事件 | `agent/EventSink`、`web/SseEventSink` |
 | 降级与工单 | `agent/FallbackService`、`agent/FallbackReason` |
 | 缓存写回 | `cache/WriteBackPolicy`、`cache/WriteBackPool` |
 
-调试台是 `gateway/src/main/resources/static/index.html`，它只访问 gateway 同源接口；浏览器验收在 `scripts/verify-console.mjs`。
+调试台是 `gateway/src/main/resources/static/console.html`（round37 起；`/admin/debug` 重定向到它，根路径 `/` 是产品导航），它只访问 gateway 同源接口；浏览器验收在 `scripts/verify-console.mjs`（目标地址已跟到 `/console.html`）。
 
 ## Test Map
 
@@ -85,7 +86,7 @@
 | 业务租户隔离、幂等 | `shoppilot-biz-mock/src/test/java/...` |
 | 工单工作流、规则分流、坐席领取、SLA、慢查询证据 | `shoppilot-ticket/src/test/java/...`（round23 票 72 随数据搬走） |
 | **容器档**（干净克隆一条命令起全栈，round24） | `docker-compose.yml` 的 `full` profile + `Dockerfile`（`ARG MODULE`）+ `scripts/up.ps1 -Containerized` / `down.ps1 -Containerized`；偏移量与凭证走**每份克隆自己的 `.env`**；默认档（本机 JVM）不受影响 |
-| 坐席工作台页面（登录/队列/领取/处理/释放/退款审核） | `frontend-workspace/src/`，产物落 `shoppilot-gateway/src/main/resources/static/workspace/`（round23 票 73；**登录面在 round25 票 83 换成坐席账号**；round36 票 151 补转人工上下文详情、结单意见对话框、状态/来源/队列可读名；浏览器只经网关，不直连内部服务） |
+| 坐席工作台页面（登录/队列/领取/处理/释放/退款审核） | `frontend-workspace/src/`，产物落 `shoppilot-gateway/src/main/resources/static/workspace/`（round23 票 73；**登录面在 round25 票 83 换成坐席账号**；round36 票 151 补转人工上下文详情、结单意见对话框、状态/来源/队列可读名；round37 票 152 加回环一键体验登录；浏览器只经网关，不直连内部服务） |
 | **共享前端库 `frontend-shared`**（round36 票 151 / ADR 0070） | 两个 Vue 工程以 `file:../frontend-shared` 接入（不是根 npm workspaces）。导出：`tokens.css`（设计令牌 + 按钮/输入/表格基线）、`request` / `ApiResult` / `messageOf`、`TicketSummary` / `STATUS_LABEL` / `PRIORITY_LABEL` / `priorityRank` / `minutesLeft`。各页只保留自己的路径前缀与失败文案；产物仍由各工程 `npm run build` 落到 `static/` |
 | **身份域**（账号 + 角色守卫，round25 票 80-82） | **落在 `shoppilot-biz-mock`**，不在网关、也不是第五个服务——ADR **0058** 有完整论证（0053 的资源账 + 网关没有数据源 + 账号主体是买家）。⚠️ **0053 给 biz-mock 的定义（订单/物流/退款/工具/审批）里没有身份**，按旧清单去找会找不到。入口：`bizmock/domain/UserAccount`（表 `users`，Flyway `V7`）、`bizmock/service/IdentityService`、`bizmock/web/IdentityController`（`/api/identity/*`，内部凭证之后）；登录面在网关 `identity/AccountController`（`/auth/login` `/auth/register` `/auth/me`）+ `identity/IdentityClient`；角色守卫在网关 `web/OpsController.guardedTicket`；契约在 `shoppilot-tool-api` 的 `tool/identity/` 与 `tool/audit/{Actor,ActorHeaders}` |
 | 自报身份的退役面（round25 票 82） | **下游不再读自报头**：biz-mock 与 ticket 服务只认 `X-Actor` + `X-Actor-Authenticated`，两者都由网关从已验签令牌解出（`grep -rn "X-Agent\|X-Reviewer"` 在两边只剩注释与测试）。网关**仍然接受**客户端的 `X-Agent` / `X-Reviewer`——但只在**没有账号身份**时作为自称来源（ops 运维面那条路径），**盖不过令牌**，且产出的 actor 一律标成未认证 |
@@ -93,8 +94,8 @@
 | **入站会话与幂等派生**（两格，round31 票 96 / ADR 0065） | `channel/ChannelAdapter` 的 `NormalizedChat` 五格（新增 `conversationId` + `clientToken`）与静态派生辅助：`<渠道label>:chat:<sessionId|customerId>`、`<渠道label>:msg:<messageId>`——**渠道标签与聊天维度缺一不可**（变异 B1/B2 钉住）。派生在 `WebhookAdapter`/`EmailAdapter`（payload 可选 `messageId`/`sessionId`，上限 255；渠道标签取自 `ChannelContext`，不进 NormalizedChat——两处真相）；web 渠道不派生（`WebSseAdapter` 行为零变更）。接线在 `web/ChannelController.handle`：**显式请求头 `X-Conversation-Id` 与显式 `idempotencyToken` 恒优先**，派生只补缺——会话坐标替换只动 `conversationId`，租户与买家身份一字不动（ADR 0025）；响应带 `conversationId`。测试 `web/ChannelDerivedSessionJvmTest`（10 条）+ `identity/AuthFilterTest` 现状锚。真实 IM 渠道（票 97/113 飞书）到这两个字段的映射落在各自的适配器 |
 | **飞书适配器与录放门**（round31 票 97 / ADR 0060 决策 4 + 0065） | `channel/FeishuAdapter`：吃飞书 v2 原样事件（`im.message.receive_v1`），**仅单聊（p2p）文本**，范围外当场拒；`content` 是字符串化 JSON 二次解析。**不读 `ChannelContext`/`TenantContext`**（长连接线程没有 HTTP 上下文）——渠道标签取 `channel()`，聊天维度取事件 `chat_id`；`contact` 恒 null（回复走出站 API）。`Channel.FEISHU` 被 `fromPath` **显式排除**（无 HTTP 入站路径，零暴露红线）。夹具 `eval/im-events/`（append-only，组合 sha256 钉在测试里）；门禁 `channel/FeishuAdapterReplayTest` 6 条（0 token、免凭据、进 CI 既有 test 步）。**长连接客户端是票 113**（SDK 引入），活体是票 115（真凭据） |
 | **飞书长连接客户端**（round31 票 113+114 / ADR 0065） | `channel/FeishuLongConnectionClient`：飞书官方 SDK `oapi-sdk` 2.4.0+ 的长连接客户端 `com.lark.oapi.ws.Client`，承担心跳/重连/生命周期。`handleEvent()` 把飞书事件 JSON → `NormalizedChat` 契约（票 96 两格派生），走既有 `AgentStateMachine.run()` 链路。出站回复：`FeishuReplySender` 接口 + `FeishuApiReplySender` 实现（SDK `client.im().message().create()`）。断线语义：SDK 重连期间事件丢失照登（飞书侧无补推保证），日志可查。零暴露红线：出站 WSS，不开新端口、无入站回调。**凭据家法（票 114）**：`bindAddress` 经 `@Value("${server.address:}")` 注入，`start()` 用 `PostureGuard.isLoopback()` 判定——非回环 + 启用 + 空凭据 → 拒启（`IllegalStateException`，消息三要素：哪个凭据缺、为什么危险、怎么配）；回环 + 空凭据 → WARN + 不注册。`application.yml` 新增 `shoppilot.feishu` 配置块，三个环境变量占位符走 `.env`。测试 `channel/FeishuLongConnectionClientJvmTest` 17 条（正常编排、身份注入、空答案跳过、坏形状拒绝、ThreadLocal 清理、stop()、变异测试、PostureGuard 拒启/WARN/变异对照） |
-| **买家端**（第三个前端入口，round27） | `frontend-buyer/src/`，产物落 `shoppilot-gateway/src/main/resources/static/buyer/`（round27 票 93；round36 票 151 换成对话流、店铺码走 `?store=`、加载三态；浏览器只经网关，不直连内部服务）。「我的工单」链路：`GET /api/v1/support/ops/tickets/mine`（网关，**只过买家 JWT、不要 ops 凭证**）→ `GET /api/tickets/mine`（工单服务，买家号取自 `X-Customer-Id`，**不接受任何查询参数**）→ `WorkItemService.listOwn`。**买家视角 `contact` 与 `transcript` 两格都置空**（`toBuyerView`；round36 起 `transcript` 是契约真字段，这条隔离断言不再是真空断言）。静态入口放行面与两个入口转发：`identity/AuthFilter.shouldNotFilter` + `web/StaticEntryController`，由 `identity/StaticEntryExemptionTest` 一次钉住三个入口 |
-| 三个前端入口的静态放行（清场日抓到过一次同类洞） | `identity/AuthFilter.shouldNotFilter` 必须同时列 `/`、`/workspace/**`、`/buyer/**`；**加一个新入口而忘了在这里放行 → 401**，且要等到活体验收才发现。`identity/StaticEntryExemptionTest` 会在下一个入口加入时先撞红 |
+| **买家端**（第三个前端入口，round27） | `frontend-buyer/src/`，产物落 `shoppilot-gateway/src/main/resources/static/buyer/`（round27 票 93；round36 票 151 换成对话流、店铺码走 `?store=`、加载三态；round37 票 152 加免密游客入口与店铺名片；`guest=0` 保留口令登录门禁。浏览器只经网关，不直连内部服务）。「我的工单」链路：`GET /api/v1/support/ops/tickets/mine`（网关，**只过买家 JWT、不要 ops 凭证**）→ `GET /api/tickets/mine`（工单服务，买家号取自 `X-Customer-Id`，**不接受任何查询参数**）→ `WorkItemService.listOwn`。**买家视角 `contact` 与 `transcript` 两格都置空**（`toBuyerView`；round36 起 `transcript` 是契约真字段，这条隔离断言不再是真空断言）。静态入口放行面与两个入口转发：`identity/AuthFilter.shouldNotFilter` + `web/StaticEntryController`，由 `identity/StaticEntryExemptionTest` 一次钉住三个入口 |
+| 三个前端入口的静态放行（清场日抓到过一次同类洞） | `identity/AuthFilter.shouldNotFilter` 必须同时列 `/`、`/workspace/**`、`/buyer/**`、`/admin/debug`（以及 `.html` 静态资源）；**加一个新入口而忘了在这里放行 → 401**，且要等到活体验收才发现。`identity/StaticEntryExemptionTest` 会在下一个入口加入时先撞红 |
 | 模式迁移与 schema 一致性 | `bizmock/SchemaMigrationTest`（迁移已应用、9 表齐备、`ddl-auto` 仍是 validate） |
 | 慢查询计划与索引守卫 | `bizmock/SlowQueryPlanTest`（含被否决的那笔优化，见 `docs/slow-query-optimization-2026-09-21.md`） |
 | 跨模块 schema | `shoppilot-tool-api/src/test/java/.../ToolSchemaGeneratorTest` |
@@ -110,7 +111,7 @@
 - `agent/AgentStateMachine.java` 约 938 行（round21 收口实测），同时承担状态循环、Prompt、检索、缓存写回、fallback 和槽位抽取。未来按行为边界拆时，先用 ticket 固定现有测试和 SSE 契约。round21 的两处新增（票 58 的 `replayAnswer`、票 59 的 `pendingApprovalAnswer`）都抽成 helper 并把话术渲染外置到 `agent/ReplayReply`，是为了**不加重**这笔债。
 - `agent/AgentStateMachine` 与 `agent/ToolDispatcher` 各自持有部分槽位策略。若继续出现参数校验漂移，可评估 `ToolInputPolicy`，不要为了“少一个类”先合并。
 - `web/ChatController` 的同步和流式路径重复限流、工单和 fallback 决策。若新增准入规则，优先抽 `ChatAdmission` 一类深模块，避免两条路径再次漏改。
-- `agent/ConversationOwnershipTest` 位于 agent 包，但实际读取并断言 `static/index.html`；若继续扩调试台断言，应迁到 web/console seam，而不是继续在 agent 测试里堆前端细节。
+- `agent/ConversationOwnershipTest` 位于 agent 包，但实际读取并断言 `static/console.html`（round37 前是 `index.html`）；若继续扩调试台断言，应迁到 web/console seam，而不是继续在 agent 测试里堆前端细节。
 - ~~`knowledge/HybridRetriever` 与 `ingest/MarkdownChunker` 缺少聚焦单测~~ —— **已还（round22 票 64 / ADR 0049）**：`RetrievalFusionReplayTest`（由录制的两路序重算融合，四个常数从生产 `application.yml` 绑定、语料 sha 现算）与 `MarkdownChunkerTest`（切块不重叠、ruleId 稳定 = ES `_id`/Qdrant point id 稳定）随该票一起交付，并接进 CI 的 `Retrieval fusion gate` 步。
 - `identity` 与 `web` 之间存在通过 `ApiErrorWriter` 形成的包环。ADR 0028 已限定错误信封只管网关自产错误；不重开错误信封协议时，不为消环做大搬迁。
 

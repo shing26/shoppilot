@@ -32,6 +32,9 @@ class StaticEntryExemptionTest {
         assertThat(exempted("/buyer/")).isTrue();
         assertThat(exempted("/buyer/index.html")).isTrue();
         assertThat(exempted("/buyer/assets/index-abc.js")).isTrue();
+        assertThat(exempted("/console.html")).isTrue();
+        assertThat(exempted("/admin/debug")).isTrue();
+        assertThat(exempted("/admin/debug/")).isTrue();
     }
 
     @Test
@@ -48,6 +51,9 @@ class StaticEntryExemptionTest {
         assertThat(exempted("/api/v1/support/chat")).isFalse();
         assertThat(exempted("/api/v1/support/ops/tickets/mine")).isFalse();
         assertThat(exempted("/api/v1/support/ops/refunds/12/review")).isFalse();
+        // /admin 只放行 debug 入口本身：前缀放行会把未来任何 /admin/* 管理面变成匿名可访问。
+        assertThat(exempted("/admin/tenants")).isFalse();
+        assertThat(exempted("/admin/config")).isFalse();
     }
 
     @Test

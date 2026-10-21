@@ -85,7 +85,8 @@ if ($Containerized) {
     }
     Write-Host ''
     Write-Host '栈已就绪（容器档）：' -ForegroundColor Green
-    Write-Host "  调试台   http://127.0.0.1:$pGateway/"
+    Write-Host "  产品导航 http://127.0.0.1:$pGateway/"
+    Write-Host "  调试台   http://127.0.0.1:$pGateway/console.html"
     Write-Host "  坐席工作台 http://127.0.0.1:$pGateway/workspace/"
     Write-Host '  停    栈 pwsh -NoProfile -File scripts/down.ps1 -Containerized'
     exit 0
@@ -207,7 +208,8 @@ if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8082/actuator/health/r
 
 Write-Host ''
 Write-Host "栈已就绪（profile=$Profile）：" -ForegroundColor Green
-Write-Host '  调试台   http://127.0.0.1:8082/'
+Write-Host '  产品导航 http://127.0.0.1:8082/'
+Write-Host '  调试台   http://127.0.0.1:8082/console.html'
 Write-Host '  工单服务 http://127.0.0.1:8092/actuator/health'
 Write-Host '  三条演示 pwsh -NoProfile -File scripts/demo.ps1'
 Write-Host '  停    栈 pwsh -NoProfile -File scripts/down.ps1'

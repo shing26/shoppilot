@@ -31,6 +31,15 @@ export function api<T>(method: string, path: string, opts: { token?: string; bod
 }
 
 /**
+ * 一键体验登录（round37）：服务端用演示口令换真账号令牌，浏览器不接触口令。
+ *
+ * <p>端点同样只回环注册；非回环部署返回 404，页面回落为账号口令登录。
+ */
+export function demoLogin(tenantId: string, role: 'agent' | 'admin'): Promise<ApiResult<Session>> {
+  return request<Session>('/auth/demo-login', { method: 'POST', body: { tenantId, role } })
+}
+
+/**
  * 队列列表。
  *
  * <p>三种失败各有各的处置，所以它们都必须原样回到调用方：**0** 是「读不到网关」、

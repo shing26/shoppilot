@@ -16,6 +16,7 @@
 import { computed, onMounted, ref } from 'vue'
 import {
   claimTicket,
+  demoLogin,
   describe,
   listPendingRefunds,
   listTickets,
@@ -93,7 +94,28 @@ async function doLogin() {
     clearStoredSession()
     return
   }
-  const logged = result.body as Session
+  await acceptSession(result.body as Session)
+}
+
+/**
+ * 一键体验登录（round37）：浏览器不接触演示口令，服务端用环境里的口令换真账号令牌。
+ *
+ * <p>端点只在回环注册；非回环部署返回 404，这里把原因写出来并保留口令登录。
+ */
+async function doDemoLogin(role: 'agent' | 'admin') {
+  loginError.value = ''
+  const result = await demoLogin(tenant.value.trim(), role)
+  if (result.status !== 200) {
+    loginError.value =
+      result.status === 404
+        ? '当前部署不提供一键体验登录，请用坐席账号进入'
+        : (messageOf(result.body) ?? `一键登录失败（HTTP ${result.status}）`)
+    return
+  }
+  await acceptSession(result.body as Session)
+}
+
+async function acceptSession(logged: Session) {
   session.value = logged
   // 口令不留痕：登录完立刻清掉输入框，浏览器里也不落。
   password.value = ''
@@ -296,7 +318,11 @@ function clearStoredSession() {
       <label>坐席账号 <input v-model="username" type="text" placeholder="坐席账号" /></label>
       <label>口令 <input v-model="password" type="password" placeholder="口令" @keyup.enter="doLogin" /></label>
       <button type="button" @click="doLogin">登录</button>
+      <span class="demo-sep">或</span>
+      <button type="button" class="demo" @click="doDemoLogin('agent')">一键体验坐席</button>
+      <button type="button" class="demo" @click="doDemoLogin('admin')">一键体验管理员</button>
     </section>
+    <p v-if="!session" class="sub-hint">演示账号由 biz-mock 播种；一键登录只在回环演示栈可用</p>
 
     <!--
       未登录时队列整段不渲染（没有身份就没有「本店的队列」），但**必须说清为什么**，
@@ -422,6 +448,8 @@ h1 { font-size: 20px; margin: 0 0 4px; }
 .sub { color: #666; margin: 0 0 16px; }
 .ctl { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
 .ctl input, .ctl select { padding: 4px 6px; }
+.demo-sep { color: #6b7280; font-size: 13px; }
+.demo { border-color: #0f766e; color: #0f766e; }
 .who { font-weight: 600; }
 .hint { color: #666; font-weight: 400; margin-left: 6px; }
 table { border-collapse: collapse; width: 100%; }
@@ -437,6 +465,7 @@ table { min-width: 720px; }
 .note { color: #146c2e; }
 .empty { color: #666; }
 .notice { color: #666; margin: 4px 0 0; }
+.sub-hint { color: #6b7280; font-size: 12px; margin: 0 0 4px; }
 .ops button { margin-right: 6px; }
 .refund-panel { margin-top: 32px; }
 .refund-panel h2 { font-size: 16px; margin: 0 0 4px; }

@@ -69,7 +69,7 @@ process.on('unhandledRejection', async (err) => {
   process.exit(1);
 });
 
-await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+await page.goto(BASE + '/console.html', { waitUntil: 'networkidle' });
 
 // 运维令牌由输入框提供，页面每个请求都带上它，只有 ops 端点会读。必须在点「注入」之前填好。
 // fill 触发的是 input（change 要等失焦），页面那边是输入后去抖 400ms 补读数，
@@ -108,7 +108,7 @@ for (const light of LIGHT_STATES) {
   await probe.route('**/actuator/health/deps', (route) => route.fulfill({
     status: light.http, contentType: 'application/json', body: JSON.stringify(light.body),
   }));
-  await probe.goto(BASE + '/', { waitUntil: 'load' });
+  await probe.goto(BASE + '/console.html', { waitUntil: 'load' });
   const state = await probe.waitForFunction(
     () => document.getElementById('health').dataset.state || null, null, { timeout: 20000 })
     .then((handle) => handle.jsonValue()).catch(() => '');
@@ -169,7 +169,14 @@ await page.click('#btnSend');
 await page.waitForFunction(() => document.querySelectorAll('#timeline .ev.done').length > 0, null, { timeout: 90000 });
 await page.waitForTimeout(400);
 await page.click('#btnSend');
-await page.waitForTimeout(1500);
+// round37：入口层情绪分类也是一次真实 LLM 调用，命中路径整体约 1.3s 起。
+// 固定 sleep 会把「刚好慢一点」判成功能坏——改成等那条「命中」meta 真出现。
+await page.waitForFunction(
+  () => [...document.querySelectorAll('#timeline .ev.meta')].some((e) => e.textContent.includes('命中：一次性下发')),
+  null,
+  { timeout: 60000 },
+);
+await page.waitForTimeout(300);
 const hitMeta = await page.$$eval('#timeline .ev.meta', (els) => els.map((e) => e.textContent).pop());
 const hitChips = await page.$$eval('#timeline .ev.token .chip', (els) => els.length).catch(() => 0);
 check('cache hit renders as one-shot (1 token frame)', hitChips === 1, `meta="${(hitMeta || '').trim()}" chips=${hitChips}`);
@@ -502,7 +509,7 @@ check('wrong ops token writes the failure reason into its own gauge',
 // 单开一页做，避免把主页面那条「页面无失败请求」断言污染成假红。
 const abortPage = await browser.newPage();
 await abortPage.route('**/api/v1/support/ops/**', (route) => route.abort('connectionrefused'));
-await abortPage.goto(BASE + '/', { waitUntil: 'load' });
+await abortPage.goto(BASE + '/console.html', { waitUntil: 'load' });
 await abortPage.fill('#opsToken', OPS_TOKEN);
 await abortPage.waitForTimeout(1200);
 const abortGauge = await abortPage.evaluate(() => ({

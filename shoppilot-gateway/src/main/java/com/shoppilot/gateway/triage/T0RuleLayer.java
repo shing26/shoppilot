@@ -48,6 +48,16 @@ public class T0RuleLayer {
     private static final List<String> SHIPPING_POLICY_WORDS = List.of("发什么快递", "哪家快递", "多久发货", "几天发货", "什么时候发货", "包邮", "偏远");
 
     /**
+     * 政策形状词（round37 安全网）：T0/T1 把一句政策诉求误判成 UNKNOWN 时，仍要能把它送回
+     * 检索与空召回出口。只收**政策语义**词，不收“商品 / 推荐 / 卖什么”这类一般问答词——
+     * 否则「店铺推荐什么商品」又会被灌进无关条款。
+     */
+    private static final List<String> POLICY_SHAPE_WORDS = List.of(
+            "政策", "规则", "条款", "保障", "售后", "理赔", "赔付", "包赔", "包退", "运费险", "运费",
+            "时效", "时限", "期限", "窗口", "有效期", "怎么赔", "怎么退", "能不能退", "可以退吗",
+            "谁承担", "谁出", "多久", "几天");
+
+    /**
      * 酒店域词表（round32）。它是**另一个行业**的词汇，与电商四条政策词表零重叠——
      * 这也正是它为什么是「换知识库就换场景」的合格证据：同一套代码，换一套语料与一份词表。
      */
@@ -228,6 +238,51 @@ public class T0RuleLayer {
     public boolean hasActionVerb(String query) {
         return query != null && (containsAny(query, ADDRESS_WORDS) || containsAny(query, REFUND_WORDS)
                 || containsAny(query, LOGISTICS_WORDS) || containsAny(query, ORDER_WORDS));
+    }
+
+    /**
+     * 政策形状判定（round37 / ADR 0071 的失败安全网）。
+     *
+     * <p>用途只有一个：当意图被判成 {@code UNKNOWN} 时，决定还要不要走条款检索与空召回出口。
+     * 它**不改变意图**、不参与缓存准入，也不会让一般问答重新被无关条款污染。
+     */
+    public boolean looksPolicyShaped(String query) {
+        if (query == null || query.isBlank()) {
+            return false;
+        }
+        return containsAny(query, FRESH_WORDS) || containsAny(query, PROMO_WORDS)
+                || containsAny(query, RETURN_WORDS) || containsAny(query, SHIPPING_POLICY_WORDS)
+                || containsAny(query, POLICY_SHAPE_WORDS) || containsHotelWord(query);
+    }
+
+    /**
+     * 政策形状命中后，尽量给检索一个具体意图分区（只读，不改变 {@link #classify} 的结果）。
+     *
+     * <p>为什么不直接用 {@code policyIntent}：它没有“售后/保障”这类泛政策词；而既然句子
+     * 已经过了 {@code looksPolicyShaped}，能归到具体分区就归（冷链/促销/退换/物流/酒店）。
+     * 归不到具体分区的泛问（“有哪些售后保障”）返回 null——调用方据此走确定性追问，
+     * 不让模型把平台规则与本店规则合并成更宽的承诺。
+     */
+    public Intent policyHintIntent(String query) {
+        if (query == null || query.isBlank()) {
+            return null;
+        }
+        if (containsAny(query, FRESH_WORDS)) {
+            return Intent.POLICY_FRESH;
+        }
+        if (containsAny(query, PROMO_WORDS)) {
+            return Intent.POLICY_PROMO;
+        }
+        if (containsAny(query, RETURN_WORDS)) {
+            return Intent.POLICY_RETURN;
+        }
+        if (containsAny(query, SHIPPING_POLICY_WORDS)) {
+            return Intent.POLICY_SHIPPING;
+        }
+        if (containsHotelWord(query)) {
+            return Intent.POLICY_HOTEL;
+        }
+        return null;
     }
 
     private Intent policyIntent(String query) {

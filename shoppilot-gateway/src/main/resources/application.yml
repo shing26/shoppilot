@@ -60,12 +60,16 @@ shoppilot:
   # 守护判的必须是真正在用的那个值，两处各写一份迟早分家（ADR 0029）。
   jwt-secret: ${SHOPPILOT_JWT_SECRET:}
   llm:
-    # dev | local | perf —— 三态模式，指标分口径声明见 ADR 0001
-    mode: local
+    # dev | local | perf —— 三态模式，指标分口径声明见 ADR 0001。
+    # 2026-10-20：模式必须能从 .env 选择。此前这里写死 local，而 base-url/api-key/model
+    # 在 .env 里指向 DashScope——配了云端却永远走 Ollama，本机没 pull qwen2.5:3b 时
+    # 每次对话都以「本地模型返回 500」收场。profile 仍可覆盖本值（dev/local/perf 三段）。
+    mode: ${SHOPPILOT_LLM_MODE:local}
     base-url: ${SHOPPILOT_LLM_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
     api-key: ${SHOPPILOT_LLM_API_KEY:}
     model: ${SHOPPILOT_LLM_MODEL:qwen-plus}
-    temperature: 0.2
+    # 0.2 是评测口径的稳定值；对话演示可用 .env 调到 0.6 左右去掉复读感。
+    temperature: ${SHOPPILOT_LLM_TEMPERATURE:0.2}
     connect-timeout: 3s
     # 默认 20s 是按云端 API 定的；指向慢端点（例如本地 OpenAI 兼容服务）时要能放宽，
     # 否则非流式的工具规划轮会成片报 TIMEOUT，测出来的数字属于超时而不是模型能力。
@@ -157,12 +161,37 @@ shoppilot:
       T002: ECOMMERCE
       T003: ECOMMERCE
       T004: HOTEL
+  # round37：店铺人格（店名/主营/本店承诺）随 tenantId 注入系统提示词。
+  # 名称与主营以 biz-mock 的 SeedRunner 和 knowledge/ 的店铺级条款为准，这里只做
+  # **对话层摘要**，不新增业务事实；具体政策仍只以【政策条款】与工具返回为准。
+  store-profiles:
+    profiles:
+      T001:
+        name: 星选生活旗舰店
+        business: 生鲜果蔬、数码配件、服饰鞋包、家居日用的综合生活店
+        guarantees: 自营商品无理由退货窗口 15 天；单价低于 300 元的自营商品可免费上门取件；服装、家纺、日用类优先换货；每月 8 日会员日店铺会员额外九折
+      T002:
+        name: 鲜果驿站
+        business: 水果、蔬菜、鲜肉、水产、鲜花等生鲜商品
+        guarantees: 生鲜不支持七天无理由，但到货腐烂、变质、缺重、死蟹等质量类问题可按本店时限申请补偿；死蟹受理窗口为签收后 6 小时；口感争议在签收后 48 小时内协商
+      T003:
+        name: 云裳服饰旗舰店
+        business: 服饰鞋包
+        guarantees: 按平台七天无理由规则受理，本店暂无额外的店铺级承诺
+      T004:
+        name: 云栖酒店
+        business: 客房预订与入住服务
+        guarantees: 标准入住 14:00 后、退房次日 12:00 前；可取消房型在入住当日 18:00 前免费取消；加床与入住人数以房型说明为准
   ops:
     # 调试台的故障注入 / 工单队列 / 演示复位经网关代理到 biz-mock（ticket 14、15）。
     # 生产必须置 false：故障注入是平台级动作，能拖慢整条链路。
     enabled: ${SHOPPILOT_OPS_ENABLED:true}
     # 同上。非回环绑定时「仍用默认令牌且没关掉运维端点」是启动阻断项（ADR 0029）。
     token: ${SHOPPILOT_OPS_TOKEN:}
+  identity:
+    # 演示账号口令（与 biz-mock 播种用的是同一个键）。只供回环上的一键体验登录使用；
+    # 为空时该端点直接 503，不创建也不猜测任何口令（ADR 0056）。
+    demo-password: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:}
   feishu:
     # 飞书长连接（round31 票 113/114 / ADR 0065）。
     # 凭据走 .env，不入库；非回环绑定 + 空凭据 → 拒启（PostureGuard 家法）。

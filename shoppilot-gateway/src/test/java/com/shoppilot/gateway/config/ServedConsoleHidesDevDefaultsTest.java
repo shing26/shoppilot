@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ServedConsoleHidesDevDefaultsTest {
 
     private static String servedPage() throws Exception {
-        try (InputStream in = ServedConsoleHidesDevDefaultsTest.class.getResourceAsStream("/static/index.html")) {
-            return new String(Objects.requireNonNull(in, "静态页不在 classpath：/static/index.html")
+        try (InputStream in = ServedConsoleHidesDevDefaultsTest.class.getResourceAsStream("/static/console.html")) {
+            return new String(Objects.requireNonNull(in, "静态页不在 classpath：/static/console.html")
                     .readAllBytes(), StandardCharsets.UTF_8);
         }
     }

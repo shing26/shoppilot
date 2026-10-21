@@ -16,6 +16,47 @@ export function login(tenantId: string, username: string, password: string): Pro
   return request<Session>('/auth/login', { method: 'POST', body: { tenantId, username, password } })
 }
 
+/**
+ * 游客身份（round37）：本机演示一键开聊。
+ *
+ * <p>走回环调试口 `/auth/mock-token`（ADR 0014/0029）：它只在回环绑定上注册，
+ * 非回环部署拿到 404 时页面回落为口令登录。顾客号固定 C001——演示段的默认买家。
+ */
+export async function guestSession(tenantId: string): Promise<ApiResult<Session>> {
+  const result = await request<{ token: string; claims: { tid: string; cid: string }; expiresInSeconds: number }>(
+    '/auth/mock-token',
+    { method: 'POST', body: { tenantId, customerId: 'C001' } },
+  )
+  if (result.status !== 200) {
+    return { status: result.status, body: result.body as { message?: string } }
+  }
+  const body = result.body as { token: string; claims: { tid: string; cid: string } }
+  return {
+    status: 200,
+    body: {
+      token: body.token,
+      accountId: null,
+      username: 'guest',
+      role: 'BUYER',
+      tenantId: body.claims.tid,
+      customerId: body.claims.cid,
+      displayName: '访客',
+    },
+  }
+}
+
+/** 当前店铺资料（round37）：店名、主营、本店承诺，只读且只认令牌里的租户。 */
+export interface StoreProfile {
+  tenantId: string
+  name: string
+  business: string
+  guarantees: string
+}
+
+export function storeProfile(token: string): Promise<ApiResult<StoreProfile>> {
+  return request<StoreProfile>('/api/v1/support/store-profile', { token })
+}
+
 /** 店铺清单：登录后把内部租户号换成店名（round36 / 票 151）。 */
 export interface StoreInfo {
   tenantId: string

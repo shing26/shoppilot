@@ -7,8 +7,8 @@
 [![Java](https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/projects/loom/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
-[![ADR](https://img.shields.io/badge/Architecture-68%20ADRs-blueviolet)](docs/adr/)
-[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-591-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
+[![ADR](https://img.shields.io/badge/Architecture-70%20ADRs-blueviolet)](docs/adr/)
+[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-596-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
 [![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
 **10** 态有界状态机 · **4** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
@@ -201,7 +201,7 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
 2. **串号防线**：A 店买家问自己的 `90001`，B 店买家问同一个单号。B 店只得到"未在本店找到该订单"，不返回 403（403 等于承认这单存在）；伪造 token 直接 401；body 里塞 `tenantId` 被忽略并告警。
 3. **降级转人工**：现场注入 `failRate=1.0`（经网关运维代理，脚本碰不到 biz-mock 的内部凭证），下一次物流查询不返回 500，而是同一条 SSE 通道里推 `fallback{reason=TOOL_UNAVAILABLE, ticketId}`，随后按工单号能从队列里读回这条工单。
 
-界面版演示：浏览器开 `http://127.0.0.1:8082/`，右侧时间线逐帧显示状态机转移，底部滑块就是同一个故障注入接口，右上抽屉是工单队列（认领/结单可点）。
+界面版演示：浏览器开 `http://127.0.0.1:8082/`（产品导航）进入买家端或坐席台；调试台在 `http://127.0.0.1:8082/console.html`（也可走 `/admin/debug`），右侧时间线逐帧显示状态机转移，底部滑块就是同一个故障注入接口，右上抽屉是工单队列（认领/结单可点）。
 
 </details>
 
@@ -252,10 +252,16 @@ start http://127.0.0.1:8082
 
 ### 服务接入端点（本地回环绑定）
 
-* **买家交互界面**：`http://127.0.0.1:8082/buyer/`
+* **产品导航**：`http://127.0.0.1:8082/`（买家端 / 坐席台 / 调试台三个入口）
+* **买家交互界面**：`http://127.0.0.1:8082/buyer/?store=T001`（可用 T002 鲜果驿站、T003 云裳服饰、T004 云栖酒店）
 * **人工审批工作台**：`http://127.0.0.1:8082/workspace/`
+* **运维调试台**：`http://127.0.0.1:8082/console.html`（别名 `/admin/debug`；静态页可读，写动作由 ops token / staff 令牌把门）
 * **网关 Metrics (Prometheus)**：`http://127.0.0.1:8082/actuator/prometheus`
 * **工单服务健康检查**：`http://127.0.0.1:8092/actuator/health`
+
+> 游客登录与坐席一键体验只在**回环绑定**上注册（`/auth/mock-token`、`/auth/demo-login`）。
+> 容器档把 `SHOPPILOT_SERVER_ADDRESS` 设为 `0.0.0.0`，这两个入口按设计不注册，
+> 产品页会回落为账号口令登录。
 
 <details>
 <summary>手动分步、三种运行模式与运维细节</summary>
@@ -304,7 +310,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 * **Part 8 Task**：复合业务长链路端到端完成率
 * **Part 10 Autonomy**：4 轮链 / 2 步链、反思三态（触发 / 不触发 / 次数用尽）与超限出口（单独成列，不给总分；dev 档 30 条，票 148/149）
 
-**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **591 条** JVM 测试（tool-api 10 + biz-mock 73 + ticket 45 + gateway 463）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
+**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **596 条** JVM 测试（tool-api 10 + biz-mock 73 + ticket 45 + gateway 468）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
 
 ---
 
@@ -588,7 +594,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 <summary>🔁 复现：压测、评测与验收命令</summary>
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（四模块 10 + 73 + 463 + 45 = 591 项）
+# 单元、架构与主链路 JVM 集成测试（四模块 10 + 73 + 468 + 45 = 596 项）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟

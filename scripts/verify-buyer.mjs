@@ -18,7 +18,8 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 
 const BASE = process.env.SHOPPILOT_GATEWAY_BASE || 'http://127.0.0.1:8082';
 // round36 / 票 151：店铺码走 URL（ADR 0070 B2），页面不再有「店铺编号」输入框。
-const PAGE = `${BASE}/buyer/?store=${encodeURIComponent(process.env.SHOPPILOT_IDENTITY_TENANT || 'T001')}`;
+// round37：产品默认免密游客进入；这条门禁验的是口令登录与跨买家隔离，所以显式关掉自动游客。
+const PAGE = `${BASE}/buyer/?store=${encodeURIComponent(process.env.SHOPPILOT_IDENTITY_TENANT || 'T001')}&guest=0`;
 const TENANT = process.env.SHOPPILOT_IDENTITY_TENANT || 'T001';
 const BUYER = process.env.SHOPPILOT_IDENTITY_AGENT || 'buyer';
 const PASSWORD = process.env.SHOPPILOT_IDENTITY_DEMO_PASSWORD;

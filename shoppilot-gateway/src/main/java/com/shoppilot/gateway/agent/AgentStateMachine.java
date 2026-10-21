@@ -17,6 +17,8 @@ import com.shoppilot.gateway.llm.LlmException;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
 import com.shoppilot.gateway.sentiment.SentimentGate;
+import com.shoppilot.gateway.store.StoreProfileProperties;
+import com.shoppilot.gateway.store.StoreProfileService;
 import com.shoppilot.gateway.style.StyleService;
 import com.shoppilot.gateway.triage.TriageEngine;
 import com.shoppilot.gateway.triage.TriageResult;
@@ -28,6 +30,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -80,6 +83,7 @@ public class AgentStateMachine {
     private final PromptCatalog promptCatalog;
     private final SentimentGate sentimentGate;
     private final StyleService styleService;
+    private final StoreProfileService storeProfileService;
     private final MeterRegistry registry;
     private final Counter toolRoundExhaustedCounter;
     private final Counter negativeSuppressedCounter;
@@ -88,13 +92,30 @@ public class AgentStateMachine {
     private final Counter reflectionTriggeredCounter;
     private final Counter reflectionExhaustedCounter;
 
+    /**
+     * 无店铺人格的构造重载：只给既有单测用（它们不关心提示词里的店铺段）。
+     * 生产路径一律走下面带 {@link StoreProfileService} 的那一支。
+     */
+    public AgentStateMachine(TriageEngine triageEngine, CacheService cacheService, SingleFlight singleFlight,
+                      WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, TenantDomainRegistry domainRegistry,
+                      HybridRetriever retriever, LlmGateway llm, ToolDispatcher dispatcher,
+                      SessionStore sessionStore, FallbackService fallbackService, GatewayProperties properties,
+                      WriteBackPool writeBackPool, PromptCatalog promptCatalog, SentimentGate sentimentGate,
+                      StyleService styleService, MeterRegistry registry) {
+        this(triageEngine, cacheService, singleFlight, writeBackPolicy, kbEpoch, domainRegistry, retriever, llm,
+                dispatcher, sessionStore, fallbackService, properties, writeBackPool, promptCatalog, sentimentGate,
+                styleService, new StoreProfileService(new StoreProfileProperties(Map.of())), registry);
+    }
+
+    @Autowired
     public AgentStateMachine(TriageEngine triageEngine, CacheService cacheService, SingleFlight singleFlight,
                              WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, TenantDomainRegistry domainRegistry,
                              HybridRetriever retriever,
                              LlmGateway llm, ToolDispatcher dispatcher, SessionStore sessionStore,
                              FallbackService fallbackService, GatewayProperties properties,
                              WriteBackPool writeBackPool, PromptCatalog promptCatalog, SentimentGate sentimentGate,
-                             StyleService styleService, MeterRegistry registry) {
+                             StyleService styleService, StoreProfileService storeProfileService,
+                             MeterRegistry registry) {
         this.triageEngine = triageEngine;
         this.cacheService = cacheService;
         this.singleFlight = singleFlight;
@@ -111,6 +132,7 @@ public class AgentStateMachine {
         this.promptCatalog = promptCatalog;
         this.sentimentGate = sentimentGate;
         this.styleService = styleService;
+        this.storeProfileService = storeProfileService;
         this.registry = registry;
         this.toolRoundExhaustedCounter = Counter.builder("shoppilot_tool_round_exhausted_total").register(registry);
         // 被拦下来的"不该写的负缓存"要看得见：它是这条防线在中间件抖动时确实生效的唯一证据
@@ -200,7 +222,10 @@ public class AgentStateMachine {
         // 不必为它新增响应字段（票 35 登记的"离线归因"触发条件由此关闭）
         step(trace, sink, AgentState.INTAKE, "style=" + styleTier.name());
         sink.style(styleTier.name());
-        String systemPrompt = styleService.assemble(promptCatalog.systemPrompt(), styleTier);
+        // 店铺人格（round37）：按已验签租户追加一段「店名/主营/本店承诺」，再叠风格档位。
+        // 未登记租户不追加，避免拿别家店的资料补位。
+        String systemPrompt = styleService.assemble(
+                storeProfileService.augment(promptCatalog.systemPrompt(), tenantId), styleTier);
         // 显式转人工优先于情绪判定（ADR 0042）：ADR 0017 把「转人工」下沉到 T0 就是为了不依赖任何
         // 服务，而情绪门位于 INTAKE、先于意图判定，会把这条平静问句判成 URGENT 后抢先转接，于是 T0
         // 那张含「转人工」的词表根本没机会执行（2026-09-20 矩阵 F2；2026-09-23 活体验收 step 7 复现）。
@@ -340,16 +365,44 @@ public class AgentStateMachine {
         appendHistory(messages, session);
 
         HybridRetriever.Result retrieved = null;
-        if (intent == null || intent == Intent.UNKNOWN || intent.isPolicy()) {
-            step(trace, sink, AgentState.RETRIEVE, "intent=" + intent);
+        // 只有政策咨询才做条款检索（round37）。UNKNOWN 是「判定不出的诉求」，此前也走检索，
+        // 结果是任何一句通用问题都会被灌进 5 条不相关政策（实测「店铺推荐什么商品」召回了
+        // 冷链、死蟹、价保等条款），模型要么照着念、要么被带偏。这类问题交给店铺人格 + 模型
+        // 常识作答，不引用条款、也不进缓存。
+        //
+        // 但「分类错误」不能成为绕过安全出口的路：T0/T1 把一句政策诉求误判成 UNKNOWN 时
+        // （gold 的 UNKNOWN 读数本来就不是 100%），再加一道零 token 的**政策形状**判定，
+        // 命中就仍走检索与空召回出口；一般问答（推荐商品、问店名）没有政策词，不受影响。
+        boolean policyIntent = intent != null && intent.isPolicy();
+        boolean policyHint = !policyIntent && triageEngine.looksPolicyShaped(query);
+        // 政策形状命中时尽量给一个具体意图分区：按 null 检索会把别类条款一起捞进来。
+        Intent hintIntent = policyHint ? triageEngine.policyHintIntent(query) : null;
+        if (policyHint && hintIntent == null) {
+            // 泛化的“有哪些售后保障”没有具体分区：模型会把平台规则与本店规则合并成更宽的承诺
+            // （实测把“水果蔬菜鲜花 7 天无理由 / 换货两次”说给鲜果驿站）。这里不检索、不调模型，
+            // 用一句确定性追问收口；具体问题（生鲜腐烂、七天无理由、酒店退改）仍走正常政策路径。
+            String answer = "本店售后政策按商品类型和问题类型不同（比如生鲜腐烂、七天无理由、"
+                    + "物流破损、退款时效）。请告诉我具体商品或订单号，以及遇到的问题，我再按对应条款答复。";
+            step(trace, sink, AgentState.RETRIEVE, "policy-hint:need-detail");
+            sink.token(answer);
+            sessionStore.save(tenantId, customerId,
+                    sessionStore.appendTurn(clearPending(session), query, answer));
+            return ModelRun.solo(new AgentResult(answer, intent, triage.layer(), CacheService.Layer.NONE,
+                    List.of(), trace, null, null, false, usage.prompt(), usage.completion(), false, false,
+                    promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE, List.of()));
+        }
+        if (policyIntent || policyHint) {
+            step(trace, sink, AgentState.RETRIEVE, "intent=" + intent + (policyHint ? " policy-hint" : ""));
             try {
-                retrieved = retriever.retrieve(query, tenantId, domain, intent == Intent.UNKNOWN ? null : intent);
+                retrieved = retriever.retrieve(query, tenantId, domain, policyIntent ? intent : hintIntent);
             } catch (RuntimeException retrievalFailure) {
                 log.warn("混合检索失败，本轮无政策上下文: {}", retrievalFailure.getMessage());
                 retrieved = HybridRetriever.Result.unavailable(epoch);
             }
             step(trace, sink, AgentState.RETRIEVE, "dense=" + retrieved.denseHits() + " lexical=" + retrieved.lexicalHits()
                     + " fused=" + retrieved.rules().size() + " degraded=" + retrieved.degraded());
+        } else {
+            step(trace, sink, AgentState.RETRIEVE, "skipped:general-chat");
         }
         // 空召回不是答案（2026-10-17 实机复现后定：与跨店同问同答同批修复）。
         // 政策意图在可见范围里检索不到任何条款时，此前把模型自由发挥的正文直接当答案返回——
@@ -359,12 +412,14 @@ public class AgentStateMachine {
         // 直接冲突。改成与负缓存同一出口：确定性转人工 + 落单 + 写负标记，模型不再有机会发挥。
         // 只在"跑完了、确实 0 条"时触发；检索降级（degraded）仍走原路——把一次抖动固化成
         // 批量转人工是 2026-09-08 压测里踩过的坑，不在本出口的范围内。
-        if (intent != null && intent.isPolicy() && retrieved != null && retrieved.empty()
+        if ((policyIntent || policyHint) && retrieved != null && retrieved.empty()
                 && !retrieved.degraded()) {
-            if (lookup.normalizedQuery() != null && !lookup.normalizedQuery().isEmpty()) {
+            // 负标记只写具体政策意图：UNKNOWN 分区不承接政策问句，写进去会污染一般问答的负缓存。
+            if (policyIntent && lookup.normalizedQuery() != null && !lookup.normalizedQuery().isEmpty()) {
                 cacheService.writeNegative(tenantId, domain, intent, epoch, lookup);
             }
-            step(trace, sink, AgentState.RETRIEVE, "empty-recall:可见范围内无该意图条款");
+            step(trace, sink, AgentState.RETRIEVE,
+                    "empty-recall:可见范围内无该意图条款" + (policyHint ? " (policy-hint)" : ""));
             return ModelRun.solo(fallback(AgentState.RETRIEVE, trace, sink, FallbackReason.INTENT_UNRESOLVED,
                     query, "可见范围内没有该诉求的政策条款（空召回）", styleTier, usage));
         }
@@ -1121,13 +1176,21 @@ public class AgentStateMachine {
     }
 
     private String composeUserMessage(String query, HybridRetriever.Result retrieved) {
-        if (retrieved == null || retrieved.empty()) {
+        // 一般问答（round37）：没有检索面就不加「未检索到条款」这句，避免模型把它读成
+        // 「本店没有相关信息，应该转人工」。店铺资料已经在系统提示词里。
+        if (retrieved == null) {
+            return query;
+        }
+        if (retrieved.empty()) {
             return "【政策条款】\n（本轮未检索到相关条款）\n\n【买家问题】\n" + query;
         }
         StringBuilder builder = new StringBuilder("【政策条款】\n");
         int index = 1;
         for (HybridRetriever.Retrieved rule : retrieved.rules()) {
-            builder.append(index++).append(". [").append(rule.ruleId()).append("] ")
+            // scope 必须让模型看见：同一事项平台与本店口径不同时，要优先本店条款（T002 生鲜不退
+            // vs 平台七天无理由就是这一格）。否则模型只能把两条都念一遍，甚至合并成更宽的承诺。
+            String scope = "SHOP".equalsIgnoreCase(rule.scope()) ? "本店" : "平台";
+            builder.append(index++).append(". [").append(scope).append("] [").append(rule.ruleId()).append("] ")
                     .append(ruleText(rule)).append('\n');
         }
         builder.append("\n【买家问题】\n").append(query);

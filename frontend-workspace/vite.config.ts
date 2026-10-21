@@ -13,7 +13,7 @@ import { fileURLToPath, URL } from 'node:url'
  * <p>`emptyOutDir: true` 是必须的：outDir 在项目外时 Vite 默认拒绝清空，而我们要的是
  * 「重建即清干净」——残留的旧 chunk 会让「产物与仓内一致」这条 CI 断言变得没有意义。
  *
- * <p>base 用 `/workspace/`：网关的 `/` 是运维调试台，两者并存各占一段路径。
+ * <p>base 用 `/workspace/`：round37 起网关的 `/` 是产品导航，调试台在 `/console.html`，各占一段路径。
  */
 export default defineConfig({
   plugins: [vue()],

@@ -253,4 +253,19 @@ class T0RuleLayerTest {
         assertThat(layer.classify("这个不合规，转人工").orElseThrow().intent())
                 .isEqualTo(Intent.ESCALATE);
     }
+
+    @Test
+    @DisplayName("政策形状兜底：一般问答不被误判，政策诉求即使 UNKNOWN 仍能走检索")
+    void policyShapeGuard() {
+        assertThat(layer.looksPolicyShaped("店铺推荐什么商品")).isFalse();
+        assertThat(layer.looksPolicyShaped("你们店是卖什么的？")).isFalse();
+        assertThat(layer.looksPolicyShaped("有哪些售后保障？")).isTrue();
+        assertThat(layer.looksPolicyShaped("生鲜坏了怎么赔")).isTrue();
+        assertThat(layer.looksPolicyShaped("入住和退房时间是几点？")).isTrue();
+        assertThat(layer.looksPolicyShaped(null)).isFalse();
+        // 形状命中后尽量给具体分区；泛化的「售后保障」没有具体分区，交给确定性追问。
+        assertThat(layer.policyHintIntent("有哪些售后保障？")).isNull();
+        assertThat(layer.policyHintIntent("入住和退房时间是几点？")).isEqualTo(Intent.POLICY_HOTEL);
+        assertThat(layer.policyHintIntent("店铺推荐什么商品")).isNull();
+    }
 }

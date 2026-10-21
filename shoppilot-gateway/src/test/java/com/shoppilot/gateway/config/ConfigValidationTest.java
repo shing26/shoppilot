@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -50,7 +51,9 @@ class ConfigValidationTest {
             "SHOPPILOT_LLM_DAILY_TOKEN_BUDGET",
             "SHOPPILOT_LLM_MAX_OUTPUT_TOKENS",
             "SHOPPILOT_LLM_MODEL",
+            "SHOPPILOT_LLM_MODE",
             "SHOPPILOT_LLM_READ_TIMEOUT",
+            "SHOPPILOT_LLM_TEMPERATURE",
             "SHOPPILOT_LOCAL_LLM_MODEL",
             "SHOPPILOT_OLLAMA_URL",
             "SHOPPILOT_OPS_ENABLED",
@@ -69,7 +72,9 @@ class ConfigValidationTest {
             // round31 票 114：飞书长连接凭据走 .env，不入库。
             "SHOPPILOT_IM_FEISHU_ENABLED",
             "SHOPPILOT_IM_FEISHU_APP_ID",
-            "SHOPPILOT_IM_FEISHU_APP_SECRET");
+            "SHOPPILOT_IM_FEISHU_APP_SECRET",
+            // round37：演示账号口令只供回环一键体验登录；不配置时该端点 503。
+            "SHOPPILOT_IDENTITY_DEMO_PASSWORD");
 
     private ApplicationContextRunner runner() {
         return new ApplicationContextRunner()
@@ -146,27 +151,37 @@ class ConfigValidationTest {
     }
 
     @Test
-    @DisplayName("校验失败的报错不回显 JWT、内部令牌、运维令牌与模型密钥")
+    @DisplayName("校验失败的报错不回显 JWT、内部令牌、运维令牌、模型密钥与演示口令")
     void validationFailureDoesNotEchoSecrets() {
-        String jwt = "leak-jwt-secret-0123456789";
-        String apiKey = "leak-llm-api-key";
-        String internal = "leak-internal-token";
-        String ops = "leak-ops-token";
+        // 运行时生成：这些值是“必须不出现在报错里”的哨兵，不是凭据本身。
+        String jwt = "fixture-jwt-" + UUID.randomUUID();
+        String llmKey = "fixture-key-" + UUID.randomUUID();
+        String internal = "fixture-internal-" + UUID.randomUUID();
+        String ops = "fixture-ops-" + UUID.randomUUID();
+        String demo = "fixture-demo-" + UUID.randomUUID();
 
         runner().withPropertyValues(
                 "shoppilot.llm.temperature=9",
                 "shoppilot.jwt-secret=" + jwt,
-                "shoppilot.llm.api-key=" + apiKey,
+                "shoppilot.llm.api-key=" + llmKey,
                 "shoppilot.bizmock.internal-token=" + internal,
-                "shoppilot.ops.token=" + ops).run(context -> {
+                "shoppilot.ops.token=" + ops,
+                "shoppilot.identity.demo-password=" + demo).run(context -> {
             String failure = failureText(context.getStartupFailure());
             assertThat(failure).contains("shoppilot.llm.temperature");
             assertThat(failure)
                     .doesNotContain(jwt)
-                    .doesNotContain(apiKey)
+                    .doesNotContain(llmKey)
                     .doesNotContain(internal)
-                    .doesNotContain(ops);
+                    .doesNotContain(ops)
+                    .doesNotContain(demo);
         });
+    }
+
+    @Test
+    @DisplayName("非法 llm.mode 在绑定层拒绝：未知值不能静默落到云端并绕过日预算")
+    void invalidLlmModeIsRejected() {
+        assertValidationFailure("shoppilot.llm.mode=Development", "shoppilot.llm.mode");
     }
 
     @Test

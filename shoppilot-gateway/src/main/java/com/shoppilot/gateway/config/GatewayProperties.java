@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -29,7 +30,12 @@ public record GatewayProperties(
         @Valid Ops ops,
         @Valid Feishu feishu) {
 
-    public record Llm(String mode, String baseUrl, String apiKey, String model,
+    public record Llm(
+            // 未知/空模式会落进 LlmGateway 的 else（云端客户端），而 dev() 为假意味着
+            // ADR 0012 的日预算被静默绕过——值域必须在绑定层拒绝。
+            @Pattern(regexp = "(?i)^(dev|local|perf)$",
+                    message = "shoppilot.llm.mode must be one of dev|local|perf") String mode,
+            String baseUrl, String apiKey, String model,
                       @DecimalMin("0.0") @DecimalMax("2.0") double temperature,
                       @DurationMin(nanos = 1, message = "shoppilot.llm.connect-timeout must be greater than 0")
                       Duration connectTimeout,
