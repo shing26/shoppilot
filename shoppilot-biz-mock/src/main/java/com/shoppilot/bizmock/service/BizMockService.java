@@ -28,6 +28,8 @@ import com.shoppilot.tool.view.RefundReviewState;
 import com.shoppilot.tool.view.RefundView;
 import com.shoppilot.tool.view.ToolResponse;
 import com.shoppilot.tool.view.ToolStatus;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,11 +66,14 @@ public class BizMockService {
     /** 审计（round23 票 71）：退款放行/驳回是唯一不可逆的资金迁移，必须留痕。 */
     private final AuditService auditService;
 
+    /** 退款已提交但审批工单没开成（2026-10-22 评审）：资金正确性优先，工单补偿可观测。 */
+    private final Counter refundTicketMissing;
+
     public BizMockService(OrderRepository orderRepository, LogisticsRepository logisticsRepository,
                           AddressHistoryRepository addressHistoryRepository, RefundRepository refundRepository,
                           FaultInjector faultInjector,
                           TransactionTemplate transactionTemplate, WorkItemClient workItemClient,
-                          AuditService auditService) {
+                          AuditService auditService, MeterRegistry registry) {
         this.orderRepository = orderRepository;
         this.logisticsRepository = logisticsRepository;
         this.addressHistoryRepository = addressHistoryRepository;
@@ -77,6 +82,9 @@ public class BizMockService {
         this.transactionTemplate = transactionTemplate;
         this.workItemClient = workItemClient;
         this.auditService = auditService;
+        this.refundTicketMissing = Counter.builder("shoppilot_refund_ticket_missing_total")
+                .description("退款已落库但审批工单没开成的次数（资金正确性优先，工单走补偿）")
+                .register(registry);
     }
 
     @Transactional(readOnly = true)
@@ -221,30 +229,39 @@ public class BizMockService {
                     "退款金额不得超过订单实付金额", List.of());
         }
         // 插入必须独占一个事务：约束冲突后当前事务已被标记 rollback-only，
-        // 在同一个事务里 catch 住继续查会拿到半死的 Session，50 并发下直接炸给调用方
+        // 在同一个事务里 catch 住继续查会拿到半死的 Session，50 并发下直接炸给调用方。
+        // 2026-10-22 评审 P0：DB 层加在办唯一键（active_order_id），并发双退由数据库兜底；
+        // 工单调用移出事务，失败只记账不阻断资金状态。
         final String orderId = order.getId();
+        final Refund saved;
         try {
-            Refund saved = transactionTemplate.execute(status -> {
-                Refund inserted = refundRepository.save(new Refund(TenantContextHolder.tenantId(), orderId,
+            saved = transactionTemplate.execute(status -> {
+                Refund inserted = refundRepository.saveAndFlush(new Refund(TenantContextHolder.tenantId(), orderId,
                         order.getCustomerId(), amount, reason, idempotencyToken, PENDING_REVIEW,
                         Instant.now()));
-                // 受理即开审批工单（round23 票 69/72）：退款从这一刻起就是一个待人工处理的工作项。
-                openRefundApprovalWorkItem(inserted, orderId, order.getCustomerId());
-                refundRepository.save(inserted);
                 order.setStatus(OrderStatus.REFUNDING);
                 orderRepository.save(order);
                 return inserted;
             });
-            // 受理不是放行（ADR 0047）：资金要人工审核后才动。订单已在同一事务里置 REFUNDING
-            // （受理即冻结后续改动），所以"同一订单只允许一笔在办退款"由既有的 STATE_NOT_ALLOWED 分支守住。
-            return ToolResponse.pendingApproval(ToolName.APPLY_REFUND.apiName(), toRefundView(saved));
         } catch (DataIntegrityViolationException raceWithConcurrentSubmit) {
-            return transactionTemplate.execute(status ->
-                    refundRepository.findByOrderIdAndIdempotencyToken(orderId, idempotencyToken)
-                            .map(winner -> replay(ToolName.APPLY_REFUND, winner))
-                            .orElseGet(() -> ToolResponse.failure(ToolName.APPLY_REFUND.apiName(),
-                                    ToolStatus.IDEMPOTENT_REPLAY, "重复提交已被唯一约束拦截", List.of())));
+            return refundRepository.findByOrderIdAndIdempotencyToken(orderId, idempotencyToken)
+                    .<ToolResponse<RefundView>>map(winner -> replay(ToolName.APPLY_REFUND, winner))
+                    .orElseGet(() -> refundRepository.findByActiveOrderId(orderId)
+                            .<ToolResponse<RefundView>>map(active -> ToolResponse.failure(
+                                    ToolName.APPLY_REFUND.apiName(),
+                                    ToolStatus.STATE_NOT_ALLOWED,
+                                    "该订单已有一笔退款在办，不能重复发起", List.of()))
+                            .orElseThrow(() -> raceWithConcurrentSubmit));
         }
+        String ticketId = openRefundApprovalWorkItem(saved, orderId, order.getCustomerId());
+        if (ticketId != null) {
+            transactionTemplate.executeWithoutResult(status -> refundRepository.findById(saved.getId())
+                    .ifPresent(refreshed -> refreshed.setTicketId(ticketId)));
+            saved.setTicketId(ticketId);
+        }
+        // 受理不是放行（ADR 0047）：资金要人工审核后才动。订单已在同一事务里置 REFUNDING，
+        // 在办唯一键由 active_order_id 唯一索引保证；网关的订单锁是第二道，不是唯一一道。
+        return ToolResponse.pendingApproval(ToolName.APPLY_REFUND.apiName(), toRefundView(saved));
     }
 
     /** 退款单状态：受理后待人工审核。 */
@@ -362,15 +379,17 @@ public class BizMockService {
      * <p>回指 {@code refunds.ticket_id} 只在拿到工单号时写；拿不到就留空，
      * 「查不到工单号」比「指向一个不存在的号」诚实。
      */
-    private void openRefundApprovalWorkItem(Refund refund, String orderId, String customerId) {
+    private String openRefundApprovalWorkItem(Refund refund, String orderId, String customerId) {
         String ticketId = workItemClient.create(TicketSource.REFUND_APPROVAL, customerId,
                 "REFUND_APPROVAL", "订单 " + orderId + " 的退款待人工审核", "", null,
                 "{\"refundId\":\"" + refund.getId() + "\",\"orderId\":\"" + orderId + "\"}");
         if (ticketId == null) {
+            // 资金状态已提交，工单只是工作项：宁可让队列少一张单，也不让退款卡在事务里。
+            // 可观测性由 metric 兜住；真正的 outbox 补偿登记为下一轮 debt。
             log.warn("退款 {} 的审批工单没开成；审核队列仍可处理（真源是 refunds 表）", refund.getId());
-            return;
+            refundTicketMissing.increment();
         }
-        refund.setTicketId(ticketId);
+        return ticketId;
     }
 
     /** 可选参数留空 = 不改这一项；退款原因的默认值见 applyRefund。 */

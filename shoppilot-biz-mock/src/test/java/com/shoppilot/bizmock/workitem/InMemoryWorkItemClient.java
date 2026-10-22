@@ -30,6 +30,11 @@ public class InMemoryWorkItemClient implements WorkItemClient {
         this.unavailable = true;
     }
 
+    /** 恢复可达：同一个 Spring 上下文里多个用例共享这个替身，不能把状态带进下一个用例。 */
+    public void reachable() {
+        this.unavailable = false;
+    }
+
     public List<Created> created() {
         return List.copyOf(created);
     }

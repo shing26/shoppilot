@@ -10,6 +10,9 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
 
     Optional<Refund> findByOrderIdAndIdempotencyToken(String orderId, String idempotencyToken);
 
+    /** 在办退款（2026-10-22 评审 P0）：active_order_id 唯一索引的业务侧查询。 */
+    Optional<Refund> findByActiveOrderId(String activeOrderId);
+
     long countByOrderId(String orderId);
 
     /** 审核队列（ADR 0047）：租户由实体上的 {@code @TenantId} 自动拼接，这里只按状态取。 */

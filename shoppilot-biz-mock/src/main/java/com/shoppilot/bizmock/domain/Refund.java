@@ -55,6 +55,14 @@ public class Refund {
     @Column(name = "ticket_id", length = 40)
     private String ticketId;
 
+    /**
+     * 在办退款的订单号（2026-10-22 评审 P0）。active 状态等于 {@code orderId}，
+     * 驳回置空；数据库唯一索引 {@code uk_refund_active_order} 因此保证
+     * 「一单最多一笔在办退款」。可空唯一列是 partial index 的 H2/PG 可移植替代。
+     */
+    @Column(name = "active_order_id", length = 32)
+    private String activeOrderId;
+
     protected Refund() {
     }
 
@@ -67,7 +75,12 @@ public class Refund {
         this.reason = reason;
         this.idempotencyToken = idempotencyToken;
         this.status = status;
+        this.activeOrderId = active(status) ? orderId : null;
         this.createdAt = createdAt;
+    }
+
+    private static boolean active(String status) {
+        return "PENDING_REVIEW".equals(status) || "PROCESSING".equals(status);
     }
 
     public Long getId() {
@@ -99,9 +112,17 @@ public class Refund {
         return status;
     }
 
-    /** 只由审核动作推进（ADR 0047）：受理后 {@code PENDING_REVIEW} → {@code PROCESSING}/{@code REJECTED}。 */
+    /**
+     * 只由审核动作推进（ADR 0047）：受理后 {@code PENDING_REVIEW} → {@code PROCESSING}/{@code REJECTED}。
+     * 状态迁移同时维护在办唯一键：驳回释放 order，放行保持占用。
+     */
     public void setStatus(String status) {
         this.status = status;
+        this.activeOrderId = active(status) ? orderId : null;
+    }
+
+    public String getActiveOrderId() {
+        return activeOrderId;
     }
 
     public Instant getCreatedAt() {
