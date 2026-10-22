@@ -102,6 +102,19 @@ public class TicketController {
     }
 
     /**
+     * 买家自己的单张工单详情（UX-03）。
+     *
+     * <p>与 {@link #mine()} 同一隔离口径：买家号只取自已验签的 {@code X-Customer-Id}，
+     * 别人的单与不存在同答案（404），不泄露「这张单存在但不可见」。
+     */
+    @GetMapping("/mine/{ticketId}")
+    public ResponseEntity<TicketView> mineOne(@PathVariable String ticketId) {
+        return service.getOwn(TenantContextHolder.customerId(), ticketId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
     /**
      * 运维直改状态机（调试台的状态流转按钮）。走与动作端点同一套流转校验与租户口径；
      * 非法流转回 409、未知状态值回 400。

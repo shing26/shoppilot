@@ -87,6 +87,37 @@ class BuyerOwnTicketsTest {
     }
 
     @Test
+    @DisplayName("买家按号读自己的工单：带状态与时间，仍不带会话原文")
+    void readsOwnTicketDetail() throws Exception {
+        String mine = createTicket("C001", "我这条要找客服");
+
+        ResponseEntity<String> detail = getMineOne(mine, "C001", "T001");
+
+        assertThat(detail.getStatusCode().value()).isEqualTo(200);
+        JsonNode body = JSON.readTree(detail.getBody());
+        assertThat(body.path("id").asText()).isEqualTo(mine);
+        assertThat(body.path("status").asText()).isEqualTo("OPEN");
+        assertThat(body.path("createdAt").asText()).isNotBlank();
+        assertThat(body.hasNonNull("transcript")).as("买家详情也不该拿到会话原文").isFalse();
+    }
+
+    @Test
+    @DisplayName("同租户另一个买家读详情 → 404，不泄露存在性")
+    void otherBuyerCannotReadDetail() throws Exception {
+        String mine = createTicket("C001", "我这条要找客服");
+
+        assertThat(getMineOne(mine, "C155", "T001").getStatusCode().value()).isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("跨租户读详情 → 404")
+    void otherTenantCannotReadDetail() throws Exception {
+        String mine = createTicket("C001", "我这条要找客服");
+
+        assertThat(getMineOne(mine, "C001", "T002").getStatusCode().value()).isEqualTo(404);
+    }
+
+    @Test
     @DisplayName("按创建时间倒序：买家找的是「我最近问过什么」")
     void newestFirst() throws Exception {
         String first = createTicket("C001", "更早的一条");
@@ -118,6 +149,11 @@ class BuyerOwnTicketsTest {
 
     private ResponseEntity<String> getMine(String customerId, String query, String tenantId) {
         return rest.exchange("/api/tickets/mine" + (query == null ? "" : query), HttpMethod.GET,
+                new HttpEntity<>(headers(tenantId, customerId)), String.class);
+    }
+
+    private ResponseEntity<String> getMineOne(String ticketId, String customerId, String tenantId) {
+        return rest.exchange("/api/tickets/mine/" + ticketId, HttpMethod.GET,
                 new HttpEntity<>(headers(tenantId, customerId)), String.class);
     }
 

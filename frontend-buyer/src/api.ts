@@ -94,6 +94,11 @@ export function myTickets(token: string): Promise<ApiResult<Ticket[]>> {
   return request<Ticket[]>('/api/v1/support/ops/tickets/mine', { token })
 }
 
+/** 买家自己的单张工单详情（UX-03）：隔离由下游按令牌里的买家号再判一次。 */
+export function myTicket(token: string, ticketId: string): Promise<ApiResult<Ticket>> {
+  return request<Ticket>('/api/v1/support/ops/tickets/mine/' + encodeURIComponent(ticketId), { token })
+}
+
 /** 同步问答。SSE 那条在 `stream.ts` 里，因为它要逐帧处理。 */
 export function ask(token: string, query: string, conversationId: string): Promise<ApiResult<{ answer: string; ticketId: string | null }>> {
   return request('/api/v1/support/chat', {

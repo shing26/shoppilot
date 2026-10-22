@@ -25,8 +25,8 @@ import java.io.IOException;
 @Component
 public class OpsAuthorizationInterceptor implements HandlerInterceptor {
 
-    /** 买家只读自己的工单，仍按买家身份放行（票 92/93 的契约）。 */
-    static final String BUYER_SAFE_PATH = "/api/v1/support/ops/tickets/mine";
+    /** 买家只读自己的工单（列表与详情），仍按买家身份放行（票 92/93、UX-03 的契约）。 */
+    static final String BUYER_SAFE_PREFIX = "/api/v1/support/ops/tickets/mine";
 
     private final GatewayProperties properties;
     private final ApiErrorWriter errors;
@@ -39,7 +39,8 @@ public class OpsAuthorizationInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws IOException {
-        if (BUYER_SAFE_PATH.equals(request.getRequestURI())) {
+        String path = request.getRequestURI();
+        if (path.equals(BUYER_SAFE_PREFIX) || path.startsWith(BUYER_SAFE_PREFIX + "/")) {
             return true;
         }
         OpsAccess access = opsAccess(request);

@@ -60,6 +60,15 @@ class OpsAuthorizationInterceptorTest {
     }
 
     @Test
+    @DisplayName("买家读自己的工单详情 → 放行（白名单前缀）")
+    void buyerKeepsOwnTicketDetail() throws Exception {
+        buyer();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        assertThat(interceptor.preHandle(request("/api/v1/support/ops/tickets/mine/T123", null), response, new Object()))
+                .isTrue();
+    }
+
+    @Test
     @DisplayName("正确 ops token → 放行")
     void opsTokenAllows() throws Exception {
         MockHttpServletResponse response = new MockHttpServletResponse();

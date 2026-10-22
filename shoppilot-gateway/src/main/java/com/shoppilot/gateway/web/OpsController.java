@@ -224,6 +224,12 @@ public class OpsController {
         return forwardToTicket("GET", "/api/tickets/mine", null, null);
     }
 
+    /** 买家自己的单张工单详情（UX-03）；隔离由下游按已验签买家号再判一次。 */
+    @GetMapping("/tickets/mine/{ticketId}")
+    public ResponseEntity<String> myTicket(@PathVariable String ticketId) {
+        return forwardToTicket("GET", "/api/tickets/mine/" + ticketId, null, null);
+    }
+
     /** 熔断器状态来自网关进程自己，不需要代理。 */
     @GetMapping("/circuit")
     public Map<String, Object> circuit() {

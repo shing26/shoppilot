@@ -6,13 +6,14 @@
  * 而不是一张需要先问运维要账号的空白表单。容器演示档用一键体验买家进入；
  * 非演示档自动回落到口令登录，不把「端点没开」写成一句死路。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   demoBuyerLogin,
   describe,
   guestSession,
   login,
   messageOf,
+  myTicket,
   myTickets,
   storeProfile,
   streamAnswer,
@@ -49,6 +50,13 @@ const ticketsLoading = ref(false)
 const ticketError = ref('')
 const now = ref(Date.now())
 let conversation = ''
+
+// UX-03：工单详情抽屉。选中后轮询进度，结单后停止。
+const selectedTicket = ref<Ticket | null>(null)
+const detailLoading = ref(false)
+const detailError = ref('')
+const progressNote = ref('')
+let detailTimer = 0
 
 // 登录前拿不到店名时显示「本店」，不把内部租户号 T001 当产品文案。
 const storeLabel = computed(() => storeName.value || '本店')
@@ -178,6 +186,7 @@ function signOut() {
   messages.value = []
   conversation = ''
   asking.value = false
+  closeTicket()
 }
 
 async function askQuick(question: string) {
@@ -206,7 +215,85 @@ async function refreshTickets() {
     return
   }
   tickets.value = result.body
+  const current = selectedTicket.value
+  if (current) {
+    const fresh = tickets.value.find((ticket) => ticket.id === current.id)
+    if (fresh) selectedTicket.value = fresh
+  }
 }
+
+/** 工单来源的产品化说法；未知来源原样显示，不吞掉信息。 */
+function channelLabel(channel: string | null | undefined): string {
+  const labels: Record<string, string> = { web: '网页', app: 'App', miniapp: '小程序', webhook: 'Webhook', email: '邮件' }
+  return channel ? (labels[channel] ?? channel) : '网页'
+}
+
+function reasonLabel(reason: string | null): string {
+  const labels: Record<string, string> = {
+    TOOL_UNAVAILABLE: '系统暂时无法回答',
+    USER_REQUESTED: '你要求转人工',
+    LLM_TIMEOUT: '模型响应超时',
+    LLM_UNAVAILABLE: '模型暂不可用',
+    TOOL_ROUNDS_EXHAUSTED: '工具调用未完成',
+    BUDGET_EXCEEDED: '今日模型额度用尽',
+    REFUND_APPROVAL: '退款待审核',
+    EMAIL_REPLY: '邮件回执',
+    FEEDBACK_REVIEW: '反馈复核',
+  }
+  return reason ? (labels[reason] ?? reason) : '人工处理'
+}
+
+/** 读取当前选中工单的详情；轮询时静默刷新，不闪加载态。 */
+async function loadTicketDetail(showSpinner = true) {
+  if (!session.value || !selectedTicket.value) return
+  if (showSpinner) detailLoading.value = true
+  detailError.value = ''
+  const result = await myTicket(session.value.token, selectedTicket.value.id)
+  detailLoading.value = false
+  if (result.status !== 200 || !result.body || !(result.body as Ticket).id) {
+    detailError.value = describe(result, '工单详情暂时读不到')
+    return
+  }
+  const next = result.body as Ticket
+  const previous = selectedTicket.value
+  if (previous.status !== next.status) {
+    progressNote.value = `进度已更新：${STATUS_LABEL[next.status] ?? next.status}`
+  }
+  selectedTicket.value = next
+  const index = tickets.value.findIndex((ticket) => ticket.id === next.id)
+  if (index >= 0) tickets.value[index] = next
+  if (next.status === 'RESOLVED' && detailTimer) {
+    window.clearInterval(detailTimer)
+    detailTimer = 0
+  }
+}
+
+function openTicket(ticket: Ticket) {
+  selectedTicket.value = ticket
+  detailError.value = ''
+  progressNote.value = ''
+  if (detailTimer) window.clearInterval(detailTimer)
+  void loadTicketDetail(false)
+  detailTimer = window.setInterval(() => {
+    if (selectedTicket.value && selectedTicket.value.status !== 'RESOLVED') {
+      void loadTicketDetail(false)
+    }
+  }, 8000)
+}
+
+function closeTicket() {
+  selectedTicket.value = null
+  detailError.value = ''
+  progressNote.value = ''
+  if (detailTimer) {
+    window.clearInterval(detailTimer)
+    detailTimer = 0
+  }
+}
+
+onUnmounted(() => {
+  if (detailTimer) window.clearInterval(detailTimer)
+})
 
 /** 一次流式回答。ask 与 retry 共用，保证「停止 / 重试」不会产生两套状态机。 */
 async function runAnswer(text: string, index: number) {
@@ -447,7 +534,15 @@ function clearStoredSession() {
         <p v-else-if="ticketError" class="err">{{ ticketError }}</p>
         <p v-else-if="ticketsLoading" class="empty">正在读取…</p>
         <div v-else-if="tickets.length" class="ticket-list">
-          <article v-for="t in tickets" :key="t.id" class="ticket-card">
+          <article
+            v-for="t in tickets"
+            :key="t.id"
+            class="ticket-card clickable"
+            role="button"
+            tabindex="0"
+            @click="openTicket(t)"
+            @keyup.enter="openTicket(t)"
+          >
             <div class="ticket-top">
               <strong class="mono">{{ t.id }}</strong>
               <span class="pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
@@ -463,6 +558,7 @@ function clearStoredSession() {
             <div class="ticket-meta">
               <span>{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</span>
               <span>{{ t.assignee ?? '待分配' }}</span>
+              <span class="ticket-open">查看进度 →</span>
             </div>
           </article>
         </div>
@@ -481,6 +577,51 @@ function clearStoredSession() {
         <button v-else class="primary" type="button" :disabled="!query.trim()" @click="ask">发送</button>
       </section>
     </template>
+
+    <div v-if="selectedTicket" class="drawer-mask" @click.self="closeTicket">
+      <aside class="drawer" role="dialog" aria-modal="true" aria-label="工单详情">
+        <header class="drawer-head">
+          <div>
+            <p class="eyebrow">工单详情</p>
+            <h2 class="mono">{{ selectedTicket.id }}</h2>
+          </div>
+          <button class="link" type="button" @click="closeTicket">关闭</button>
+        </header>
+
+        <p v-if="detailLoading" class="empty">正在读取最新进度…</p>
+        <p v-if="detailError" class="err">{{ detailError }}</p>
+        <p v-if="progressNote" class="progress" aria-live="polite">{{ progressNote }}</p>
+
+        <div class="detail-status">
+          <span class="pill">{{ STATUS_LABEL[selectedTicket.status] ?? selectedTicket.status }}</span>
+          <span>{{ reasonLabel(selectedTicket.reason) }}</span>
+        </div>
+        <p class="detail-query">{{ selectedTicket.userQuery }}</p>
+
+        <ol class="detail-timeline">
+          <li class="done"><span>已提交</span><time>{{ formatTime(selectedTicket.createdAt) }}</time></li>
+          <li v-if="selectedTicket.assignee" class="done"><span>坐席 {{ selectedTicket.assignee }} 已接入</span></li>
+          <li v-if="selectedTicket.escalatedAt" class="warn">
+            <span>已超时升级</span><time>{{ formatTime(selectedTicket.escalatedAt) }}</time>
+          </li>
+          <li :class="{ done: selectedTicket.status === 'RESOLVED' }">
+            <span>{{ STATUS_LABEL[selectedTicket.status] ?? selectedTicket.status }}</span>
+            <time v-if="selectedTicket.status !== 'RESOLVED'">{{ slaText(selectedTicket) }}</time>
+          </li>
+        </ol>
+
+        <dl class="detail-grid">
+          <div><dt>优先级</dt><dd>{{ PRIORITY_LABEL[selectedTicket.priority ?? 'normal'] ?? selectedTicket.priority }}</dd></div>
+          <div><dt>处理人</dt><dd>{{ selectedTicket.assignee ?? '待分配' }}</dd></div>
+          <div><dt>预计时限</dt><dd>{{ formatTime(selectedTicket.slaDeadline) || '—' }}</dd></div>
+          <div><dt>渠道</dt><dd>{{ channelLabel(selectedTicket.channel) }}</dd></div>
+        </dl>
+
+        <p v-if="selectedTicket.status === 'RESOLVED'" class="detail-note">人工已处理完成，结论会回到你提问的渠道。</p>
+        <p v-else class="detail-note">坐席正在处理，进度每 8 秒自动更新；不用再重复描述。</p>
+        <button class="primary" type="button" @click="loadTicketDetail()">刷新进度</button>
+      </aside>
+    </div>
   </main>
 </template>
 
@@ -601,6 +742,10 @@ h2 { font-size: 15px; margin: 0 0 10px; }
   box-sizing: border-box;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
 }
+.ticket-card.clickable { cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.ticket-card.clickable:hover { border-color: #b7ddd8; box-shadow: 0 4px 16px rgba(15, 118, 110, 0.08); }
+.ticket-card.clickable:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.ticket-open { margin-left: auto; color: var(--teal); white-space: nowrap; }
 .ticket-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ticket-top strong { font-size: 13px; overflow-wrap: anywhere; }
 .pill {
@@ -633,6 +778,42 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .notice { color: var(--ink-3); font-size: 13px; margin: 0; }
 .empty { color: var(--ink-3); font-size: 13px; margin: 0; }
 .mono { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+
+.drawer-mask {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; justify-content: flex-end;
+  background: rgba(20, 22, 26, 0.36);
+}
+.drawer {
+  width: min(460px, 100%); height: 100%; overflow-y: auto;
+  box-sizing: border-box; padding: 22px;
+  background: var(--panel); box-shadow: -12px 0 40px rgba(20, 22, 26, 0.16);
+}
+.drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.drawer-head h2 { margin: 2px 0 0; font-size: 16px; overflow-wrap: anywhere; }
+.detail-status { display: flex; align-items: center; gap: 10px; margin: 18px 0 8px; color: var(--ink-3); font-size: 13px; }
+.detail-query { margin: 0 0 18px; padding: 10px 12px; background: var(--bg); border-radius: 10px; overflow-wrap: anywhere; }
+.detail-timeline { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 10px; }
+.detail-timeline li { position: relative; padding-left: 18px; color: var(--ink-3); font-size: 13px; }
+.detail-timeline li::before { content: ''; position: absolute; left: 0; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.detail-timeline li.done::before { background: var(--teal); }
+.detail-timeline li.warn { color: #9a3412; }
+.detail-timeline li.warn::before { background: var(--amber); }
+.detail-timeline time { margin-left: 6px; color: var(--ink-3); }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 18px; }
+.detail-grid dt { color: var(--ink-3); font-size: 12px; }
+.detail-grid dd { margin: 2px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.detail-note { color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.progress {
+  color: var(--teal); background: #eef8f6; border: 1px solid #b7ddd8;
+  border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 12px 0 0;
+}
+
+@media (max-width: 640px) {
+  .drawer-mask { align-items: flex-end; }
+  .drawer { width: 100%; height: auto; max-height: 86vh; border-radius: 16px 16px 0 0; padding: 18px; }
+  .detail-grid { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 640px) {
   .wrap { padding: 0 12px 92px; }

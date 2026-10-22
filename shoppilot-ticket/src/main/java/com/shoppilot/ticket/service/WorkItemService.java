@@ -180,6 +180,19 @@ public class WorkItemService {
                 .toList();
     }
 
+    /**
+     * 买家自己的单张工单（UX-03）：租户 + 买家双重过滤，别人的单与不存在同答案。
+     */
+    @Transactional(readOnly = true)
+    public Optional<TicketView> getOwn(String customerId, String ticketId) {
+        if (customerId == null || customerId.isBlank()) {
+            return Optional.empty();
+        }
+        return ticketRepository.findByIdAndTenantId(ticketId, TenantContextHolder.tenantId())
+                .filter(ticket -> customerId.equals(ticket.getCustomerId()))
+                .map(WorkItemService::toBuyerView);
+    }
+
     /** 买家视角的视图：与坐席同一形状，{@code contact} 与 {@code transcript} 两格置空。 */
     private static TicketView toBuyerView(Ticket ticket) {
         return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
