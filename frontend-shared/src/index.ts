@@ -72,6 +72,8 @@ export interface TicketSummary {
   escalatedAt: string | null
   channel?: string | null
   contact?: string | null
+  /** UX-03：坐席结单意见；买家详情可见，未结单为 null。 */
+  resolutionNote?: string | null
 }
 
 /** 状态的两个视角同一口径（买家与坐席看到的说法一致）。 */

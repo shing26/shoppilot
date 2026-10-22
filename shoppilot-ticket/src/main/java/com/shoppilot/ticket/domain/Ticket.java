@@ -102,6 +102,15 @@ public class Ticket {
     @Column(name = "contact", length = 255)
     private String contact;
 
+    /**
+     * 坐席结单意见（UX-03）：结单时写入，买家详情可见。
+     *
+     * <p>它和审计/出站正文同源但用途不同：审计留操作证据，出站负责投递；
+     * 这一格是**买家在自己中心里能读到的处理结论**。空串按 null 处理，不制造“已处理但没说明”的假字段。
+     */
+    @Column(name = "resolution_note", length = 500)
+    private String resolutionNote;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -231,5 +240,13 @@ public class Ticket {
 
     public String getContact() {
         return contact;
+    }
+
+    public String getResolutionNote() {
+        return resolutionNote;
+    }
+
+    public void setResolutionNote(String resolutionNote) {
+        this.resolutionNote = resolutionNote == null || resolutionNote.isBlank() ? null : resolutionNote.trim();
     }
 }

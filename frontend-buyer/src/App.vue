@@ -617,7 +617,12 @@ function clearStoredSession() {
           <div><dt>渠道</dt><dd>{{ channelLabel(selectedTicket.channel) }}</dd></div>
         </dl>
 
-        <p v-if="selectedTicket.status === 'RESOLVED'" class="detail-note">人工已处理完成，结论会回到你提问的渠道。</p>
+        <div v-if="selectedTicket.status === 'RESOLVED'" class="resolution">
+          <h3>处理结论</h3>
+          <p v-if="selectedTicket.resolutionNote">{{ selectedTicket.resolutionNote }}</p>
+          <p v-else class="muted">人工已处理完成；本次没有填写结单说明。</p>
+          <p class="muted">结论也会按你提问的渠道回传。</p>
+        </div>
         <p v-else class="detail-note">坐席正在处理，进度每 8 秒自动更新；不用再重复描述。</p>
         <button class="primary" type="button" @click="loadTicketDetail()">刷新进度</button>
       </aside>
@@ -804,6 +809,14 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .detail-grid dt { color: var(--ink-3); font-size: 12px; }
 .detail-grid dd { margin: 2px 0 0; font-size: 13px; overflow-wrap: anywhere; }
 .detail-note { color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.resolution {
+  background: #f0faf8; border: 1px solid #c9e6e1; border-radius: 12px;
+  padding: 12px 14px; margin: 0 0 14px;
+}
+.resolution h3 { margin: 0 0 6px; font-size: 13px; color: var(--teal); }
+.resolution p { margin: 0 0 6px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.resolution p:last-child { margin-bottom: 0; }
+.muted { color: var(--ink-3); }
 .progress {
   color: var(--teal); background: #eef8f6; border: 1px solid #b7ddd8;
   border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 12px 0 0;

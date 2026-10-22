@@ -198,7 +198,8 @@ public class WorkItemService {
         return new TicketView(ticket.getId(), ticket.getTenantId(), ticket.getCustomerId(), ticket.getReason(),
                 ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt(),
                 ticket.getSource(), ticket.getQueue(), ticket.getAssignee(), ticket.getSlaDeadline(),
-                ticket.getPayload(), ticket.getEscalatedAt(), ticket.getChannel(), null, null);
+                ticket.getPayload(), ticket.getEscalatedAt(), ticket.getChannel(), null, null,
+                ticket.getResolutionNote());
     }
 
     /**
@@ -262,6 +263,8 @@ public class WorkItemService {
             return false;
         }
         ticket.setStatus(TicketStatus.RESOLVED.name());
+        // UX-03：结单意见落库，买家详情才能看到“处理结论”；审计/出站仍用同一句来源。
+        ticket.setResolutionNote(note == null ? null : truncate(note, 500));
         ticketRepository.save(ticket);
         auditPublisher.publish(AuditActions.TICKET_RESOLVED, "TICKET", ticketId, actor,
                 note == null || note.isBlank() ? "处理完成，未填说明" : "处理完成：" + truncate(note, 200));
@@ -285,6 +288,6 @@ public class WorkItemService {
                 ticket.getUserQuery(), ticket.getStatus(), ticket.getPriority(), ticket.getCreatedAt(),
                 ticket.getSource(), ticket.getQueue(), ticket.getAssignee(), ticket.getSlaDeadline(),
                 ticket.getPayload(), ticket.getEscalatedAt(), ticket.getChannel(), ticket.getContact(),
-                ticket.getTranscript());
+                ticket.getTranscript(), ticket.getResolutionNote());
     }
 }

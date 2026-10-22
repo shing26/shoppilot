@@ -102,6 +102,20 @@ class BuyerOwnTicketsTest {
     }
 
     @Test
+    @DisplayName("坐席结单意见落库，买家详情能读到处理结论")
+    void resolutionNoteReachesBuyerDetail() throws Exception {
+        String mine = createTicket("C001", "我要退款");
+        claimAndResolve(mine, "已核实，退款原路退回");
+
+        ResponseEntity<String> detail = getMineOne(mine, "C001", "T001");
+
+        assertThat(detail.getStatusCode().value()).isEqualTo(200);
+        JsonNode body = JSON.readTree(detail.getBody());
+        assertThat(body.path("status").asText()).isEqualTo("RESOLVED");
+        assertThat(body.path("resolutionNote").asText()).isEqualTo("已核实，退款原路退回");
+    }
+
+    @Test
     @DisplayName("同租户另一个买家读详情 → 404，不泄露存在性")
     void otherBuyerCannotReadDetail() throws Exception {
         String mine = createTicket("C001", "我这条要找客服");
@@ -155,6 +169,22 @@ class BuyerOwnTicketsTest {
     private ResponseEntity<String> getMineOne(String ticketId, String customerId, String tenantId) {
         return rest.exchange("/api/tickets/mine/" + ticketId, HttpMethod.GET,
                 new HttpEntity<>(headers(tenantId, customerId)), String.class);
+    }
+
+    private void claimAndResolve(String ticketId, String note) {
+        ResponseEntity<String> claimed = rest.exchange("/api/tickets/" + ticketId + "/claim", HttpMethod.POST,
+                new HttpEntity<>(actorHeaders()), String.class);
+        assertThat(claimed.getStatusCode().value()).isEqualTo(204);
+        ResponseEntity<String> resolved = rest.exchange("/api/tickets/" + ticketId + "/resolve", HttpMethod.POST,
+                new HttpEntity<>("{\"note\":\"" + note + "\"}", actorHeaders()), String.class);
+        assertThat(resolved.getStatusCode().value()).isEqualTo(204);
+    }
+
+    private HttpHeaders actorHeaders() {
+        HttpHeaders headers = headers("T001", "C001");
+        headers.set("X-Actor", "agent");
+        headers.set("X-Actor-Authenticated", "true");
+        return headers;
     }
 
     private List<String> idsOf(ResponseEntity<String> response) throws Exception {

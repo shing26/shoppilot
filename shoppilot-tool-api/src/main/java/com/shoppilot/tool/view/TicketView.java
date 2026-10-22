@@ -40,14 +40,16 @@ public record TicketView(
          * **买家视角恒为 null**（`WorkItemService.toBuyerView` 刻意置空）。
          * 它不是身份，也不是隔离依据——隔离仍由租户上下文与 `customerId` 承担。
          */
-        String transcript) {
+        String transcript,
+        // UX-03：坐席结单意见；买家详情可见。旧客户端忽略未知字段，追加在尾部不破坏契约。
+        String resolutionNote) {
 
     /** 票 86 之前的十三参构造，落到「无渠道、无目标」。 */
     public TicketView(String id, String tenantId, String customerId, String reason, String userQuery, String status,
                       String priority, Instant createdAt, String source, String queue, String assignee,
                       Instant slaDeadline, String payload, Instant escalatedAt) {
         this(id, tenantId, customerId, reason, userQuery, status, priority, createdAt, source, queue, assignee,
-                slaDeadline, payload, escalatedAt, null, null, null);
+                slaDeadline, payload, escalatedAt, null, null, null, null);
     }
 
     /** 票 151 之前的十六参构造，落到「无会话原文」——坐席若需要它必须显式传。 */
@@ -55,6 +57,6 @@ public record TicketView(
                       String priority, Instant createdAt, String source, String queue, String assignee,
                       Instant slaDeadline, String payload, Instant escalatedAt, String channel, String contact) {
         this(id, tenantId, customerId, reason, userQuery, status, priority, createdAt, source, queue, assignee,
-                slaDeadline, payload, escalatedAt, channel, contact, null);
+                slaDeadline, payload, escalatedAt, channel, contact, null, null);
     }
 }
