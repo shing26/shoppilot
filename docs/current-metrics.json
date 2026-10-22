@@ -1,0 +1,54 @@
+{
+  "generatedFrom": "docs/loadtest-report.md + eval/results + 2026-10-17 复跑",
+  "metrics": [
+    {
+      "name": "命中路径 P99",
+      "value": "22 ms @200 并发",
+      "target": "<30 ms",
+      "status": "条件达成",
+      "condition": "未饱和队列；800 并发为 480 ms，整体 P99 1200 ms；9-17 复测 69–170 ms"
+    },
+    {
+      "name": "虚拟线程收益",
+      "value": "+61% @400 / +65% @800",
+      "target": "报出对照",
+      "status": "达成",
+      "condition": "同机同模型，no-virtual 对 605.19 vs 975.81 QPS"
+    },
+    {
+      "name": "Token 节约率",
+      "value": "62.4%",
+      "target": "报出基线",
+      "status": "条件达成",
+      "condition": "perf/Mock 模板估算，非计费口径"
+    },
+    {
+      "name": "缓存总拦截率",
+      "value": "73.2–74.0% / 77.8–78.2%",
+      "target": ">=80%",
+      "status": "未达成",
+      "condition": "L1 主导；L2/SF 增量为 0；2026-10-17 同口径复跑 52%，见 U10"
+    },
+    {
+      "name": "吞吐峰值",
+      "value": "1013 QPS @800",
+      "target": ">=1200 QPS",
+      "status": "未达成",
+      "condition": "4 个 Locust 进程同机发压，单进程约 260 QPS；1200/1600 并发降到 974/862"
+    },
+    {
+      "name": "未命中 TTFT",
+      "value": "690–1499 ms",
+      "target": "<500 ms",
+      "status": "未达成",
+      "condition": "1 并发 690 / 50–200 并发 1031–1049 / 500 并发 1499；Mock 首字 300 ms + 本机 embedding 311 ms"
+    },
+    {
+      "name": "工具调用准确率",
+      "value": "93.3% 选对 / 90.5% 填对；重算 95.6%",
+      "target": "分意图 >=95%",
+      "status": "未达成",
+      "condition": "qwen-plus 180 条；最新全量 4 个意图低于 95%（R15）"
+    }
+  ]
+}

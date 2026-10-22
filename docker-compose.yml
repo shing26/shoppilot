@@ -59,7 +59,7 @@ services:
     command: ["redis-server", "--save", "", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "volatile-lru"]
     ports:
       # 宿主端口用偏移值：这台机器上 Docker Desktop 的 wslrelay 已占住 6379/6333/9200
-      - "127.0.0.1:${SHOPPIOT_REDIS_PORT:-16379}:6379"
+      - "127.0.0.1:${SHOPPILOT_REDIS_PORT:-16379}:6379"
     mem_limit: 192m
     volumes:
       - redis-data:/data
@@ -77,7 +77,7 @@ services:
     restart: unless-stopped
     container_name: ${COMPOSE_PROJECT_NAME}-qdrant
     ports:
-      - "127.0.0.1:${SHOPPIOT_QDRANT_PORT:-16333}:6333"
+      - "127.0.0.1:${SHOPPILOT_QDRANT_PORT:-16333}:6333"
     mem_limit: 512m
     volumes:
       - qdrant-data:/qdrant/storage
@@ -107,7 +107,7 @@ services:
         soft: -1
         hard: -1
     ports:
-      - "127.0.0.1:${SHOPPIOT_ES_PORT:-19200}:9200"
+      - "127.0.0.1:${SHOPPILOT_ES_PORT:-19200}:9200"
     mem_limit: 1024m
     volumes:
       - es-data:/usr/share/elasticsearch/data
@@ -127,6 +127,8 @@ services:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     container_name: ${COMPOSE_PROJECT_NAME}-postgres
+    # 与 121-122 行注释一致：Postgres 属于可选容器档，默认档只起 Redis/Qdrant/ES。
+    profiles: ["full"]
     environment:
       POSTGRES_USER: shoppilot
       # 必需语法（:?）：不给密码 compose 直接拒，不兜底——凭据不进仓库（ADR 0029），
@@ -157,6 +159,8 @@ services:
       dockerfile: Dockerfile
       args:
         MODULE: shoppilot-gateway
+        MAVEN_IMAGE: ${SHOPPILOT_MAVEN_IMAGE:-maven:3.9-eclipse-temurin-21}
+        JRE_IMAGE: ${SHOPPILOT_JRE_IMAGE:-eclipse-temurin:21-jre}
     image: shoppilot/gateway:local
     profiles: ["full"]
     restart: "no"
@@ -182,6 +186,8 @@ services:
       dockerfile: Dockerfile
       args:
         MODULE: shoppilot-biz-mock
+        MAVEN_IMAGE: ${SHOPPILOT_MAVEN_IMAGE:-maven:3.9-eclipse-temurin-21}
+        JRE_IMAGE: ${SHOPPILOT_JRE_IMAGE:-eclipse-temurin:21-jre}
     image: shoppilot/biz-mock:local
     profiles: ["full"]
     restart: unless-stopped
@@ -203,6 +209,8 @@ services:
       # 演示账号口令（round25 票 80）：同样**不给仓库默认值**，留空即不建演示账号。
       # 要演示账号就在 .env 里给一个 SHOPPILOT_IDENTITY_DEMO_PASSWORD。
       SHOPPILOT_IDENTITY_DEMO_PASSWORD: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:-}
+      # 容器档演示默认播种 90001/90002 固定单；持久档本可不开，但 demo 需要可复述的订单。
+      SHOPPILOT_BIZMOCK_DEMO_SEED: ${SHOPPILOT_BIZMOCK_DEMO_SEED:-true}
     depends_on:
       redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
@@ -213,6 +221,8 @@ services:
       dockerfile: Dockerfile
       args:
         MODULE: shoppilot-ticket
+        MAVEN_IMAGE: ${SHOPPILOT_MAVEN_IMAGE:-maven:3.9-eclipse-temurin-21}
+        JRE_IMAGE: ${SHOPPILOT_JRE_IMAGE:-eclipse-temurin:21-jre}
     image: shoppilot/ticket:local
     profiles: ["full"]
     restart: unless-stopped
@@ -237,16 +247,22 @@ services:
       dockerfile: Dockerfile
       args:
         MODULE: shoppilot-gateway
+        MAVEN_IMAGE: ${SHOPPILOT_MAVEN_IMAGE:-maven:3.9-eclipse-temurin-21}
+        JRE_IMAGE: ${SHOPPILOT_JRE_IMAGE:-eclipse-temurin:21-jre}
     image: shoppilot/gateway:local
     profiles: ["full"]
     restart: unless-stopped
     mem_limit: 768m
     ports:
       # 调试台与坐席工作台的唯一入口：浏览器只经网关访问内部服务（票 15 纪律）
-      - "127.0.0.1:${SHOPPIOT_GATEWAY_PORT:-8082}:8082"
+      - "127.0.0.1:${SHOPPILOT_GATEWAY_PORT:-8082}:8082"
     environment:
       <<: *service-env
       SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
+      # 容器档演示默认走 MockLLM（perf），只要求宿主 Ollama 提供 bge-m3；真模型用 .env 覆盖。
+      SHOPPILOT_LLM_MODE: ${SHOPPILOT_LLM_MODE:-perf}
+      # CPU-only bge-m3 在容器/低配机上单次向量化可能 >5s；容器档演示默认放宽到 30s（本机 JVM 仍 5s）。
+      SHOPPILOT_EMBEDDING_TIMEOUT: ${SHOPPILOT_EMBEDDING_TIMEOUT:-30s}
       # 容器冷启动首请求要初始化 DispatcherServlet（实测 >3s），默认 3s 会把首个降级落单打超时。
       # 只在容器档放宽——本机档仍是 3s，口径不动。
       SHOPPILOT_TICKET_READ_TIMEOUT: "15s"

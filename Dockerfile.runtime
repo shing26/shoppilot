@@ -1,0 +1,14 @@
+# 预构建 jar 的运行时镜像（Docker Hub/Maven 网络不可用时的降级路径）。
+#
+# 与 Dockerfile 的区别：不在镜像里跑 Maven，只把宿主机已构建好的 fat jar 拷进 JRE。
+# 用法（scripts/demo.py --prebuilt 会自动做）：
+#   docker build -f Dockerfile.runtime -t shoppilot/gateway:local logs/runtime/gateway
+FROM eclipse-temurin:21-jre
+ARG MODULE
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8"
+WORKDIR /workspace
+COPY app.jar /workspace/app.jar
+RUN useradd --system --uid 10001 app && chown -R app:app /workspace
+USER app
+EXPOSE 8082 8091 8092
+ENTRYPOINT ["java", "-jar", "/workspace/app.jar"]

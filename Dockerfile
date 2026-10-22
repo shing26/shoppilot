@@ -11,7 +11,10 @@
 #   docker build --build-arg MODULE=shoppilot-biz-mock -t shoppilot/biz-mock:local .
 
 # ---- build stage -------------------------------------------------------------
-FROM maven:3.9-eclipse-temurin-21 AS build
+# 基础镜像可覆盖：Docker Hub 401/限流时，在 .env 里指到镜像站（见 RUNBOOK「Docker Hub 401」）。
+ARG MAVEN_IMAGE=maven:3.9-eclipse-temurin-21
+ARG JRE_IMAGE=eclipse-temurin:21-jre
+FROM ${MAVEN_IMAGE} AS build
 
 # 先只拷 wrapper 与 pom，让依赖层能被缓存：只改 Java 源码时这一层不失效
 WORKDIR /workspace
@@ -28,7 +31,7 @@ RUN ./mvnw -B -ntp -pl ${MODULE} -am -DskipTests package \
     && cp "$(ls /workspace/${MODULE}/target/*.jar | grep -v original | head -1)" /workspace/app.jar
 
 # ---- runtime stage -----------------------------------------------------------
-FROM eclipse-temurin:21-jre
+FROM ${JRE_IMAGE}
 
 # 堆上限在 compose 里按容器的 mem_limit 给（MaxRAMPercentage），
 # 这里只给兜底：**别让一个没配上限的容器把宿主内存吃光**——那正是这一档要解决的失败模式。

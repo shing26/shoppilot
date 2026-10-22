@@ -1,4 +1,4 @@
-﻿# 一条命令起栈：中间件 -> 模型 -> 构建 -> 业务库 seed -> 政策入库 -> 两个服务。
+# 一条命令起栈：中间件 -> 模型 -> 构建 -> 业务库 seed -> 政策入库 -> 两个服务。
 #
 # 每一步都可重入：容器已在跑就跳过、seed 非空即跳过、入库是幂等 upsert。
 # 这样 README 里"照着一行一行跑"才真的成立，而不是"在你那台已经配好三小时的机器上成立"。
@@ -14,6 +14,15 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+# 干净克隆没有 .env：先复制模板；有 Python 时把占位符换成随机值（容器档/非回环会拒绝占位符）。
+if (-not (Test-Path (Join-Path $root '.env'))) {
+    Copy-Item (Join-Path $root '.env.example') (Join-Path $root '.env')
+    Write-Host '  已从 .env.example 生成 .env；建议随后运行 python scripts/bootstrap_env.py --force' -ForegroundColor DarkGray
+}
+$python = Get-Command python -ErrorAction SilentlyContinue
+if ($python) {
+    & $python.Source (Join-Path $root 'scriptsootstrap_env.py') --force | Out-Null
+}
 . (Join-Path $PSScriptRoot 'lib-launch.ps1')
 # 找不到 JDK 就在这里停：起栈脚本以前拿一个绝对路径兜底，换台机器会把 JAVA_HOME 指到不存在的目录，
 # 失败点于是漂到几十秒之后的一句 mvnw 报错上。
@@ -48,10 +57,10 @@ if ($Containerized) {
     if ($LASTEXITCODE -ne 0) { throw '中间件启动失败' }
     # 端口与 compose 用同一批环境变量（票 79）：第二份克隆整体右移时，等就绪也得等在它自己的端口上。
     # 容器名用 $env:COMPOSE_PROJECT_NAME 派生——compose 会把它设进环境。
-    $pRedis = if ($env:SHOPPIOT_REDIS_PORT) { [int]$env:SHOPPIOT_REDIS_PORT } else { 16379 }
-    $pQdrant = if ($env:SHOPPIOT_QDRANT_PORT) { [int]$env:SHOPPIOT_QDRANT_PORT } else { 16333 }
-    $pEs = if ($env:SHOPPIOT_ES_PORT) { [int]$env:SHOPPIOT_ES_PORT } else { 19200 }
-    $pGateway = if ($env:SHOPPIOT_GATEWAY_PORT) { [int]$env:SHOPPIOT_GATEWAY_PORT } else { 8082 }
+    $pRedis = if ($env:SHOPPILOT_REDIS_PORT) { [int]$env:SHOPPIOT_REDIS_PORT } else { 16379 }
+    $pQdrant = if ($env:SHOPPILOT_QDRANT_PORT) { [int]$env:SHOPPIOT_QDRANT_PORT } else { 16333 }
+    $pEs = if ($env:SHOPPILOT_ES_PORT) { [int]$env:SHOPPIOT_ES_PORT } else { 19200 }
+    $pGateway = if ($env:SHOPPILOT_GATEWAY_PORT) { [int]$env:SHOPPIOT_GATEWAY_PORT } else { 8082 }
     $project = if ($env:COMPOSE_PROJECT_NAME) { $env:COMPOSE_PROJECT_NAME } else { 'shoppilot' }
     foreach ($triple in @(@($pRedis, 'Redis', "$project-redis"), @($pQdrant, 'Qdrant', "$project-qdrant"), @($pEs, 'Elasticsearch', "$project-es"))) {
         if (-not (Wait-For { Test-Port $triple[0] } "$($triple[1]) :$($triple[0])" 180)) {
@@ -150,10 +159,10 @@ if ($SkipBuild -and $jars.Count -eq 3) {
     Write-Host '  OK 用现成的 jar（-SkipBuild）'
 } else {
     # 先试离线：本仓库日常用 -o 避开远程元数据抖动；离线失败（干净机器的典型情况）再联网取一次。
-    & mvn.cmd -B -ntp -o -DskipTests package @($MvnArgs -split ' ' | Where-Object { $_ })
+    & (Join-Path $root 'mvnw.cmd') -B -ntp -o -DskipTests package @($MvnArgs -split ' ' | Where-Object { $_ })
     if ($LASTEXITCODE -ne 0) {
         Write-Host '  离线构建失败，改用联网构建（首次约需下载依赖）' -ForegroundColor Yellow
-        & mvn.cmd -B -ntp -DskipTests package @($MvnArgs -split ' ' | Where-Object { $_ })
+        & (Join-Path $root 'mvnw.cmd') -B -ntp -DskipTests package @($MvnArgs -split ' ' | Where-Object { $_ })
         if ($LASTEXITCODE -ne 0) { throw '构建失败' }
     }
 }
