@@ -109,6 +109,7 @@ export async function streamAnswer(
   query: string,
   conversationId: string,
   onToken: (chunk: string) => void,
+  signal?: AbortSignal,
 ): Promise<ApiResult<{ ticketId: string | null; citations: Citation[]; citationDetails: CitationDetail[]; fallbackReason: string | null }>> {
   let res: Response
   try {
@@ -120,8 +121,12 @@ export async function streamAnswer(
         'X-Conversation-Id': conversationId,
       },
       body: JSON.stringify({ query, idempotencyToken: `buyer-${conversationId}-${Date.now()}` }),
+      signal,
     })
   } catch (unreachable) {
+    if (signal?.aborted) {
+      return { status: 499, body: { message: '已停止生成' } }
+    }
     const reason = unreachable instanceof Error ? unreachable.message : 'network error'
     return { status: 0, body: { message: `网关不可达（${reason}）` } }
   }
@@ -144,44 +149,51 @@ export async function streamAnswer(
 
   // 分帧不能按子串猜：round21 记过一次「流式分帧不能子串匹配 → 读回用同步端点」。
   // 这里按 \n\n 切块、逐块解析 `event:` 与 `data:` 行。
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let split = buffer.indexOf('\n\n')
-    while (split >= 0) {
-      const frame = buffer.slice(0, split)
-      buffer = buffer.slice(split + 2)
-      for (const line of frame.split('\n')) {
-        if (line.startsWith('event:')) {
-          event = line.slice(6).trim()
-        } else if (line.startsWith('data:') && event) {
-          const data = line.slice(5).trim()
-          if (event === 'token') {
-            // token 帧的 data 是一段 JSON **字符串**（"片段"），不是对象——按 .text 取值会得到 undefined，
-            // 拼出来是空串，于是「流式逐字」这条永远失败（round21 记过同一处）。
-            const parsed = safeParse(data)
-            const chunk = typeof parsed === 'string' ? parsed : ((parsed as Record<string, unknown>)?.text as string ?? '')
-            if (chunk) {
-              answer += chunk
-              onToken(chunk)
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let split = buffer.indexOf('\n\n')
+      while (split >= 0) {
+        const frame = buffer.slice(0, split)
+        buffer = buffer.slice(split + 2)
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event:')) {
+            event = line.slice(6).trim()
+          } else if (line.startsWith('data:') && event) {
+            const data = line.slice(5).trim()
+            if (event === 'token') {
+              // token 帧的 data 是一段 JSON **字符串**（"片段"），不是对象——按 .text 取值会得到 undefined，
+              // 拼出来是空串，于是「流式逐字」这条永远失败（round21 记过同一处）。
+              const parsed = safeParse(data)
+              const chunk = typeof parsed === 'string' ? parsed : ((parsed as Record<string, unknown>)?.text as string ?? '')
+              if (chunk) {
+                answer += chunk
+                onToken(chunk)
+              }
+            } else if (event === 'fallback') {
+              const parsed = asObject(safeParse(data))
+              fallbackReason = (parsed.reason as string) ?? fallbackReason
+              ticketId = (parsed.ticketId as string) ?? ticketId
+            } else if (event === 'done') {
+              const parsed = asObject(safeParse(data))
+              // round33 / ADR 0067：详情优先，citations 那份字符串契约照旧留着（旧客户端读它）
+              citationDetails = (parsed.citationDetails as CitationDetail[]) ?? citationDetails
+              citations = (parsed.citations as Citation[]) ?? citations
+              ticketId = (parsed.ticketId as string) ?? ticketId
             }
-          } else if (event === 'fallback') {
-            const parsed = asObject(safeParse(data))
-            fallbackReason = (parsed.reason as string) ?? fallbackReason
-            ticketId = (parsed.ticketId as string) ?? ticketId
-          } else if (event === 'done') {
-            const parsed = asObject(safeParse(data))
-            // round33 / ADR 0067：详情优先，citations 那份字符串契约照旧留着（旧客户端读它）
-            citationDetails = (parsed.citationDetails as CitationDetail[]) ?? citationDetails
-            citations = (parsed.citations as Citation[]) ?? citations
-            ticketId = (parsed.ticketId as string) ?? ticketId
           }
         }
+        event = ''
+        split = buffer.indexOf('\n\n')
       }
-      event = ''
-      split = buffer.indexOf('\n\n')
     }
+  } catch (readFailure) {
+    if (signal?.aborted) {
+      return { status: 499, body: { message: '已停止生成' } }
+    }
+    return { status: 0, body: { message: '流式连接中断，请重试' } }
   }
   return { status: 200, body: { ticketId, citations, citationDetails, fallbackReason } }
 }

@@ -42,6 +42,7 @@ const loginError = ref('')
 
 const query = ref('')
 const asking = ref(false)
+const inFlight = ref<AbortController | null>(null)
 const messages = ref<ChatMessage[]>([])
 const tickets = ref<Ticket[]>([])
 const ticketsLoading = ref(false)
@@ -68,6 +69,10 @@ interface ChatMessage {
   pending?: boolean
   note?: string
   citations?: CitationDetail[]
+  /** 重试时复用原问题，不要求用户再打一遍。 */
+  retryQuery?: string
+  stopped?: boolean
+  failed?: boolean
 }
 
 const isGuest = computed(() => guestMode.value || session.value?.username === 'guest')
@@ -203,24 +208,43 @@ async function refreshTickets() {
   tickets.value = result.body
 }
 
-async function ask() {
-  const text = query.value.trim()
-  if (!session.value || asking.value || !text) return
+/** 一次流式回答。ask 与 retry 共用，保证「停止 / 重试」不会产生两套状态机。 */
+async function runAnswer(text: string, index: number) {
+  if (!session.value || asking.value) return
   asking.value = true
-  query.value = ''
-  if (!conversation) conversation = `buyer-${Date.now()}`
+  const target = messages.value[index]
+  target.pending = true
+  target.stopped = false
+  target.failed = false
+  target.note = undefined
+  target.citations = undefined
+  target.text = ''
 
-  messages.value.push({ role: 'user', text })
-  const index = messages.value.push({ role: 'assistant', text: '', pending: true }) - 1
-
-  const result = await streamAnswer(session.value.token, text, conversation, (chunk) => {
-    messages.value[index].text += chunk
-  })
+  const controller = new AbortController()
+  inFlight.value = controller
+  const result = await streamAnswer(
+    session.value.token,
+    text,
+    conversation,
+    (chunk) => {
+      target.text += chunk
+    },
+    controller.signal,
+  )
   asking.value = false
-  messages.value[index].pending = false
+  inFlight.value = null
+  target.pending = false
 
+  if (result.status === 499) {
+    target.stopped = true
+    if (!target.text.trim()) target.text = '已停止生成。'
+    target.note = '已停止生成，可以重试；不用重新描述问题。'
+    return
+  }
   if (result.status !== 200) {
-    messages.value[index].text = describe(result, '')
+    target.failed = true
+    target.text = describe(result, '')
+    target.note = '这次没有连上，可以重试；问题已经留在上面。'
     return
   }
   const body = result.body as {
@@ -228,23 +252,43 @@ async function ask() {
     citationDetails: CitationDetail[]
     fallbackReason: string | null
   }
-  messages.value[index].citations = body.citationDetails ?? []
-  if (!messages.value[index].text.trim()) {
-    messages.value[index].text = '这次没有收到完整回答，请重试，或直接转人工。'
+  target.citations = body.citationDetails ?? []
+  if (!target.text.trim()) {
+    target.text = '这次没有收到完整回答，可以重试，或直接转人工。'
   }
   if (body.fallbackReason) {
-    const ticketInText = !!body.ticketId && messages.value[index].text.includes(body.ticketId)
-    messages.value[index].note = body.ticketId
+    const ticketInText = !!body.ticketId && target.text.includes(body.ticketId)
+    target.note = body.ticketId
       ? (isGuest.value
         ? `已转人工，工单号 ${body.ticketId}（游客模式不展示工单）`
         : ticketInText
-          ? '已转人工，进度在下方「我的工单」里。'
-          : `已转人工：${body.ticketId}。进度在下方「我的工单」里。`)
-      : '这次没能直接答出来，已转人工处理'
+          ? '已转人工，进度在下方「我的工单」里，不用再重复描述。'
+          : `已转人工：${body.ticketId}。进度在下方「我的工单」里，不用再重复描述。`)
+      : '这次没能直接答出来，已转人工处理，不用再重复描述。'
   }
   if (body.ticketId && !isGuest.value) {
     await refreshTickets()
   }
+}
+
+async function ask() {
+  const text = query.value.trim()
+  if (!session.value || asking.value || !text) return
+  query.value = ''
+  if (!conversation) conversation = `buyer-${Date.now()}`
+  messages.value.push({ role: 'user', text })
+  const index = messages.value.push({ role: 'assistant', text: '', pending: true, retryQuery: text }) - 1
+  await runAnswer(text, index)
+}
+
+function stopAnswer() {
+  inFlight.value?.abort()
+}
+
+async function retry(index: number) {
+  const target = messages.value[index]
+  if (!target?.retryQuery || asking.value) return
+  await runAnswer(target.retryQuery, index)
 }
 
 onMounted(() => {
@@ -267,6 +311,15 @@ function slaText(ticket: Ticket): string {
   const left = minutesLeft(ticket.slaDeadline, now.value)
   if (left === null) return '—'
   return left >= 0 ? `剩 ${left} 分钟` : `超时 ${-left} 分钟`
+}
+
+/** 工单时间线用的短时间：同城演示只显示月-日 时:分，不引入日期库。 */
+function formatTime(value: string | null | undefined): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 function readStoredSession(): Session | null {
@@ -361,16 +414,20 @@ function clearStoredSession() {
         </div>
       </section>
 
-      <section v-if="messages.length" class="thread">
+      <section v-if="messages.length" class="thread" aria-live="polite">
         <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
           <div class="msg-who">{{ m.role === 'user' ? '我' : '客服' }}</div>
-          <div class="bubble">
+          <div class="bubble" :class="{ streaming: m.pending }">
             <span v-if="m.pending && !m.text" class="typing">正在回答</span>
             <template v-else>{{ m.text }}</template>
           </div>
           <p v-if="m.note" class="fallback">{{ m.note }}</p>
+          <div v-if="m.stopped || m.failed" class="msg-actions">
+            <button class="link" type="button" :disabled="asking" @click="retry(i)">重试</button>
+            <span class="fine">问题已经留在上面，不用重新输入。</span>
+          </div>
           <details v-if="m.citations?.length" class="cites">
-            <summary>依据 {{ m.citations.length }} 条</summary>
+            <summary>依据 {{ m.citations.length }} 条 · 展开</summary>
             <ul>
               <li v-for="(c, j) in m.citations" :key="c.ruleId || j">
                 <span class="cite-h">{{ c.heading || c.doc || '政策条款' }}</span>
@@ -396,9 +453,15 @@ function clearStoredSession() {
               <span class="pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
             </div>
             <p class="ticket-query">{{ t.userQuery }}</p>
+            <div class="ticket-timeline">
+              <span class="step done">已提交 <time>{{ formatTime(t.createdAt) }}</time></span>
+              <span v-if="t.escalatedAt" class="step warn">已超时升级 <time>{{ formatTime(t.escalatedAt) }}</time></span>
+              <span class="step" :class="{ done: t.status === 'RESOLVED' }">
+                {{ STATUS_LABEL[t.status] ?? t.status }}<template v-if="t.status !== 'RESOLVED'"> · {{ slaText(t) }}</template>
+              </span>
+            </div>
             <div class="ticket-meta">
               <span>{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</span>
-              <span>{{ slaText(t) }}</span>
               <span>{{ t.assignee ?? '待分配' }}</span>
             </div>
           </article>
@@ -414,9 +477,8 @@ function clearStoredSession() {
           aria-label="输入问题"
           @keyup.enter="ask"
         />
-        <button class="primary" type="button" :disabled="asking || !query.trim()" @click="ask">
-          {{ asking ? '回答中…' : '发送' }}
-        </button>
+        <button v-if="asking" class="stop" type="button" @click="stopAnswer">停止</button>
+        <button v-else class="primary" type="button" :disabled="!query.trim()" @click="ask">发送</button>
       </section>
     </template>
   </main>
@@ -515,8 +577,12 @@ function clearStoredSession() {
   white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); text-align: left;
 }
 .msg.user .bubble { background: #e7f4f2; border-color: #c9e6e1; }
+.bubble.streaming::after { content: '▍'; color: var(--teal); margin-left: 2px; animation: blink 1s steps(2, start) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
 .typing { color: var(--ink-3); }
 .typing::after { content: '…'; }
+.msg-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; text-align: left; }
+.msg-actions .fine { margin: 0; }
 .fallback {
   color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa;
   border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 8px 0 0;
@@ -542,6 +608,13 @@ h2 { font-size: 15px; margin: 0 0 10px; }
   border: 1px solid #b7ddd8; border-radius: 999px; padding: 1px 8px;
 }
 .ticket-query { margin: 6px 0 8px; color: var(--ink); overflow-wrap: anywhere; }
+.ticket-timeline { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 8px; color: var(--ink-3); font-size: 12px; }
+.step { position: relative; padding-left: 10px; }
+.step::before { content: ''; position: absolute; left: 0; top: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--line); }
+.step.done::before { background: var(--teal); }
+.step.warn { color: #9a3412; }
+.step.warn::before { background: var(--amber); }
+.step time { margin-left: 4px; }
 .ticket-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
 .mono { font-family: var(--mono); }
 .composer {
@@ -555,6 +628,7 @@ h2 { font-size: 15px; margin: 0 0 10px; }
   border-radius: 10px; padding: 0 12px;
 }
 .composer button { height: 42px; padding: 0 18px; flex: none; }
+.stop { background: var(--panel); border-color: var(--line); color: var(--rose); }
 .err { color: var(--rose); font-size: 13px; margin: 10px 0 0; }
 .notice { color: var(--ink-3); font-size: 13px; margin: 0; }
 .empty { color: var(--ink-3); font-size: 13px; margin: 0; }
