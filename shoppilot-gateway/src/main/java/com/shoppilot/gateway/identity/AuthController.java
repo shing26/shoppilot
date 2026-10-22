@@ -43,12 +43,15 @@ public class AuthController {
     private final JwtService jwtService;
     private final IdentityClient identityClient;
     private final String demoPassword;
+    private final boolean demoLoginEnabled;
 
     public AuthController(JwtService jwtService, IdentityClient identityClient,
-                          @Value("${shoppilot.identity.demo-password:}") String demoPassword) {
+                          @Value("${shoppilot.identity.demo-password:}") String demoPassword,
+                          @Value("${shoppilot.identity.demo-login-enabled:false}") boolean demoLoginEnabled) {
         this.jwtService = jwtService;
         this.identityClient = identityClient;
         this.demoPassword = demoPassword;
+        this.demoLoginEnabled = demoLoginEnabled;
     }
 
     @PostMapping("/mock-token")
@@ -81,17 +84,18 @@ public class AuthController {
     @PostMapping("/demo-login")
     public ResponseEntity<?> demoLogin(@RequestBody @Valid DemoLoginRequest request, HttpServletRequest http) {
         // 非本机请求与「端点未注册」同形，不新增可探测的 401。
-        if (!isLocalRequest(http) || demoPassword == null || demoPassword.isBlank()) {
+        if (!isDemoRequest(http) || demoPassword == null || demoPassword.isBlank()) {
             return ResponseEntity.notFound().build();
         }
         String requestedRole = request.role() == null ? "" : request.role().trim();
         String username = switch (requestedRole) {
+            case "buyer" -> "buyer";
             case "agent" -> "agent";
             case "admin" -> "admin";
             default -> null;
         };
         if (username == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "演示登录只支持 agent / admin"));
+            return ResponseEntity.badRequest().body(Map.of("message", "演示登录只支持 buyer / agent / admin"));
         }
         IdentityClient.Attempt attempt = identityClient.authenticate(request.tenantId(), username, demoPassword);
         if (attempt.account() == null) {
@@ -104,7 +108,7 @@ public class AuthController {
         }
         AccountView account = attempt.account();
         // 角色白名单不能只信请求参数：签发的角色取自下游账号，这里必须再次校验。
-        if (account.role() != UserRole.AGENT && account.role() != UserRole.ADMIN) {
+        if (account.role() != UserRole.BUYER && account.role() != UserRole.AGENT && account.role() != UserRole.ADMIN) {
             log.warn("演示登录拒绝：下游账号不是员工 tenant={} username={} role={}",
                     account.tenantId(), account.username(), account.role());
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "演示登录只接受员工账号"));
@@ -126,9 +130,27 @@ public class AuthController {
 
     /** remoteAddr 必须是回环，且浏览器实际请求的 Host 也必须是本机名/IP。 */
     private static boolean isLocalRequest(HttpServletRequest request) {
-        if (!PostureGuard.isLoopback(request.getRemoteAddr())) {
-            return false;
+        return PostureGuard.isLoopback(request.getRemoteAddr()) && isLocalHost(request);
+    }
+
+    /**
+     * 一键体验登录的请求门：本机/回环永远放行；容器演示档额外允许 Docker 网桥地址。
+     *
+     * <p>容器里 browser → 宿主发布端口 → 容器，remoteAddr 是网桥网关（172.x）而不是 127.0.0.1，
+     * 所以只靠回环会把产品页的一键登录判成 404。这个放宽必须同时满足：
+     * demo-login-enabled=true、Host 仍是本机名/IP、端口只发布到宿主回环。
+     * mock-token 不走这条门——它仍然是严格回环。
+     */
+    private boolean isDemoRequest(HttpServletRequest request) {
+        if (isLocalRequest(request)) {
+            return true;
         }
+        return demoLoginEnabled
+                && isDockerPrivateAddress(request.getRemoteAddr())
+                && isLocalHost(request);
+    }
+
+    private static boolean isLocalHost(HttpServletRequest request) {
         String host = request.getHeader("Host");
         if (host == null || host.isBlank()) {
             return false;
@@ -143,6 +165,28 @@ public class AuthController {
         }
         name = name.toLowerCase(Locale.ROOT);
         return name.equals("127.0.0.1") || name.equals("localhost") || name.equals("::1");
+    }
+
+    /** Docker 默认桥/自定义桥的 RFC1918 地址；只用于 demo-login 的容器档判定。 */
+    private static boolean isDockerPrivateAddress(String address) {
+        if (address == null) {
+            return false;
+        }
+        if (address.startsWith("10.") || address.startsWith("192.168.")) {
+            return true;
+        }
+        if (address.startsWith("172.")) {
+            int dot = address.indexOf('.', 4);
+            if (dot > 4) {
+                try {
+                    int second = Integer.parseInt(address.substring(4, dot));
+                    return second >= 16 && second <= 31;
+                } catch (NumberFormatException ignored) {
+                    return false;
+                }
+            }
+        }
+        return false;
     }
 
     public record MockTokenRequest(@NotBlank String tenantId, @NotBlank String customerId) {

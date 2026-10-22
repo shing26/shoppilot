@@ -80,5 +80,6 @@ python scripts/demo.py --prebuilt
 - `.env` 由 `bootstrap_env.py` 生成；`replace-with-*` 会被启动守卫拒绝。
 - mock 身份签发只在回环注册，且请求期再验 remoteAddr/Host；容器档不注册。
 - `/ops/**` 默认拒绝：需 `X-Ops-Token` 或 `AGENT/ADMIN`；`/ops/tickets/mine` 是买家白名单。
+- 容器档一键体验买家/坐席：`SHOPPILOT_IDENTITY_DEMO_LOGIN_ENABLED=true`；只在网关端口绑 `127.0.0.1` 的演示栈使用，生产保持 false。
 - 网关与中间件端口只发布到宿主回环；不要改成 0.0.0.0 对外。
 - 资金动作（退款放行/驳回）只接受已验签坐席账号。

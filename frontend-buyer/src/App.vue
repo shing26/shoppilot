@@ -1,26 +1,22 @@
 <script setup lang="ts">
 /**
- * 买家中心（round27 票 93 / ADR 0057；round36 票 151 产品化）。
+ * 买家中心（round27 票 93 / ADR 0057；UX-01 首屏收口）。
  *
- * <p>三条口径不变，与另两个前端同族：
- * <ol>
- *   <li><b>失败不冻结</b>：读不到就写清「读不到 + 为什么」，不留空态、不抛未捕获 Promise；</li>
- *   <li><b>登录态在 sessionStorage</b>：关掉标签页就登出（令牌 30 分钟 TTL）；</li>
- *   <li><b>口令登录完立刻清掉</b>，不落任何存储。</li>
- * </ol>
- *
- * <p>round36 的三处产品化：
- * <ul>
- *   <li><b>对话流</b>：消息数组而不是单个 `answer`——此前每次提问先清空，页面永远只有最后一轮；</li>
- *   <li><b>店铺入口</b>：不再要求买家输入内部租户号，店铺码走 URL（`?store=T001`），
- *       登录后用店名显示（ADR 0070 取 (a) 方案，不新增未鉴权端点）；</li>
- *   <li><b>加载态</b>：读取中不再渲染成「你还没有需要人工处理的工单」。</li>
- * </ul>
- *
- * <p>本页面**只读**工单：它不触发投递、不改工单状态。
+ * <p>这一版只做一件事：让买家打开页面就看到「这是哪家店、能帮什么、怎么开始」，
+ * 而不是一张需要先问运维要账号的空白表单。容器演示档用一键体验买家进入；
+ * 非演示档自动回落到口令登录，不把「端点没开」写成一句死路。
  */
 import { computed, onMounted, ref } from 'vue'
-import { describe, guestSession, login, messageOf, myTickets, storeProfile, streamAnswer } from './api'
+import {
+  demoBuyerLogin,
+  describe,
+  guestSession,
+  login,
+  messageOf,
+  myTickets,
+  storeProfile,
+  streamAnswer,
+} from './api'
 import { PRIORITY_LABEL, STATUS_LABEL, minutesLeft, type CitationDetail, type Session, type Ticket } from './types'
 
 const STORAGE_KEY = 'shoppilot.buyer.session'
@@ -28,10 +24,6 @@ const STORAGE_KEY = 'shoppilot.buyer.session'
 /** 店铺码来自 URL；缺省时不猜、也不退回内部 id 输入框（ADR 0070 B2）。 */
 const STORE_PARAMS = new URLSearchParams(window.location.search)
 const STORE_CODE = (STORE_PARAMS.get('store') ?? '').trim()
-/**
- * 自动游客进入（round37）。`guest=0` 关掉它，供「登录门禁」与跨买家隔离验收使用：
- * 那条门禁必须先看到未登录态，再真走一遍口令登录；产品默认路径仍是免密开聊。
- */
 const AUTO_GUEST = !['0', 'false', 'off'].includes((STORE_PARAMS.get('guest') ?? '').trim().toLowerCase())
 
 const tenant = ref(STORE_CODE)
@@ -39,21 +31,27 @@ const storeName = ref('')
 const storeBusiness = ref('')
 const storeGuarantees = ref('')
 const guestMode = ref(false)
+const demoMode = ref(false)
 const guestError = ref('')
 const username = ref('')
 const password = ref('')
+const showLogin = ref(false)
+const demoLoading = ref(false)
 const session = ref<Session | null>(readStoredSession())
 const loginError = ref('')
 
 const query = ref('')
 const asking = ref(false)
+const messages = ref<ChatMessage[]>([])
+const tickets = ref<Ticket[]>([])
+const ticketsLoading = ref(false)
+const ticketError = ref('')
+const now = ref(Date.now())
+let conversation = ''
 
-/**
- * 快捷问题（round37）：按店铺类型分流。
- *
- * <p>不再统一放「有哪些售后保障？」——这类泛问会把平台规则与本店规则一起召回，
- * 生鲜店很容易被答成“水果也能七天无理由”。每家店给一条该行业最典型的政策问句。
- */
+// 登录前拿不到店名时显示「本店」，不把内部租户号 T001 当产品文案。
+const storeLabel = computed(() => storeName.value || '本店')
+
 const QUICK_QUESTIONS = computed(() => {
   if (tenant.value === 'T004') {
     return ['你们酒店是卖什么的？', '入住和退房时间是几点？', '帮我查一下订单 90001 的物流']
@@ -68,33 +66,12 @@ interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
   pending?: boolean
-  /** 本轮的降级说明；只挂在它所属的那条回答上，不串到下一轮。 */
   note?: string
   citations?: CitationDetail[]
 }
 
-const messages = ref<ChatMessage[]>([])
-
-const tickets = ref<Ticket[]>([])
-const ticketsLoading = ref(false)
-const ticketError = ref('')
-const now = ref(Date.now())
-let conversation = ''
-
-const who = computed(() =>
-  session.value ? `${session.value.displayName ?? session.value.username}（${session.value.role}）` : '',
-)
-
-/**
- * 游客身份是共享的 C001 演示账号（round37）：**不展示「我的工单」**。
- *
- * <p>同一台机器上的两个访客会拿到同一个 C001；如果仍渲染工单列表，后进入者能看到
- * 前一位访客的工单。游客只保留问答，工单入口留给口令登录后的真实买家。
- * 刷新页面后 `guestMode` 会丢，所以同时用令牌里的 username=guest 兜底判断。
- */
 const isGuest = computed(() => guestMode.value || session.value?.username === 'guest')
 
-/** 登录后读店铺资料；取不到就继续显示店铺码，不编一个名字。 */
 async function loadStoreInfo() {
   if (!session.value) return
   const result = await storeProfile(session.value.token)
@@ -106,25 +83,59 @@ async function loadStoreInfo() {
 }
 
 /**
- * 游客一键开聊（round37）：只在回环演示栈可用。
- *
- * <p>失败不把页面卡成空白：把原因写出来，同时保留口令登录表单作为第二出口。
+ * 一键体验买家：服务端持有演示口令，浏览器只拿令牌。
+ * 失败时把原因写出来并展开口令登录，不把首屏留成空白。
  */
-async function enterAsGuest() {
+async function enterAsDemoBuyer(): Promise<boolean> {
+  if (demoLoading.value) return false
+  if (!tenant.value.trim()) {
+    guestError.value = '缺少店铺码：请通过店铺链接进入（例如 /buyer/?store=T001）'
+    showLogin.value = true
+    return false
+  }
+  demoLoading.value = true
   guestError.value = ''
-  if (!tenant.value.trim()) return
-  const result = await guestSession(tenant.value.trim())
-  if (result.status !== 200) {
+  const result = await demoBuyerLogin(tenant.value.trim())
+  demoLoading.value = false
+  if (result.status !== 200 || !result.body || !(result.body as Session).token) {
     guestError.value = result.status === 404
-      ? '当前部署不提供游客登录，请用买家账号进入'
-      : (messageOf(result.body) ?? `游客登录失败（HTTP ${result.status}）`)
-    return
+      ? '当前部署未开启一键体验，请用买家账号登录'
+      : describe(result, '一键体验暂时不可用')
+    showLogin.value = true
+    return false
   }
   session.value = result.body as Session
-  guestMode.value = true
+  demoMode.value = true
+  guestMode.value = false
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result.body))
-  // 游客不读工单：共享 C001 会串出前一位访客的售后记录。
-  await loadStoreInfo()
+  await Promise.all([refreshTickets(), loadStoreInfo()])
+  return true
+}
+
+/**
+ * 游客身份：本机回环栈的免密入口。容器档会 404，随后尝试一键体验买家；
+ * 两者都不可用时才显示口令登录。
+ */
+async function enterAsGuest(): Promise<boolean> {
+  guestError.value = ''
+  if (!tenant.value.trim()) return false
+  const result = await guestSession(tenant.value.trim())
+  if (result.status === 200 && result.body) {
+    session.value = result.body as Session
+    guestMode.value = true
+    demoMode.value = false
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result.body))
+    await loadStoreInfo()
+    return true
+  }
+  if (result.status === 404) {
+    return enterAsDemoBuyer()
+  }
+  guestError.value = result.status === 0
+    ? (messageOf(result.body) ?? '网关不可达')
+    : (messageOf(result.body) ?? `进入失败（HTTP ${result.status}）`)
+  showLogin.value = true
+  return false
 }
 
 async function doLogin() {
@@ -143,7 +154,9 @@ async function doLogin() {
     return
   }
   session.value = result.body as Session
+  demoMode.value = false
   guestMode.value = false
+  showLogin.value = false
   password.value = ''
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result.body))
   await Promise.all([refreshTickets(), loadStoreInfo()])
@@ -151,7 +164,9 @@ async function doLogin() {
 
 function signOut() {
   session.value = null
+  demoMode.value = false
   guestMode.value = false
+  showLogin.value = true
   clearStoredSession()
   tickets.value = []
   ticketError.value = ''
@@ -160,18 +175,19 @@ function signOut() {
   asking.value = false
 }
 
-/** 快捷问题：点一下就直接发，不要求用户再按一次「提问」。 */
-function askQuick(question: string) {
+async function askQuick(question: string) {
   if (asking.value) return
+  if (!session.value) {
+    const entered = await enterAsDemoBuyer()
+    if (!entered) return
+  }
   query.value = question
-  void ask()
+  await ask()
 }
 
-/** 三态分开：读取中不得渲染成空态（round36 / 票 151）。 */
 async function refreshTickets() {
   ticketError.value = ''
   if (!session.value) {
-    ticketError.value = '先登录买家账号——工单列表要买家身份才能读'
     tickets.value = []
     ticketsLoading.value = false
     return
@@ -198,7 +214,6 @@ async function ask() {
   const index = messages.value.push({ role: 'assistant', text: '', pending: true }) - 1
 
   const result = await streamAnswer(session.value.token, text, conversation, (chunk) => {
-    // 必须穿过数组代理写，直接改 push 进去的原对象不会触发渲染
     messages.value[index].text += chunk
   })
   asking.value = false
@@ -214,13 +229,18 @@ async function ask() {
     fallbackReason: string | null
   }
   messages.value[index].citations = body.citationDetails ?? []
-  // 降级也是一种结局：说清楚发生了什么，并给出工单号，而不是给一句「稍后」
+  if (!messages.value[index].text.trim()) {
+    messages.value[index].text = '这次没有收到完整回答，请重试，或直接转人工。'
+  }
   if (body.fallbackReason) {
+    const ticketInText = !!body.ticketId && messages.value[index].text.includes(body.ticketId)
     messages.value[index].note = body.ticketId
       ? (isGuest.value
-        ? `这次没能直接答出来，已经转人工，工单号 ${body.ticketId}（游客模式不展示工单）`
-        : `这次没能直接答出来，已经转人工，工单号 ${body.ticketId}（在下方「我的工单」里能看到进度）`)
-      : '这次没能直接答出来，已经转人工处理'
+        ? `已转人工，工单号 ${body.ticketId}（游客模式不展示工单）`
+        : ticketInText
+          ? '已转人工，进度在下方「我的工单」里。'
+          : `已转人工：${body.ticketId}。进度在下方「我的工单」里。`)
+      : '这次没能直接答出来，已转人工处理'
   }
   if (body.ticketId && !isGuest.value) {
     await refreshTickets()
@@ -228,12 +248,13 @@ async function ask() {
 }
 
 onMounted(() => {
-  // 有店铺码就自动以游客身份进入（round37）；已有会话则沿用，不再重复领取。
   if (session.value) {
     if (!isGuest.value) void refreshTickets()
     void loadStoreInfo()
   } else if (STORE_CODE && AUTO_GUEST) {
     void enterAsGuest()
+  } else {
+    showLogin.value = !STORE_CODE
   }
   now.value = Date.now()
   window.setInterval(() => {
@@ -266,74 +287,80 @@ function clearStoredSession() {
 
 <template>
   <main class="wrap">
-    <header>
-      <h1>买家中心</h1>
-      <p class="sub">
-        <span v-if="storeName || STORE_CODE" class="store">{{ storeName || STORE_CODE }}</span>
-        对话与售后进度 · 工单由人工处理，结论会回到你问的那个渠道
-      </p>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">SP</span>
+        <div>
+          <strong>ShopPilot</strong>
+          <small>买家服务</small>
+        </div>
+      </div>
+      <div class="top-right">
+        <span v-if="demoMode" class="badge">体验买家</span>
+        <span v-else-if="guestMode" class="badge">访客</span>
+        <button v-if="session" class="link" type="button" @click="signOut">退出</button>
+      </div>
     </header>
 
-    <!-- 店铺名片：游客一进来就先知道「这是哪家店、卖什么、有什么保障」。 -->
-    <section v-if="storeName || storeBusiness || storeGuarantees" class="shop-card">
-      <div class="shop-title">
-        <span class="avatar">{{ (storeName || STORE_CODE).slice(0, 1) }}</span>
-        <div>
-          <strong>{{ storeName || STORE_CODE }}</strong>
-          <p v-if="storeBusiness" class="shop-line">{{ storeBusiness }}</p>
+    <section class="store-card">
+      <span class="avatar">{{ storeLabel.slice(0, 1) }}</span>
+      <div class="store-main">
+        <div class="store-title">
+          <strong>{{ storeLabel }}</strong>
+          <span class="online">在线</span>
         </div>
-        <span class="online">在线</span>
+        <p>{{ storeBusiness || '在线客服 · 查订单 / 退换 / 生鲜理赔' }}</p>
+        <p v-if="storeGuarantees" class="guarantee">本店保障：{{ storeGuarantees }}</p>
       </div>
-      <p v-if="storeGuarantees" class="shop-guarantee">本店保障：{{ storeGuarantees }}</p>
     </section>
 
-    <section v-if="!session" class="ctl">
-      <label>账号 <input v-model="username" type="text" placeholder="买家账号" /></label>
-      <label>口令 <input v-model="password" type="password" placeholder="口令" @keyup.enter="doLogin" /></label>
-      <button type="button" :disabled="!STORE_CODE" @click="doLogin">登录</button>
-    </section>
+    <template v-if="!session">
+      <section class="gate">
+        <p class="eyebrow">在线客服</p>
+        <h1>你好，我是{{ storeLabel }}的客服</h1>
+        <p class="lede">
+          可以帮你查订单、退换货、生鲜理赔。答不了会转人工，并给你一个可追踪的工单号，不用重复描述。
+        </p>
+        <div class="gate-actions">
+          <button class="primary big" type="button" :disabled="demoLoading || !STORE_CODE" @click="enterAsDemoBuyer">
+            {{ demoLoading ? '正在进入…' : '一键体验买家' }}
+          </button>
+          <button class="link" type="button" @click="showLogin = !showLogin">
+            {{ showLogin ? '收起账号登录' : '用买家账号登录' }}
+          </button>
+        </div>
 
-    <!--
-      未登录时「我的工单」整段不渲染（没有身份就没有「我的」），但**必须说清为什么**。
-      店铺码缺失是另一种「为什么」，单独说，别让页面看上去像坏了。
-    -->
-    <p v-if="!STORE_CODE" class="notice">
-      缺少店铺码：请通过店铺链接进入（例如 <span class="mono">/buyer/?store=T001</span>）
-    </p>
-    <p v-else-if="!session && guestError" class="notice">{{ guestError }}</p>
-    <p v-else-if="!session && AUTO_GUEST" class="notice">正在以访客身份进入…</p>
-    <p v-else-if="!session" class="notice">登录后这里会显示你的工单与售后进度</p>
+        <form v-if="showLogin" class="login" @submit.prevent="doLogin">
+          <label>买家账号
+            <input v-model="username" type="text" autocomplete="username" placeholder="例如 buyer" />
+          </label>
+          <label>口令
+            <input v-model="password" type="password" autocomplete="current-password" placeholder="演示口令见 .env" />
+          </label>
+          <button class="primary" type="submit" :disabled="!STORE_CODE || !username.trim() || !password">登录</button>
+        </form>
 
-    <section v-else class="ctl">
-      <span class="who">当前身份：{{ who }}<span class="hint">（@ {{ session.tenantId }}）</span></span>
-      <span v-if="guestMode" class="badge">游客体验</span>
-      <button type="button" @click="signOut">退出</button>
-    </section>
+        <p v-if="!STORE_CODE" class="err">
+          缺少店铺码：请通过店铺链接进入（例如 <span class="mono">/buyer/?store=T001</span>）
+        </p>
+        <p v-else-if="guestError" class="err">{{ guestError }}</p>
+        <p v-else-if="AUTO_GUEST" class="fine">正在为你进入店铺…</p>
+        <p v-if="loginError" class="err">{{ loginError }}</p>
+        <p class="fine">演示环境可一键进入；正式环境请用买家账号登录。</p>
+      </section>
+    </template>
 
-    <p v-if="loginError" class="err">{{ loginError }}</p>
-
-    <template v-if="session">
-      <section class="quick">
-        <button v-for="q in QUICK_QUESTIONS" :key="q" type="button" class="chip" :disabled="asking" @click="askQuick(q)">
-          {{ q }}
-        </button>
+    <template v-else>
+      <section v-if="!messages.length" class="welcome">
+        <h1>有什么可以帮你？</h1>
+        <p>我会先查店铺规则和订单；需要人工时直接转，不让你重复描述。</p>
+        <div class="quick">
+          <button v-for="q in QUICK_QUESTIONS" :key="q" type="button" class="chip" :disabled="asking" @click="askQuick(q)">
+            {{ q }}
+          </button>
+        </div>
       </section>
 
-      <section class="ask">
-        <label>我要问
-          <input
-            v-model="query"
-            type="text"
-            placeholder="七天无理由退货怎么操作"
-            @keyup.enter="ask"
-          />
-        </label>
-        <button type="button" :disabled="asking || !query.trim()" @click="ask">
-          {{ asking ? '正在回答…' : '提问' }}
-        </button>
-      </section>
-
-      <!-- 对话流：每条回答带自己的引用与降级说明，不串到下一轮。 -->
       <section v-if="messages.length" class="thread">
         <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
           <div class="msg-who">{{ m.role === 'user' ? '我' : '客服' }}</div>
@@ -341,100 +368,208 @@ function clearStoredSession() {
             <span v-if="m.pending && !m.text" class="typing">正在回答</span>
             <template v-else>{{ m.text }}</template>
           </div>
-          <p v-if="m.note" class="warn">{{ m.note }}</p>
-          <ul v-if="m.citations?.length" class="cites">
-            <li v-for="(c, j) in m.citations" :key="c.ruleId || j" :title="c.ruleId">
-              <span class="cite-h">{{ c.heading || c.doc || '政策条款' }}</span>
-              <span v-if="c.doc" class="cite-doc">{{ c.doc }}</span>
-            </li>
-          </ul>
+          <p v-if="m.note" class="fallback">{{ m.note }}</p>
+          <details v-if="m.citations?.length" class="cites">
+            <summary>依据 {{ m.citations.length }} 条</summary>
+            <ul>
+              <li v-for="(c, j) in m.citations" :key="c.ruleId || j">
+                <span class="cite-h">{{ c.heading || c.doc || '政策条款' }}</span>
+                <span v-if="c.doc" class="cite-doc">{{ c.doc }}</span>
+              </li>
+            </ul>
+          </details>
         </div>
       </section>
 
-      <section v-if="!isGuest" class="tickets">
-        <h2>我的工单</h2>
-        <p v-if="ticketError" class="err">{{ ticketError }}</p>
-        <p v-if="ticketsLoading" class="empty">正在读取…</p>
-        <div v-if="tickets.length" class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>工单号</th><th>我问了什么</th><th>状态</th><th>优先级</th><th>预计时限</th><th>处理人</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="t in tickets" :key="t.id">
-                <td class="mono">{{ t.id }}</td>
-                <td class="query">{{ t.userQuery }}</td>
-                <td :class="{ done: t.status === 'RESOLVED' }">{{ STATUS_LABEL[t.status] ?? t.status }}</td>
-                <td :class="{ urgent: t.priority === 'high' }">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</td>
-                <td :class="{ overdue: !!t.escalatedAt }">{{ slaText(t) }}</td>
-                <td>{{ t.assignee ?? '待分配' }}</td>
-              </tr>
-            </tbody>
-          </table>
+      <section class="tickets">
+        <div class="section-head">
+          <h2>我的工单</h2>
+          <button v-if="!isGuest" class="link" type="button" @click="refreshTickets">刷新</button>
         </div>
-        <p v-else-if="!ticketError && !ticketsLoading" class="empty">你还没有需要人工处理的工单</p>
+        <p v-if="isGuest" class="notice">游客模式不展示工单：先登录买家账号，才能看到自己的售后进度。</p>
+        <p v-else-if="ticketError" class="err">{{ ticketError }}</p>
+        <p v-else-if="ticketsLoading" class="empty">正在读取…</p>
+        <div v-else-if="tickets.length" class="ticket-list">
+          <article v-for="t in tickets" :key="t.id" class="ticket-card">
+            <div class="ticket-top">
+              <strong class="mono">{{ t.id }}</strong>
+              <span class="pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
+            </div>
+            <p class="ticket-query">{{ t.userQuery }}</p>
+            <div class="ticket-meta">
+              <span>{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</span>
+              <span>{{ slaText(t) }}</span>
+              <span>{{ t.assignee ?? '待分配' }}</span>
+            </div>
+          </article>
+        </div>
+        <p v-else class="empty">你还没有需要人工处理的工单</p>
       </section>
-      <section v-else class="tickets">
-        <h2>我的工单</h2>
-        <p class="notice">游客模式不展示工单：当前是共享演示身份 C001。登录买家账号后可查看自己的售后进度。</p>
+
+      <section class="composer">
+        <input
+          v-model="query"
+          type="text"
+          placeholder="输入问题，例如：订单 90001 到哪了"
+          aria-label="输入问题"
+          @keyup.enter="ask"
+        />
+        <button class="primary" type="button" :disabled="asking || !query.trim()" @click="ask">
+          {{ asking ? '回答中…' : '发送' }}
+        </button>
       </section>
     </template>
   </main>
 </template>
 
 <style scoped>
-.wrap { font: 14px/1.6 system-ui, sans-serif; margin: 24px auto; max-width: 900px; padding: 0 16px; }
-h1 { font-size: 20px; margin: 0 0 4px; }
-h2 { font-size: 15px; margin: 24px 0 8px; }
-.sub { color: #666; margin: 0 0 16px; }
-.store { color: #14161a; font-weight: 600; margin-right: 8px; }
-.shop-card { border: 1px solid #e0e3e7; border-radius: 12px; padding: 12px 14px; margin: 0 0 14px;
-  background: linear-gradient(180deg, #fbfdfc, #fff); }
-.shop-title { display: flex; align-items: center; gap: 10px; }
-.shop-title strong { font-size: 15px; }
-.avatar { width: 36px; height: 36px; border-radius: 10px; background: #0f766e; color: #fff;
-  display: grid; place-items: center; font-weight: 650; flex: none; }
-.shop-line { margin: 2px 0 0; color: #5c636e; font-size: 13px; }
-.shop-guarantee { margin: 10px 0 0; color: #5c636e; font-size: 13px; line-height: 1.6; }
-.online { margin-left: auto; color: #15803d; font-size: 12px; white-space: nowrap; }
+.wrap {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 20px 80px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  background: rgba(242, 243, 245, 0.92);
+  backdrop-filter: blur(10px);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo {
+  width: 32px; height: 32px; border-radius: 10px; background: var(--teal); color: #fff;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700; letter-spacing: 0.5px;
+}
+.brand strong { display: block; font-size: 15px; line-height: 1.2; }
+.brand small { color: var(--ink-3); font-size: 12px; }
+.top-right { display: flex; align-items: center; gap: 10px; }
+.badge {
+  font-size: 12px; color: var(--teal); border: 1px solid #b7ddd8; background: #eef8f6;
+  border-radius: 999px; padding: 1px 8px; white-space: nowrap;
+}
+.store-card {
+  box-sizing: border-box;
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 16px; margin: 4px 0 18px;
+}
+.avatar {
+  width: 42px; height: 42px; border-radius: 12px; background: var(--teal); color: #fff;
+  display: grid; place-items: center; font-weight: 650; flex: none;
+}
+.store-main { min-width: 0; }
+.store-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.store-title strong { font-size: 16px; }
+.store-main p { margin: 4px 0 0; color: var(--ink-2); font-size: 13px; }
+.guarantee { color: var(--ink-3) !important; }
+.online { color: var(--green); font-size: 12px; white-space: nowrap; }
 .online::before { content: '●'; margin-right: 4px; }
-.badge { font-size: 12px; color: #0f766e; border: 1px solid #b7ddd8; background: #eef8f6;
-  border-radius: 999px; padding: 1px 8px; }
-.quick { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
-.chip { border: 1px solid #d7dbe1; background: #fff; color: #14161a; border-radius: 999px;
-  padding: 5px 12px; font-size: 13px; cursor: pointer; }
-.chip:hover:not(:disabled) { border-color: #0f766e; color: #0f766e; }
-.chip:disabled { opacity: .55; cursor: default; }
-.ctl { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-.ctl input, .ask input { padding: 4px 6px; }
-.who { font-weight: 600; }
-.hint { color: #666; font-weight: 400; margin-left: 6px; }
-.ask { display: flex; gap: 12px; align-items: center; margin: 8px 0; }
-.ask input { flex: 1; }
-.thread { margin: 16px 0; display: flex; flex-direction: column; gap: 14px; }
-.msg { max-width: 86%; }
+.gate {
+  box-sizing: border-box;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
+  padding: 32px; margin: 12px auto 0; max-width: 640px; width: 100%;
+  box-shadow: 0 12px 40px rgba(20, 22, 26, 0.07);
+  text-align: center;
+}
+.eyebrow { margin: 0 0 8px; color: var(--teal); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; }
+.gate h1 { margin: 0 0 10px; font-size: 24px; line-height: 1.3; }
+.lede { margin: 0 auto 20px; max-width: 520px; color: var(--ink-2); font-size: 14px; }
+.gate-actions { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.big { padding: 10px 20px; font-size: 15px; }
+.login {
+  display: grid; gap: 10px; max-width: 320px; margin: 20px auto 0; text-align: left;
+}
+.login label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.login input { width: 100%; box-sizing: border-box; }
+.login button { margin-top: 2px; }
+.link {
+  border: none; background: none; color: var(--teal); padding: 0; cursor: pointer;
+  font-size: 13px; text-decoration: underline; text-underline-offset: 2px;
+}
+.link:hover:not(:disabled) { color: var(--teal); }
+.fine { color: var(--ink-3); font-size: 12px; margin: 12px 0 0; }
+.welcome { padding: 18px 0 10px; }
+.welcome h1 { margin: 0 0 8px; font-size: 22px; }
+.welcome p { margin: 0 0 16px; color: var(--ink-2); }
+.quick { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+}
+.chip:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
+.chip:disabled { opacity: 0.55; cursor: default; }
+.thread { display: flex; flex-direction: column; gap: 14px; padding: 8px 0 4px; }
+.msg { max-width: 88%; }
 .msg.user { align-self: flex-end; text-align: right; }
-.msg-who { font-size: 12px; color: #666; margin-bottom: 3px; }
-.bubble { border: 1px solid #e0e3e7; border-radius: 10px; padding: 8px 11px; white-space: pre-wrap;
-  overflow-wrap: anywhere; background: #fff; text-align: left; }
-.msg.user .bubble { background: #f2f4f7; border-color: #f2f4f7; }
-.typing { color: #666; }
+.msg-who { font-size: 12px; color: var(--ink-3); margin-bottom: 3px; }
+.bubble {
+  border: 1px solid var(--line); border-radius: 14px; padding: 9px 13px;
+  white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); text-align: left;
+}
+.msg.user .bubble { background: #e7f4f2; border-color: #c9e6e1; }
+.typing { color: var(--ink-3); }
 .typing::after { content: '…'; }
-.warn { color: #b54708; font-size: 13px; margin: 6px 0 0; }
-.cites { color: #666; font-size: 13px; padding-left: 18px; margin: 6px 0 0; text-align: left; }
-/* 引用主文本是标题，出处是 slug；ruleId 是内容哈希，只留在 title 里供溯源。 */
+.fallback {
+  color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa;
+  border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 8px 0 0;
+  text-align: left;
+}
+.cites { margin: 8px 0 0; text-align: left; font-size: 13px; color: var(--ink-2); }
+.cites summary { cursor: pointer; color: var(--ink-3); }
+.cites ul { margin: 6px 0 0; padding-left: 18px; }
 .cite-h { color: var(--ink-2); }
 .cite-doc { color: var(--ink-3); margin-left: 6px; font-family: var(--mono); font-size: 12px; }
-.mono { font-family: ui-monospace, monospace; margin-right: 6px; overflow-wrap: anywhere; }
-/* 窄屏（round36 / 票 151）：宽表格在容器内横向滚动，页面本身不横向溢出 */
-.table-wrap { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; min-width: 560px; }
-th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; vertical-align: top; }
-.query { max-width: 320px; }
-.overdue { color: #b42318; }
-.urgent { color: #b42318; font-weight: 600; }
-.done { color: #146c2e; }
-.err { color: #b42318; }
-.empty { color: #666; }
-.notice { color: #666; margin: 4px 0 0; }
+.tickets { margin: 26px 0 8px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+.ticket-list { display: grid; gap: 10px; }
+.ticket-card {
+  box-sizing: border-box;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+}
+.ticket-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ticket-top strong { font-size: 13px; overflow-wrap: anywhere; }
+.pill {
+  flex: none; font-size: 12px; color: var(--teal); background: #eef8f6;
+  border: 1px solid #b7ddd8; border-radius: 999px; padding: 1px 8px;
+}
+.ticket-query { margin: 6px 0 8px; color: var(--ink); overflow-wrap: anywhere; }
+.ticket-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
+.mono { font-family: var(--mono); }
+.composer {
+  position: sticky; bottom: 0; z-index: 10;
+  display: flex; gap: 10px; align-items: center;
+  padding: 12px 0 18px; margin-top: auto;
+  background: linear-gradient(180deg, rgba(242, 243, 245, 0), var(--bg) 34%);
+}
+.composer input {
+  flex: 1; min-width: 0; height: 42px; box-sizing: border-box;
+  border-radius: 10px; padding: 0 12px;
+}
+.composer button { height: 42px; padding: 0 18px; flex: none; }
+.err { color: var(--rose); font-size: 13px; margin: 10px 0 0; }
+.notice { color: var(--ink-3); font-size: 13px; margin: 0; }
+.empty { color: var(--ink-3); font-size: 13px; margin: 0; }
+.mono { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .wrap { padding: 0 12px 92px; }
+  .topbar { padding: 10px 0; }
+  .store-card { padding: 12px; border-radius: 12px; margin-bottom: 14px; }
+  .gate { padding: 22px 16px; margin: 10px 0 0; border-radius: 16px; }
+  .gate h1 { font-size: 21px; }
+  .gate-actions { flex-direction: column; align-items: stretch; }
+  .gate-actions .link { align-self: center; margin-top: 10px; }
+  .msg { max-width: 96%; }
+  .composer { padding: 10px 0 14px; }
+  .composer button { padding: 0 14px; }
+}
 </style>

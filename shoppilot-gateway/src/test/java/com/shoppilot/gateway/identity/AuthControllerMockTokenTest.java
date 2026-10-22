@@ -11,7 +11,7 @@ import static org.mockito.Mockito.mock;
 class AuthControllerMockTokenTest {
 
     private final AuthController controller = new AuthController(
-            new JwtService("0123456789abcdef0123456789abcdef"), mock(IdentityClient.class), "");
+            new JwtService("0123456789abcdef0123456789abcdef"), mock(IdentityClient.class), "", false);
 
     @Test
     @DisplayName("回环 + localhost Host → 签发")

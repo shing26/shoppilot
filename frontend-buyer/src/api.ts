@@ -45,6 +45,16 @@ export async function guestSession(tenantId: string): Promise<ApiResult<Session>
   }
 }
 
+/**
+ * 一键体验买家（UX-01）：服务端用演示口令换真买家令牌，浏览器不接触口令。
+ *
+ * <p>与坐席页共用 `/auth/demo-login`；容器演示档由 `SHOPPILOT_IDENTITY_DEMO_LOGIN_ENABLED=true`
+ * 注册，默认关闭。非演示档返回 404 时页面回落为口令登录。
+ */
+export function demoBuyerLogin(tenantId: string): Promise<ApiResult<Session>> {
+  return request<Session>('/auth/demo-login', { method: 'POST', body: { tenantId, role: 'buyer' } })
+}
+
 /** 当前店铺资料（round37）：店名、主营、本店承诺，只读且只认令牌里的租户。 */
 export interface StoreProfile {
   tenantId: string

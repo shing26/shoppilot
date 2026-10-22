@@ -261,6 +261,10 @@ services:
       SHOPPILOT_SERVER_ADDRESS: "0.0.0.0"
       # 容器档演示默认走 MockLLM（perf），只要求宿主 Ollama 提供 bge-m3；真模型用 .env 覆盖。
       SHOPPILOT_LLM_MODE: ${SHOPPILOT_LLM_MODE:-perf}
+      # 容器演示档：允许产品页一键体验买家/坐席；远端仍被 Host 与端口回环绑定限制。
+      SHOPPILOT_IDENTITY_DEMO_LOGIN_ENABLED: "true"
+      # 一键体验由服务端拿演示口令换真账号令牌；网关自身也要拿到这个口令。
+      SHOPPILOT_IDENTITY_DEMO_PASSWORD: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:-}
       # CPU-only bge-m3 在容器/低配机上单次向量化可能 >5s；容器档演示默认放宽到 30s（本机 JVM 仍 5s）。
       SHOPPILOT_EMBEDDING_TIMEOUT: ${SHOPPILOT_EMBEDDING_TIMEOUT:-30s}
       # 容器冷启动首请求要初始化 DispatcherServlet（实测 >3s），默认 3s 会把首个降级落单打超时。

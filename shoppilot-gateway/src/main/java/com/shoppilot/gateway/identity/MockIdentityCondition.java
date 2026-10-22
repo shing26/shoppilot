@@ -16,6 +16,10 @@ public class MockIdentityCondition implements Condition {
 
     @Override
     public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-        return DevDefaultsPolicy.isLoopback(context.getEnvironment().getProperty("server.address", ""));
+        // 默认仍是「只回环绑定」；容器演示档显式打开 demo-login，因为容器内 remoteAddr 是
+        // Docker 网桥地址，回环条件永远不成立。生产不要设置这个开关。
+        return DevDefaultsPolicy.isLoopback(context.getEnvironment().getProperty("server.address", ""))
+                || Boolean.parseBoolean(context.getEnvironment()
+                        .getProperty("shoppilot.identity.demo-login-enabled", "false"));
     }
 }
