@@ -1,5 +1,7 @@
 # ShopPilot Evidence Map
 
+> **历史台账（historical）**：本页保留逐轮读数、未达成项与复现指针，不是当前状态。当前测试数/覆盖率/首屏口径只看 [`STATUS.md`](STATUS.md)；产品说明看根目录 `README.md`。
+
 README 里的数字、否决项和“可复现”声明都应从这里找到证据落点。规则很简单：产品说明引用报告，报告引用原始产物，ticket 保存收口上下文；不要把本机日志当成人人克隆都会有的文件。
 
 ## 证据分层
@@ -139,5 +141,14 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 3. 指标未达成时保留红值、判据、归因和限制；不要改分母、阈值、gold 或模式来换一个绿值。
 4. 历史文件名是审计接口。除非 ticket 明确要求迁移，不重命名、不压缩、不清理旧产物。
 5. `ShopPilot-项目梳理-20260913.md` 不是证据；它是 2026-09-13 的过期快照，且当前未跟踪。
+
+## 2026-10-22 可信度收口（fix，非新功能）
+
+- **安全**：`/api/v1/support/ops/**` 默认拒绝（仅 `/ops/tickets/mine` 买家白名单）；`PostureGuard` 把 `replace-with-*` / `sk-replace-me` 判为未覆盖；`/auth/mock-token` 增加请求期 remoteAddr/Host 校验。
+- **资金**：`refunds.active_order_id` 可空唯一列 + H2/PG `V9`（一单最多一笔在办退款）；审批单调用移出事务（afterCommit），失败计数 `shoppilot_refund_ticket_missing_total`。
+- **可复现**：`scripts/bootstrap_env.py`、`scripts/demo.py --up`、`postgres` 归 `full` 档；CI 的 Coverage 步追加 `gen_status.py --check` 与 `docker compose config`。
+- **验证**：`RefundInvariantTest`（绕网关并发 + 工单不可达）、`OpsAuthorizationInterceptorTest`、`AuthControllerMockTokenTest`、`DevDefaultsPolicyTest` 占位符用例；当前读数见 [`STATUS.md`](STATUS.md)。
+- **活体（2026-10-22，本机 JVM，perf MockLLM + bge-m3）**：`python scripts/demo.py --scenario all` 三场景 PASS——缓存第二次 L1 且模型增量 0；串号 T001 `queryLogistics=STATE_NOT_ALLOWED` / T002 `NOT_FOUND`；降级 `LLM_TIMEOUT` + 工单号。另实测 ops：买家 token 打 `feedback/review-queue` 与 `tenants` 均 403，`tickets/mine` 200，ops token 200；退款并发（绕过网关、不同 token）一笔 `PENDING_APPROVAL`、一笔 `STATE_NOT_ALLOWED`。
+- **容器档（2026-10-22）**：Docker Hub 401 用镜像站 `SHOPPILOT_MAVEN_IMAGE` / `SHOPPILOT_JRE_IMAGE` + 本地 tag 解决；随后标准 `--up` 的 Maven 依赖在容器内握手失败，改用 `Dockerfile.runtime` + 宿主机 jar 的 `python scripts/demo.py --prebuilt`，三场景同样 PASS（ops 403/403/200/200）。容器档额外需要 `OLLAMA_HOST=0.0.0.0:11434`、CPU-only bge-m3、`SHOPPILOT_EMBEDDING_TIMEOUT=30s`、`SHOPPILOT_BIZMOCK_DEMO_SEED=true`；均为环境/演示口径，不是代码改动。
 
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。

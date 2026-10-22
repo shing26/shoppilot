@@ -2,7 +2,7 @@
 
 这份地图回答两个问题：一个需求应该先改哪里，以及哪些“看起来可以合并”的包不应在无 ADR 的情况下移动。它描述现状，不替代 `CONTEXT.md` 术语和 `docs/adr/` 决策。
 
-## 三个 Maven 模块
+## 四个 Maven 模块
 
 | 模块 | 职责 | 依赖方向 |
 | --- | --- | --- |
@@ -24,8 +24,8 @@
 | `llm` | local/dev/perf 三种模型实现、超时/预算、显式输出上限与 LLM 故障注入 | `LlmGateway`、`OllamaLlmClient`、`OpenAiCompatibleLlmClient`、`MockLlmClient`、`TokenBudget` |
 | `agent` | 10 状态编排、工具派发、会话、幂等、fallback 与工单；计划步骤与上下文组成的观测出口（ADR 0044 票 48/49）；**请求级幂等回放**（模型之前，ADR 0046 票 58）与**退款受理出口**（ADR 0047 票 59） | `AgentStateMachine`、`AgentResult`、`ToolDispatcher`、`BizMockClient`、`FallbackService`、`IdempotencyService`、`ReplayReply` |
 | `store` | 按已验签 `tenantId` 提供对话层店铺资料（店名/主营/本店承诺），拼进系统提示词（round37 / ADR 0071） | `StoreProfileProperties`（配置 `shoppilot.store-profiles`）、`StoreProfileService`；读面 `web/StoreProfileController` |
-| `web` | 同步/SSE 聊天入口、运维接口、错误信封、调试台事件出口；店铺资料只读端点与调试台入口重定向 | `ChatController`、`SseEventSink`、`OpsController`、`StoreProfileController`、`DebugEntryController`、`ApiErrorWriter` |
-| `config` | 配置绑定/校验、健康组、dev 默认值、线程与 HTTP 客户端、运行时指标 | `GatewayProperties`、`ValidatedServerProperties`、`DevDefaultsPolicy`、`RuntimeStateMetrics` |
+| `web` | 同步/SSE 聊天入口、运维接口、错误信封、调试台事件出口；店铺资料只读端点与调试台入口重定向；**`/ops/**` 默认拒绝守卫**（2026-10-22） | `ChatController`、`SseEventSink`、`OpsController`、`OpsAuthorizationInterceptor`、`StoreProfileController`、`DebugEntryController`、`ApiErrorWriter` |
+| `config` | 配置绑定/校验、健康组、dev 默认值、线程与 HTTP 客户端、运行时指标、MVC 拦截器注册 | `GatewayProperties`、`ValidatedServerProperties`、`DevDefaultsPolicy`、`RuntimeStateMetrics`、`WebMvcConfig` |
 
 ## Biz-Mock 与 Tool Contract
 
@@ -33,8 +33,8 @@
 | --- | --- | --- |
 | `bizmock/domain` | Hibernate 实体和业务状态枚举 | `Order`、`Refund`、`Ticket`、`TicketStatus` |
 | `bizmock/repo` | tenant-aware repository 与唯一约束 | `OrderRepository`、`RefundRepository`、`TicketRepository` |
-| `bizmock/db/migration`（资源） | **模式的唯一产生源（H2，默认档）**：Flyway 版本化迁移（`ddl-auto` 已是 `validate`）。索引的真相源在这里，实体上的 `@Index` 注解在 `validate` 下不再被校验、只作文档。**换代（round28 / ADR 0061）**：`bizmock/db/migration-postgresql/`（**平级目录，不是子目录**——Flyway 对 `classpath:db/migration` 递归扫描，子目录会同版本撞车）是持久档的 PG 方言产生源，两侧版本钟由 `PostgresMigrationParityTest` 钉住；持久档配置在 `application-postgres.yml` | `V1__baseline.sql`、`V2__index_feedback_review.sql`；回滚约定在 `db/rollback/U1__baseline_down.sql`（PG 回滚演练登记给 B2） |
-| `bizmock/service` | 查询、改地址、退款、**退款审核（受理/放行/驳回 + 推导回滚）**、工单、归属和状态前置校验 | `BizMockService` |
+| `bizmock/db/migration`（资源） | **模式的唯一产生源（H2，默认档）**：Flyway 版本化迁移（`ddl-auto` 已是 `validate`）。索引的真相源在这里，实体上的 `@Index` 注解在 `validate` 下不再被校验、只作文档。**换代（round28 / ADR 0061）**：`bizmock/db/migration-postgresql/`（**平级目录，不是子目录**——Flyway 对 `classpath:db/migration` 递归扫描，子目录会同版本撞车）是持久档的 PG 方言产生源，两侧版本钟由 `PostgresMigrationParityTest` 钉住；持久档配置在 `application-postgres.yml`。**2026-10-22**：`V9__refund_active_uniqueness.sql` 增加 `refunds.active_order_id` 可空唯一列（一单最多一笔在办退款） | `V1__baseline.sql`、`V2__index_feedback_review.sql`、`V9__refund_active_uniqueness.sql`；回滚约定在 `db/rollback/U1__baseline_down.sql`（PG 回滚演练登记给 B2） |
+| `bizmock/service` | 查询、改地址、退款、**退款审核（受理/放行/驳回 + 推导回滚）**、工单、归属和状态前置校验；**2026-10-22** 起退款受理由 `refunds.active_order_id` 唯一索引守并发，审批单调用移出事务（afterCommit + `shoppilot_refund_ticket_missing_total`） | `BizMockService` |
 | `bizmock/web` | 内部工具接口、工单接口、**退款审核端点**（B3 起 `review` 要求 `X-Actor-Authenticated: true`，未认证 → 403）、内部 token 校验、故障注入 | `ToolController`、`TicketController`、`RefundReviewController`、`InternalAuthFilter` |
 | `tool/request` / `tool/view` | 跨模块请求和响应 DTO | `QueryOrderDetailRequest`、`ToolResponse`（`ToolStatus.PENDING_APPROVAL`）、`OrderView`（`RefundReviewState`）、`TicketView` |
 | `tool/schema` | 工具 JSON schema 生成 | `ToolSchemaGenerator` |
@@ -78,6 +78,8 @@
 | 会话归属 | `agent/ConversationOwnershipTest` |
 | fallback 与幂等 | `agent/FallbackReasonTest`、`agent/IdempotencyServiceTest` |
 | 请求级幂等回放 | `agent/IdempotencyServiceRequestReplayTest`（往返性质，Map 假 Redis）、`web/GatewayMainPathJvmTest.repeatedRequestReplaysTheFirstResultWithoutCallingTheModel` |
+| 退款在办唯一性 / 工单移出事务（2026-10-22） | `bizmock/RefundInvariantTest`（绕网关并发测试 + 工单不可达） |
+| `/ops/**` 默认拒绝（2026-10-22） | `web/OpsAuthorizationInterceptorTest`（买家 403 / allowlist / staff / ops 关闭）、`web/RestErrorEnvelopeTest`（保留 token_mismatch 语义） |
 | 退款审批闸门 | `agent/ToolDispatcherApprovalTest`（受理态落幂等）、`bizmock/RefundReviewTest`（三态迁移 / 推导回滚 / 跨租户 / 重复审核；独立 H2）、`web/GatewayMainPathJvmTest.refundApprovalStopsAtTheGateWithoutASecondModelHop`、`web/RestErrorEnvelopeTest.refundReviewProxiesWithTenantContext` |
 | 跨模块工具契约（审批策略与新状态值） | `shoppilot-tool-api/src/test/java/.../ToolContractApprovalTest` |
 | 检索融合录放门（round22 票 64） | `knowledge/RetrievalFusionReplayTest`（JVM，重算的唯一 owner）、`ingest/MarkdownChunkerTest`、`scripts/retrieval_gate.py`（只校验不复算）+ `eval/retrieval-fixture-*.json`（append-only，录制器 `scripts/record_retrieval_fixture.py`） |

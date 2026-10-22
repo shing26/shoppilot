@@ -21,7 +21,10 @@
 | 本文档目录并非临时草稿 | `.scratch/shoppilot-mvp/` 是正式 tracker，不按目录名做清理 |
 | 已锁定架构与产品决策 | `docs/adr/` |
 | 领域术语和边界 | `CONTEXT.md` |
-| 公开指标与未达成项 | `README.md`，详细口径与产物见 `docs/EVIDENCE.md` |
+| 当前测试数/覆盖率/首屏指标口径 | `docs/STATUS.md`（脚本生成；不要手改） |
+| 架构现状与已知缺口 | `ARCHITECTURE.md` |
+| 起栈/排障/回滚 | `RUNBOOK.md` |
+| 公开指标与未达成项（历史台账） | `README.md` 首屏 + `docs/EVIDENCE.md`（historical） |
 | 代码所有权与首改位置 | `docs/CODE_MAP.md` |
 | 当前交付方向、冻结线与执行顺序 | `docs/PROJECT_PLAN.md` |
 | 干净 runner 的构建/单测结果 | `.github/workflows/ci-subset.yml` 与对应 GitHub Actions run |

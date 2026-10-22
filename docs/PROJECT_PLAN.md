@@ -1,5 +1,7 @@
 # ShopPilot v1.0 Freeze and Portfolio Plan
 
+> **历史计划（historical）**：baseline 与 221 tests 等是 2026-09-17 的落点；当前状态以 [`STATUS.md`](STATUS.md) 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task by task. Steps use checkbox syntax for tracking.
 
 **Goal:** 把 ShopPilot 从持续扩张的面试作品收口为 `v1.0.0`，补齐 3 分钟可读材料与面试掌握资产，然后用面试反馈触发后续变更。

@@ -1,5 +1,7 @@
 # ShopPilot v1.0.0
 
+> **冻结声明（历史）**：本文件记录 2026-09-16 的 v1.0.0 发布事实；之后的重开与当前状态见 [`docs/STATUS.md`](docs/STATUS.md) 与 `docs/adr/`。
+
 状态：`v1.0.0` 已发布并冻结。Tag `v1.0.0` 指向 CI run `35104751284` 已验证的 release commit `7f4334c`。
 
 ## What it does
