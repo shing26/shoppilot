@@ -32,8 +32,21 @@ public final class PostureGuard {
         return a.equals("localhost") || a.equals("::1") || a.equals("[::1]") || a.startsWith("127.");
     }
 
-    /** 未设置、空串、等于仓库默认值，三者都算「仍在吃默认值」。 */
+    /**
+     * 未设置、空串、等于仓库默认值、或仍是模板占位符，四者都算「仍在吃默认值」。
+     *
+     * <p>最后一条是 2026-10-22 评审补的：{@code .env.example} 里的
+     * {@code replace-with-*} / {@code sk-replace-me} 既非空也不等于仓库默认值，
+     * 原判据会把「照抄模板」误判成「已覆盖」，于是 0.0.0.0 启动放行公开令牌。
+     * 占位符不是密钥，必须和默认值同罪。
+     */
     public static boolean stillDefault(String actual, String repoDefault) {
-        return actual == null || actual.isBlank() || actual.trim().equals(repoDefault);
+        if (actual == null || actual.isBlank()) {
+            return true;
+        }
+        String value = actual.trim();
+        return value.equals(repoDefault)
+                || value.startsWith("replace-with-")
+                || value.equals("sk-replace-me");
     }
 }

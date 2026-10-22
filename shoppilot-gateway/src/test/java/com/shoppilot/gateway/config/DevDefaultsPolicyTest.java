@@ -116,4 +116,27 @@ class DevDefaultsPolicyTest {
         assertThat(at("127.0.0.1", "", "", "", true).devDefaultsInUse()).containsExactly(
                 "SHOPPILOT_JWT_SECRET", "SHOPPILOT_INTERNAL_TOKEN", "SHOPPILOT_OPS_TOKEN");
     }
+
+    @Test
+    @DisplayName("照抄 .env.example 的占位符不是覆盖：非回环必须三处都拒绝")
+    void envExamplePlaceholdersAreStillDefaults() {
+        DevDefaultsPolicy policy = at("0.0.0.0",
+                "replace-with-32-bytes-minimum-secret",
+                "replace-with-random-internal-token",
+                "replace-with-random-ops-token", true);
+
+        assertThat(policy.startupBlockers()).hasSize(3);
+        assertThat(String.join("；", policy.startupBlockers())).contains(
+                "SHOPPILOT_JWT_SECRET", "SHOPPILOT_INTERNAL_TOKEN", "SHOPPILOT_OPS_TOKEN");
+    }
+
+    @Test
+    @DisplayName("回环上占位符也自报为默认值，不假装已覆盖")
+    void placeholdersReportedOnLoopback() {
+        assertThat(at("127.0.0.1",
+                "replace-with-32-bytes-minimum-secret",
+                "replace-with-random-internal-token",
+                "replace-with-random-ops-token", true).devDefaultsInUse()).containsExactly(
+                "SHOPPILOT_JWT_SECRET", "SHOPPILOT_INTERNAL_TOKEN", "SHOPPILOT_OPS_TOKEN");
+    }
 }

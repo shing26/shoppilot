@@ -52,7 +52,13 @@ public class AuthController {
     }
 
     @PostMapping("/mock-token")
-    public Map<String, Object> mockToken(@RequestBody MockTokenRequest request) {
+    public ResponseEntity<?> mockToken(@RequestBody MockTokenRequest request, HttpServletRequest http) {
+        // 与 demo-login 同一口径（2026-10-22 评审）：Bean 注册期只看绑定地址，
+        // 反向代理 / SSH 隧道 / DNS rebinding 仍可能把请求送进来。请求期再验一次，
+        // 非本机与「端点未注册」同形，不新增可探测的 401。
+        if (!isLocalRequest(http)) {
+            return ResponseEntity.notFound().build();
+        }
         String token = jwtService.issue(request.tenantId(), request.customerId());
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("tid", request.tenantId());
@@ -61,7 +67,7 @@ public class AuthController {
         body.put("token", token);
         body.put("claims", claims);
         body.put("expiresInSeconds", jwtService.ttl().toSeconds());
-        return body;
+        return ResponseEntity.ok(body);
     }
 
     /**

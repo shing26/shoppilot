@@ -198,7 +198,8 @@ class RestErrorEnvelopeTest {
         String downstream = "{\"error\":\"order not found\",\"detail\":\"带\\\"引号\\\"与中文\",\"z\":2}";
         stubDownstream(404, downstream);
 
-        MvcResult result = mvc().perform(get("/api/v1/support/ops/tenants")).andReturn();
+        MvcResult result = mvc().perform(get("/api/v1/support/ops/tenants")
+                .header("X-Ops-Token", OPS_TOKEN)).andReturn();
 
         assertThat(result.getResponse().getStatus()).isEqualTo(404);
         assertThat(text(result)).isEqualTo(downstream);
