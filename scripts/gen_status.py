@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -23,6 +24,9 @@ METRICS = ROOT / "docs" / "current-metrics.json"
 MODULES = ("shoppilot-tool-api", "shoppilot-biz-mock", "shoppilot-gateway", "shoppilot-ticket")
 BEGIN = "<!-- STATUS:BEGIN -->"
 END = "<!-- STATUS:END -->"
+# JaCoCo 的行覆盖在不同 OS/JDK/测试顺序下会有零点几个百分点的漂移；
+# 状态文件是快照，不是门禁。覆盖率门槛仍由 check_coverage.py 单独守。
+COVERAGE_TOLERANCE = 1.5
 
 
 def git(*args: str) -> str:
@@ -88,6 +92,28 @@ def render() -> str:
     return "\n".join(lines) + "\n"
 
 
+def strip_coverage(block: str) -> str:
+    return "\n".join(line for line in block.splitlines() if not line.startswith("- 覆盖率（LINE）："))
+
+
+def coverage_pairs(block: str) -> dict[str, float]:
+    line = next((item for item in block.splitlines() if item.startswith("- 覆盖率（LINE）：")), "")
+    return {name: float(value) for name, value in re.findall(r"([a-z0-9-]+) \*\*([0-9.]+)%\*\*", line)}
+
+
+def test_count(block: str) -> int | None:
+    match = re.search(r"JVM：\*\*(\d+)\*\* tests", block)
+    return int(match.group(1)) if match else None
+
+
+def coverage_close(current: str, expected: str) -> bool:
+    actual = coverage_pairs(current)
+    want = coverage_pairs(expected)
+    if actual.keys() != want.keys() or not want:
+        return False
+    return all(abs(actual[name] - value) <= COVERAGE_TOLERANCE for name, value in want.items())
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
@@ -101,11 +127,17 @@ def main(argv: list[str]) -> int:
         start = text.find(BEGIN)
         end = text.find(END)
         current = text[start:end + len(END)] + "\n" if start >= 0 and end >= 0 else ""
-        if current != block:
-            print("STATUS.md is stale; run python scripts/gen_status.py and commit")
-            return 1
-        print("STATUS ok")
-        return 0
+        if current == block:
+            print("STATUS ok")
+            return 0
+        # 覆盖率允许平台漂移，但测试数、失败/跳过数、指标行必须逐字一致。
+        if (strip_coverage(current) == strip_coverage(block)
+                and test_count(current) == test_count(block)
+                and coverage_close(current, block)):
+            print(f"STATUS ok（覆盖率在 ±{COVERAGE_TOLERANCE}pp 内）")
+            return 0
+        print("STATUS.md is stale; run python scripts/gen_status.py and commit")
+        return 1
     existing = STATUS.read_text(encoding="utf-8") if STATUS.exists() else "# ShopPilot Status\n\n"
     start = existing.find(BEGIN)
     end = existing.find(END)
