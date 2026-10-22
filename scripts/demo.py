@@ -127,6 +127,21 @@ def wait_ready(seconds: int = 240) -> None:
     raise DemoError(f"gateway not ready in {seconds}s (last={last})")
 
 
+def wait_login_ready(seconds: int = 90) -> None:
+    """compose --wait 只看健康检查；biz-mock 的 seed 可能还在跑，登录会先吃 502。"""
+    password = env_values().get("SHOPPILOT_IDENTITY_DEMO_PASSWORD", "")
+    deadline = time.time() + seconds
+    last = ""
+    while time.time() < deadline:
+        try:
+            login("T001", "buyer", password)
+            return
+        except DemoError as failure:
+            last = str(failure)
+        time.sleep(2)
+    raise DemoError(f"login not ready in {seconds}s (last={last})")
+
+
 def flush_cache(buyer: str, ops: str) -> None:
     status, body = http("POST", "/api/v1/support/ops/cache/flush", token=buyer, ops=ops)
     if status != 200:
@@ -246,6 +261,7 @@ def up() -> None:
             "docker compose up/build 失败。若是 Docker Hub 401/限流，先 docker login 或改用本机 JVM 路径"
             "（README 快速开始；本机 JVM 下可用 --scenario 直接跑）。") from failure
     wait_ready()
+    wait_login_ready()
     run_scenarios("all")
 
 
@@ -275,6 +291,7 @@ def prebuilt() -> None:
     except subprocess.CalledProcessError as failure:
         raise DemoError("docker compose up 失败；看 docker compose logs 与 RUNBOOK 的容器排障表") from failure
     wait_ready()
+    wait_login_ready()
     run_scenarios("all")
 
 

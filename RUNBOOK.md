@@ -33,7 +33,7 @@ pwsh -NoProfile -File scripts/up.ps1
 pwsh -NoProfile -File scripts/stop.ps1
 ```
 
-Maven Central 在容器里握手失败（宿主机能构建、容器里拉不到依赖）：先在本机构建 jar，再走预构建运行时镜像：
+容器内 Maven 默认走 `docker/maven-settings.xml`（Aliyun public）；内网要求 Nexus 时改该文件的 `<url>` 即可。若镜像站也不通，先在本机构建 jar，再走预构建运行时镜像：
 
 ```bash
 mvnw -B -ntp -DskipTests package
@@ -53,6 +53,7 @@ python scripts/demo.py --prebuilt
 |---|---|
 | `docker compose` 报 required variable | 没有 `.env` 或占位符未替换：`python scripts/bootstrap_env.py --force` |
 | Docker Hub 401 / `failed to authorize` / 拉 `eclipse-temurin` 超时 | 基础镜像走镜像站，不改 Dockerfile：在 `.env` 设 `SHOPPILOT_MAVEN_IMAGE=docker.1ms.run/library/maven:3.9-eclipse-temurin-21`、`SHOPPILOT_JRE_IMAGE=docker.1ms.run/library/eclipse-temurin:21-jre`；或先 `docker pull` 再 `docker tag` 成默认名 |
+| 容器 build 时 Maven Central 握手失败 / 卡在 `dependency:go-offline` | Dockerfile 已把 central 指到 `docker/maven-settings.xml`（Aliyun）；换内网改 `<url>`；仍不通就 `mvnw -DskipTests package` + `python scripts/demo.py --prebuilt` |
 | 端口被占（8082/8091/8092/16379/16333/19200） | 停旧栈；Windows 上还有 wslrelay 占标准端口，本项目用偏移端口 |
 | 起不来且日志说非回环 + 默认凭证 | 占位符或仓库默认值仍在：`python scripts/bootstrap_env.py --force`，或绑定 127.0.0.1 |
 | 容器名冲突（第二份克隆） | `COMPOSE_PROJECT_NAME` 换一个；容器名是全局唯一的 |

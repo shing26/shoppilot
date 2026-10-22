@@ -18,6 +18,8 @@ FROM ${MAVEN_IMAGE} AS build
 
 # 先只拷 wrapper 与 pom，让依赖层能被缓存：只改 Java 源码时这一层不失效
 WORKDIR /workspace
+# 容器内 Maven 的 central 走镜像站：宿主能拉、容器里握手失败时不再卡住（见 RUNBOOK）。
+COPY docker/maven-settings.xml /root/.m2/settings.xml
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw && ./mvnw -B -ntp -q dependency:go-offline -DexcludeArtifactIds=shoppilot-gateway || true
