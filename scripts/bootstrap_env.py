@@ -35,8 +35,8 @@ SECRET_KEYS = (
     "SHOPPILOT_IDENTITY_DEMO_PASSWORD",
 )
 PLACEHOLDERS = ("replace-with-", "sk-replace-me")
-# 演示默认：MockLLM，只要求宿主 Ollama 的 bge-m3；真模型用 .env 覆盖。
-DEMO_LLM_MODE = "perf"
+# 演示默认：意图感知的 demo 档，只要求宿主 Ollama 的 bge-m3；真模型用 .env 覆盖。
+DEMO_LLM_MODE = "demo"
 
 
 def _is_placeholder(value: str) -> bool:

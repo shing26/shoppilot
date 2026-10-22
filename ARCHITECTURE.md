@@ -6,7 +6,7 @@
 
 **是**：一个单机可复现的客服对话运行时原型。买家一句话进入网关，经鉴权、意图、缓存、检索、有界工具循环，走到政策答复、业务办理或一张可查工单；退款等涉资动作必须人工放行。
 
-**不是**：生产系统。没有真实商家数据、真实支付、真实 IdP、多实例验证或 SLA。官方演示默认 `perf`（MockLLM）+ 真实 `bge-m3`，衡量的是编排层，不是模型能力。
+**不是**：生产系统。没有真实商家数据、真实支付、真实 IdP、多实例验证或 SLA。官方产品演示默认 `demo`（意图感知模板）+ 真实 `bge-m3`；压测用 `perf`。两者衡量的都是编排层，不是模型能力。
 
 ## 2. 当前拓扑（以代码为准）
 
@@ -58,7 +58,7 @@ Redis        Qdrant + ES   biz-mock :8091（订单/退款/身份/审计）
 
 ### 3.5 编排自研，只留 provider 缝（ADR 0032）
 
-- **决策**：不引入 Spring AI / LangChain4j；`LlmClient` 一条缝，`OpenAiCompatibleLlmClient` / `OllamaLlmClient` / `MockLlmClient` 三种实现。
+- **决策**：不引入 Spring AI / LangChain4j；`LlmClient` 一条缝，`OpenAiCompatibleLlmClient` / `OllamaLlmClient` / `MockLlmClient` / `DemoLlmClient` 四种实现。
 - **换回**：没有两套循环、两处指标口径；代价是状态机、重试、反思、工具 schema 全部自己维护。
 - **现状**：工具 schema 由 record 反射生成（`ToolContracts`），跨模块共用 DTO，这一点比框架更可控。
 

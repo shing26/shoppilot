@@ -8,7 +8,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
 [![ADR](https://img.shields.io/badge/Architecture-70%20ADRs-blueviolet)](docs/adr/)
-[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-618-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
+[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-625-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
 [![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
 **10** 态有界状态机 · **4** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
@@ -36,7 +36,7 @@
   它只讲业务、不复述指标；所有数字与未达成项仍只在本文与 [`docs/EVIDENCE.md`](docs/EVIDENCE.md) 维护。
 - **工程读者**：从下面的[架构与工程验证索引](#-架构与工程验证索引)进入，或直接看
   [快速开始](#-快速开始一条命令)。
-- **外部评审者（60 秒）**：`python scripts/demo.py --up`（Docker + Python 3.11+ + Ollama `bge-m3`）——容器档 MockLLM 起全栈并跑三个场景。当前测试数/覆盖率/指标口径只看
+- **外部评审者（60 秒）**：`python scripts/demo.py --up`（Docker + Python 3.11+ + Ollama `bge-m3`）——容器档 demo 档（意图感知模板）起全栈并跑三个场景。当前测试数/覆盖率/指标口径只看
   [`docs/STATUS.md`](docs/STATUS.md)；历史读数与未达成项在 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)，两处不要混读。
 - **Docker Hub 401 / Maven 网络不通**：用镜像站基础镜像（`SHOPPILOT_MAVEN_IMAGE` / `SHOPPILOT_JRE_IMAGE`，见 RUNBOOK），或 `python scripts/demo.py --prebuilt`（用本机已构建 jar，不走 Dockerfile 的 Maven stage）。
 
@@ -172,7 +172,7 @@ flowchart TD
 </div>
 
 > **现场实录前置边界说明**：
-> 1. **模型基准**：两段录屏均运行在 `perf` 档位（MockLLM + 真实 bge-m3 + 真实 Qdrant/ES/Redis）；被演示的链路（语义缓存、极性守卫、工具编排、人机审核、审计）都真实发生，模型侧答案由 Mock 模板产出。
+> 1. **模型基准**：两段录屏运行在 `perf` 档位（固定输出 MockLLM + 真实 bge-m3 + 真实 Qdrant/ES/Redis）；当前产品页/容器演示默认 `demo` 档（意图感知模板）。两者都不是真实模型质量证据：被演示的链路（语义缓存、极性守卫、工具编排、人机审核、审计）真实发生，模型侧答案由模板产出。
 > 2. **真实日志签名**：极性守卫拦截日志为真实输出行（`CacheService`）：`L2 语义命中被极性守卫拒绝: polarity-conflict (cached=… incoming=…)`。
 > 3. **极性实测词对**：同极性近义对「这个能退么」/「这个能退吗」余弦 **0.9980**，正常命中 L2——这是语义缓存该做的事；反义对「这个能退吗」/「这个不能退吗」余弦 **0.9799**，同样越过 0.95 阈值，但在复用前被守卫捕获（`shoppilot_cache_l2_polarity_blocked_total` +1）。
 > 4. **审批出站边界**：退款审核放行后，出站投递只认 webhook / email / 回执工单三类；**web 渠道不向买家浏览器推送任何东西**（买家只能在自己中心里查工单进度），所以录像停在放行那一刻，没有编「买家收到通知」那一帧。
@@ -280,7 +280,7 @@ pwsh -NoProfile -File scripts/ingest.ps1          # 30 篇政策 -> 90 规则块
 pwsh -NoProfile -File scripts/start-gateway.ps1 -Profile local
 ```
 
-三种运行模式（ADR 0001）：`local` = Ollama `qwen2.5:3b`（默认，演示与降级验证）、`dev` = DashScope `qwen-plus`（工具调用准确率评测，需要 `Copy-Item .env.example .env` 填 `SHOPPILOT_LLM_API_KEY`）、`perf` = `MockLLMClient` 固定延迟（压测，只衡量网关编排层）。换模式：`pwsh -File scripts/start-gateway.ps1 -Profile dev`。`.env` 由启动脚本读进来注入服务进程（Spring Boot 自己不认 `.env`），已经导出到环境里的同名变量优先。
+四种运行模式（ADR 0001）：`local` = Ollama `qwen2.5:3b`（本机默认，真模型降级验证）、`dev` = DashScope `qwen-plus`（工具调用准确率评测，需要 `Copy-Item .env.example .env` 填 `SHOPPILOT_LLM_API_KEY`）、`perf` = `MockLlmClient` 固定输出（压测，只衡量网关编排层）、`demo` = `DemoLlmClient` 意图感知模板（容器产品演示，答案随问题类型/工具结果变化）。换模式：`pwsh -File scripts/start-gateway.ps1 -Profile dev`。`.env` 由启动脚本读进来注入服务进程（Spring Boot 自己不认 `.env`），已经导出到环境里的同名变量优先。
 
 **可选的容器档**：四个域服务跑在容器里，要导出/放置凭证——ADR 0029 的守卫会在容器内绑定 0.0.0.0 时检查 `SHOPPILOT_INTERNAL_TOKEN` / `SHOPPILOT_OPS_TOKEN` / `SHOPPILOT_JWT_SECRET` 三处，缺任一（或运维端点没显式关闭）就拒绝启动。这是那条防线按设计工作，不是配置错误。
 
@@ -400,7 +400,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | 检索 | Qdrant 稠密 + ES 倒排 + RRF | 双引擎各有短板，融合成本 60 行代码（ADR 0010） |
 | 业务侧 | H2 + Spring Data JPA | Mock 的是业务系统而不是业务逻辑：状态机、归属校验、幂等约束都是真的；工单带 `priority`（情绪升级单为 high）、反馈行与工单同库同生命周期（ADR 0039） |
 | 通道 | Spring MVC `SseEmitter` | 单向推流 + 断线重连够用；POST SSE 需要自带读流（浏览器 `EventSource` 不支持 POST）；webhook/email 走整段 JSON |
-| 模型依赖 | dev / local / perf 三模式 | 数字归属清晰：吞吐类指标只算编排层，推理成本另开一条曲线（ADR 0001）；dev 口径下每请求多一跳情绪分类调用，token 成本随口径登记 |
+| 模型依赖 | dev / local / perf / demo 四模式 | 数字归属清晰：吞吐类指标只算编排层，推理成本另开一条曲线（ADR 0001）；dev 口径下每请求多一跳情绪分类调用，token 成本随口径登记 |
 | **身份与责任** | 自建轻量身份域（`users` 表 + BCrypt + 三角色），落在 biz-mock（ADR 0056、0058） | 退款放行是不可逆的资金动作，它的责任人曾经是一个请求头。现在登录换来的令牌带角色，工单动作与退款审核要 `AGENT`/`ADMIN`（或运维凭证），审计事件的 actor 带着「这个名字是否来自已验签令牌」一起落库。登录面 `/auth/login` `/auth/register` `/auth/me` 在网关；账号数据在 biz-mock。密码策略只做到演示口径：BCrypt cost 10、最短 8 位、无失败锁定、无 refresh token（ADR 0056 的非目标） |
 | **结果回流** | 工单结单 → `channel.outbound`（Redis Streams）→ 网关消费端投递（ADR 0059、0054） | 买家问 → 转人工落单 → 坐席处理若干分钟到若干小时 → **结论送回原渠道**：这是 program 主线的最后一格。**「送达」的定义是目标返回 2xx**，不是「发出去了」；至少一次投递所以消费端按 `event_id` 幂等；送不到落 `CHANNEL_RECEIPT` 工单而不是丢。email 不真发（无 SMTP 依赖），web 渠道不发出站 |
 | **三个前端入口** | `/` 运维调试台、`/workspace/` 坐席工作台、`/buyer/` 买家中心（两个 Vite+Vue3 工程 + 共享层 `frontend-shared`；产物入库、CI 逐字节校验） | 买家中心能登录、连续提问（对话流保留历史）、看**自己**的工单（买家号只从已验签身份取，同店另一买家的单一条都不出现）；坐席能看到转人工上下文（失败/升级说明）并填写结单结论（结论随结果回流送到买家）。三个入口的静态放行面由 `StaticEntryExemptionTest` 一次钉住，调试台页脚提供两个产品入口（ADR 0057、0005、0070） |
@@ -597,7 +597,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 <summary>🔁 复现：压测、评测与验收命令</summary>
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（四模块 10 + 75 + 485 + 48 = 618 项；当前值以 docs/STATUS.md 为准）
+# 单元、架构与主链路 JVM 集成测试（四模块 10 + 75 + 492 + 48 = 625 项；当前值以 docs/STATUS.md 为准）
 mvn -o test
 # 压测全矩阵（阶梯 + SSE + 虚拟线程对照 + token 基线 + 连接池），每组带环境记录
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟

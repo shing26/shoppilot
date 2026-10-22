@@ -6,7 +6,7 @@
 
 - Docker（Compose v2）
 - Python 3.11+（脚本与 demo）
-- Ollama + `bge-m3`（约 1.2GB；容器档 MockLLM 只要求 embedding）
+- Ollama + `bge-m3`（约 1.2GB；容器档 demo/perf 只要求 embedding）
 - 可选：JDK 21 + Maven wrapper（本机 JVM 开发路径）
 - 可选：Node 22+（前端构建/浏览器门禁）
 

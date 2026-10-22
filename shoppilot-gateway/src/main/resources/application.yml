@@ -60,7 +60,7 @@ shoppilot:
   # 守护判的必须是真正在用的那个值，两处各写一份迟早分家（ADR 0029）。
   jwt-secret: ${SHOPPILOT_JWT_SECRET:}
   llm:
-    # dev | local | perf —— 三态模式，指标分口径声明见 ADR 0001。
+    # dev | local | perf | demo —— 四态模式；demo 是意图感知的演示档，指标分口径见 ADR 0001。
     # 2026-10-20：模式必须能从 .env 选择。此前这里写死 local，而 base-url/api-key/model
     # 在 .env 里指向 DashScope——配了云端却永远走 Ollama，本机没 pull qwen2.5:3b 时
     # 每次对话都以「本地模型返回 500」收场。profile 仍可覆盖本值（dev/local/perf 三段）。

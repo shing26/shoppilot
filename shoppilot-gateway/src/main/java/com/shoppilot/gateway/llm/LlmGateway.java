@@ -36,7 +36,9 @@ public class LlmGateway {
         this.tokenBudget = tokenBudget;
         this.faultInjector = faultInjector;
         GatewayProperties.Llm llm = properties.llm();
-        if (llm.perf()) {
+        if (llm.demo()) {
+            this.delegate = new DemoLlmClient(llm, mapper);
+        } else if (llm.perf()) {
             this.delegate = new MockLlmClient(llm);
         } else if (llm.local()) {
             this.delegate = new OllamaLlmClient(httpClient, mapper, llm);

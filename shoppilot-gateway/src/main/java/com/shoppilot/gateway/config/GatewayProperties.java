@@ -33,8 +33,8 @@ public record GatewayProperties(
     public record Llm(
             // 未知/空模式会落进 LlmGateway 的 else（云端客户端），而 dev() 为假意味着
             // ADR 0012 的日预算被静默绕过——值域必须在绑定层拒绝。
-            @Pattern(regexp = "(?i)^(dev|local|perf)$",
-                    message = "shoppilot.llm.mode must be one of dev|local|perf") String mode,
+            @Pattern(regexp = "(?i)^(dev|local|perf|demo)$",
+                    message = "shoppilot.llm.mode must be one of dev|local|perf|demo") String mode,
             String baseUrl, String apiKey, String model,
                       @DecimalMin("0.0") @DecimalMax("2.0") double temperature,
                       @DurationMin(nanos = 1, message = "shoppilot.llm.connect-timeout must be greater than 0")
@@ -62,6 +62,11 @@ public record GatewayProperties(
 
         public boolean perf() {
             return "perf".equalsIgnoreCase(mode);
+        }
+
+        /** 演示档：意图感知的确定性答案，质量与延迟都不冒充 dev/local。 */
+        public boolean demo() {
+            return "demo".equalsIgnoreCase(mode);
         }
     }
 

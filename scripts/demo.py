@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""一条命令演示：起容器档（MockLLM + 真实 bge-m3）并跑三个场景。
+"""一条命令演示：起容器档（demo 档 + 真实 bge-m3）并跑三个场景。
 
 用法：
   python scripts/demo.py --up          # 生成 .env、docker compose 构建并起栈、跑三场景
@@ -10,7 +10,7 @@
 
 设计约束：
   - 只用标准库；Windows / macOS / Linux 同一份；
-  - 容器档默认 SHOPPILOT_LLM_MODE=perf（MockLLM），只要求宿主 Ollama 的 bge-m3；
+  - 容器档默认 SHOPPILOT_LLM_MODE=demo（意图感知的确定性答案），只要求宿主 Ollama 的 bge-m3；
   - 认证走 /auth/login（容器档 mock-token 不注册），账号由 .env 的
     SHOPPILOT_IDENTITY_DEMO_PASSWORD 播种；
   - 场景断言沿用 scripts/demo.ps1 的三条，不另造一套口径。
