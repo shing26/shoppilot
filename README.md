@@ -301,7 +301,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 
 ## 🧪 端到端评测门禁
 
-项目摒弃主观打分，在 `eval/` 建立了 8 个分区的自动化评测基准，任何 Prompt 或编排层代码变更均须通过回归门禁：
+项目摒弃主观打分，在 `eval/` 建立了多分区的自动化评测基准，任何 Prompt 或编排层代码变更均须通过回归门禁：
 
 * **Part 1 Policy**：政策检索召回率与分块边界判定
 * **Part 2 Action**：工具调用选择精度与参数提取吻合度
@@ -312,6 +312,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 * **Part 7 Style & Feedback**：话术风格注入与反馈回流完整性
 * **Part 8 Task**：复合业务长链路端到端完成率
 * **Part 10 Autonomy**：4 轮链 / 2 步链、反思三态（触发 / 不触发 / 次数用尽）与超限出口（单独成列，不给总分；dev 档 30 条，票 148/149）
+* **UX Golden 30**（`eval/golden-ux-30.jsonl`）：买家侧 30 条行为面回归，覆盖意图、工具结果、引用、缓存、降级工单、跨店隔离与可读答案关键词；独立成列，**不并入 180 条 gold 的分母**。运行：`python scripts/run_golden_set.py --base http://127.0.0.1:8082`（输出 `eval/results/golden-ux-*.md`，失败项原样登记）。
 
 **CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **610 条** JVM 测试（tool-api 10 + biz-mock 75 + ticket 45 + gateway 480）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
 
@@ -603,6 +604,8 @@ mvn -o test
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1                    # 全跑，约 40 分钟
 pwsh -NoProfile -File scripts/run_experiment_suite.ps1 -Only l1,sse       # 只跑两条
 python scripts/build_loadtest_report.py --strict                          # 由产物生成 docs/loadtest-report.md
+# 买家侧 UX golden 30（行为面回归；demo/local/dev 都可跑，不替代 180 条 gold）
+python scripts/run_golden_set.py --base http://127.0.0.1:8082 --tag local
 python scripts/plot_loadtest_curves.py                                    # 画 docs/loadtest-curves.png（需 matplotlib）
 # 首字时延（TTFT）：分桶扫描 + 归因，两支都要网关先起在 perf
 pwsh -NoProfile -File scripts/run_ttft_sweep.ps1 -Levels 50,100,200,500    # 8 臂约 11 分钟，脚本自己重启网关并回读 llmMode
