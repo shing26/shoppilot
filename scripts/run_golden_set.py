@@ -119,6 +119,10 @@ def score_case(case, result, second=None):
 
     for keyword in expect.get("answerContains", []):
         checks["answerContains:" + keyword] = keyword in answer
+    # 同义组：真实模型常把「物流」说成「快递/承运」、把「14:00」说成「14点」。
+    # 这里只放宽**表述**，事实要求仍由组内词承担；严格字段仍用 answerContains。
+    for group in expect.get("answerContainsAny", []):
+        checks["answerContainsAny:" + "/".join(group)] = any(keyword in answer for keyword in group)
     for keyword in expect.get("answerNotContains", []):
         checks["answerNotContains:" + keyword] = keyword not in answer
     if expect.get("nonEmptyAnswer"):
@@ -157,6 +161,7 @@ def main(argv=None):
     parser.add_argument("--cases", default=str(CASES))
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--tag", default="demo")
+    parser.add_argument("--mode", default="", help="报告里的模型档位标签；缺省读 .env")
     args = parser.parse_args(argv)
 
     password = env_value("SHOPPILOT_IDENTITY_DEMO_PASSWORD")
@@ -242,7 +247,7 @@ def main(argv=None):
     payload = {
         "generatedAt": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "base": args.base,
-        "mode": env_value("SHOPPILOT_LLM_MODE") or "unknown",
+        "mode": args.mode or env_value("SHOPPILOT_LLM_MODE") or "unknown",
         "cases": len(rows),
         "passed": passed,
         "failed": len(rows) - passed,
@@ -250,7 +255,7 @@ def main(argv=None):
         "byCategory": by_category,
         "rows": rows,
     }
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
 
     lines = [
         "# UX golden set",
@@ -271,7 +276,7 @@ def main(argv=None):
         query = row["query"].replace("|", "\\|")
         lines.append(f"| {row['id']} | {row['category']} | {query} | {result} | {failures} |")
     lines += ["", "> 判据是行为面：intent / 工具结果 / 引用 / 缓存 / 降级工单 / 跨店隔离 / 答案关键词。", ""]
-    md_path.write_text("\n".join(lines), encoding="utf-8")
+    md_path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
     print(f"\n{passed}/{len(rows)} PASS · {elapsed:.1f}s")
     print(f"json: {json_path}")
