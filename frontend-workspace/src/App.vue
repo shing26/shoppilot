@@ -1,19 +1,13 @@
 <script setup lang="ts">
 /**
- * 坐席工作台（round23 票 73 / ADR 0057；票 83 换成真登录）。
+ * 坐席工作台（UX-04）：队列 + 工单详情 + 动作，一次只处理一张单。
  *
- * <p>三条刻意的口径：
- * <ol>
- *   <li><b>失败不冻结</b>：读不到就写清「读不到 + 为什么」，不留空态、不抛未捕获 Promise
- *       （同调试台那轮修的七处里的一条）；</li>
- *   <li><b>动作防连点</b>：处理是不可逆的资金/责任动作，一次点击只发一次请求
- *       （票 61 在退款面板上踩过这个坑）；</li>
- *   <li><b>坐席身份不再自报</b>（票 83）：页面不再有「坐席名」输入框，署名取自登录令牌。
- *       此前那个框其实已经不起作用——网关会用令牌里的账号覆盖它——留着只会让人以为
- *       改个名字就能换个人（ADR 0058 第 4 条）。</li>
- * </ol>
+ * <p>保留三条旧口径：
+ * 1. 失败不冻结——读不到就写清「读不到 + 为什么」；
+ * 2. 动作防连点——一次只允许一个动作在飞；
+ * 3. 署名取自登录令牌，页面不能改。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   claimTicket,
   demoLogin,
@@ -28,46 +22,41 @@ import {
   type RefundItem,
   type Session,
 } from './api'
-import { QUEUE_LABEL, PRIORITY_LABEL, QUEUES, SOURCE_LABEL, STATUS_LABEL, minutesLeft, priorityRank, type Ticket } from './types'
+import { PRIORITY_LABEL, QUEUE_LABEL, QUEUES, SOURCE_LABEL, STATUS_LABEL, minutesLeft, priorityRank, type Ticket } from './types'
 
-/**
- * 登录态放 sessionStorage 而不是 localStorage。
- *
- * <p>理由是「关掉标签页就登出」：令牌有 30 分钟有效期，而共享机器上 localStorage 里的
- * 令牌活到有人手清缓存为止。演示账号口令仍然可一键填入（下面那个按钮），但**不预填**——
- * 预填一个能直接用的口令，等于把凭证形态又退回成「打开就有」。
- */
 const STORAGE_KEY = 'shoppilot.session'
 
 const tenant = ref('T001')
 const username = ref('agent')
 const password = ref('')
+const showLogin = ref(false)
+const demoLoading = ref(false)
 const session = ref<Session | null>(readStoredSession())
 const loginError = ref('')
 const queue = ref<string>('ALL')
+type StatusFilter = 'ALL' | 'OPEN' | 'ASSIGNED' | 'OVERDUE'
+const statusFilter = ref<StatusFilter>('ALL')
 const tickets = ref<Ticket[]>([])
 const loadError = ref('')
-// 加载态（round36 / 票 151）：读取中不能渲染成「这一档队列里没有待处理工单」。
 const loading = ref(false)
 const actionNote = ref('')
+const actionError = ref('')
 const inFlight = ref<string>('')
+const selectedId = ref('')
 const now = ref(Date.now())
 
-// 详情展开（round36 / 票 151）：会话原文在 TicketView 里，默认收起——一张 8000 字的原文
-// 摊在表格里会把队列读面挤没。
-const expandedId = ref('')
-
-// 结单意见（round36 / 票 151 / ADR 0059）：note 会同时进审计与出站正文，空串等于让买家
-// 收到一句「已处理完成」。所以结单改成带文本框的对话框，空意见在提交前拦住。
 const resolveTarget = ref<Ticket | null>(null)
 const resolveNote = ref('')
 const resolveError = ref('')
 
-// ── 退款审核（B3 / ADR 0063）────────────────────────────────────────────────
 const refunds = ref<RefundItem[]>([])
 const refundError = ref('')
 const refundNote = ref('')
 const refundInFlight = ref<number>(0)
+const refundTarget = ref<RefundItem | null>(null)
+const refundDecision = ref<'APPROVE' | 'REJECT'>('APPROVE')
+const refundDialogNote = ref('')
+const refundDialogError = ref('')
 
 let timer = 0
 
@@ -75,21 +64,34 @@ const who = computed(() =>
   session.value ? `${session.value.username}（${session.value.role}）@ ${session.value.tenantId}` : '',
 )
 
-const sorted = computed(() =>
-  [...tickets.value].sort((a, b) => {
+const counts = computed(() => ({
+  open: tickets.value.filter((t) => t.status === 'OPEN').length,
+  assigned: tickets.value.filter((t) => t.status === 'ASSIGNED').length,
+  overdue: tickets.value.filter((t) => isOverdue(t)).length,
+}))
+
+const filtered = computed(() => {
+  const rows = tickets.value.filter((ticket) => {
+    if (statusFilter.value === 'ALL') return true
+    if (statusFilter.value === 'OPEN') return ticket.status === 'OPEN'
+    if (statusFilter.value === 'ASSIGNED') return ticket.status === 'ASSIGNED'
+    return isOverdue(ticket)
+  })
+  return rows.sort((a, b) => {
     const byPriority = priorityRank(a.priority) - priorityRank(b.priority)
     return byPriority !== 0 ? byPriority : b.createdAt.localeCompare(a.createdAt)
-  }),
-)
+  })
+})
+
+const selected = computed(() => tickets.value.find((ticket) => ticket.id === selectedId.value) ?? null)
 
 async function doLogin() {
   loginError.value = ''
   const result = await login(tenant.value.trim(), username.value.trim(), password.value)
   if (result.status !== 200) {
-    loginError.value =
-      result.status === 0
-        ? (messageOf(result.body) ?? '网关不可达')
-        : (messageOf(result.body) ?? `登录失败（HTTP ${result.status}）`)
+    loginError.value = result.status === 0
+      ? (messageOf(result.body) ?? '网关不可达')
+      : (messageOf(result.body) ?? `登录失败（HTTP ${result.status}）`)
     session.value = null
     clearStoredSession()
     return
@@ -97,19 +99,15 @@ async function doLogin() {
   await acceptSession(result.body as Session)
 }
 
-/**
- * 一键体验登录（round37）：浏览器不接触演示口令，服务端用环境里的口令换真账号令牌。
- *
- * <p>端点只在回环注册；非回环部署返回 404，这里把原因写出来并保留口令登录。
- */
 async function doDemoLogin(role: 'agent' | 'admin') {
   loginError.value = ''
+  demoLoading.value = true
   const result = await demoLogin(tenant.value.trim(), role)
+  demoLoading.value = false
   if (result.status !== 200) {
-    loginError.value =
-      result.status === 404
-        ? '当前部署不提供一键体验登录，请用坐席账号进入'
-        : (messageOf(result.body) ?? `一键登录失败（HTTP ${result.status}）`)
+    loginError.value = result.status === 404
+      ? '当前部署不提供一键体验登录，请用坐席账号进入'
+      : (messageOf(result.body) ?? `一键登录失败（HTTP ${result.status}）`)
     return
   }
   await acceptSession(result.body as Session)
@@ -117,33 +115,32 @@ async function doDemoLogin(role: 'agent' | 'admin') {
 
 async function acceptSession(logged: Session) {
   session.value = logged
-  // 口令不留痕：登录完立刻清掉输入框，浏览器里也不落。
   password.value = ''
+  showLogin.value = false
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(logged))
-  await refresh()
-  await refreshRefunds()
+  await Promise.all([refresh(), refreshRefunds()])
 }
 
 function signOut() {
   session.value = null
   clearStoredSession()
   tickets.value = []
+  selectedId.value = ''
   loadError.value = ''
   actionNote.value = ''
-  expandedId.value = ''
+  actionError.value = ''
   resolveTarget.value = null
   resolveNote.value = ''
   resolveError.value = ''
   refunds.value = []
   refundError.value = ''
   refundNote.value = ''
+  refundTarget.value = null
 }
 
-/** 三种失败各有各的说法——混成一句「加载失败」正是调试台修掉的那个毛病。 */
 async function refresh() {
   loadError.value = ''
   if (!session.value) {
-    loadError.value = '先登录坐席账号——工单队列要坐席身份才能读'
     tickets.value = []
     loading.value = false
     return
@@ -167,22 +164,30 @@ async function refresh() {
     return
   }
   tickets.value = result.body
+  const keep = selectedId.value
+  if (!keep || !tickets.value.some((ticket) => ticket.id === keep)) {
+    selectedId.value = filtered.value[0]?.id ?? ''
+  }
 }
 
 async function run(ticket: Ticket, kind: 'claim' | 'release') {
-  if (!session.value || inFlight.value) return // 防连点：一次只允许一个动作在飞
+  if (!session.value || inFlight.value) return
   inFlight.value = `${ticket.id}:${kind}`
   actionNote.value = ''
-  const result =
-    kind === 'claim'
-      ? await claimTicket(ticket.id, session.value)
-      : await releaseTicket(ticket.id, session.value)
-  actionNote.value = describe(result, { claim: '已领取', release: '已释放' }[kind])
+  actionError.value = ''
+  const result = kind === 'claim'
+    ? await claimTicket(ticket.id, session.value)
+    : await releaseTicket(ticket.id, session.value)
+  const message = describe(result, { claim: '已领取', release: '已释放' }[kind])
+  if (result.status >= 200 && result.status < 300) {
+    actionNote.value = message
+  } else {
+    actionError.value = message
+  }
   inFlight.value = ''
   await refresh()
 }
 
-/** 打开结单对话框。真正的确认在 `confirmResolve`，不在浏览器原生 confirm 里。 */
 function openResolve(ticket: Ticket) {
   if (!session.value || inFlight.value) return
   resolveTarget.value = ticket
@@ -197,12 +202,6 @@ function closeResolve() {
   resolveError.value = ''
 }
 
-/**
- * 结单：意见必填。
- *
- * <p>空串不是「没写」这么简单——`WorkItemService.resolve` 拿它当审计说明与出站正文，
- * ADR 0059 承诺的「结单结论送回原渠道」正落在这段文字上。
- */
 async function confirmResolve() {
   const ticket = resolveTarget.value
   if (!ticket || !session.value || inFlight.value) return
@@ -218,14 +217,12 @@ async function confirmResolve() {
   if (result.status >= 200 && result.status < 300) {
     resolveTarget.value = null
     resolveNote.value = ''
-    actionNote.value = '已处理完成，结论已进入结果回流'
+    actionNote.value = '已处理完成，结论会显示在买家工单详情'
     await refresh()
     return
   }
   resolveError.value = describe(result, '')
 }
-
-// ── 退款审核（B3 / ADR 0063）────────────────────────────────────────────────
 
 async function refreshRefunds() {
   refundError.value = ''
@@ -245,48 +242,83 @@ async function refreshRefunds() {
     return
   }
   if (!Array.isArray(result.body)) {
-    refundError.value = messageOf(result.body) ?? `队列读取失败（HTTP ${result.status}）`
+    refundError.value = messageOf(result.body) ?? `退款队列读取失败（HTTP ${result.status}）`
     refunds.value = []
     return
   }
   refunds.value = result.body
 }
 
-async function runRefundReview(refund: RefundItem, decision: 'APPROVE' | 'REJECT') {
+/** 资金动作的确认框：把金额、订单、责任人摆出来，不用浏览器原生 confirm。 */
+function openRefund(refund: RefundItem, decision: 'APPROVE' | 'REJECT') {
   if (!session.value || refundInFlight.value) return
-  // 资金放行是不可逆的，且责任人必须是已验签账号（ADR 0063）。
-  if (
-    !window.confirm(
-      `确认${decision === 'APPROVE' ? '放行' : '驳回'}退款 #${refund.refundId}？\n` +
-        `订单 ${refund.orderNo}，金额 ${(refund.amountFen / 100).toFixed(2)} 元。\n` +
-        `此操作会记进审计，责任人是当前登录账号。`,
-    )
-  ) {
+  refundTarget.value = refund
+  refundDecision.value = decision
+  refundDialogNote.value = ''
+  refundDialogError.value = ''
+}
+
+function closeRefund() {
+  if (refundInFlight.value) return
+  refundTarget.value = null
+  refundDialogNote.value = ''
+  refundDialogError.value = ''
+}
+
+async function confirmRefund() {
+  const refund = refundTarget.value
+  if (!refund || !session.value || refundInFlight.value) return
+  refundInFlight.value = refund.refundId
+  refundDialogError.value = ''
+  const result = await reviewRefund(refund.refundId, refundDecision.value, refundDialogNote.value.trim(), session.value)
+  refundInFlight.value = 0
+  if (result.status >= 200 && result.status < 300) {
+    refundTarget.value = null
+    refundDialogNote.value = ''
+    refundNote.value = describe(result, refundDecision.value === 'APPROVE' ? '已放行' : '已驳回')
+    await refreshRefunds()
     return
   }
-  refundInFlight.value = refund.refundId
-  refundNote.value = ''
-  const result = await reviewRefund(refund.refundId, decision, '', session.value)
-  refundNote.value = describe(result, decision === 'APPROVE' ? '已放行' : '已驳回')
-  refundInFlight.value = 0
-  await refreshRefunds()
+  refundDialogError.value = describe(result, '')
 }
 
 onMounted(() => {
-  void refresh()
-  void refreshRefunds()
-  // SLA 倒计时只需要分钟粒度，10 秒一跳足够；不跳得更勤是为了不给浏览器白烧 CPU。
+  if (session.value) {
+    void refresh()
+    void refreshRefunds()
+  }
   timer = window.setInterval(() => {
     now.value = Date.now()
   }, 10_000)
-  window.addEventListener('beforeunload', () => window.clearInterval(timer))
 })
 
+onUnmounted(() => {
+  window.clearInterval(timer)
+})
+
+function isOverdue(ticket: Ticket): boolean {
+  if (ticket.escalatedAt) return true
+  const left = minutesLeft(ticket.slaDeadline, now.value)
+  return left !== null && left < 0
+}
+
 function slaText(ticket: Ticket): string {
-  if (ticket.escalatedAt) return '已超时（状态不变）'
+  if (ticket.escalatedAt) return '已超时'
   const left = minutesLeft(ticket.slaDeadline, now.value)
   if (left === null) return '无 SLA'
   return left >= 0 ? `剩 ${left} 分钟` : `超时 ${-left} 分钟`
+}
+
+function formatTime(value: string | null | undefined): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function shortId(id: string): string {
+  return id.length > 18 ? `…${id.slice(-12)}` : id
 }
 
 function readStoredSession(): Session | null {
@@ -295,7 +327,6 @@ function readStoredSession(): Session | null {
   try {
     return JSON.parse(raw) as Session
   } catch (unreadable) {
-    // 会话存储被人手改过：清掉并当未登录，而不是拿一个半截对象去发请求
     sessionStorage.removeItem(STORAGE_KEY)
     return null
   }
@@ -307,134 +338,235 @@ function clearStoredSession() {
 </script>
 
 <template>
-  <main class="wrap">
-    <header>
-      <h1>坐席工作台</h1>
-      <p class="sub">待处理工单与资金审核 · 署名取自登录账号，所有动作记进审计</p>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">SP</span>
+        <div>
+          <strong>ShopPilot</strong>
+          <small>坐席工作台</small>
+        </div>
+      </div>
+      <div v-if="session" class="top-right">
+        <span class="identity">{{ who }}</span>
+        <button class="ghost" type="button" @click="refresh">刷新队列</button>
+        <button class="link" type="button" @click="signOut">退出</button>
+      </div>
     </header>
 
-    <section v-if="!session" class="ctl">
-      <label>店铺 <input v-model="tenant" type="text" placeholder="店铺编号，如 T001" /></label>
-      <label>坐席账号 <input v-model="username" type="text" placeholder="坐席账号" /></label>
-      <label>口令 <input v-model="password" type="password" placeholder="口令" @keyup.enter="doLogin" /></label>
-      <button type="button" @click="doLogin">登录</button>
-      <span class="demo-sep">或</span>
-      <button type="button" class="demo" @click="doDemoLogin('agent')">一键体验坐席</button>
-      <button type="button" class="demo" @click="doDemoLogin('admin')">一键体验管理员</button>
-    </section>
-    <p v-if="!session" class="sub-hint">演示账号由 biz-mock 播种；一键登录只在回环演示栈可用</p>
-
-    <!--
-      未登录时队列整段不渲染（没有身份就没有「本店的队列」），但**必须说清为什么**，
-      否则页面看上去像坏了。买家端那页的同一句提示是清场日当天补的（票 94），
-      这里当时漏了——两页由同一轮写成，行为却不一致，这正是那句话存在的理由。
-    -->
-    <p v-if="!session" class="notice">登录坐席账号后才能看到队列</p>
-
-    <section v-else class="ctl">
-      <span class="who">当前身份：{{ who }}<span class="hint">（署名取自登录令牌，页面上不能改）</span></span>
-      <label>队列
-        <select v-model="queue" @change="refresh">
-          <option v-for="q in QUEUES" :key="q" :value="q">{{ QUEUE_LABEL[q] ?? q }}</option>
-        </select>
-      </label>
-      <button type="button" @click="refresh">刷新</button>
-      <button type="button" @click="signOut">退出登录</button>
-    </section>
-
-    <p v-if="loginError" class="err">{{ loginError }}</p>
-    <p v-if="loadError" class="err">{{ loadError }}</p>
-    <p v-if="actionNote" class="note">{{ actionNote }}</p>
-
-    <div v-if="sorted.length" class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>工单号</th><th>来源</th><th>队列</th><th>优先级</th><th>诉求</th><th>SLA</th><th>状态</th><th>操作</th></tr>
-        </thead>
-        <tbody>
-          <template v-for="t in sorted" :key="t.id">
-            <tr>
-              <td class="mono">{{ t.id }}</td>
-              <td>{{ SOURCE_LABEL[t.source ?? ''] ?? t.source ?? '—' }}</td>
-              <td>{{ QUEUE_LABEL[t.queue ?? ''] ?? t.queue ?? '—' }}</td>
-              <td :class="{ urgent: t.priority === 'high' }">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</td>
-              <td class="query">{{ t.userQuery }}</td>
-              <td :class="{ overdue: !!t.escalatedAt }">{{ slaText(t) }}</td>
-              <td>{{ STATUS_LABEL[t.status] ?? t.status }}<span v-if="t.assignee"> / {{ t.assignee }}</span></td>
-              <td class="ops">
-                <button type="button" @click="expandedId = expandedId === t.id ? '' : t.id">
-                  {{ expandedId === t.id ? '收起' : '详情' }}
-                </button>
-                <button type="button" :disabled="!!inFlight" @click="run(t, 'claim')">领取</button>
-                <button type="button" :disabled="!!inFlight || t.status === 'OPEN'" @click="run(t, 'release')">释放</button>
-                <button type="button" :disabled="!!inFlight || t.status === 'RESOLVED'" @click="openResolve(t)">处理完成</button>
-              </td>
-            </tr>
-            <!-- 会话原文（round36 / 票 151）：默认收起，展开后限高滚动——单张单可达 8000 字。 -->
-            <tr v-if="expandedId === t.id" class="detail-row">
-              <td colspan="8">
-                <div class="detail">
-                  <div class="detail-cap">转人工上下文</div>
-                  <pre v-if="t.transcript">{{ t.transcript }}</pre>
-                  <p v-else class="empty">这张单没有记录失败/升级上下文</p>
-                </div>
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
-    </div>
-    <p v-if="loading" class="empty">正在读取…</p>
-    <p v-else-if="!loadError" class="empty">这一档队列里没有待处理工单</p>
-
-    <!-- 退款审核面板（B3 / ADR 0063） -->
-    <section v-if="session" class="refund-panel">
-      <h2>退款审核</h2>
-      <p class="hint">资金动作的责任人必须是已验签账号（ADR 0063）。放行/驳回都会记进审计。</p>
-      <p v-if="refundError" class="err">{{ refundError }}</p>
-      <p v-if="refundNote" class="note">{{ refundNote }}</p>
-      <div v-if="refunds.length" class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>退款号</th><th>订单号</th><th>店铺</th><th>金额</th><th>理由</th><th>状态</th><th>操作</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in refunds" :key="r.refundId">
-              <td class="mono">{{ r.refundId }}</td>
-              <td class="mono">{{ r.orderNo }}</td>
-              <td>{{ r.tenantId }}</td>
-              <td>{{ (r.amountFen / 100).toFixed(2) }} 元</td>
-              <td class="query">{{ r.reason }}</td>
-              <td>{{ r.status }}</td>
-              <td class="ops">
-                <button type="button" :disabled="!!refundInFlight" @click="runRefundReview(r, 'APPROVE')">放行</button>
-                <button type="button" :disabled="!!refundInFlight" @click="runRefundReview(r, 'REJECT')">驳回</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <section v-if="!session" class="login-wrap">
+      <div class="login-card">
+        <p class="eyebrow">坐席工作台</p>
+        <h1>先登录，再开始接单</h1>
+        <p class="lede">队列、会话原文、结单与退款审核都在这里；所有动作记审计，署名取自登录账号。</p>
+        <div class="login-actions">
+          <button class="primary big" type="button" :disabled="demoLoading" @click="doDemoLogin('agent')">
+            {{ demoLoading ? '正在进入…' : '一键体验坐席' }}
+          </button>
+          <button class="ghost" type="button" :disabled="demoLoading" @click="doDemoLogin('admin')">管理员体验</button>
+        </div>
+        <button class="link" type="button" @click="showLogin = !showLogin">
+          {{ showLogin ? '收起账号登录' : '用账号口令登录' }}
+        </button>
+        <form v-if="showLogin" class="login-form" @submit.prevent="doLogin">
+          <label>店铺编号<input v-model="tenant" type="text" placeholder="例如 T001" /></label>
+          <label>坐席账号<input v-model="username" type="text" placeholder="例如 agent" /></label>
+          <label>口令<input v-model="password" type="password" placeholder="演示口令见 .env" /></label>
+          <button class="primary" type="submit">登录</button>
+        </form>
+        <p v-if="loginError" class="err">{{ loginError }}</p>
+        <p class="fine">一键体验只在回环演示栈可用；正式环境请用账号口令登录。</p>
       </div>
-      <p v-else-if="!refundError" class="empty">当前没有待审核的退款申请</p>
     </section>
 
-    <!-- 结单对话框（round36 / 票 151）：原生 confirm 装不下意见文本框，而意见是结果回流的正文。 -->
+    <template v-else>
+      <section class="summary">
+        <button class="kpi" :class="{ active: statusFilter === 'ALL' }" type="button" @click="statusFilter = 'ALL'">
+          <span>当前队列</span><strong>{{ tickets.length }}</strong>
+        </button>
+        <button class="kpi" :class="{ active: statusFilter === 'OPEN' }" type="button" @click="statusFilter = 'OPEN'">
+          <span>待处理</span><strong>{{ counts.open }}</strong>
+        </button>
+        <button class="kpi" :class="{ active: statusFilter === 'ASSIGNED' }" type="button" @click="statusFilter = 'ASSIGNED'">
+          <span>处理中</span><strong>{{ counts.assigned }}</strong>
+        </button>
+        <button class="kpi danger" :class="{ active: statusFilter === 'OVERDUE' }" type="button" @click="statusFilter = 'OVERDUE'">
+          <span>已超时</span><strong>{{ counts.overdue }}</strong>
+        </button>
+        <button class="kpi refund" type="button" @click="refreshRefunds">
+          <span>待审退款</span><strong>{{ refunds.length }}</strong>
+        </button>
+      </section>
+
+      <section class="toolbar">
+        <label>队列
+          <select v-model="queue" @change="refresh">
+            <option v-for="q in QUEUES" :key="q" :value="q">{{ QUEUE_LABEL[q] ?? q }}</option>
+          </select>
+        </label>
+        <span class="toolbar-hint">按优先级排序；SLA 每 10 秒刷新</span>
+        <button class="ghost" type="button" @click="refresh">刷新</button>
+      </section>
+
+      <p v-if="loadError" class="err">{{ loadError }}</p>
+      <p v-if="actionError" class="err">{{ actionError }}</p>
+      <p v-if="actionNote" class="note">{{ actionNote }}</p>
+
+      <div class="workspace">
+        <section class="queue-pane">
+          <div class="pane-head">
+            <h2>工单队列</h2>
+            <span class="count">{{ filtered.length }}</span>
+          </div>
+          <p v-if="loading" class="empty">正在读取队列…</p>
+          <p v-else-if="!loadError && !filtered.length" class="empty">这一档队列里没有待处理工单</p>
+          <div v-else class="ticket-list" role="list">
+            <article
+              v-for="t in filtered"
+              :key="t.id"
+              class="ticket-card"
+              :class="{ active: selectedId === t.id, overdue: isOverdue(t), urgent: t.priority === 'high' }"
+              role="listitem"
+              tabindex="0"
+              @click="selectedId = t.id"
+              @keyup.enter="selectedId = t.id"
+            >
+              <div class="ticket-top">
+                <span class="priority">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</span>
+                <span class="status-pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
+              </div>
+              <p class="ticket-query">{{ t.userQuery }}</p>
+              <div class="ticket-meta">
+                <span>{{ SOURCE_LABEL[t.source ?? ''] ?? t.source ?? '—' }}</span>
+                <span>{{ QUEUE_LABEL[t.queue ?? ''] ?? t.queue ?? '—' }}</span>
+                <span :class="{ danger: isOverdue(t) }">{{ slaText(t) }}</span>
+              </div>
+              <div class="ticket-foot">
+                <span>{{ t.assignee ?? '待分配' }}</span>
+                <span class="mono">{{ shortId(t.id) }}</span>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <aside v-if="selected" class="detail-pane">
+          <header class="detail-head">
+            <div>
+              <p class="eyebrow">工单详情</p>
+              <h2 class="mono">{{ selected.id }}</h2>
+            </div>
+            <span class="status-pill">{{ STATUS_LABEL[selected.status] ?? selected.status }}</span>
+          </header>
+
+          <p class="detail-query">{{ selected.userQuery }}</p>
+
+          <div class="detail-meta">
+            <div><span>来源</span><strong>{{ SOURCE_LABEL[selected.source ?? ''] ?? selected.source ?? '—' }}</strong></div>
+            <div><span>队列</span><strong>{{ QUEUE_LABEL[selected.queue ?? ''] ?? selected.queue ?? '—' }}</strong></div>
+            <div><span>优先级</span><strong>{{ PRIORITY_LABEL[selected.priority ?? 'normal'] ?? selected.priority }}</strong></div>
+            <div><span>SLA</span><strong :class="{ danger: isOverdue(selected) }">{{ slaText(selected) }}</strong></div>
+          </div>
+
+          <div class="detail-actions">
+            <button class="primary" type="button" :disabled="!!inFlight || !!selected.assignee || selected.status === 'RESOLVED'" @click="run(selected, 'claim')">
+              {{ inFlight === `${selected.id}:claim` ? '领取中…' : '领取' }}
+            </button>
+            <button class="ghost" type="button" :disabled="!!inFlight || !selected.assignee || selected.status === 'RESOLVED'" @click="run(selected, 'release')">
+              {{ inFlight === `${selected.id}:release` ? '释放中…' : '释放' }}
+            </button>
+            <button class="primary" type="button" :disabled="!!inFlight || selected.status === 'RESOLVED'" @click="openResolve(selected)">
+              处理完成
+            </button>
+          </div>
+
+          <section class="block">
+            <h3>处理进度</h3>
+            <ol class="timeline">
+              <li class="done"><span>已提交</span><time>{{ formatTime(selected.createdAt) }}</time></li>
+              <li v-if="selected.assignee" class="done"><span>坐席 {{ selected.assignee }} 已接入</span></li>
+              <li v-if="selected.escalatedAt" class="warn"><span>已超时升级</span><time>{{ formatTime(selected.escalatedAt) }}</time></li>
+              <li :class="{ done: selected.status === 'RESOLVED' }">
+                <span>{{ STATUS_LABEL[selected.status] ?? selected.status }}</span>
+                <time v-if="selected.status !== 'RESOLVED'">{{ slaText(selected) }}</time>
+              </li>
+            </ol>
+          </section>
+
+          <section class="block">
+            <h3>转人工上下文</h3>
+            <pre v-if="selected.transcript" class="transcript">{{ selected.transcript }}</pre>
+            <p v-else class="empty">这张单没有记录失败/升级上下文</p>
+          </section>
+
+          <section v-if="selected.status === 'RESOLVED'" class="resolution">
+            <h3>处理结论</h3>
+            <p>{{ selected.resolutionNote || '本次没有填写结单说明' }}</p>
+          </section>
+        </aside>
+        <aside v-else class="detail-pane empty-pane">选择左侧一张工单查看详情</aside>
+      </div>
+
+      <section class="refund-section">
+        <div class="pane-head">
+          <h2>退款审核</h2>
+          <span class="count">{{ refunds.length }}</span>
+        </div>
+        <p class="hint">资金动作的责任人必须是已验签账号；放行/驳回都会记进审计。</p>
+        <p v-if="refundError" class="err">{{ refundError }}</p>
+        <p v-if="refundNote" class="note">{{ refundNote }}</p>
+        <p v-if="!refunds.length && !refundError" class="empty">当前没有待审核的退款申请</p>
+        <div v-else class="refund-list">
+          <article v-for="r in refunds" :key="r.refundId" class="refund-card">
+            <div class="refund-top">
+              <strong>退款 #{{ r.refundId }}</strong>
+              <span class="amount">{{ (r.amountFen / 100).toFixed(2) }} 元</span>
+            </div>
+            <p>订单 {{ r.orderNo }} · {{ r.reason }}</p>
+            <div class="refund-actions">
+              <button class="primary" type="button" :disabled="!!refundInFlight" @click="openRefund(r, 'APPROVE')">放行</button>
+              <button class="ghost" type="button" :disabled="!!refundInFlight" @click="openRefund(r, 'REJECT')">驳回</button>
+            </div>
+          </article>
+        </div>
+      </section>
+    </template>
+
     <div v-if="resolveTarget" class="scrim" @click.self="closeResolve">
       <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="resolve-title">
         <h2 id="resolve-title">处理完成</h2>
-        <p class="dialog-sub">
-          工单 <span class="mono">{{ resolveTarget.id }}</span> ·
-          {{ resolveTarget.userQuery }}
-        </p>
-        <label class="dialog-field">
-          处理结论（必填，会随结果回流送到买家）
+        <p class="dialog-sub">工单 <span class="mono">{{ resolveTarget.id }}</span> · {{ resolveTarget.userQuery }}</p>
+        <label class="field">
+          处理结论（必填，会显示在买家工单详情并随结果回流）
           <textarea v-model="resolveNote" rows="4" placeholder="例如：已核实商品破损，按实付金额退款，3 个工作日内到账" />
         </label>
         <p v-if="resolveError" class="err">{{ resolveError }}</p>
-        <p class="hint">结单后不能再流转，操作会记进审计，责任人是当前登录账号。</p>
+        <p class="fine">结单后不能再流转；操作会记进审计，责任人是当前登录账号。</p>
         <div class="dialog-actions">
-          <button type="button" :disabled="!!inFlight" @click="closeResolve">取消</button>
-          <button type="button" class="primary" :disabled="!!inFlight" @click="confirmResolve">
+          <button class="ghost" type="button" :disabled="!!inFlight" @click="closeResolve">取消</button>
+          <button class="primary" type="button" :disabled="!!inFlight" @click="confirmResolve">
             {{ inFlight ? '正在提交…' : '确认结单' }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="refundTarget" class="scrim" @click.self="closeRefund">
+      <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="refund-title">
+        <h2 id="refund-title">{{ refundDecision === 'APPROVE' ? '放行退款' : '驳回退款' }}</h2>
+        <p class="dialog-sub">
+          退款 #{{ refundTarget.refundId }} · 订单 {{ refundTarget.orderNo }} ·
+          <strong>{{ (refundTarget.amountFen / 100).toFixed(2) }} 元</strong>
+        </p>
+        <p class="dialog-warn">这是不可逆的资金动作，责任人是当前登录账号；操作会记进审计。</p>
+        <label class="field">
+          备注（可选）
+          <textarea v-model="refundDialogNote" rows="3" placeholder="例如：已核对订单与凭证" />
+        </label>
+        <p v-if="refundDialogError" class="err">{{ refundDialogError }}</p>
+        <div class="dialog-actions">
+          <button class="ghost" type="button" :disabled="!!refundInFlight" @click="closeRefund">取消</button>
+          <button class="primary" type="button" :disabled="!!refundInFlight" @click="confirmRefund">
+            {{ refundInFlight ? '正在提交…' : (refundDecision === 'APPROVE' ? '确认放行' : '确认驳回') }}
           </button>
         </div>
       </section>
@@ -443,52 +575,131 @@ function clearStoredSession() {
 </template>
 
 <style scoped>
-.wrap { font: 14px/1.6 system-ui, sans-serif; margin: 24px auto; max-width: 1100px; padding: 0 16px; }
-h1 { font-size: 20px; margin: 0 0 4px; }
-.sub { color: #666; margin: 0 0 16px; }
-.ctl { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-.ctl input, .ctl select { padding: 4px 6px; }
-.demo-sep { color: #6b7280; font-size: 13px; }
-.demo { border-color: #0f766e; color: #0f766e; }
-.who { font-weight: 600; }
-.hint { color: #666; font-weight: 400; margin-left: 6px; }
-table { border-collapse: collapse; width: 100%; }
-th, td { border-bottom: 1px solid #e5e5e5; padding: 6px 8px; text-align: left; vertical-align: top; }
-.mono { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
-/* 窄屏（round36 / 票 151）：宽表格在容器内横向滚动，页面本身不横向溢出 */
-.table-wrap { overflow-x: auto; }
-table { min-width: 720px; }
-.query { max-width: 320px; }
-.overdue { color: #b42318; }
-.urgent { color: #b42318; font-weight: 600; }
-.err { color: #b42318; }
-.note { color: #146c2e; }
-.empty { color: #666; }
-.notice { color: #666; margin: 4px 0 0; }
-.sub-hint { color: #6b7280; font-size: 12px; margin: 0 0 4px; }
-.ops button { margin-right: 6px; }
-.refund-panel { margin-top: 32px; }
-.refund-panel h2 { font-size: 16px; margin: 0 0 4px; }
-.refund-panel .hint { color: #666; margin: 0 0 12px; }
-
-/* 会话原文：限高滚动，避免一张 8000 字的单把队列读面挤走 */
-.detail-row td { background: #fafafa; }
-.detail { max-height: 320px; overflow: auto; }
-.detail-cap { font-size: 12px; color: #666; margin-bottom: 4px; }
-.detail pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.55 ui-monospace, monospace; }
-
-/* 结单对话框 */
+.shell {
+  max-width: 1280px; margin: 0 auto; padding: 0 20px 40px;
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 0; background: rgba(242, 243, 245, .94);
+  backdrop-filter: blur(10px);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo { width: 32px; height: 32px; border-radius: 10px; background: var(--teal); color: #fff;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.brand strong { display: block; font-size: 15px; line-height: 1.2; }
+.brand small { color: var(--ink-3); font-size: 12px; }
+.top-right { display: flex; align-items: center; gap: 12px; }
+.identity { color: var(--ink-2); font-size: 13px; }
+.ghost { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.ghost:hover:not(:disabled) { border-color: var(--ink-3); }
+.link { border: none; background: none; color: var(--teal); padding: 0; cursor: pointer; font-size: 13px;
+  text-decoration: underline; text-underline-offset: 2px; }
+.login-wrap { flex: 1; display: grid; place-items: center; padding: 40px 0; }
+.login-card { width: min(620px, 100%); box-sizing: border-box; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 20px; padding: 32px;
+  box-shadow: 0 12px 40px rgba(20, 22, 26, .08); text-align: center; }
+.eyebrow { margin: 0 0 8px; color: var(--teal); font-size: 12px; font-weight: 600; letter-spacing: .08em; }
+.login-card h1 { margin: 0 0 10px; font-size: 25px; }
+.lede { color: var(--ink-2); margin: 0 auto 22px; max-width: 500px; }
+.login-actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.big { padding: 10px 20px; font-size: 15px; }
+.login-form { display: grid; gap: 10px; max-width: 340px; margin: 18px auto 0; text-align: left; }
+.login-form label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.login-form input { width: 100%; box-sizing: border-box; }
+.fine { color: var(--ink-3); font-size: 12px; margin: 12px 0 0; }
+.summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 6px 0 14px; }
+.kpi { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; cursor: pointer; }
+.kpi span { display: block; color: var(--ink-3); font-size: 12px; }
+.kpi strong { display: block; font-size: 22px; line-height: 1.2; margin-top: 2px; }
+.kpi.active { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal) inset; }
+.kpi.danger strong { color: var(--rose); }
+.kpi.refund strong { color: var(--amber); }
+.toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 14px; }
+.toolbar label { font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.toolbar select { padding: 5px 8px; }
+.toolbar-hint { color: var(--ink-3); font-size: 12px; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); gap: 16px; align-items: start; }
+.queue-pane, .detail-pane, .refund-section { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.detail-pane { position: sticky; top: 74px; max-height: calc(100vh - 96px); overflow: auto; }
+.pane-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.pane-head h2 { margin: 0; font-size: 15px; }
+.count { color: var(--ink-3); font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.ticket-list { display: grid; gap: 8px; }
+.ticket-card { border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease; }
+.ticket-card:hover { border-color: #b7ddd8; }
+.ticket-card.active { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal) inset; background: #fbfefd; }
+.ticket-card.overdue { border-left: 3px solid var(--rose); }
+.ticket-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.priority { font-size: 12px; color: var(--ink-3); }
+.ticket-card.urgent .priority { color: var(--rose); font-weight: 600; }
+.status-pill { font-size: 12px; color: var(--teal); background: #eef8f6; border: 1px solid #b7ddd8; border-radius: 999px; padding: 1px 8px; }
+.ticket-query { margin: 6px 0 8px; font-size: 14px; overflow-wrap: anywhere; }
+.ticket-meta { display: flex; gap: 12px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
+.ticket-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; color: var(--ink-3); font-size: 12px; }
+.danger { color: var(--rose); }
+.mono { font-family: var(--mono); overflow-wrap: anywhere; }
+.empty { color: var(--ink-3); font-size: 13px; margin: 6px 0; }
+.detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.detail-head h2 { margin: 2px 0 0; font-size: 15px; }
+.detail-query { margin: 12px 0; background: var(--bg); border-radius: 10px; padding: 10px 12px; overflow-wrap: anywhere; }
+.detail-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.detail-meta div { display: grid; gap: 2px; }
+.detail-meta span { color: var(--ink-3); font-size: 12px; }
+.detail-meta strong { font-size: 13px; }
+.detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
+.block { border-top: 1px solid var(--line-2); padding-top: 14px; margin-top: 14px; }
+.block h3 { font-size: 13px; margin: 0 0 8px; }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.timeline li { position: relative; padding-left: 16px; color: var(--ink-3); font-size: 13px; }
+.timeline li::before { content: ''; position: absolute; left: 0; top: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.timeline li.done::before { background: var(--teal); }
+.timeline li.warn { color: #9a3412; }
+.timeline li.warn::before { background: var(--amber); }
+.timeline time { margin-left: 6px; }
+.transcript { max-height: 260px; overflow: auto; margin: 0; padding: 10px; background: var(--bg);
+  border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 var(--mono); }
+.resolution { border-top: 1px solid var(--line-2); margin-top: 14px; padding-top: 14px; }
+.resolution h3 { font-size: 13px; margin: 0 0 6px; color: var(--teal); }
+.resolution p { margin: 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.empty-pane { display: grid; place-items: center; color: var(--ink-3); min-height: 220px; }
+.refund-section { margin-top: 16px; }
+.hint { color: var(--ink-3); font-size: 12px; margin: 0 0 10px; }
+.refund-list { display: grid; gap: 10px; }
+.refund-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.refund-top { display: flex; justify-content: space-between; gap: 12px; }
+.amount { color: var(--amber); font-weight: 600; }
+.refund-card p { color: var(--ink-2); margin: 6px 0 10px; }
+.refund-actions { display: flex; gap: 8px; }
 .scrim { position: fixed; inset: 0; background: rgba(20, 22, 26, .38); display: flex; align-items: center;
   justify-content: center; padding: 16px; z-index: 30; }
-.dialog { background: #fff; border-radius: 10px; padding: 20px; width: min(520px, 100%);
+.dialog { background: var(--panel); border-radius: 14px; padding: 22px; width: min(540px, 100%);
   box-shadow: 0 18px 48px rgba(20, 22, 26, .22); }
 .dialog h2 { font-size: 17px; margin: 0 0 6px; }
-.dialog-sub { color: #444; margin: 0 0 14px; overflow-wrap: anywhere; }
-.dialog-field { display: block; font-size: 13px; color: #444; }
-.dialog-field textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font: inherit;
-  border: 1px solid #cfd3d9; border-radius: 6px; resize: vertical; box-sizing: border-box; }
+.dialog-sub { color: var(--ink-2); margin: 0 0 14px; overflow-wrap: anywhere; }
+.dialog-warn { color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px;
+  padding: 8px 10px; font-size: 13px; }
+.field { display: block; font-size: 13px; color: var(--ink-2); }
+.field textarea { display: block; width: 100%; margin-top: 6px; padding: 8px; font: inherit;
+  border: 1px solid var(--line); border-radius: 8px; resize: vertical; box-sizing: border-box; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-.dialog-actions .primary { background: #14161a; color: #fff; border: 1px solid #14161a; border-radius: 6px;
-  padding: 6px 14px; cursor: pointer; }
-.dialog-actions button { padding: 6px 14px; cursor: pointer; }
+.err { color: var(--rose); font-size: 13px; }
+.note { color: var(--green); font-size: 13px; }
+
+@media (max-width: 960px) {
+  .workspace { grid-template-columns: 1fr; }
+  .detail-pane { position: static; max-height: none; }
+  .summary { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 640px) {
+  .shell { padding: 0 12px 24px; }
+  .topbar { padding: 10px 0; }
+  .top-right .identity { display: none; }
+  .login-card { padding: 22px 16px; border-radius: 16px; }
+  .summary { grid-template-columns: repeat(2, 1fr); }
+  .detail-meta { grid-template-columns: 1fr; }
+}
 </style>
