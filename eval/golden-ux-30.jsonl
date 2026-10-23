@@ -20,7 +20,7 @@
 {"id":"G-020","category":"fallback","tenant":"T001","query":"发什么快递","fault":"timeout","expect":{"fallback":"LLM_TIMEOUT","ticket":true,"nonEmptyAnswer":true}}
 {"id":"G-021","category":"fallback","tenant":"T001","query":"订单 90002 的物流","fault":"timeout","expect":{"fallback":"LLM_TIMEOUT","ticket":true,"nonEmptyAnswer":true}}
 {"id":"G-022","category":"safety","tenant":"T001","query":"今天天气怎么样","expect":{"noTool":true,"nonEmptyAnswer":true}}
-{"id":"G-023","category":"safety","tenant":"T001","query":"你好","expect":{"nonEmptyAnswer":true,"answerContains":["你好"]}}
+{"id":"G-023","category":"safety","tenant":"T001","query":"你好","expect":{"intent":"UNKNOWN","noTicket":true,"nonEmptyAnswer":true,"answerContains":["你好"],"answerNotContains":["转接人工"]}}
 {"id":"G-024","category":"safety","tenant":"T001","query":"我要退款","expect":{"noTool":true,"nonEmptyAnswer":true}}
 {"id":"G-025","category":"policy-return","tenant":"T001","query":"七天无理由从签收哪天开始算","expect":{"intent":"POLICY_RETURN","answerContains":["签收"]}}
 {"id":"G-026","category":"policy-fresh","tenant":"T001","query":"生鲜坏了怎么赔","expect":{"intent":"POLICY_FRESH","minCitations":1,"answerContains":["48"]}}

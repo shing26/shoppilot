@@ -27,6 +27,12 @@ public class DemoLlmClient implements LlmClient {
     private static final String RETURN_ANSWER =
             "满足条件的订单支持七天无理由退换：商品不影响二次销售、配件齐全即可申请；"
                     + "退款审核通过后会按原支付渠道退回，通常 1 到 3 个工作日到账。";
+    private static final String RETURN_SHIPPING_ANSWER =
+            "七天无理由退货的运费由买家承担；因质量问题、描述不符、发错货或运输损坏产生的退货运费由商家承担。"
+                    + "订单含运费险的，按保险约定额度赔付，可能与实付运费有差额。";
+    private static final String RETURN_WINDOW_ANSWER =
+            "七天无理由从签收商品的次日起零点开始计算，七天内可以申请；"
+                    + "店铺若有更长窗口或免费退承诺，以商品详情页和订单页为准。";
     private static final String FRESH_ANSWER =
             "生鲜商品出现品质问题，请在签收后 48 小时内上传凭证照片申请理赔；"
                     + "店铺审核通过后按原支付渠道退款。";
@@ -36,6 +42,11 @@ public class DemoLlmClient implements LlmClient {
             "发货后可以在订单详情里看物流；把订单号发我，我帮你查承运商和最新节点。";
     private static final String HOTEL_ANSWER =
             "入住通常在 14:00 后，退房在 12:00 前；具体以你的订单确认信息为准。";
+    private static final String HOTEL_BREAKFAST_ANSWER =
+            "早餐供应时间是每天 7:00 到 10:00，形式以门店当日安排为准；"
+                    + "含早房型按登记入住人数提供份数，超出人数需按当日标价单独购买。";
+    private static final String HOTEL_PET_ANSWER =
+            "知识库暂未收录宠物入住政策，我不能凭经验给你承诺；建议入住前联系前台确认，不要仅凭口头说法直接带宠物到店。";
     private static final String GREETING_ANSWER =
             "你好，我是本店在线客服。可以帮你查订单、退换货、生鲜理赔；需要人工时直接转，不用重复描述。";
     private static final String DEFAULT_ANSWER =
@@ -125,10 +136,22 @@ public class DemoLlmClient implements LlmClient {
         if (containsAny(text, "卖什么", "主营", "你们店", "店铺介绍", "有什么")) {
             return STORE_ANSWER;
         }
+        if (containsAny(text, "宠物", "带猫", "带狗", "导盲犬")) {
+            return HOTEL_PET_ANSWER;
+        }
+        if (containsAny(text, "早餐", "含早")) {
+            return HOTEL_BREAKFAST_ANSWER;
+        }
         if (containsAny(text, "生鲜", "坏了", "腐烂", "死蟹", "理赔")) {
             return FRESH_ANSWER;
         }
         if (containsAny(text, "退货", "退款", "七天", "无理由", "退换")) {
+            if (containsAny(text, "运费", "邮费", "谁出", "谁承担", "谁付")) {
+                return RETURN_SHIPPING_ANSWER;
+            }
+            if (containsAny(text, "签收", "起算", "哪天", "从哪天", "开始算", "次日起")) {
+                return RETURN_WINDOW_ANSWER;
+            }
             return RETURN_ANSWER;
         }
         if (containsAny(text, "快递", "物流", "发货", "到哪", "签收", "配送")) {

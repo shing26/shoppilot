@@ -213,6 +213,24 @@ class T0RuleLayerTest {
         assertThat(result.cacheAdmissible()).isFalse();
     }
 
+    @ParameterizedTest
+    @CsvSource({"你好", "您好！", "hi", "hello", "在吗", "你好呀"})
+    @DisplayName("纯问候在 T0 定案为 UNKNOWN，不落 ESCALATE/人工工单（G-023）")
+    void pureGreetingsAreNotEscalations(String query) {
+        var result = layer.classify(query).orElseThrow();
+
+        assertThat(result.intent()).isEqualTo(Intent.UNKNOWN);
+        assertThat(result.cacheAdmissible()).isFalse();
+    }
+
+    @Test
+    @DisplayName("问候语后面真的要求人工时，仍先命中显式转人工")
+    void greetingWithExplicitEscalationStillEscalates() {
+        var result = layer.classify("你好，转人工").orElseThrow();
+
+        assertThat(result.intent()).isEqualTo(Intent.ESCALATE);
+    }
+
     @Test
     @DisplayName("拿不准时不定案，交给下一级而不是猜一个")
     void staysSilentWhenUnsure() {

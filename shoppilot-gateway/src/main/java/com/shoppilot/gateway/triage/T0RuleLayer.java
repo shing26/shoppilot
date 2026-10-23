@@ -5,7 +5,9 @@ import com.shoppilot.tool.Intent;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -100,6 +102,17 @@ public class T0RuleLayer {
     private static final List<String> ESCALATE_WORDS = List.of("转人工", "转个人", "人工客服", "真人客服", "人工服务", "转接人工", "人工介入");
     /** 紧邻关键词前的否定/取消词：用于"别转人工""不想转人工"这类反义提问。 */
     private static final List<String> ESCALATE_NEGATIONS = List.of("不", "别", "莫", "没", "无需", "取消", "拒绝", "退出");
+
+    /**
+     * 纯问候语（UX golden G-023）。
+     *
+     * <p>不放进 T1 质心："你好" 只有两个字，和"转人工"的短句在向量上很容易贴在一起；
+     * 一旦被 T1 判成 ESCALATE，买家只是打了招呼就被落一张人工工单。问候不是诉求，
+     * 在 T0 直接定案为 UNKNOWN，交给带工具的模型正常寒暄；显式"你好，转人工"仍先命中
+     * {@link #ESCALATE_WORDS}，不会被这条抢走。
+     */
+    private static final Set<String> PURE_GREETINGS = Set.of(
+            "你好", "您好", "hi", "hello", "嗨", "在吗", "早上好", "下午好", "晚上好");
     /** 否定词只看关键词前这么长的窗口，单位是字符。2 足够覆盖"不想/不要/别再/别"。 */
     private static final int ESCALATE_NEGATION_WINDOW = 2;
 
@@ -147,6 +160,10 @@ public class T0RuleLayer {
             // 先于实体与第一人称判定："90001 这单搞错了，转人工" 要的是人，不是订单查询
             return Optional.of(TriageResult.dynamic(Intent.ESCALATE, "T0", false));
         }
+        if (pureGreeting(query)) {
+            // 纯问候不是诉求；定案为 UNKNOWN，避免 T1 把短问候吸进 ESCALATE 桶。
+            return Optional.of(TriageResult.dynamic(Intent.UNKNOWN, "T0", false));
+        }
         if (policyHumanEscalation(query, tenantId)) {
             // R7：fresh-08「看照片不能定责，必须转人工并留可查询工单」。规则在实体分支之前：
             // 「90001 这单死蟹了，你们负责吗」要的是人工结论，不是先查订单。
@@ -156,6 +173,15 @@ public class T0RuleLayer {
             return classifyHotel(query);
         }
         return classifyEcommerce(query);
+    }
+
+    /** 去掉空白、标点与符号后，整句是否只是一个问候词。 */
+    private static boolean pureGreeting(String query) {
+        String compact = query.toLowerCase(Locale.ROOT).replaceAll("[\\p{P}\\p{S}\\s]", "");
+        if (compact.endsWith("呀") || compact.endsWith("啊") || compact.endsWith("呢") || compact.endsWith("哦")) {
+            compact = compact.substring(0, compact.length() - 1);
+        }
+        return PURE_GREETINGS.contains(compact);
     }
 
     /** R7 定责升级的完整谓词：租户 + 活鲜主体 + 定责判断词，且不是纯政策/流程问法。 */

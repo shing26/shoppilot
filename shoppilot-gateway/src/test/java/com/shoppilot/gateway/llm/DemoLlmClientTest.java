@@ -12,8 +12,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class DemoLlmClientTest {
 
@@ -21,9 +19,10 @@ class DemoLlmClientTest {
 
     @BeforeEach
     void setUp() {
-        GatewayProperties.Llm config = mock(GatewayProperties.Llm.class);
-        when(config.perfFirstTokenLatency()).thenReturn(Duration.ZERO);
-        when(config.perfTotalLatency()).thenReturn(Duration.ofMillis(1));
+        // 直接构造配置而不是 mock：这是纯延迟/模式参数，没有外部协作对象值得用 mock 换启动成本。
+        GatewayProperties.Llm config = new GatewayProperties.Llm("demo", "", "", "", 0.2d,
+                Duration.ofSeconds(1), Duration.ofSeconds(1), 0L, "", "",
+                Duration.ZERO, Duration.ZERO, 0);
         client = new DemoLlmClient(config, new ObjectMapper());
     }
 
@@ -42,6 +41,41 @@ class DemoLlmClientTest {
         LlmTypes.Reply reply = client.complete(request(composed, List.of()));
         assertThat(reply.content()).contains("物流");
         assertThat(reply.content()).doesNotContain("48 小时");
+    }
+
+    @Test
+    @DisplayName("退货运费问题回运费承担口径，而不是笼统退货政策")
+    void returnShippingFeeQuestion() {
+        LlmTypes.Reply reply = client.complete(request("退货的运费谁承担", List.of()));
+        assertThat(reply.content()).contains("运费").contains("买家承担");
+    }
+
+    @Test
+    @DisplayName("七天无理由起算日回到签收次日")
+    void returnWindowQuestion() {
+        LlmTypes.Reply reply = client.complete(request("七天无理由从签收哪天开始算", List.of()));
+        assertThat(reply.content()).contains("签收").contains("次日");
+    }
+
+    @Test
+    @DisplayName("酒店宠物问题不编造政策，明确转人工确认")
+    void hotelPetQuestion() {
+        LlmTypes.Reply reply = client.complete(request("酒店可以带宠物吗", List.of()));
+        assertThat(reply.content()).contains("宠物").contains("前台");
+    }
+
+    @Test
+    @DisplayName("酒店早餐问题回到早餐时间，而不是入住/退房时间")
+    void hotelBreakfastQuestion() {
+        LlmTypes.Reply reply = client.complete(request("酒店早餐几点", List.of()));
+        assertThat(reply.content()).contains("7:00").contains("10:00");
+    }
+
+    @Test
+    @DisplayName("问候语回问候，不重复退货政策")
+    void greetingQuestion() {
+        LlmTypes.Reply reply = client.complete(request("你好", List.of()));
+        assertThat(reply.content()).contains("你好");
     }
 
     @Test
