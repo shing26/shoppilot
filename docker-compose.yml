@@ -172,6 +172,8 @@ services:
     environment:
       <<: *service-env
       SHOPPILOT_KNOWLEDGE_DIR: /workspace/knowledge
+      # bge-m3 在 CPU 上单条可超过默认 5s；入库时放宽，避免半途超时留下部分纪元。
+      SHOPPILOT_EMBEDDING_TIMEOUT: ${SHOPPILOT_EMBEDDING_TIMEOUT:-30s}
       LOG_APP: ingest
     volumes:
       # 语料只读挂载：它是这一档唯一需要读宿主磁盘的东西

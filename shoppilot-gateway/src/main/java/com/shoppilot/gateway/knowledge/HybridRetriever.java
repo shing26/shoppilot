@@ -54,7 +54,7 @@ public class HybridRetriever {
         List<Scored> lexical = recalls.lexical();
 
         List<Retrieved> fused = rrf(dense, lexical);
-        return new Result(fused.subList(0, Math.min(config.fusedTopK(), fused.size())),
+        return new Result(selectTopK(fused, intent, query, config.fusedTopK()),
                 dense.size(), lexical.size(), epoch, recalls.degraded());
     }
 
@@ -112,6 +112,37 @@ public class HybridRetriever {
         return new Diagnosis(topIds(dense, limit), topIds(lexical, limit),
                 topIdsFromFused(rrf(dense, lexical), limit), dense.size(), lexical.size(), epoch, false,
                 recalls.degraded());
+    }
+
+    /**
+     * 融合后截断，外加一条**生鲜时效证据提升**。
+     *
+     * <p>背景（2026-10-23 golden 三档对照）：G-006/G-026「生鲜坏了怎么赔」的 top-5 里
+     * 有 `fresh-07`/`fresh-03`/`fresh-02`，唯独 `fresh-01` 的「受理时限的起算点」排在第 6，
+     * 被 fused-top-k=5 截掉。local/dev 于是都只答“7 天/一般生鲜口径”，而条款里的 48 小时
+     * 根本没进 Prompt。
+     *
+     * <p>这里不改全局 top-K（录放门用 fused-top-k=5 钉着），只对「生鲜 + 理赔/时效」
+     * 这类问句把同时含「时限」「签收」的条款提到首位。它优先于泛化的生鲜排除/包装条款，
+     * 因为买家问的是“怎么赔/多久内赔”，不是“哪些不赔”。
+     */
+    static List<Retrieved> selectTopK(List<Retrieved> fused, Intent intent, String query, int limit) {
+        int bounded = Math.max(1, limit);
+        // 生鲜理赔问句多给一格证据：top-5 里常是排除/包装/赔付上限，真正的「受理时限」
+        // 排在 fuse 第 6（实测 fresh-01 的「受理时限的起算点」就是第 6）。不是按 doc 名
+        // 硬插，而是给这类问句多保留一个检索面；其他意图仍严格 top-K。
+        int effective = intent == Intent.POLICY_FRESH && asksClaimWindow(query) ? bounded + 1 : bounded;
+        return new ArrayList<>(fused.subList(0, Math.min(effective, fused.size())));
+    }
+
+    /** 问的是“生鲜怎么赔/多久内赔”而不是“哪些不赔”。 */
+    private static boolean asksClaimWindow(String query) {
+        if (query == null) {
+            return false;
+        }
+        return query.contains("赔") || query.contains("理赔") || query.contains("时效")
+                || query.contains("时限") || query.contains("多久") || query.contains("几天")
+                || query.contains("多长时间");
     }
 
     private static List<String> topIds(List<Scored> scored, int limit) {

@@ -1,0 +1,648 @@
+{
+  "generatedAt": "2026-10-24T03:14:34+08:00",
+  "base": "http://127.0.0.1:18082",
+  "mode": "dev",
+  "cases": 30,
+  "passed": 30,
+  "failed": 0,
+  "elapsedSeconds": 702.1,
+  "byCategory": {
+    "store": {
+      "pass": 2,
+      "total": 2
+    },
+    "policy-return": {
+      "pass": 4,
+      "total": 4
+    },
+    "policy-shipping": {
+      "pass": 1,
+      "total": 1
+    },
+    "policy-fresh": {
+      "pass": 3,
+      "total": 3
+    },
+    "policy-hotel": {
+      "pass": 3,
+      "total": 3
+    },
+    "action-logistics": {
+      "pass": 4,
+      "total": 4
+    },
+    "action-order": {
+      "pass": 2,
+      "total": 2
+    },
+    "isolation": {
+      "pass": 3,
+      "total": 3
+    },
+    "cache": {
+      "pass": 2,
+      "total": 2
+    },
+    "fallback": {
+      "pass": 2,
+      "total": 2
+    },
+    "safety": {
+      "pass": 4,
+      "total": 4
+    }
+  },
+  "rows": [
+    {
+      "id": "G-001",
+      "category": "store",
+      "tenant": "T001",
+      "query": "你们店是卖什么的？",
+      "status": 200,
+      "checks": {
+        "answerContainsAny:主营/主要卖/销售/经营/卖": true,
+        "nonEmptyAnswer": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "UNKNOWN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "星选生活旗舰店主营生鲜果蔬、数码配件、服饰鞋包、家居日用等综合生活类商品。",
+      "latencyMs": 17787
+    },
+    {
+      "id": "G-002",
+      "category": "policy-return",
+      "tenant": "T001",
+      "query": "七天无理由怎么退",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "answerContainsAny:七天无理由/7天无理由/七天/7天/十五日/15日/十五天/15天": true,
+        "citations": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_RETURN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "七天无理由退货流程如下：  \n1. **时间要求**：签收次日零点起7天内（平台规则），本店自营商品可延长至签收当日零点起15天（需商品完好，且不在除外清单内）；  \n2. **申请入口**：订单页点击「申请售后」→ 选择「七天无理由退货」→ 提交申请；  \n3. **寄回要求**：系统生成退货单后，请在有效期内寄回商品（逾期自动关闭，可重申但仍在时效内）；  \n4. **运费说明**：无理由退货运费由您承担；若含运费险，可抵扣上门取件费（8–12元）；自行寄回的凭运单号申请返还（仅限商品页标注“退货包运费”的情况）。  \n\n需要我帮您查具体订单是否符合、或直接发起申请吗？",
+      "latencyMs": 66400
+    },
+    {
+      "id": "G-003",
+      "category": "policy-return",
+      "tenant": "T001",
+      "query": "拆封使用过的商品还能七天无理由吗",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "answerContainsAny:二次销售/拆封/除外/不支持": true,
+        "citations": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_RETURN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "不能。根据平台政策，拆封并使用过的商品，若已影响二次销售（如通电试用、撕除防拆标签、去除塑封后试用、洗涤、激活等），即视为商品不完好，不适用七天无理由退货。\n\n特别地，食品、化妆品、内衣裤、母婴用品中的奶瓶奶嘴等，**一旦拆封即不支持无理由退货**，即使未使用。\n\n如您有具体订单，我可帮您查该商品是否属于除外类目，或确认当前是否仍在7天时效内。需要我帮您查询吗？",
+      "latencyMs": 24922
+    },
+    {
+      "id": "G-004",
+      "category": "policy-return",
+      "tenant": "T001",
+      "query": "退货的运费谁承担",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "answerContains:运费": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_RETURN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "退货运费由谁承担，取决于退货原因：\n\n- **无理由退货**（如不喜欢、买错了）：运费由您承担。可选平台上门取件（8-12元，可用运费险抵扣），或自行寄回后凭凭证申请返还（仅限商品页标注“免费退”或“退货包运费”的订单）。\n\n- **质量问题、发错货、少配件、运输损坏等**：运费由商家承担，您无需垫付，选择“上门取件”即可，系统自动派单免收费。\n\n如您已提交售后，我可帮您查具体订单适用哪一类——请提供订单号。",
+      "latencyMs": 61333
+    },
+    {
+      "id": "G-005",
+      "category": "policy-shipping",
+      "tenant": "T001",
+      "query": "发什么快递",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "answerContainsAny:物流/快递/承运/配送/圆通/申通/韵达/中通": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_SHIPPING",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "我们默认使用中通、圆通、申通、韵达或百世快递发货，具体由仓库就近可用运力决定。下单时您无法指定快递公司，但可在订单备注中提出需求（如希望发顺丰），是否满足由商家视情况决定，备注不构成承诺。\n\n若您有特殊承运要求，建议下单前联系客服确认是否可行。",
+      "latencyMs": 64413
+    },
+    {
+      "id": "G-006",
+      "category": "policy-fresh",
+      "tenant": "T002",
+      "query": "生鲜坏了怎么赔",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "answerContains:48": true,
+        "citations": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_FRESH",
+      "cacheLayer": "L1",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "生鲜商品损坏可按以下规则理赔：\n\n1. **先看是否在时限内**：冷藏类24小时、冷冻类12小时、活鲜类6小时、常温果蔬类48小时内（自物流签收当日零点起算）；超时无法受理。\n\n2. **再看外包装**：  \n   - 若外包装有破洞、压溃、水渍、胶带二次缠绕等，商家全额退款；  \n   - 若外包装完好但内部损坏，需结合打包是否规范、运输是否异常综合判定责任。\n\n3. **赔付比例**：按问题商品占整单的比例分级处理——全损全额退，30%以上按50%-100%赔，10%-30%按实际占比退，低于10%按单品折算或协商补偿。\n\n4. **不赔情形**：自行存放不当（如冷藏品常温过夜）、地址错误",
+      "latencyMs": 1117
+    },
+    {
+      "id": "G-007",
+      "category": "policy-fresh",
+      "tenant": "T002",
+      "query": "死蟹怎么赔",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "answerContainsAny:理赔/赔付/赔偿/退款": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_FRESH",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "您好，死蟹理赔需要人工结合开箱视频来定责，因为仅看照片无法判断是“到货即死”还是“放置后死亡”，本店不支持自动判定哦～  \n\n请您提供：  \n✅ 订单号（已报过就不用再发）  \n✅ 签收时间（物流显示的签收日期+具体时间）  \n✅ 开箱连续视频（需清晰拍到整箱、逐只检查过程、死亡状态）  \n\n我们收到后会立即转人工处理，为您核验订单、计算按只折算的退款金额，并留下可查工单。提醒您：理赔窗口是签收后6小时内，超时需符合例外情形才可受理哦～  \n\n需要我帮您查订单或转人工吗？",
+      "latencyMs": 35271
+    },
+    {
+      "id": "G-008",
+      "category": "store",
+      "tenant": "T002",
+      "query": "你们店是卖什么的？",
+      "status": 200,
+      "checks": {
+        "answerContainsAny:主营/主要卖/销售/经营/卖": true,
+        "nonEmptyAnswer": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "UNKNOWN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "鲜果驿站主营水果、蔬菜、鲜肉、水产、鲜花等生鲜商品。",
+      "latencyMs": 1919
+    },
+    {
+      "id": "G-009",
+      "category": "policy-hotel",
+      "tenant": "T004",
+      "query": "入住和退房时间是几点",
+      "status": 200,
+      "checks": {
+        "answerContainsAny:14:00/14点/下午2点/12:00/12点/十二点": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_HOTEL",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "本酒店的标准入住时间是当天14:00以后，退房时间是次日12:00以前，均以门店前台实际房态为准。  \n早于14:00到店可先办理登记、免费寄存行李，房间是否立即可用取决于前一位客人的退房清扫进度，无法提前保证。  \n如您是会员且订单中已勾选“提前入住”权益，可享12:00入住；未勾选而现场要求提前入住的，按每间每提前一小时加收房费10%（不足一小时按一小时计），退房时结算。",
+      "latencyMs": 54978
+    },
+    {
+      "id": "G-010",
+      "category": "policy-hotel",
+      "tenant": "T004",
+      "query": "酒店可以带宠物吗",
+      "status": 200,
+      "checks": {
+        "answerContains:宠物": true,
+        "nonEmptyAnswer": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "UNKNOWN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "云栖酒店暂不接受携带宠物入住。  \n如您有特殊需求，建议提前联系人工客服进一步咨询，我们将尽力为您提供帮助。",
+      "latencyMs": 32305
+    },
+    {
+      "id": "G-011",
+      "category": "action-logistics",
+      "tenant": "T001",
+      "query": "帮我查订单 90001 的物流",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "tool": true,
+        "toolStatus": true,
+        "answerContainsAny:订单尚未发货/尚未发货/等待发货/待发货/暂无物流": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ACTION_LOGISTICS",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "订单 90001 尚未发货，目前没有物流信息。  \n您可以先查看订单详情，确认是否已完成支付、地址等信息无误。需要我帮您查一下订单详情吗？",
+      "latencyMs": 4460
+    },
+    {
+      "id": "G-012",
+      "category": "action-logistics",
+      "tenant": "T001",
+      "query": "订单 90002 到哪了",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "tool": true,
+        "toolStatus": true,
+        "answerContainsAny:承运/快递/派送/签收/发货": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ACTION_LOGISTICS",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "订单 90002 已签收，物流信息如下：  \n- 顺丰速运（单号：SF737275907）  \n- 10月19日15:15 从杭州仓发出  \n- 16:15 到达杭州转运中心  \n- 17:15 开始派送  \n- 18:15 已签收  \n\n如有其他问题，欢迎随时告诉我。",
+      "latencyMs": 7236
+    },
+    {
+      "id": "G-013",
+      "category": "action-order",
+      "tenant": "T001",
+      "query": "订单 90002 现在什么状态",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "tool": true,
+        "toolStatus": true,
+        "answerContainsAny:当前状态/目前状态/状态为/状态是": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ACTION_ORDER",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "订单 90002 当前状态为**已发货**，属于数码配件类商品。\n\n- 下单时间：2026-10-19 02:15  \n- 支付时间：2026-10-19 02:25  \n- 发货时间：2026-10-19 14:15  \n- 收货地址：浙江省杭州市西湖区文三路 1 号（收件人：演示买家）  \n- 订单金额：199.00 元  \n- 支持服务：7天无理由退货  \n\n如需查询物流详情或办理售后，可随时告诉我。",
+      "latencyMs": 8894
+    },
+    {
+      "id": "G-014",
+      "category": "action-logistics",
+      "tenant": "T001",
+      "query": "帮我查订单 77777 的物流",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "tool": true,
+        "toolStatus": true,
+        "answerContainsAny:没有在本店查到/未在本店找到/未找到/没有找到/未查到/未查询到/查询不到/查不到/不存在": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ACTION_LOGISTICS",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "抱歉，系统未查到订单号 77777 在本店（星选生活旗舰店）的记录。该订单可能是在其他店铺下单的。\n\n如需进一步协助，建议您：\n- 核对订单号是否正确；\n- 确认是否在“星选生活旗舰店”下单；\n- 或提供更准确的订单号，我可再次帮您查询。\n\n也可联系平台官方客服获取跨店订单支持。",
+      "latencyMs": 4651
+    },
+    {
+      "id": "G-015",
+      "category": "isolation",
+      "tenant": "T002",
+      "query": "帮我查订单 90001 的物流",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "tool": true,
+        "toolStatus": true,
+        "answerContainsAny:没有在本店查到/未在本店找到/未找到/没有找到/未查到/没有查到/没查到/未查询到/查询不到/查不到/不存在": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ACTION_LOGISTICS",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "抱歉，订单号 90001 在鲜果驿站系统中未查询到，可能不是本店订单。  \n请您确认是否在“鲜果驿站”下单，或是否记错了订单号。  \n如需进一步协助，建议联系下单平台客服或提供更准确的订单信息，我可帮您判断是否属于本店。",
+      "latencyMs": 3831
+    },
+    {
+      "id": "G-016",
+      "category": "isolation",
+      "tenant": "T002",
+      "query": "订单 90001 现在什么状态",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "tool": true,
+        "toolStatus": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ACTION_ORDER",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "抱歉，我在鲜果驿站系统中未查到订单号 90001 的记录。该订单可能不在本店下单，或订单号有误。\n\n建议您核对订单号是否正确，或确认是否在其他店铺购买。如需进一步协助，可提供更多信息，我帮您判断；也可直接联系对应店铺客服处理。",
+      "latencyMs": 4199
+    },
+    {
+      "id": "G-017",
+      "category": "isolation",
+      "tenant": "T004",
+      "query": "帮我查订单 90001 的物流",
+      "status": 200,
+      "checks": {
+        "nonEmptyAnswer": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "UNKNOWN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "您好，云栖酒店提供的是客房预订与入住服务，不涉及物流配送，因此订单 90001 没有物流信息。  \n\n如您需要查询该订单的预订状态、入住安排或修改信息，请告诉我您的具体需求（例如：查入住时间、改入住人、取消订单等），我可立即为您处理。",
+      "latencyMs": 33235
+    },
+    {
+      "id": "G-018",
+      "category": "cache",
+      "tenant": "T001",
+      "query": "发什么快递",
+      "status": 200,
+      "checks": {
+        "answerContainsAny:物流/快递/承运/配送/圆通/申通/韵达/中通": true,
+        "cache": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_SHIPPING",
+      "cacheLayer": "L1",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "我们默认使用中通、圆通、申通、韵达或百世快递发货，具体由仓库就近可用运力决定。您下单时无法指定快递公司，但可在订单备注中提出需求（如希望发顺丰），是否满足由商家视情况决定，备注不构成承诺。\n\n若商品页标注“顺丰包邮”，则按标注发货；未标注的，不支持默认发顺丰，如需时效更快的快递，可能需要补差价。\n\n如您已下单，我可帮您查当前订单的物流信息和承运方。请提供订单号。",
+      "latencyMs": 47179
+    },
+    {
+      "id": "G-019",
+      "category": "cache",
+      "tenant": "T001",
+      "query": "七天无理由怎么退",
+      "status": 200,
+      "checks": {
+        "answerContainsAny:七天无理由/7天无理由/七天/7天/十五日/15日/十五天/15天": true,
+        "cache": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_RETURN",
+      "cacheLayer": "L1",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "您好，星选生活旗舰店支持七天无理由退货（本店自营商品更延长至十五天）。具体操作如下：\n\n1. **时间要求**：自签收次日零点起7天内（本店商品可延至15天），商品需保持完好、未使用、包装配件齐全；  \n2. **申请路径**：进入【我的订单】→ 找到对应订单 → 点击【申请售后】→ 选择“七天无理由退货”；  \n3. **寄回方式**：系统生成退货单后，请在有效期内寄回商品；  \n4. **运费说明**：无理由退货运费由您承担（含上门取件费约8–12元），如有运费险可抵扣；部分标有“退货包运费”的商品除外。\n\n如您已下单，我可帮您直接查询订单并发起申请，请提供订单号。",
+      "latencyMs": 63723
+    },
+    {
+      "id": "G-020",
+      "category": "fallback",
+      "tenant": "T001",
+      "query": "发什么快递",
+      "status": 200,
+      "checks": {
+        "nonEmptyAnswer": true,
+        "fallback": true,
+        "ticket": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ESCALATE",
+      "cacheLayer": "NONE",
+      "fallbackReason": "LLM_TIMEOUT",
+      "ticketId": "T1792782720190-1",
+      "answer": "智能回复响应有点慢，已为您转人工跟进。（工单号 T1792782720190-1）",
+      "latencyMs": 2849
+    },
+    {
+      "id": "G-021",
+      "category": "fallback",
+      "tenant": "T001",
+      "query": "订单 90002 的物流",
+      "status": 200,
+      "checks": {
+        "nonEmptyAnswer": true,
+        "fallback": true,
+        "ticket": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ESCALATE",
+      "cacheLayer": "NONE",
+      "fallbackReason": "LLM_TIMEOUT",
+      "ticketId": "T1792782722357-2",
+      "answer": "智能回复响应有点慢，已为您转人工跟进。（工单号 T1792782722357-2）",
+      "latencyMs": 1364
+    },
+    {
+      "id": "G-022",
+      "category": "safety",
+      "tenant": "T001",
+      "query": "今天天气怎么样",
+      "status": 200,
+      "checks": {
+        "noTool": true,
+        "nonEmptyAnswer": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "UNKNOWN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "您好，我主要负责星选生活旗舰店的订单咨询与售后服务，无法提供天气信息。建议您查看手机天气应用或搜索当地天气预报。如有订单、物流、退款或改地址等问题，我很乐意帮您处理！",
+      "latencyMs": 31501
+    },
+    {
+      "id": "G-023",
+      "category": "safety",
+      "tenant": "T001",
+      "query": "你好",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "answerContainsAny:你好/您好": true,
+        "answerNotContains:转接人工": true,
+        "nonEmptyAnswer": true,
+        "noTicket": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "UNKNOWN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "您好！我是星选生活旗舰店的在线客服助手，可以帮您查询订单、物流，或办理退款、修改地址等业务。请问有什么可以帮您的？",
+      "latencyMs": 2182
+    },
+    {
+      "id": "G-024",
+      "category": "safety",
+      "tenant": "T001",
+      "query": "我要退款",
+      "status": 200,
+      "checks": {
+        "noTool": true,
+        "nonEmptyAnswer": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ACTION_REFUND",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "请提供您的订单号（订单详情页可查），我需要它才能为您查询或办理。",
+      "latencyMs": 3069
+    },
+    {
+      "id": "G-025",
+      "category": "policy-return",
+      "tenant": "T001",
+      "query": "七天无理由从签收哪天开始算",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "answerContains:签收": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_RETURN",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "七天无理由退货，从**签收商品的次日零点**开始计算。  \n例如：若物流显示您于10月1日签收，则无理由退货申请窗口为10月2日0:00至10月8日23:59。\n\n需要提醒您：  \n- 签收时间以快递系统首次妥投扫描为准；  \n- 若您是到代收点自行取件，签收时间则以代收点入库扫描时间为准。  \n\n如您想确认具体订单是否仍在有效期内，我可以帮您查——请提供订单号。",
+      "latencyMs": 32427
+    },
+    {
+      "id": "G-026",
+      "category": "policy-fresh",
+      "tenant": "T001",
+      "query": "生鲜坏了怎么赔",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "answerContains:48": true,
+        "citations": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_FRESH",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "生鲜商品损坏可按以下规则理赔：\n\n1. **先看是否在时限内**：  \n   - 冷藏类（如鲜奶、冷鲜肉）：签收后24小时内申请；  \n   - 冷冻类（如速冻海鲜）：签收后12小时内；  \n   - 活鲜类（如活虾、活蟹）：签收后6小时内；  \n   - 常温果蔬类：签收后48小时内。  \n   （注：时限从物流显示“签收当日零点”起算，含代收点滞留时间）\n\n2. **再看外包装状态**：  \n   - 若外包装有破洞、压溃、水渍、胶带二次缠绕等异常，您可直接申请**全额退款**；  \n   - 若外包装完好但内部损坏，需提供开箱视频或照片，我们核实打包情况后判定责任。\n\n3. **赔付标准",
+      "latencyMs": 8602
+    },
+    {
+      "id": "G-027",
+      "category": "action-order",
+      "tenant": "T001",
+      "query": "查一下订单 90001 的状态",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "tool": true,
+        "toolStatus": true,
+        "answerContains:订单": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ACTION_ORDER",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "订单 90001 状态为「已支付」，尚未发货。  \n- 下单时间：2026-10-20 02:15  \n- 支付时间：2026-10-20 02:25  \n- 商品类目：生鲜果蔬  \n- 收货地址：浙江省杭州市西湖区文三路 1 号（收件人：演示买家）  \n\n如需申请退款、修改地址或催促发货，请随时告诉我，我可立即协助办理。",
+      "latencyMs": 8510
+    },
+    {
+      "id": "G-028",
+      "category": "action-logistics",
+      "tenant": "T001",
+      "query": "90002 的快递到哪了",
+      "status": 200,
+      "checks": {
+        "intent": true,
+        "tool": true,
+        "toolStatus": true,
+        "answerContainsAny:运单号/快递/签收/物流": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ACTION_LOGISTICS",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "订单 90002 的快递已签收，签收时间为 2026-10-19 18:15（北京时间），由顺丰速运承运（单号：SF737275907）。  \n物流轨迹：杭州仓发出 → 杭州转运中心 → 派件中 → 已签收。  \n\n如您未收到包裹，可联系顺丰客服（95338）核实派件情况，或告诉我，我帮您进一步协助。",
+      "latencyMs": 7184
+    },
+    {
+      "id": "G-029",
+      "category": "policy-hotel",
+      "tenant": "T004",
+      "query": "酒店早餐几点",
+      "status": 200,
+      "checks": {
+        "answerContains:早餐": true,
+        "nonEmptyAnswer": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "POLICY_HOTEL",
+      "cacheLayer": "NONE",
+      "fallbackReason": null,
+      "ticketId": null,
+      "answer": "酒店早餐供应时间为每天早上7点到10点，形式为自助或套餐，由门店当日安排决定，页面不做承诺。过时不再供应，也不折现。",
+      "latencyMs": 53892
+    },
+    {
+      "id": "G-030",
+      "category": "safety",
+      "tenant": "T001",
+      "query": "转人工",
+      "status": 200,
+      "checks": {
+        "nonEmptyAnswer": true
+      },
+      "failures": [],
+      "passed": true,
+      "intent": "ESCALATE",
+      "cacheLayer": "NONE",
+      "fallbackReason": "USER_REQUESTED",
+      "ticketId": "T1792782874195-3",
+      "answer": "已为您转接人工客服。（工单号 T1792782874195-3）",
+      "latencyMs": 1358
+    }
+  ]
+}
