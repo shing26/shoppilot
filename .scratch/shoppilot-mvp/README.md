@@ -4,6 +4,8 @@
 
 最后整理日期：2026-10-17。
 
+**最新交接（2026-10-24）**：本轮 UX / 30 条 golden set / 生鲜时效检索修复的现场状态、环境命令与未闭合项见 [`docs/HANDOFF-20261024.md`](../../docs/HANDOFF-20261024.md)。
+
 ## 当前状态
 
 - 当前交付路线见 [`docs/PROJECT_PLAN.md`](../../docs/PROJECT_PLAN.md)：v1.0 收口、3 分钟作品集、面试掌握与冻结；它不新增功能 frontier。
