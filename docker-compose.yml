@@ -262,6 +262,13 @@ services:
       # 容器档演示默认走 demo（意图感知的确定性答案），只要求宿主 Ollama 提供 bge-m3；
       # 压测仍显式用 perf，真模型用 .env 覆盖。
       SHOPPILOT_LLM_MODE: ${SHOPPILOT_LLM_MODE:-demo}
+      # dev 档必须把云端端点/模型/key 一起带进容器；缺 key 时客户端会以 401 降级，
+      # 而不是回落到 local（那会把「配了云端」静默变成「还在跑本地」）。
+      SHOPPILOT_LLM_BASE_URL: ${SHOPPILOT_LLM_BASE_URL:-}
+      SHOPPILOT_LLM_API_KEY: ${SHOPPILOT_LLM_API_KEY:-}
+      SHOPPILOT_LLM_MODEL: ${SHOPPILOT_LLM_MODEL:-qwen-plus}
+      # dev 日预算熔断；默认 20 万 token，评测跑批显式抬高。
+      SHOPPILOT_LLM_DAILY_TOKEN_BUDGET: ${SHOPPILOT_LLM_DAILY_TOKEN_BUDGET:-200000}
       # 本地/慢端点可放宽；云端默认仍 20s。
       SHOPPILOT_LLM_READ_TIMEOUT: ${SHOPPILOT_LLM_READ_TIMEOUT:-20s}
       # 容器演示档：允许产品页一键体验买家/坐席；远端仍被 Host 与端口回环绑定限制。
