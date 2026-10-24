@@ -4,6 +4,7 @@ Date: 2026-10-24　Status: **Accepted**（2026-10-24 所有者确认）
 Owner basis: 2026-10-24 所有者确认“覆盖更完整业务链路、让 AI 承担更多类型自主任务”的路径，
 并明确第一阶段不是多 Agent 矩阵，而是**角色化执行内核 + 有向 Handoff**。
 Context source: 2026-10-24 外部多 Agent 编排建议与本仓现状对齐讨论。
+Rollout plan: [ORCHESTRATION_PLAN.md](../ORCHESTRATION_PLAN.md)（H1 session kernel → H2 blocked handoff → H3 tool risk → H4 quality sidecar → H5 optional MCP）。
 
 Context:
 
