@@ -1,0 +1,11 @@
+{"id":"H-ROUTE-001","kind":"route","intent":"POLICY_SHIPPING","domain":"ECOMMERCE","expectedRole":"PRE_SALES","expectedSurface":"NO_TOOLS"}
+{"id":"H-ROUTE-002","kind":"route","intent":"POLICY_PROMO","domain":"ECOMMERCE","expectedRole":"PRE_SALES","expectedSurface":"NO_TOOLS"}
+{"id":"H-ROUTE-003","kind":"route","intent":"ACTION_REFUND","domain":"ECOMMERCE","expectedRole":"AFTER_SALES","expectedSurface":"ACTION_SURFACE"}
+{"id":"H-ROUTE-004","kind":"route","intent":"ACTION_ADDRESS","domain":"ECOMMERCE","expectedRole":"AFTER_SALES","expectedSurface":"ACTION_SURFACE"}
+{"id":"H-ROUTE-005","kind":"route","intent":"UNKNOWN","domain":"ECOMMERCE","expectedRole":"AFTER_SALES","expectedSurface":"ACTION_SURFACE"}
+{"id":"H-ROUTE-006","kind":"route","intent":"POLICY_RETURN","domain":"ECOMMERCE","expectedRole":"AFTER_SALES","expectedSurface":"NO_TOOLS"}
+{"id":"H-INDUSTRY-001","kind":"route","intent":"ACTION_REFUND","domain":"HOTEL","expectedRole":"AFTER_SALES","expectedSurface":"NO_TOOLS"}
+{"id":"H-EDGE-001","kind":"handoff","from":"PRE_SALES","to":"AFTER_SALES","depth":0,"expectedResult":"ALLOWED"}
+{"id":"H-EDGE-002","kind":"handoff","from":"AFTER_SALES","to":"PRE_SALES","depth":0,"expectedResult":"NO_EDGE"}
+{"id":"H-EDGE-003","kind":"handoff","from":"PRE_SALES","to":"AFTER_SALES","depth":1,"expectedResult":"DEPTH_EXHAUSTED"}
+{"id":"H-EDGE-004","kind":"handoff","from":"AFTER_SALES","to":"AFTER_SALES","depth":0,"expectedResult":"SAME_ROLE"}

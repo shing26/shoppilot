@@ -16,6 +16,9 @@ import com.shoppilot.gateway.knowledge.KbEpoch;
 import com.shoppilot.gateway.llm.LlmException;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
+import com.shoppilot.gateway.orchestration.AgentRole;
+import com.shoppilot.gateway.orchestration.RouteContext;
+import com.shoppilot.gateway.orchestration.ToolSurfacePolicy;
 import com.shoppilot.gateway.sentiment.SentimentGate;
 import com.shoppilot.gateway.store.StoreProfileProperties;
 import com.shoppilot.gateway.store.StoreProfileService;
@@ -23,7 +26,6 @@ import com.shoppilot.gateway.style.StyleService;
 import com.shoppilot.gateway.triage.TriageEngine;
 import com.shoppilot.gateway.triage.TriageResult;
 import com.shoppilot.tool.Intent;
-import com.shoppilot.tool.ToolContracts;
 import com.shoppilot.tool.ToolName;
 import com.shoppilot.tool.view.ToolStatus;
 import io.micrometer.core.instrument.Counter;
@@ -191,6 +193,16 @@ public class AgentStateMachine {
     }
 
     public AgentResult run(String query, String idempotencyToken, EventSink sink) {
+        // ADR 0072：路由事实只属于本次请求；同步与流式工作线程都必须显式清理。
+        RouteContext.clear();
+        try {
+            return runRouted(query, idempotencyToken, sink);
+        } finally {
+            RouteContext.clear();
+        }
+    }
+
+    private AgentResult runRouted(String query, String idempotencyToken, EventSink sink) {
         List<AgentResult.TraceStep> trace = new ArrayList<>();
         String tenantId = TenantContext.tenantId();
         String customerId = TenantContext.customerId();
@@ -262,6 +274,12 @@ public class AgentStateMachine {
         TriageResult triage = outcome.result();
         step(trace, sink, AgentState.TRIAGE,
                 "layer=" + triage.layer() + " intent=" + triage.intent() + " admissible=" + triage.cacheAdmissible());
+        // ADR 0072：路由是确定性纯函数，不新增 LLM 调用。这里只裁剪角色工具面；
+        // HandoffGraph 的运行时触发留给下一个切片，本切片先把 route/toolSurface 变成可观测事实。
+        AgentRole route = AgentRole.routeFor(triage.intent());
+        registry.counter("shoppilot_agent_role_total", "role", route.name()).increment();
+        step(trace, sink, AgentState.TRIAGE, "route=" + route.name() + " toolSurface=" + route.toolSurface());
+        RouteContext.set(route, List.of());
 
         if (triage.intent() == Intent.ESCALATE) {
             sink.meta(conversationId, Intent.ESCALATE, CacheService.Layer.NONE);
@@ -360,8 +378,10 @@ public class AgentStateMachine {
                                   List<AgentResult.TraceStep> trace, EventSink sink, String systemPrompt,
                                   StyleService.Tier styleTier, TokenUsage usage) {
         Intent intent = triage.intent();
+        AgentRole route = AgentRole.routeFor(intent);
+        String rolePrompt = route.promptSegment();
         List<LlmTypes.Message> messages = new ArrayList<>();
-        messages.add(LlmTypes.Message.system(systemPrompt));
+        messages.add(LlmTypes.Message.system(rolePrompt.isBlank() ? systemPrompt : systemPrompt + "\n" + rolePrompt));
         appendHistory(messages, session);
 
         HybridRetriever.Result retrieved = null;
@@ -456,7 +476,7 @@ public class AgentStateMachine {
         boolean unresolvedToolFailure = false;
         while (rounds < properties.agent().maxToolRounds()) {
             step(trace, sink, AgentState.PLAN, "round=" + rounds);
-            LlmTypes.Request planRequest = new LlmTypes.Request(messages, toolsFor(triage, domain),
+            LlmTypes.Request planRequest = new LlmTypes.Request(messages, toolsFor(triage, domain, route),
                     properties.llm().temperature());
             try {
                 lastReply = llm.complete(planRequest);
@@ -608,7 +628,7 @@ public class AgentStateMachine {
                         "轮次上限内未能完成 " + expectedWrite.apiName(), styleTier, usage));
             }
             step(trace, sink, AgentState.PLAN, "budget-check");
-            LlmTypes.Request budgetRequest = new LlmTypes.Request(messages, toolsFor(triage, domain),
+            LlmTypes.Request budgetRequest = new LlmTypes.Request(messages, toolsFor(triage, domain, route),
                     properties.llm().temperature());
             try {
                 lastReply = llm.complete(budgetRequest);
@@ -998,15 +1018,8 @@ public class AgentStateMachine {
      * 同样 fail-closed。少了这道门，"酒店不碰电商工具"就只是 T0 词表的好运气——T1 质心层
      * 一旦把句子判成 ACTION_REFUND，全套电商工具又会挂回去。
      */
-    private List<Map<String, Object>> toolsFor(TriageResult triage, Domain domain) {
-        if (domain != Domain.ECOMMERCE) {
-            return List.of();
-        }
-        Intent intent = triage.intent();
-        if (intent == null || intent == Intent.UNKNOWN) {
-            return ToolContracts.actionDescriptors();
-        }
-        return intent.isAction() ? ToolContracts.actionDescriptors() : List.of();
+    private List<Map<String, Object>> toolsFor(TriageResult triage, Domain domain, AgentRole route) {
+        return ToolSurfacePolicy.toolsFor(route, domain, triage.intent());
     }
 
     /** 只有两个写操作意图需要状态机记住"必须真的办掉"；查询类答错顶多是信息不全，不会造成业务后果。 */

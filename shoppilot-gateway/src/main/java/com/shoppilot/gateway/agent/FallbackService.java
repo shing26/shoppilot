@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.identity.TenantContext;
+import com.shoppilot.gateway.orchestration.RouteContext;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -104,6 +105,15 @@ public class FallbackService {
         String contact = com.shoppilot.gateway.channel.ChannelContext.contact();
         if (contact != null) {
             payload.put("contact", contact);
+        }
+        // ADR 0072：路由事实随降级单带走；没跑到路由层就不伪造。
+        RouteContext.Snapshot route = RouteContext.snapshot();
+        if (route.role() != null) {
+            payload.put("agentRole", route.role().name());
+            payload.put("toolSurface", route.role().toolSurface());
+        }
+        if (!route.trail().isEmpty()) {
+            payload.put("handoffTrail", route.trail().stream().limit(5).toList());
         }
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(config.baseUrl() + "/api/tickets"))
