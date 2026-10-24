@@ -2,11 +2,14 @@ package com.shoppilot.gateway.agent;
 
 import com.shoppilot.gateway.llm.LlmTypes;
 import com.shoppilot.gateway.identity.TenantContext;
+import com.shoppilot.gateway.orchestration.RouteContext;
 import com.shoppilot.tool.ToolContracts;
 import com.shoppilot.tool.ToolName;
 import com.shoppilot.tool.schema.ToolSchemaGenerator;
 import com.shoppilot.tool.view.ToolStatus;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -23,6 +26,8 @@ import java.util.Map;
  */
 @Component
 public class ToolDispatcher {
+
+    private static final Logger log = LoggerFactory.getLogger(ToolDispatcher.class);
 
     private final BizMockClient bizMockClient;
     private final IdempotencyService idempotency;
@@ -80,6 +85,7 @@ public class ToolDispatcher {
                     false, false);
         }
         Map<String, Object> arguments = call.arguments() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(call.arguments());
+        recordToolRisk(tool);
         List<String> missing = missingSlots(tool, arguments);
         if (!missing.isEmpty()) {
             return new Dispatch(tool, null, null, missing, label(tool, arguments), false, false);
@@ -104,6 +110,27 @@ public class ToolDispatcher {
                                                                       String requestFingerprint) {
         return idempotency.lookupByClientToken(TenantContext.tenantId(), TenantContext.customerId(),
                 idempotencyToken, requestFingerprint);
+    }
+
+    /**
+     * 记录工具尝试的风险面（ADR 0072 H3）。
+     *
+     * <p>指标只使用封闭枚举标签；actor 只进日志、不进指标，避免把用户/账号变成标签基数。
+     * 这是“谁在用什么风险工具”的观测点，不是第二套授权：风险与 HITL 的强制点仍在下面的执行路径。
+     */
+    private void recordToolRisk(ToolName tool) {
+        var route = RouteContext.snapshot();
+        String role = route.role() == null ? "UNROUTED" : route.role().name();
+        registry.counter("shoppilot_tool_risk_attempts_total",
+                "tool", tool.name(),
+                "risk", tool.riskTier().name(),
+                "hitl", String.valueOf(tool.requiresHitl()),
+                "role", role).increment();
+        if (tool.requiresHitl()) {
+            String actor = TenantContext.present() ? TenantContext.current().actor() : "ANONYMOUS";
+            log.info("HITL tool attempt actor={} role={} tool={} risk={}",
+                    actor, role, tool.apiName(), tool.riskTier().name());
+        }
     }
 
     /** 写操作：先过幂等与业务锁，只有执行成功的结果才落成幂等结果。 */

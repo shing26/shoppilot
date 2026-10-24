@@ -22,6 +22,7 @@ import com.shoppilot.gateway.orchestration.HandoffGraph;
 import com.shoppilot.gateway.orchestration.HandoffStep;
 import com.shoppilot.gateway.orchestration.HandoffTrigger;
 import com.shoppilot.gateway.orchestration.RouteContext;
+import com.shoppilot.gateway.orchestration.ToolSurfaceDecision;
 import com.shoppilot.gateway.orchestration.ToolSurfacePolicy;
 import com.shoppilot.gateway.sentiment.SentimentGate;
 import com.shoppilot.gateway.store.StoreProfileProperties;
@@ -300,7 +301,9 @@ public class AgentStateMachine {
                     + " depth=" + routing.step().orElseThrow().depth() + " result=ALLOWED");
         }
         registry.counter("shoppilot_agent_role_total", "role", route.name()).increment();
-        step(trace, sink, AgentState.TRIAGE, "route=" + route.name() + " toolSurface=" + route.toolSurface());
+        ToolSurfaceDecision surface = ToolSurfacePolicy.decide(route, domain, triage.intent());
+        step(trace, sink, AgentState.TRIAGE, "route=" + route.name() + " toolSurface=" + route.toolSurface()
+                + " surfaceReason=" + surface.reason());
         SessionStore.Session routedSession = session.withRouting(route, trail);
         if (!routedSession.equals(session)) {
             sessionStore.save(tenantId, customerId, routedSession);

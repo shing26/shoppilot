@@ -4,18 +4,20 @@ import java.util.Arrays;
 
 /** 四个业务动作工具，名字即下发给模型的 function name。 */
 public enum ToolName {
-    QUERY_ORDER_DETAIL("queryOrderDetail", Intent.ACTION_ORDER, "查询指定订单的状态、金额、品类与服务标"),
-    QUERY_LOGISTICS("queryLogistics", Intent.ACTION_LOGISTICS, "查询指定订单的物流公司与实时轨迹节点"),
-    MODIFY_DELIVERY_ADDRESS("modifyDeliveryAddress", Intent.ACTION_ADDRESS, "修改指定订单的收货地址，仅未发货订单允许"),
-    APPLY_REFUND("applyRefund", Intent.ACTION_REFUND, "为指定订单发起退款申请");
+    QUERY_ORDER_DETAIL("queryOrderDetail", Intent.ACTION_ORDER, ToolRiskTier.READ_ONLY, "查询指定订单的状态、金额、品类与服务标"),
+    QUERY_LOGISTICS("queryLogistics", Intent.ACTION_LOGISTICS, ToolRiskTier.READ_ONLY, "查询指定订单的物流公司与实时轨迹节点"),
+    MODIFY_DELIVERY_ADDRESS("modifyDeliveryAddress", Intent.ACTION_ADDRESS, ToolRiskTier.LOW_RISK_WRITE, "修改指定订单的收货地址，仅未发货订单允许"),
+    APPLY_REFUND("applyRefund", Intent.ACTION_REFUND, ToolRiskTier.MONEY_WRITE, "为指定订单发起退款申请");
 
     private final String apiName;
     private final Intent intent;
+    private final ToolRiskTier riskTier;
     private final String description;
 
-    ToolName(String apiName, Intent intent, String description) {
+    ToolName(String apiName, Intent intent, ToolRiskTier riskTier, String description) {
         this.apiName = apiName;
         this.intent = intent;
+        this.riskTier = riskTier;
         this.description = description;
     }
 
@@ -25,6 +27,16 @@ public enum ToolName {
 
     public Intent intent() {
         return intent;
+    }
+
+    /** 爆炸半径的静态契约元数据（ADR 0072 H3）；执行强制点仍在运行时，不由模型判断。 */
+    public ToolRiskTier riskTier() {
+        return riskTier;
+    }
+
+    /** 是否 HITL 级风险；与既有 ADR 0047 审批判据保持同一结论。 */
+    public boolean requiresHitl() {
+        return riskTier == ToolRiskTier.MONEY_WRITE || riskTier == ToolRiskTier.IRREVERSIBLE_WRITE;
     }
 
     public String description() {
@@ -40,7 +52,7 @@ public enum ToolName {
      * <p>先例是 {@code IdempotencyService.isWrite(ToolName)} —— 但那是"是否写库"的判据，与本节不同。
      */
     public boolean requiresApproval() {
-        return this == APPLY_REFUND;
+        return requiresHitl();
     }
 
     public static ToolName fromApiName(String name) {

@@ -15,3 +15,9 @@
 {"id":"H-TRIGGER-004","kind":"trigger","from":null,"to":"PRE_SALES","actionEvidence":false,"depth":0,"expectedKind":"ROUTE_RESET","expectedRole":"PRE_SALES","expectedTicket":false}
 {"id":"H-TRIGGER-005","kind":"trigger","from":"AFTER_SALES","to":"AFTER_SALES","actionEvidence":true,"depth":0,"expectedKind":"ROUTE_RESET","expectedRole":"AFTER_SALES","expectedTicket":false}
 {"id":"H-TRIGGER-006","kind":"trigger","from":"PRE_SALES","to":"AFTER_SALES","actionEvidence":true,"depth":1,"expectedKind":"BLOCKED","expectedRole":"AFTER_SALES","expectedBlocked":"DEPTH_EXHAUSTED","expectedTicket":true}
+{"id":"H-SURFACE-001","kind":"surface","role":"PRE_SALES","domain":"ECOMMERCE","intent":"POLICY_SHIPPING","expectedSurface":"NO_TOOLS","expectedReason":"DENIED:PRE_SALES_READ_ONLY"}
+{"id":"H-SURFACE-002","kind":"surface","role":"AFTER_SALES","domain":"ECOMMERCE","intent":"ACTION_REFUND","expectedSurface":"ACTION_SURFACE","expectedReason":"ALLOWED:AFTER_SALES_ACTION_SURFACE"}
+{"id":"H-SURFACE-003","kind":"surface","role":"AFTER_SALES","domain":"ECOMMERCE","intent":"UNKNOWN","expectedSurface":"ACTION_SURFACE","expectedReason":"ALLOWED:UNKNOWN_DYNAMIC_SURFACE"}
+{"id":"H-SURFACE-004","kind":"surface","role":"AFTER_SALES","domain":"ECOMMERCE","intent":"POLICY_RETURN","expectedSurface":"NO_TOOLS","expectedReason":"DENIED:POLICY_CONSULTATION"}
+{"id":"H-SURFACE-005","kind":"surface","role":"AFTER_SALES","domain":"HOTEL","intent":"ACTION_REFUND","expectedSurface":"NO_TOOLS","expectedReason":"DENIED:DOMAIN_ISOLATION"}
+{"id":"H-SURFACE-006","kind":"surface","role":"PRE_SALES","domain":"HOTEL","intent":"ACTION_REFUND","expectedSurface":"NO_TOOLS","expectedReason":"DENIED:DOMAIN_ISOLATION"}

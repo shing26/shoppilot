@@ -146,11 +146,11 @@ public enum ToolRiskTier {
 
 **Tasks:**
 
-- [ ] H3-T1 在 tool-api 定义 `ToolRiskTier`
-- [ ] H3-T2 为每个 `ToolName` 声明风险等级
-- [ ] H3-T3 `ToolDispatcher` 增加风险面日志 / 指标
-- [ ] H3-T4 角色工具面按风险等级输出可解释原因
-- [ ] H3-T5 golden 增加风险面判据
+- [x] H3-T1 在 tool-api 定义 `ToolRiskTier`
+- [x] H3-T2 为每个 `ToolName` 声明风险等级
+- [x] H3-T3 `ToolDispatcher` 增加风险面日志 / 指标
+- [x] H3-T4 角色工具面按风险等级输出可解释原因
+- [x] H3-T5 golden 增加风险面判据
 
 **Acceptance:**
 
@@ -160,6 +160,11 @@ public enum ToolRiskTier {
 - JVM verify 全绿。
 
 **Estimated size:** S/M。
+
+**Execution status (2026-10-25):** H3 已实现。`ToolName` 静态声明 `READ_ONLY` / `LOW_RISK_WRITE` / `MONEY_WRITE`；
+`ToolDispatcher` 每次尝试记录 `shoppilot_tool_risk_attempts_total{tool,risk,hitl,role}`，
+HITL 尝试另写含 actor 的日志。`ToolSurfacePolicy.decide` 输出可解释 reason；
+handoff golden 扩到 23 条。全量 JVM **674 tests / 114 suites** 全绿。
 
 ---
 

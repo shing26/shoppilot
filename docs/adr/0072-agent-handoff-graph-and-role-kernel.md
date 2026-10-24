@@ -78,6 +78,9 @@ Consequences:
   及其测试；本机四模块 JVM verify **653 tests / 107 suites** 全绿，路由事实成为后续扩角色的观测基线。
 - 运行时跨会话 Handoff 尚未启用：本片先落“路由 + 工具面 + 契约 + golden set”，避免在
   session 状态、上下文丢失与回切规则未验证前就打开自由迁移。
+- **H3 update（2026-10-25）**：`ToolName` 增加静态 `ToolRiskTier`，`ToolDispatcher` 记录
+  `shoppilot_tool_risk_attempts_total{tool,risk,hitl,role}`；`ToolSurfacePolicy.decide`
+  输出可解释 reason，状态机 trace 与 golden 共用。授权与 HITL 强制点仍在执行路径。
 - **H1 update（2026-10-24）**：session 增加 `currentRole` / `handoffTrail`，`HandoffTrigger`
   只把“上一轮售前 + 本轮需要售后工具”判定为同诉求升级；普通换话题是 route reset，不是回切。
   活体验证已出现 `HANDOFF=PRE_SALES->AFTER_SALES depth=0 result=ALLOWED`。

@@ -49,7 +49,8 @@ class HandoffGoldenSetTest {
         assertThat(ids).contains(
                 "H-ROUTE-001", "H-ROUTE-003", "H-ROUTE-005",
                 "H-INDUSTRY-001", "H-EDGE-001", "H-EDGE-002", "H-EDGE-003", "H-EDGE-004",
-                "H-TRIGGER-001", "H-TRIGGER-003", "H-TRIGGER-004", "H-TRIGGER-006");
+                "H-TRIGGER-001", "H-TRIGGER-003", "H-TRIGGER-004", "H-TRIGGER-006",
+                "H-SURFACE-001", "H-SURFACE-002", "H-SURFACE-003", "H-SURFACE-004", "H-SURFACE-005", "H-SURFACE-006");
     }
 
     @Test
@@ -121,6 +122,30 @@ class HandoffGoldenSetTest {
             boolean expectedTicket = c.path("expectedTicket").asBoolean(false);
             assertThat(decision.kind() == HandoffTrigger.Kind.BLOCKED).as("case %s ticket", c.path("id").asText())
                     .isEqualTo(expectedTicket);
+        }
+    }
+
+    @Test
+    @DisplayName("逐条重算角色工具面：允许/拒绝 reason 是唯一口径")
+    void recomputesEverySurfaceCase() {
+        for (JsonNode c : cases) {
+            if (!"surface".equals(c.path("kind").asText())) {
+                continue;
+            }
+            AgentRole role = AgentRole.valueOf(c.path("role").asText());
+            Domain domain = Domain.valueOf(c.path("domain").asText());
+            Intent intent = Intent.valueOf(c.path("intent").asText());
+            var surface = ToolSurfacePolicy.decide(role, domain, intent);
+
+            String actual = surface.allowed()
+                    ? (surface.tools().containsAll(ToolContracts.actionDescriptors())
+                        && surface.tools().size() == ToolContracts.actionDescriptors().size()
+                        ? "ACTION_SURFACE" : "UNEXPECTED")
+                    : "NO_TOOLS";
+            assertThat(actual).as("case %s surface", c.path("id").asText())
+                    .isEqualTo(c.path("expectedSurface").asText());
+            assertThat(surface.reason()).as("case %s reason", c.path("id").asText())
+                    .isEqualTo(c.path("expectedReason").asText());
         }
     }
 

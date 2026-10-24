@@ -45,10 +45,25 @@ class AgentRoleTest {
     @Test
     @DisplayName("行业门优先于角色面：非电商域任何角色都不见电商工具")
     void keepsIndustryGateAheadOfRoleSurface() {
-        assertThat(ToolSurfacePolicy.toolsFor(AgentRole.AFTER_SALES, Domain.HOTEL, Intent.ACTION_REFUND))
-                .isEmpty();
-        assertThat(ToolSurfacePolicy.toolsFor(AgentRole.PRE_SALES, Domain.HOTEL, Intent.POLICY_HOTEL))
-                .isEmpty();
+        var hotelAfterSales = ToolSurfacePolicy.decide(AgentRole.AFTER_SALES, Domain.HOTEL, Intent.ACTION_REFUND);
+        var hotelPreSales = ToolSurfacePolicy.decide(AgentRole.PRE_SALES, Domain.HOTEL, Intent.POLICY_HOTEL);
+        assertThat(hotelAfterSales.tools()).isEmpty();
+        assertThat(hotelAfterSales.reason()).isEqualTo("DENIED:DOMAIN_ISOLATION");
+        assertThat(hotelPreSales.tools()).isEmpty();
+        assertThat(hotelPreSales.reason()).isEqualTo("DENIED:DOMAIN_ISOLATION");
+    }
+
+    @Test
+    @DisplayName("工具面判定输出可解释原因：售前只读、政策不配工具、动态意图给动作面")
+    void explainsToolSurfaceReasons() {
+        assertThat(ToolSurfacePolicy.decide(AgentRole.PRE_SALES, Domain.ECOMMERCE, Intent.POLICY_SHIPPING).reason())
+                .isEqualTo("DENIED:PRE_SALES_READ_ONLY");
+        assertThat(ToolSurfacePolicy.decide(AgentRole.AFTER_SALES, Domain.ECOMMERCE, Intent.POLICY_RETURN).reason())
+                .isEqualTo("DENIED:POLICY_CONSULTATION");
+        assertThat(ToolSurfacePolicy.decide(AgentRole.AFTER_SALES, Domain.ECOMMERCE, Intent.ACTION_REFUND).reason())
+                .isEqualTo("ALLOWED:AFTER_SALES_ACTION_SURFACE");
+        assertThat(ToolSurfacePolicy.decide(AgentRole.AFTER_SALES, Domain.ECOMMERCE, Intent.UNKNOWN).reason())
+                .isEqualTo("ALLOWED:UNKNOWN_DYNAMIC_SURFACE");
     }
 
     @Test
