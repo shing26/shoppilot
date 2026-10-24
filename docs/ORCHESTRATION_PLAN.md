@@ -1,6 +1,6 @@
 # Orchestration Rollout Plan · ADR 0072
 
-> Status: **Proposed**（2026-10-24 计划稿）
+> Status: **Executing**（2026-10-24 计划稿；H1 已实现）
 > Baseline: `7f84c03 feat(orchestration): add role kernel and directed handoff contract`
 > Baseline CI: `40095780918` success；JVM **653 tests / 107 suites**
 > Authority: [ADR 0072](adr/0072-agent-handoff-graph-and-role-kernel.md)
@@ -60,12 +60,12 @@
 
 **Tasks:**
 
-- [ ] H1-T1 扩展 `SessionStore.Session` 与序列化兼容测试
-- [ ] H1-T2 定义 `HandoffTrigger`：区分“普通换话题”与“同诉求升级”
-- [ ] H1-T3 在 `AgentStateMachine` 接入 session role / trail
-- [ ] H1-T4 允许 Handoff 时写 trace `HANDOFF=...`、递增 `shoppilot_handoff_total`
-- [ ] H1-T5 Handoff 后不重复追问已确认槽位
-- [ ] H1-T6 扩展 `eval/handoff-golden.jsonl`，新增跨轮升级 / 换话题不升级判据
+- [x] H1-T1 扩展 `SessionStore.Session` 与序列化兼容测试
+- [x] H1-T2 定义 `HandoffTrigger`：区分“普通换话题”与“同诉求升级”
+- [x] H1-T3 在 `AgentStateMachine` 接入 session role / trail
+- [x] H1-T4 允许 Handoff 时写 trace `HANDOFF=...`、递增 `shoppilot_handoff_total`
+- [x] H1-T5 Handoff 后不重复追问已确认槽位
+- [x] H1-T6 扩展 `eval/handoff-golden.jsonl`，新增跨轮升级 / 换话题不升级判据
 
 **Acceptance:**
 
@@ -76,6 +76,9 @@
 - JVM verify 全绿；新增指标可按 `from/to/result` 查询。
 
 **Estimated size:** M。风险主要在 session 兼容与“换话题 vs 升级”的判据，不在模型。
+
+**Execution status (2026-10-24):** H1 已实现。全量 JVM **663 tests / 109 suites** 全绿；
+活体验证：第 1 轮 `route=PRE_SALES`，第 2 轮 `HANDOFF=PRE_SALES->AFTER_SALES depth=0 result=ALLOWED`。
 
 ---
 

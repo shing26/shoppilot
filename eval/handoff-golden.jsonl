@@ -9,3 +9,9 @@
 {"id":"H-EDGE-002","kind":"handoff","from":"AFTER_SALES","to":"PRE_SALES","depth":0,"expectedResult":"NO_EDGE"}
 {"id":"H-EDGE-003","kind":"handoff","from":"PRE_SALES","to":"AFTER_SALES","depth":1,"expectedResult":"DEPTH_EXHAUSTED"}
 {"id":"H-EDGE-004","kind":"handoff","from":"AFTER_SALES","to":"AFTER_SALES","depth":0,"expectedResult":"SAME_ROLE"}
+{"id":"H-TRIGGER-001","kind":"trigger","from":"PRE_SALES","to":"AFTER_SALES","actionEvidence":true,"depth":0,"expectedKind":"ALLOWED","expectedRole":"AFTER_SALES"}
+{"id":"H-TRIGGER-002","kind":"trigger","from":"PRE_SALES","to":"AFTER_SALES","actionEvidence":false,"depth":0,"expectedKind":"ROUTE_RESET","expectedRole":"AFTER_SALES"}
+{"id":"H-TRIGGER-003","kind":"trigger","from":"AFTER_SALES","to":"PRE_SALES","actionEvidence":false,"depth":0,"expectedKind":"ROUTE_RESET","expectedRole":"PRE_SALES"}
+{"id":"H-TRIGGER-004","kind":"trigger","from":null,"to":"PRE_SALES","actionEvidence":false,"depth":0,"expectedKind":"ROUTE_RESET","expectedRole":"PRE_SALES"}
+{"id":"H-TRIGGER-005","kind":"trigger","from":"AFTER_SALES","to":"AFTER_SALES","actionEvidence":true,"depth":0,"expectedKind":"ROUTE_RESET","expectedRole":"AFTER_SALES"}
+{"id":"H-TRIGGER-006","kind":"trigger","from":"PRE_SALES","to":"AFTER_SALES","actionEvidence":true,"depth":1,"expectedKind":"BLOCKED","expectedRole":"AFTER_SALES","expectedBlocked":"DEPTH_EXHAUSTED"}

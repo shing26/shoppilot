@@ -48,7 +48,8 @@ class HandoffGoldenSetTest {
         List<String> ids = cases.stream().map(c -> c.path("id").asText()).toList();
         assertThat(ids).contains(
                 "H-ROUTE-001", "H-ROUTE-003", "H-ROUTE-005",
-                "H-INDUSTRY-001", "H-EDGE-001", "H-EDGE-002", "H-EDGE-003", "H-EDGE-004");
+                "H-INDUSTRY-001", "H-EDGE-001", "H-EDGE-002", "H-EDGE-003", "H-EDGE-004",
+                "H-TRIGGER-001", "H-TRIGGER-003", "H-TRIGGER-004", "H-TRIGGER-006");
     }
 
     @Test
@@ -88,6 +89,35 @@ class HandoffGoldenSetTest {
                     : decision.blockedReason().map(HandoffBlockReason::name).orElse("UNEXPECTED");
             assertThat(actual).as("case %s handoff", c.path("id").asText())
                     .isEqualTo(c.path("expectedResult").asText());
+        }
+    }
+
+    @Test
+    @DisplayName("逐条重算 H1 触发器：同诉求升级与普通换话题不混同")
+    void recomputesEveryTriggerCase() {
+        HandoffTrigger trigger = new HandoffTrigger();
+        for (JsonNode c : cases) {
+            if (!"trigger".equals(c.path("kind").asText())) {
+                continue;
+            }
+            AgentRole previous = c.path("from").isMissingNode() || c.path("from").isNull()
+                    ? null : AgentRole.valueOf(c.path("from").asText());
+            AgentRole requested = AgentRole.valueOf(c.path("to").asText());
+            List<HandoffStep> trail = new ArrayList<>();
+            for (int i = 0; i < c.path("depth").asInt(); i++) {
+                trail.add(HandoffStep.allowed(AgentRole.PRE_SALES, AgentRole.AFTER_SALES, i, i + 1L));
+            }
+            var decision = trigger.evaluate(previous, requested, c.path("actionEvidence").asBoolean(),
+                    trail, c.path("depth").asLong() + 100);
+
+            assertThat(decision.kind().name()).as("case %s kind", c.path("id").asText())
+                    .isEqualTo(c.path("expectedKind").asText());
+            assertThat(decision.effectiveRole().name()).as("case %s role", c.path("id").asText())
+                    .isEqualTo(c.path("expectedRole").asText());
+            if (!c.path("expectedBlocked").isMissingNode()) {
+                assertThat(decision.blockedReason()).as("case %s blocked", c.path("id").asText())
+                        .contains(HandoffBlockReason.valueOf(c.path("expectedBlocked").asText()));
+            }
         }
     }
 

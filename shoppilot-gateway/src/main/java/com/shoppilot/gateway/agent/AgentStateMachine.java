@@ -17,6 +17,8 @@ import com.shoppilot.gateway.llm.LlmException;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
 import com.shoppilot.gateway.orchestration.AgentRole;
+import com.shoppilot.gateway.orchestration.HandoffStep;
+import com.shoppilot.gateway.orchestration.HandoffTrigger;
 import com.shoppilot.gateway.orchestration.RouteContext;
 import com.shoppilot.gateway.orchestration.ToolSurfacePolicy;
 import com.shoppilot.gateway.sentiment.SentimentGate;
@@ -93,6 +95,7 @@ public class AgentStateMachine {
     private final Counter multiToolCallCounter;
     private final Counter reflectionTriggeredCounter;
     private final Counter reflectionExhaustedCounter;
+    private final HandoffTrigger handoffTrigger = new HandoffTrigger();
 
     /**
      * 无店铺人格的构造重载：只给既有单测用（它们不关心提示词里的店铺段）。
@@ -274,12 +277,32 @@ public class AgentStateMachine {
         TriageResult triage = outcome.result();
         step(trace, sink, AgentState.TRIAGE,
                 "layer=" + triage.layer() + " intent=" + triage.intent() + " admissible=" + triage.cacheAdmissible());
-        // ADR 0072：路由是确定性纯函数，不新增 LLM 调用。这里只裁剪角色工具面；
-        // HandoffGraph 的运行时触发留给下一个切片，本切片先把 route/toolSurface 变成可观测事实。
-        AgentRole route = AgentRole.routeFor(triage.intent());
+        // ADR 0072 H1：Router 仍是确定性纯函数；只有“上一轮售前 + 本轮需要售后工具”才算同诉求升级。
+        // 普通换话题按 route reset 处理，不落工单、不计 blocked（H2 再接 blocked 出口）。
+        AgentRole requested = AgentRole.routeFor(triage.intent());
+        boolean actionEvidence = triage.entityFound() || (triage.intent() != null && triage.intent().isAction());
+        HandoffTrigger.Decision routing = handoffTrigger.evaluate(session.currentRole(), requested, actionEvidence,
+                session.handoffTrail(), System.currentTimeMillis());
+        AgentRole route = routing.effectiveRole();
+        List<HandoffStep> trail = new ArrayList<>(session.handoffTrail());
+        if (routing.kind() == HandoffTrigger.Kind.ALLOWED) {
+            routing.step().ifPresent(trail::add);
+            registry.counter("shoppilot_handoff_total",
+                    "from", routing.step().orElseThrow().from(),
+                    "to", routing.step().orElseThrow().to(),
+                    "result", "ALLOWED").increment();
+            step(trace, sink, AgentState.TRIAGE, "HANDOFF=" + routing.step().orElseThrow().from()
+                    + "->" + routing.step().orElseThrow().to()
+                    + " depth=" + routing.step().orElseThrow().depth() + " result=ALLOWED");
+        }
         registry.counter("shoppilot_agent_role_total", "role", route.name()).increment();
         step(trace, sink, AgentState.TRIAGE, "route=" + route.name() + " toolSurface=" + route.toolSurface());
-        RouteContext.set(route, List.of());
+        SessionStore.Session routedSession = session.withRouting(route, trail);
+        if (!routedSession.equals(session)) {
+            sessionStore.save(tenantId, customerId, routedSession);
+        }
+        session = routedSession;
+        RouteContext.set(route, trail);
 
         if (triage.intent() == Intent.ESCALATE) {
             sink.meta(conversationId, Intent.ESCALATE, CacheService.Layer.NONE);
@@ -340,7 +363,7 @@ public class AgentStateMachine {
             try {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
                 ModelRun run = runModelPath(triage, lookup, query, idempotencyToken, tenantId, customerId,
-                        conversationId, session, epoch, domain, trace, sink, systemPrompt, styleTier, usage);
+                        conversationId, session, epoch, domain, route, trace, sink, systemPrompt, styleTier, usage);
                 // 只有真的写回缓存的那条答案才广播给等待者，降级话术一律不共享（ADR 0006）
                 published = run.shareable();
                 singleFlight.publish(flightKey, run.cacheEntry());
@@ -354,7 +377,7 @@ public class AgentStateMachine {
 
         sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
         return runModelPath(triage, CacheService.Lookup.disabled(), query, idempotencyToken, tenantId, customerId,
-                conversationId, session, epoch, domain, trace, sink, systemPrompt, styleTier, usage).result();
+                conversationId, session, epoch, domain, route, trace, sink, systemPrompt, styleTier, usage).result();
     }
 
     /**
@@ -375,10 +398,9 @@ public class AgentStateMachine {
     private ModelRun runModelPath(TriageResult triage, CacheService.Lookup lookup,
                                   String query, String idempotencyToken, String tenantId, String customerId,
                                   String conversationId, SessionStore.Session session, long epoch, Domain domain,
-                                  List<AgentResult.TraceStep> trace, EventSink sink, String systemPrompt,
-                                  StyleService.Tier styleTier, TokenUsage usage) {
+                                  AgentRole route, List<AgentResult.TraceStep> trace, EventSink sink,
+                                  String systemPrompt, StyleService.Tier styleTier, TokenUsage usage) {
         Intent intent = triage.intent();
-        AgentRole route = AgentRole.routeFor(intent);
         String rolePrompt = route.promptSegment();
         List<LlmTypes.Message> messages = new ArrayList<>();
         messages.add(LlmTypes.Message.system(rolePrompt.isBlank() ? systemPrompt : systemPrompt + "\n" + rolePrompt));
@@ -829,7 +851,8 @@ public class AgentStateMachine {
         step(trace, sink, AgentState.SLOT_ASK, dispatch.tool() + " 缺 " + slot);
         sink.slotAsk(slot, question);
         sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
-                dispatch.tool().apiName(), new LinkedHashMap<>(Map.of("askedSlot", slot)), asks));
+                dispatch.tool().apiName(), new LinkedHashMap<>(Map.of("askedSlot", slot)), asks,
+                session.currentRole(), session.handoffTrail()));
         return new AgentResult(question, dispatch.tool().intent(), "SLOT", CacheService.Layer.NONE, List.of(), trace,
                 null, null, true, usage.prompt(), usage.completion(), false, false, promptCatalog.version(), List.of(),
                 AgentResult.ContextComposition.NONE, List.of());
@@ -918,7 +941,7 @@ public class AgentStateMachine {
             }
             sink.slotAsk(slot, question);
             sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
-                    tool.apiName(), arguments, asks));
+                    tool.apiName(), arguments, asks, session.currentRole(), session.handoffTrail()));
             return new AgentResult(question, tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(), trace,
                     null, null, true, usage.prompt(), usage.completion(), false, false, promptCatalog.version(),
                     List.of(), AgentResult.ContextComposition.NONE, List.of());
@@ -1228,7 +1251,8 @@ public class AgentStateMachine {
     }
 
     private static SessionStore.Session clearPending(SessionStore.Session session) {
-        return new SessionStore.Session(session.conversationId(), session.turns(), null, new LinkedHashMap<>(), 0);
+        return new SessionStore.Session(session.conversationId(), session.turns(), null, new LinkedHashMap<>(), 0,
+                session.currentRole(), session.handoffTrail());
     }
 
     /**

@@ -3,6 +3,8 @@ package com.shoppilot.gateway.agent;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.orchestration.AgentRole;
+import com.shoppilot.gateway.orchestration.HandoffStep;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -34,16 +36,43 @@ public class SessionStore {
     public record Turn(String role, String text) {
     }
 
+    /**
+     * 会话内的编排状态（ADR 0072 H1）。
+     *
+     * <p>{@code currentRole} 为 null 表示旧会话 / 尚未路由；{@code handoffTrail} 只保留最近几步。
+     * 旧 JSON 缺这两个字段时按“无角色 / 空 trail”读取，不迁移旧键。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Session(String conversationId, List<Turn> turns, String pendingTool,
-                          Map<String, Object> pendingArgs, int slotAskCount) {
+                          Map<String, Object> pendingArgs, int slotAskCount,
+                          AgentRole currentRole, List<HandoffStep> handoffTrail) {
+
+        private static final int MAX_TRAIL = 5;
+
+        /** 兼容既有调用面：不带编排状态的老构造按“未路由 / 空 trail”处理。 */
+        public Session(String conversationId, List<Turn> turns, String pendingTool,
+                       Map<String, Object> pendingArgs, int slotAskCount) {
+            this(conversationId, turns, pendingTool, pendingArgs, slotAskCount, null, List.of());
+        }
+
+        public Session {
+            handoffTrail = handoffTrail == null ? List.of() : List.copyOf(handoffTrail);
+        }
 
         public static Session empty(String conversationId) {
-            return new Session(conversationId, new ArrayList<>(), null, new LinkedHashMap<>(), 0);
+            return new Session(conversationId, new ArrayList<>(), null, new LinkedHashMap<>(), 0, null, List.of());
         }
 
         public boolean hasPending() {
             return pendingTool != null && !pendingTool.isBlank();
+        }
+
+        public Session withRouting(AgentRole role, List<HandoffStep> trail) {
+            List<HandoffStep> bounded = trail == null ? List.of() : List.copyOf(trail);
+            if (bounded.size() > MAX_TRAIL) {
+                bounded = bounded.subList(bounded.size() - MAX_TRAIL, bounded.size());
+            }
+            return new Session(conversationId, turns, pendingTool, pendingArgs, slotAskCount, role, bounded);
         }
     }
 
@@ -109,7 +138,7 @@ public class SessionStore {
             }
         }
         return new Session(session.conversationId(), new ArrayList<>(window), session.pendingTool(),
-                session.pendingArgs(), session.slotAskCount());
+                session.pendingArgs(), session.slotAskCount(), session.currentRole(), session.handoffTrail());
     }
 
     private static String key(String tenantId, String customerId, String conversationId) {
