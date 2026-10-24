@@ -118,6 +118,9 @@ class HandoffGoldenSetTest {
                 assertThat(decision.blockedReason()).as("case %s blocked", c.path("id").asText())
                         .contains(HandoffBlockReason.valueOf(c.path("expectedBlocked").asText()));
             }
+            boolean expectedTicket = c.path("expectedTicket").asBoolean(false);
+            assertThat(decision.kind() == HandoffTrigger.Kind.BLOCKED).as("case %s ticket", c.path("id").asText())
+                    .isEqualTo(expectedTicket);
         }
     }
 

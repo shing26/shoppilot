@@ -17,6 +17,8 @@ import com.shoppilot.gateway.llm.LlmException;
 import com.shoppilot.gateway.llm.LlmGateway;
 import com.shoppilot.gateway.llm.LlmTypes;
 import com.shoppilot.gateway.orchestration.AgentRole;
+import com.shoppilot.gateway.orchestration.HandoffBlockReason;
+import com.shoppilot.gateway.orchestration.HandoffGraph;
 import com.shoppilot.gateway.orchestration.HandoffStep;
 import com.shoppilot.gateway.orchestration.HandoffTrigger;
 import com.shoppilot.gateway.orchestration.RouteContext;
@@ -280,8 +282,10 @@ public class AgentStateMachine {
         // ADR 0072 H1：Router 仍是确定性纯函数；只有“上一轮售前 + 本轮需要售后工具”才算同诉求升级。
         // 普通换话题按 route reset 处理，不落工单、不计 blocked（H2 再接 blocked 出口）。
         AgentRole requested = AgentRole.routeFor(triage.intent());
+        // blocked trace / metric 必须用**升级前**的角色；session 角色在后面才推进到请求角色。
+        AgentRole previousRole = session.currentRole();
         boolean actionEvidence = triage.entityFound() || (triage.intent() != null && triage.intent().isAction());
-        HandoffTrigger.Decision routing = handoffTrigger.evaluate(session.currentRole(), requested, actionEvidence,
+        HandoffTrigger.Decision routing = handoffTrigger.evaluate(previousRole, requested, actionEvidence,
                 session.handoffTrail(), System.currentTimeMillis());
         AgentRole route = routing.effectiveRole();
         List<HandoffStep> trail = new ArrayList<>(session.handoffTrail());
@@ -302,7 +306,29 @@ public class AgentStateMachine {
             sessionStore.save(tenantId, customerId, routedSession);
         }
         session = routedSession;
-        RouteContext.set(route, trail);
+
+        // ADR 0072 H2：blocked 只属于 active handoff；普通换话题在 trigger 里已是 route reset。
+        // 本轮不再进模型/工具推理，落可查工单；session 角色推进到请求角色，避免同一诉求反复打 blocked 单。
+        if (routing.kind() == HandoffTrigger.Kind.BLOCKED) {
+            HandoffBlockReason blockedReason = routing.blockedReason().orElse(HandoffBlockReason.NO_EDGE);
+            registry.counter("shoppilot_handoff_total",
+                    "from", previousRole == null ? "NONE" : previousRole.name(),
+                    "to", requested.name(),
+                    "result", "BLOCKED").increment();
+            step(trace, sink, AgentState.TRIAGE, "HANDOFF_BLOCKED="
+                    + (previousRole == null ? "NONE" : previousRole.name())
+                    + "->" + requested.name() + " reason=" + blockedReason.name());
+            RouteContext.set(new RouteContext.Snapshot(requested, trail, confirmedSlots(triage.intent(), query),
+                    triage.intent() == null ? null : triage.intent().name(), blockedReason,
+                    promptCatalog.version(), HandoffGraph.POLICY_VERSION));
+            sink.meta(conversationId, Intent.ESCALATE, CacheService.Layer.NONE);
+            return fallback(AgentState.TRIAGE, trace, sink, FallbackReason.INTENT_UNRESOLVED, query,
+                    "handoff blocked reason=" + blockedReason.name(), styleTier, usage);
+        }
+
+        RouteContext.set(new RouteContext.Snapshot(route, trail, confirmedSlots(triage.intent(), query),
+                triage.intent() == null ? null : triage.intent().name(), null,
+                promptCatalog.version(), HandoffGraph.POLICY_VERSION));
 
         if (triage.intent() == Intent.ESCALATE) {
             sink.meta(conversationId, Intent.ESCALATE, CacheService.Layer.NONE);
@@ -892,6 +918,34 @@ public class AgentStateMachine {
         return new DerivedCall(tool, slots, missing,
                 actionable.isEmpty() ? null
                         : new ToolDispatcher.Dispatch(tool, null, null, actionable, null, false, false));
+    }
+
+    /**
+     * Handoff / 落单 payload 的已确认槽位（H2）。只收买家本话说出的标识，不收检索条款或助手编造值；
+     * 电话进 payload 前打码，避免编排观测面变成第二份 PII 账本。
+     */
+    private static Map<String, String> confirmedSlots(Intent intent, String query) {
+        Map<String, String> slots = new LinkedHashMap<>();
+        if (query == null || query.isBlank()) {
+            return slots;
+        }
+        java.util.regex.Matcher order = java.util.regex.Pattern.compile("(?<!\\d)(\\d{5,8})(?!\\d)").matcher(query);
+        if (order.find()) {
+            slots.put("orderNo", order.group(1));
+        }
+        if (intent == Intent.ACTION_ADDRESS) {
+            java.util.regex.Matcher phone =
+                    java.util.regex.Pattern.compile("(?<!\\d)(1[3-9]\\d{9})(?!\\d)").matcher(query);
+            if (phone.find()) {
+                slots.put("receiverPhone", maskPhone(phone.group(1)));
+            }
+        }
+        return slots;
+    }
+
+    private static String maskPhone(String phone) {
+        return phone.length() <= 7 ? phone.substring(0, Math.max(1, phone.length() - 2)) + "**"
+                : phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
     }
 
     /** 槽位抽取：能正则定死的绝不打模型，这一条同时服务派生路径与续办路径。 */

@@ -88,6 +88,38 @@ public class FallbackService {
      * 带优先级的落单：情绪升级（ADR 0034）传 "high"，人工队列按此排序；
      * 其余降级不传（null），工单表按原口径排队。
      */
+    /**
+     * 编排事实的受控投影（ADR 0072 H2）：只带事实、裁长度、不展开工具参数。
+     * 独立成包级可见方法是为了让 payload schema 有 JVM 判据，不必起 HTTP。
+     */
+    static Map<String, Object> orchestrationPayload(RouteContext.Snapshot route) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (route == null || route.role() == null) {
+            return payload;
+        }
+        payload.put("agentRole", route.role().name());
+        payload.put("toolSurface", route.role().toolSurface());
+        if (!route.trail().isEmpty()) {
+            payload.put("handoffTrail", route.trail().stream().limit(5).toList());
+        }
+        if (!route.confirmedSlots().isEmpty()) {
+            payload.put("confirmedSlots", route.confirmedSlots());
+        }
+        if (route.normalizedIntent() != null) {
+            payload.put("normalizedIntent", route.normalizedIntent());
+        }
+        if (route.blockedReason() != null) {
+            payload.put("blockedReason", route.blockedReason().name());
+        }
+        if (route.promptVersion() != null) {
+            payload.put("promptVersion", route.promptVersion());
+        }
+        if (route.policyVersion() != null) {
+            payload.put("policyVersion", route.policyVersion());
+        }
+        return payload;
+    }
+
     public Optional<String> escalate(FallbackReason reason, String userQuery, String transcript, String priority) {
         Counter.builder("shoppilot_fallback_total").tag("reason", reason.name()).register(registry).increment();
         TenantContext.Identity identity = TenantContext.current();
@@ -107,13 +139,23 @@ public class FallbackService {
             payload.put("contact", contact);
         }
         // ADR 0072：路由事实随降级单带走；没跑到路由层就不伪造。
-        RouteContext.Snapshot route = RouteContext.snapshot();
-        if (route.role() != null) {
-            payload.put("agentRole", route.role().name());
-            payload.put("toolSurface", route.role().toolSurface());
-        }
-        if (!route.trail().isEmpty()) {
-            payload.put("handoffTrail", route.trail().stream().limit(5).toList());
+        Map<String, Object> orchestration = orchestrationPayload(RouteContext.snapshot());
+        if (!orchestration.isEmpty()) {
+            // 老契约只发 reason 时，工单服务会按来源自包含处理并丢弃 payload。
+            // ticket.payload 的跨进程契约是 JSON 字符串；这里把编排事实整体装进该字段。
+            if (orchestration.containsKey("blockedReason")) {
+                log.warn("blocked handoff ticket orchestration={}", orchestration);
+            }
+            String orchestrationJson;
+            try {
+                orchestrationJson = mapper.writeValueAsString(orchestration);
+            } catch (com.fasterxml.jackson.core.JsonProcessingException serializationFailure) {
+                log.warn("blocked handoff orchestration serialization failed: {}",
+                        serializationFailure.getMessage());
+                orchestrationJson = "{\"error\":\"serialization_failed\"}";
+            }
+            payload.put("source", "DEGRADE");
+            payload.put("payload", orchestrationJson);
         }
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(config.baseUrl() + "/api/tickets"))

@@ -95,16 +95,16 @@
   - `blockedReason`（封闭枚举）
   - `confirmedSlots`（脱敏后）
   - `route` / `toolSurface`
-- 新增 `shoppilot_handoff_blocked_total{from,to,reason}`。
+- 新增 `shoppilot_handoff_total{from,to,result=BLOCKED}`；reason 记入 trace 与工单 payload。
 - trace 记录 `HANDOFF_BLOCKED=from->to reason=...`。
 
 **Tasks:**
 
-- [ ] H2-T1 定义 active handoff 判据，避免 topic reset 误判
-- [ ] H2-T2 `HandoffGraph` 拒绝结果接入工单出口
-- [ ] H2-T3 `FallbackService` 写入 handoff payload
-- [ ] H2-T4 工单服务侧校验 payload 长度与字段
-- [ ] H2-T5 golden 增加 depth 超限 / no edge / same role 落单判据
+- [x] H2-T1 定义 active handoff 判据，避免 topic reset 误判
+- [x] H2-T2 `HandoffGraph` 拒绝结果接入工单出口
+- [x] H2-T3 `FallbackService` 写入 handoff payload
+- [x] H2-T4 工单服务侧校验 payload 长度与字段
+- [x] H2-T5 golden 增加 depth 超限 / no edge / same role 落单判据
 
 **Acceptance:**
 
@@ -114,6 +114,10 @@
 - JVM verify 全绿；工单详情不泄露 transcript 之外的新敏感面。
 
 **Estimated size:** M。
+
+**Execution status (2026-10-24/25):** H2 已实现。blocked 只对 active handoff 生效；
+工单 payload 以 JSON 字符串落入 `tickets.payload`，活体验证包含 `blockedReason=DEPTH_EXHAUSTED`、
+trail、`confirmedSlots.orderNo`。全量 JVM **668 tests / 112 suites** 全绿。
 
 ---
 

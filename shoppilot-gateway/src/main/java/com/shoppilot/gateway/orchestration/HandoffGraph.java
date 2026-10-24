@@ -11,6 +11,8 @@ import java.util.Optional;
 public final class HandoffGraph {
 
     public static final int MAX_HANDOFF_DEPTH = 1;
+    /** 工单 payload 里的 policy 版本；现在只有这一份 ADR。 */
+    public static final String POLICY_VERSION = "adr-0072";
 
     public record Decision(Optional<AgentRole> target, Optional<HandoffBlockReason> blockedReason) {
 
