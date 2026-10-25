@@ -108,3 +108,72 @@ tests:
       - eval_time: 12m
         alertname: ShoppilotFallbackRatioHigh
         exp_alerts: []
+
+  # ---- H4：blocked Handoff（rate > 0，持续 5 分钟）--------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_handoff_blocked_total{from="PRE_SALES",to="AFTER_SALES",reason="DEPTH_EXHAUSTED"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ShoppilotBlockedHandoff
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "ShopPilot 出现被拒绝的 Handoff"
+              description: "5 分钟窗口内 shoppilot_handoff_blocked_total 有增长；reason 分布见 quality sidecar。"
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_handoff_blocked_total{from="PRE_SALES",to="AFTER_SALES",reason="DEPTH_EXHAUSTED"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ShoppilotBlockedHandoff
+        exp_alerts: []
+
+  # ---- H4：工具成功后仍降级（increase > 0，持续 10 分钟）-------------------------
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_quality_tool_success_fallback_total'
+        values: '0+1x16'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ShoppilotToolSuccessFallback
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "ShopPilot 工具成功后仍降级"
+              description: "15 分钟窗口内存在工具拿到结果但会话仍落降级工单的模式。"
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_quality_tool_success_fallback_total'
+        values: '0x16'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ShoppilotToolSuccessFallback
+        exp_alerts: []
+
+  # ---- H4：重复追问槽位（increase > 0，持续 10 分钟）----------------------------
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_quality_slot_asks_repeated_total'
+        values: '0+2x16'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ShoppilotRepeatedSlotAsks
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "ShopPilot 出现重复追问槽位"
+              description: "15 分钟窗口内同一会话第二次及以上追问槽位的次数有增长。"
+  - interval: 1m
+    input_series:
+      - series: 'shoppilot_quality_slot_asks_repeated_total'
+        values: '0x16'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ShoppilotRepeatedSlotAsks
+        exp_alerts: []

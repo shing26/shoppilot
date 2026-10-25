@@ -35,6 +35,7 @@ import com.shoppilot.tool.ToolName;
 import com.shoppilot.tool.view.ToolStatus;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 有界 Agent 状态机（ADR 0008）。
@@ -158,7 +160,12 @@ public class AgentStateMachine {
                 .tag("outcome", "triggered").register(registry);
         this.reflectionExhaustedCounter = Counter.builder("shoppilot_reflection_total")
                 .tag("outcome", "exhausted").register(registry);
+        // H4：sidecar 的口径源。都不是 LLM 调用；blocked reason / friction 只进指标与工单，不改路由。
+        this.handoffDecisionTimer = Timer.builder("shoppilot_handoff_decision_seconds")
+                .description("Handoff 触发器判定耗时").register(registry);
     }
+
+    private final Timer handoffDecisionTimer;
 
     /**
      * 本请求已经发生的 LLM 用量（round35 票 145 / R12 登记债的触发条件）。
@@ -286,8 +293,10 @@ public class AgentStateMachine {
         // blocked trace / metric 必须用**升级前**的角色；session 角色在后面才推进到请求角色。
         AgentRole previousRole = session.currentRole();
         boolean actionEvidence = triage.entityFound() || (triage.intent() != null && triage.intent().isAction());
+        long handoffDecisionStarted = System.nanoTime();
         HandoffTrigger.Decision routing = handoffTrigger.evaluate(previousRole, requested, actionEvidence,
                 session.handoffTrail(), System.currentTimeMillis());
+        handoffDecisionTimer.record(System.nanoTime() - handoffDecisionStarted, TimeUnit.NANOSECONDS);
         AgentRole route = routing.effectiveRole();
         List<HandoffStep> trail = new ArrayList<>(session.handoffTrail());
         if (routing.kind() == HandoffTrigger.Kind.ALLOWED) {
@@ -318,6 +327,10 @@ public class AgentStateMachine {
                     "from", previousRole == null ? "NONE" : previousRole.name(),
                     "to", requested.name(),
                     "result", "BLOCKED").increment();
+            registry.counter("shoppilot_handoff_blocked_total",
+                    "from", previousRole == null ? "NONE" : previousRole.name(),
+                    "to", requested.name(),
+                    "reason", blockedReason.name()).increment();
             step(trace, sink, AgentState.TRIAGE, "HANDOFF_BLOCKED="
                     + (previousRole == null ? "NONE" : previousRole.name())
                     + "->" + requested.name() + " reason=" + blockedReason.name());
@@ -877,6 +890,9 @@ public class AgentStateMachine {
         }
         String slot = dispatch.missingSlots().get(0);
         String question = dispatcher.question(dispatch.tool(), dispatch.missingSlots());
+        if (session.slotAskCount() > 0) {
+            registry.counter("shoppilot_quality_slot_asks_repeated_total").increment();
+        }
         step(trace, sink, AgentState.SLOT_ASK, dispatch.tool() + " 缺 " + slot);
         sink.slotAsk(slot, question);
         sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
@@ -997,6 +1013,7 @@ public class AgentStateMachine {
                         styleTier, usage);
             }
             sink.slotAsk(slot, question);
+            registry.counter("shoppilot_quality_slot_asks_repeated_total").increment();
             sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
                     tool.apiName(), arguments, asks, session.currentRole(), session.handoffTrail()));
             return new AgentResult(question, tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(), trace,
@@ -1065,10 +1082,25 @@ public class AgentStateMachine {
         }
     }
 
+    /** H4 friction：只认确实拿到结果的工具步；失败 / retry / 拦截不算“修好但仍留不住人”。 */
+    private static boolean toolSucceededInTrace(List<AgentResult.TraceStep> trace) {
+        return trace.stream()
+                .filter(step -> AgentState.TOOL_EXEC.name().equals(step.state()))
+                .map(AgentResult.TraceStep::detail)
+                .filter(detail -> detail != null)
+                .anyMatch(detail -> detail.endsWith("=OK")
+                        || detail.endsWith("=IDEMPOTENT_REPLAY")
+                        || detail.endsWith("=PENDING_APPROVAL"));
+    }
+
     private AgentResult fallback(AgentState from, List<AgentResult.TraceStep> trace, EventSink sink,
                                  FallbackReason reason, String query, String detail, StyleService.Tier styleTier,
                                  TokenUsage usage) {
         step(trace, sink, AgentState.FALLBACK, reason.name() + (detail == null ? "" : " " + detail));
+        // H4 friction：工具真的拿到了结果但本轮仍降级。它不自动改路由，只给 sidecar 找“修好却留不住人”的模式。
+        if (toolSucceededInTrace(trace)) {
+            registry.counter("shoppilot_quality_tool_success_fallback_total").increment();
+        }
         // 情绪升级单进人工队列时带 high 优先级（ADR 0034）；其余降级按原口径排队
         Optional<String> ticket = reason == FallbackReason.EMOTION_ESCALATION
                 ? fallbackService.escalate(reason, query, detail, "high")

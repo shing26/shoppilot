@@ -183,10 +183,10 @@ handoff golden 扩到 23 条。全量 JVM **674 tests / 114 suites** 全绿。
 
 **Tasks:**
 
-- [ ] H4-T1 定义质检读数口径
-- [ ] H4-T2 从 Redis audit / metrics 汇总只读报表
-- [ ] H4-T3 为异常模式设告警阈值
-- [ ] H4-T4 登记哪些发现可以触发后续 ADR
+- [x] H4-T1 定义质检读数口径
+- [x] H4-T2 从 Redis audit / metrics 汇总只读报表
+- [x] H4-T3 为异常模式设告警阈值
+- [x] H4-T4 登记哪些发现可以触发后续 ADR
 
 **Acceptance:**
 
@@ -195,6 +195,11 @@ handoff golden 扩到 23 条。全量 JVM **674 tests / 114 suites** 全绿。
 - 不改请求路径行为。
 
 **Estimated size:** M。
+
+**Execution status (2026-10-25):** H4 已实现。
+`GET /api/v1/support/ops/quality/report` 只读汇总 metrics 与 Redis audit 最近 15 分钟动作；
+新增 blocked handoff / tool-success-fallback / repeated-slot-asks 三条 Prometheus 告警与 promtool 双侧测试。
+Sidecar 不改路由、不进请求路径 LLM。全量 JVM **679 tests / 116 suites** 全绿。
 
 ---
 

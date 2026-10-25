@@ -78,6 +78,8 @@ Consequences:
   及其测试；本机四模块 JVM verify **653 tests / 107 suites** 全绿，路由事实成为后续扩角色的观测基线。
 - 运行时跨会话 Handoff 尚未启用：本片先落“路由 + 工具面 + 契约 + golden set”，避免在
   session 状态、上下文丢失与回切规则未验证前就打开自由迁移。
+- **H4 update（2026-10-25）**：只读 quality sidecar 汇总 metrics 与 Redis audit；
+  blocked / friction 异常模式配 Prometheus 告警。它不自动改路由，也不在请求路径加模型调用。
 - **H3 update（2026-10-25）**：`ToolName` 增加静态 `ToolRiskTier`，`ToolDispatcher` 记录
   `shoppilot_tool_risk_attempts_total{tool,risk,hitl,role}`；`ToolSurfacePolicy.decide`
   输出可解释 reason，状态机 trace 与 golden 共用。授权与 HITL 强制点仍在执行路径。
