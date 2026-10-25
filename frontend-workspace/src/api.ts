@@ -137,6 +137,47 @@ export function listPendingRefunds(session: Session): Promise<ApiResult<RefundIt
   return api<RefundItem[]>('GET', '/refunds/pending', { token: session.token })
 }
 
+// ── 编排质量（ADR 0072 H4 / ADR 0073）───────────────────────────────────────
+
+/** 通用指标行：标签字段随指标名变化，count 恒为次数。 */
+export interface MetricRow {
+  count: number
+  [key: string]: string | number | boolean | null | undefined
+}
+
+export interface QualityReport {
+  generatedAt: string
+  scope: string
+  requests: { total: number; fallbacks: number; fallbackRatio: number }
+  handoff: {
+    rows: MetricRow[]
+    allowed: number
+    blocked: number
+    blockedRatio: number
+    blockedByReason: Record<string, number>
+    decisionSeconds: { count: number; meanSeconds: number; maxSeconds: number }
+  }
+  toolRisk: { rows: MetricRow[] }
+  friction: {
+    toolSuccessFallbacks: number
+    repeatedSlotAsks: number
+    repeatedSlotAsksByPhase: MetricRow[]
+    handoffContextLosses: MetricRow[]
+  }
+  audit: {
+    available: boolean
+    source?: string
+    windowMinutes?: number
+    eventsScanned?: number
+    actions: Record<string, number>
+  }
+}
+
+/** 只读编排质量报表；坐席/管理员登录令牌即可读，不需要页面另填 ops token。 */
+export function qualityReport(session: Session): Promise<ApiResult<QualityReport>> {
+  return api<QualityReport>('GET', '/quality/report', { token: session.token })
+}
+
 /** 审核退款。B3 起只允许坐席/管理员账号，且责任人必须是已验签账号。 */
 export function reviewRefund(
   refundId: number,

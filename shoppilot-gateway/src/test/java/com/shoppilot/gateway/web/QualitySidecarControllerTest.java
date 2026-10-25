@@ -2,8 +2,11 @@ package com.shoppilot.gateway.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.quality.QualitySidecarService;
+import com.shoppilot.tool.identity.UserRole;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +22,11 @@ class QualitySidecarControllerTest {
 
     private static final String OPS_TOKEN = "ops-secret";
     private MockMvc mvc;
+
+    @AfterEach
+    void clearIdentity() {
+        TenantContext.clear();
+    }
 
     @BeforeEach
     void setUp() {
@@ -47,5 +55,25 @@ class QualitySidecarControllerTest {
                 .andExpect(jsonPath("$.scope").value("process-local-cumulative"))
                 .andExpect(jsonPath("$.handoff.blockedRatio").value(0.0d))
                 .andExpect(jsonPath("$.friction.repeatedSlotAsks").value(0.0d));
+    }
+
+    @Test
+    @DisplayName("已验签坐席/管理员可读报表；工作台不再另填 ops token")
+    void allowsVerifiedStaffWithoutOpsToken() throws Exception {
+        TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-quality",
+                UserRole.AGENT, "U001"));
+        mvc.perform(get("/api/v1/support/ops/quality/report"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scope").value("process-local-cumulative"));
+    }
+
+    @Test
+    @DisplayName("买家身份仍不能读质量报表")
+    void rejectsBuyerIdentity() throws Exception {
+        TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-quality",
+                UserRole.BUYER, null));
+        mvc.perform(get("/api/v1/support/ops/quality/report"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").exists());
     }
 }

@@ -16,9 +16,11 @@ import {
   listTickets,
   login,
   messageOf,
+  qualityReport,
   releaseTicket,
   resolveTicket,
   reviewRefund,
+  type QualityReport,
   type RefundItem,
   type Session,
 } from './api'
@@ -58,6 +60,13 @@ const refundDecision = ref<'APPROVE' | 'REJECT'>('APPROVE')
 const refundDialogNote = ref('')
 const refundDialogError = ref('')
 
+// ADR 0073：工作台是三视图控制台；质量视图只读，不做任何干预动作。
+type WorkspaceView = 'queue' | 'refunds' | 'quality'
+const view = ref<WorkspaceView>('queue')
+const quality = ref<QualityReport | null>(null)
+const qualityLoading = ref(false)
+const qualityError = ref('')
+
 let timer = 0
 
 const who = computed(() =>
@@ -84,6 +93,12 @@ const filtered = computed(() => {
 })
 
 const selected = computed(() => tickets.value.find((ticket) => ticket.id === selectedId.value) ?? null)
+
+const blockedReasonEntries = computed(() => entriesOf(quality.value?.handoff.blockedByReason))
+const auditActionEntries = computed(() => entriesOf(quality.value?.audit.actions))
+const handoffContextLossCount = computed(() =>
+  (quality.value?.friction.handoffContextLosses ?? []).reduce((sum, row) => sum + (Number(row.count) || 0), 0),
+)
 
 async function doLogin() {
   loginError.value = ''
@@ -224,6 +239,29 @@ async function confirmResolve() {
   resolveError.value = describe(result, '')
 }
 
+async function refreshQuality() {
+  qualityError.value = ''
+  if (!session.value) {
+    quality.value = null
+    return
+  }
+  qualityLoading.value = true
+  const result = await qualityReport(session.value)
+  qualityLoading.value = false
+  if (result.status !== 200) {
+    qualityError.value = describe(result, '')
+    quality.value = null
+    return
+  }
+  quality.value = result.body as QualityReport
+}
+
+function selectView(next: WorkspaceView) {
+  view.value = next
+  if (next === 'refunds') void refreshRefunds()
+  if (next === 'quality' && (!quality.value || qualityError.value)) void refreshQuality()
+}
+
 async function refreshRefunds() {
   refundError.value = ''
   if (!session.value) {
@@ -321,6 +359,19 @@ function shortId(id: string): string {
   return id.length > 18 ? `…${id.slice(-12)}` : id
 }
 
+function ratioText(value: number | undefined | null): string {
+  return `${((value ?? 0) * 100).toFixed(1)}%`
+}
+
+function secondsText(value: number | undefined | null): string {
+  const millis = (value ?? 0) * 1000
+  return millis >= 1 ? `${millis.toFixed(0)}ms` : `${millis.toFixed(2)}ms`
+}
+
+function entriesOf(map: Record<string, number> | undefined | null): Array<[string, number]> {
+  return Object.entries(map ?? {}).sort((a, b) => b[1] - a[1])
+}
+
 function readStoredSession(): Session | null {
   const raw = sessionStorage.getItem(STORAGE_KEY)
   if (!raw) return null
@@ -380,6 +431,26 @@ function clearStoredSession() {
     </section>
 
     <template v-else>
+      <div class="console">
+        <aside class="side-nav">
+          <p class="nav-title">工作区</p>
+          <button class="nav-item" :class="{ active: view === 'queue' }" type="button" @click="view = 'queue'">
+            <span>工单队列</span><em>{{ tickets.length }}</em>
+          </button>
+          <button class="nav-item" :class="{ active: view === 'refunds' }" type="button" @click="selectView('refunds')">
+            <span>退款审核</span><em>{{ refunds.length }}</em>
+          </button>
+          <button class="nav-item" :class="{ active: view === 'quality' }" type="button" @click="selectView('quality')">
+            <span>编排质量</span><em aria-hidden="true">●</em>
+          </button>
+          <div class="nav-foot">
+            <strong>{{ session.tenantId }}</strong>
+            <span>SLA 每 10 秒刷新</span>
+          </div>
+        </aside>
+
+        <div class="work-area">
+      <section v-if="view === 'queue'" class="view-panel">
       <section class="summary">
         <button class="kpi" :class="{ active: statusFilter === 'ALL' }" type="button" @click="statusFilter = 'ALL'">
           <span>当前队列</span><strong>{{ tickets.length }}</strong>
@@ -393,7 +464,7 @@ function clearStoredSession() {
         <button class="kpi danger" :class="{ active: statusFilter === 'OVERDUE' }" type="button" @click="statusFilter = 'OVERDUE'">
           <span>已超时</span><strong>{{ counts.overdue }}</strong>
         </button>
-        <button class="kpi refund" type="button" @click="refreshRefunds">
+        <button class="kpi refund" type="button" @click="selectView('refunds')">
           <span>待审退款</span><strong>{{ refunds.length }}</strong>
         </button>
       </section>
@@ -505,8 +576,9 @@ function clearStoredSession() {
         </aside>
         <aside v-else class="detail-pane empty-pane">选择左侧一张工单查看详情</aside>
       </div>
+      </section>
 
-      <section class="refund-section">
+      <section v-else-if="view === 'refunds'" class="view-panel">
         <div class="pane-head">
           <h2>退款审核</h2>
           <span class="count">{{ refunds.length }}</span>
@@ -529,6 +601,100 @@ function clearStoredSession() {
           </article>
         </div>
       </section>
+
+      <section v-else class="view-panel quality-panel">
+        <div class="pane-head">
+          <h2>编排质量</h2>
+          <button class="ghost" type="button" :disabled="qualityLoading" @click="refreshQuality">
+            {{ qualityLoading ? '读取中…' : '刷新报表' }}
+          </button>
+        </div>
+        <p class="hint">只读旁路报表：Handoff、工具风险与摩擦模式来自本进程累计指标；坐席动作来自审计流最近 15 分钟。这里不做任何干预动作。</p>
+
+        <p v-if="qualityError" class="err">{{ qualityError }}</p>
+        <p v-if="qualityLoading" class="empty">正在读取编排质量报表…</p>
+
+        <template v-else-if="quality">
+          <div class="quality-kpis">
+            <article class="quality-kpi">
+              <span>请求 / 降级</span>
+              <strong>{{ quality.requests.total }} / {{ quality.requests.fallbacks }}</strong>
+              <small>降级率 {{ ratioText(quality.requests.fallbackRatio) }}</small>
+            </article>
+            <article class="quality-kpi">
+              <span>Handoff 允许 / 拒绝</span>
+              <strong>{{ quality.handoff.allowed }} / {{ quality.handoff.blocked }}</strong>
+              <small>拒绝率 {{ ratioText(quality.handoff.blockedRatio) }}</small>
+            </article>
+            <article class="quality-kpi">
+              <span>决策耗时</span>
+              <strong>{{ secondsText(quality.handoff.decisionSeconds.meanSeconds) }}</strong>
+              <small>最大 {{ secondsText(quality.handoff.decisionSeconds.maxSeconds) }}</small>
+            </article>
+            <article class="quality-kpi danger-kpi">
+              <span>上下文丢失</span>
+              <strong>{{ handoffContextLossCount }}</strong>
+              <small>Handoff 后重复追问同一槽位</small>
+            </article>
+          </div>
+
+          <div class="quality-grid">
+            <section class="quality-block">
+              <h3>Blocked 原因分布</h3>
+              <ul v-if="blockedReasonEntries.length" class="distribution">
+                <li v-for="[reason, count] in blockedReasonEntries" :key="reason">
+                  <span class="mono">{{ reason }}</span><strong>{{ count }}</strong>
+                </li>
+              </ul>
+              <p v-else class="empty">还没有被拒绝的 Handoff</p>
+            </section>
+
+            <section class="quality-block">
+              <h3>摩擦模式</h3>
+              <ul class="distribution">
+                <li><span>工具成功后仍降级</span><strong>{{ quality.friction.toolSuccessFallbacks }}</strong></li>
+                <li><span>重复追问槽位</span><strong>{{ quality.friction.repeatedSlotAsks }}</strong></li>
+                <li><span>Handoff 上下文丢失</span><strong>{{ handoffContextLossCount }}</strong></li>
+              </ul>
+              <p v-if="quality.friction.repeatedSlotAsksByPhase.length" class="fine">
+                已按 same_role / cross_handoff 分相统计；只有 cross_handoff + sameSlot 会进入告警。
+              </p>
+            </section>
+
+            <section class="quality-block">
+              <h3>工具风险面</h3>
+              <table v-if="quality.toolRisk.rows.length">
+                <thead><tr><th>工具</th><th>风险</th><th>HITL</th><th>角色</th><th>次数</th></tr></thead>
+                <tbody>
+                  <tr v-for="(row, index) in quality.toolRisk.rows" :key="index">
+                    <td class="mono">{{ String(row.tool ?? '—') }}</td>
+                    <td>{{ String(row.risk ?? '—') }}</td>
+                    <td>{{ String(row.hitl ?? '—') }}</td>
+                    <td>{{ String(row.role ?? '—') }}</td>
+                    <td>{{ row.count }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-else class="empty">还没有工具尝试</p>
+            </section>
+
+            <section class="quality-block">
+              <h3>最近坐席动作</h3>
+              <p v-if="!quality.audit.available" class="empty">审计流暂时读不到；指标部分仍可读。</p>
+              <ul v-else-if="auditActionEntries.length" class="distribution">
+                <li v-for="[action, count] in auditActionEntries" :key="action">
+                  <span class="mono">{{ action }}</span><strong>{{ count }}</strong>
+                </li>
+              </ul>
+              <p v-else class="empty">最近 {{ quality.audit.windowMinutes ?? 15 }} 分钟没有坐席留痕动作</p>
+            </section>
+          </div>
+          <p class="fine">数据时间：{{ formatTime(quality.generatedAt) }} · 口径：{{ quality.scope }}</p>
+        </template>
+        <p v-else class="empty">点击“刷新报表”读取编排质量数据。</p>
+      </section>
+        </div>
+      </div>
     </template>
 
     <div v-if="resolveTarget" class="scrim" @click.self="closeResolve">
@@ -609,7 +775,88 @@ function clearStoredSession() {
 .login-form label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
 .login-form input { width: 100%; box-sizing: border-box; }
 .fine { color: var(--ink-3); font-size: 12px; margin: 12px 0 0; }
-.summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 6px 0 14px; }
+.console {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 212px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  padding-top: 18px;
+}
+.side-nav {
+  position: sticky;
+  top: 76px;
+  display: grid;
+  gap: 6px;
+  padding: 14px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(20, 22, 26, .05);
+}
+.nav-title {
+  margin: 0 4px 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  color: var(--ink-2);
+}
+.nav-item:hover:not(:disabled) { background: var(--bg); border-color: var(--line); }
+.nav-item.active {
+  color: var(--ink);
+  background: #edf7f5;
+  border-color: #b7ddd8;
+  font-weight: 600;
+}
+.nav-item em { font-style: normal; color: var(--ink-3); font-size: 12px; }
+.nav-item.active em { color: var(--teal); }
+.nav-foot {
+  margin-top: 14px;
+  padding: 10px;
+  border-top: 1px solid var(--line-2);
+  display: grid;
+  gap: 2px;
+}
+.nav-foot strong { font-size: 13px; }
+.nav-foot span { color: var(--ink-3); font-size: 12px; }
+.work-area { min-width: 0; display: grid; gap: 14px; }
+.view-panel { display: grid; gap: 14px; animation: rise .18s ease; }
+@keyframes rise { from { opacity: .55; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.quality-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.quality-kpi {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px; display: grid; gap: 4px;
+}
+.quality-kpi span { color: var(--ink-3); font-size: 12px; }
+.quality-kpi strong { font-size: 24px; line-height: 1.15; }
+.quality-kpi small { color: var(--ink-3); font-size: 12px; }
+.danger-kpi strong { color: var(--rose); }
+.quality-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.quality-block { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.quality-block h3 { margin: 0 0 10px; font-size: 13px; }
+.distribution { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.distribution li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 7px 8px; background: var(--bg); border-radius: 8px; font-size: 12px;
+}
+.distribution span { color: var(--ink-2); overflow-wrap: anywhere; }
+.distribution strong { color: var(--ink); }
+
+.summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 0; }
 .kpi { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
   padding: 10px 12px; cursor: pointer; }
 .kpi span { display: block; color: var(--ink-3); font-size: 12px; }
@@ -693,6 +940,11 @@ function clearStoredSession() {
   .workspace { grid-template-columns: 1fr; }
   .detail-pane { position: static; max-height: none; }
   .summary { grid-template-columns: repeat(3, 1fr); }
+  .console { grid-template-columns: 1fr; }
+  .side-nav { position: static; grid-template-columns: repeat(3, 1fr); align-items: center; }
+  .nav-title, .nav-foot { display: none; }
+  .nav-item { justify-content: center; }
+  .quality-kpis, .quality-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .shell { padding: 0 12px 24px; }
@@ -701,5 +953,7 @@ function clearStoredSession() {
   .login-card { padding: 22px 16px; border-radius: 16px; }
   .summary { grid-template-columns: repeat(2, 1fr); }
   .detail-meta { grid-template-columns: 1fr; }
+  .side-nav { grid-template-columns: 1fr; }
+  .quality-block { overflow-x: auto; }
 }
 </style>
