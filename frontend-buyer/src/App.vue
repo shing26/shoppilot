@@ -491,9 +491,15 @@ function clearStoredSession() {
     </template>
 
     <template v-else>
+      <div class="buyer-layout">
+        <div class="buyer-main">
       <section v-if="!messages.length" class="welcome">
+        <p class="eyebrow">在线客服 · {{ storeLabel }}</p>
         <h1>有什么可以帮你？</h1>
-        <p>我会先查店铺规则和订单；需要人工时直接转，不让你重复描述。</p>
+        <p class="welcome-lede">我会先查店铺规则和订单；需要人工时直接转，不让你重复描述。</p>
+        <div class="welcome-points">
+          <span>查订单与物流</span><span>退换与理赔</span><span>转人工可追踪</span>
+        </div>
         <div class="quick">
           <button v-for="q in QUICK_QUESTIONS" :key="q" type="button" class="chip" :disabled="asking" @click="askQuick(q)">
             {{ q }}
@@ -525,7 +531,21 @@ function clearStoredSession() {
         </div>
       </section>
 
-      <section class="tickets">
+      <section class="composer">
+        <input
+          v-model="query"
+          type="text"
+          placeholder="输入问题，例如：订单 90001 到哪了"
+          aria-label="输入问题"
+          @keyup.enter="ask"
+        />
+        <button v-if="asking" class="stop" type="button" @click="stopAnswer">停止</button>
+        <button v-else class="primary" type="button" :disabled="!query.trim()" @click="ask">发送</button>
+      </section>
+        </div>
+
+        <aside class="buyer-side">
+      <section class="tickets side-card">
         <div class="section-head">
           <h2>我的工单</h2>
           <button v-if="!isGuest" class="link" type="button" @click="refreshTickets">刷新</button>
@@ -565,17 +585,17 @@ function clearStoredSession() {
         <p v-else class="empty">你还没有需要人工处理的工单</p>
       </section>
 
-      <section class="composer">
-        <input
-          v-model="query"
-          type="text"
-          placeholder="输入问题，例如：订单 90001 到哪了"
-          aria-label="输入问题"
-          @keyup.enter="ask"
-        />
-        <button v-if="asking" class="stop" type="button" @click="stopAnswer">停止</button>
-        <button v-else class="primary" type="button" :disabled="!query.trim()" @click="ask">发送</button>
+      <section class="side-card service-card">
+        <h2>服务范围</h2>
+        <ul>
+          <li><strong>订单与物流</strong><span>查状态、金额、轨迹</span></li>
+          <li><strong>退换与理赔</strong><span>按店铺政策办理</span></li>
+          <li><strong>人工接管</strong><span>答不了就转，给可追踪工单</span></li>
+        </ul>
+        <p class="side-fine">需要人工时不用重复描述，工单进度会在这里更新。</p>
       </section>
+        </aside>
+      </div>
     </template>
 
     <div v-if="selectedTicket" class="drawer-mask" @click.self="closeTicket">
@@ -632,7 +652,7 @@ function clearStoredSession() {
 
 <style scoped>
 .wrap {
-  max-width: 880px;
+  max-width: 1160px;
   margin: 0 auto;
   padding: 0 20px 80px;
   min-height: 100vh;
@@ -704,9 +724,37 @@ function clearStoredSession() {
 }
 .link:hover:not(:disabled) { color: var(--teal); }
 .fine { color: var(--ink-3); font-size: 12px; margin: 12px 0 0; }
-.welcome { padding: 18px 0 10px; }
-.welcome h1 { margin: 0 0 8px; font-size: 22px; }
+.buyer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 22px;
+  align-items: start;
+  flex: 1;
+}
+.buyer-main { min-width: 0; display: flex; flex-direction: column; min-height: 62vh; }
+.buyer-side { position: sticky; top: 76px; display: grid; gap: 12px; }
+.side-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px; box-sizing: border-box;
+}
+.side-card h2 { margin: 0 0 10px; font-size: 14px; }
+.service-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.service-card li { display: grid; gap: 1px; }
+.service-card strong { font-size: 13px; }
+.service-card li span { color: var(--ink-3); font-size: 12px; }
+.side-fine { margin: 12px 0 0; color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+.welcome {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+  padding: 26px; box-shadow: 0 10px 32px rgba(20, 22, 26, .05);
+}
+.welcome h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.25; }
 .welcome p { margin: 0 0 16px; color: var(--ink-2); }
+.welcome-lede { max-width: 520px; line-height: 1.7; }
+.welcome-points { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.welcome-points span {
+  font-size: 12px; color: var(--teal); background: #eef8f6;
+  border: 1px solid #b7ddd8; border-radius: 999px; padding: 3px 9px;
+}
 .quick { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip {
   border: 1px solid var(--line); background: var(--panel); color: var(--ink);
@@ -739,7 +787,7 @@ function clearStoredSession() {
 .cites ul { margin: 6px 0 0; padding-left: 18px; }
 .cite-h { color: var(--ink-2); }
 .cite-doc { color: var(--ink-3); margin-left: 6px; font-family: var(--mono); font-size: 12px; }
-.tickets { margin: 26px 0 8px; }
+.tickets { margin: 0; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 h2 { font-size: 15px; margin: 0 0 10px; }
 .ticket-list { display: grid; gap: 10px; }
@@ -828,10 +876,19 @@ h2 { font-size: 15px; margin: 0 0 10px; }
   .detail-grid { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 960px) {
+  .buyer-layout { grid-template-columns: 1fr; }
+  .buyer-side { position: static; grid-template-columns: 1fr; }
+  .buyer-main { min-height: 0; }
+}
+
 @media (max-width: 640px) {
   .wrap { padding: 0 12px 92px; }
   .topbar { padding: 10px 0; }
   .store-card { padding: 12px; border-radius: 12px; margin-bottom: 14px; }
+  .welcome { padding: 20px 16px; border-radius: 16px; }
+  .welcome h1 { font-size: 22px; }
+  .buyer-layout { gap: 14px; }
   .gate { padding: 22px 16px; margin: 10px 0 0; border-radius: 16px; }
   .gate h1 { font-size: 21px; }
   .gate-actions { flex-direction: column; align-items: stretch; }
