@@ -198,19 +198,26 @@ handoff golden 扩到 23 条。全量 JVM **674 tests / 114 suites** 全绿。
 
 **Execution status (2026-10-25):** H4 已实现。
 `GET /api/v1/support/ops/quality/report` 只读汇总 metrics 与 Redis audit 最近 15 分钟动作；
-新增 blocked handoff / tool-success-fallback / repeated-slot-asks 三条 Prometheus 告警与 promtool 双侧测试。
+新增 blocked handoff / tool-success-fallback / handoff-context-loss 三条 Prometheus 告警与 promtool 双侧测试。
 Sidecar 不改路由、不进请求路径 LLM。全量 JVM **679 tests / 116 suites** 全绿。
 
 ---
 
 ## 8. Phase H5 · Optional MCP Adapter
 
-**Trigger（全部满足才开）:**
+**Trigger（先决条件 + 任一量化信号，只触发评估，不自动启动）:**
+
+先决条件：
 
 - H1-H4 收口；
-- 工具数量或后端种类增长到 `ToolDispatcher` 连接层明显拥挤；
-- 需要多个进程 / 团队共享工具目录；
 - 授权、幂等、审批、审计已在 ShopPilot 侧有稳定测试。
+
+量化信号（任意一条即开 ADR 评估，不直接开工）：
+
+- 业务工具数 `> 15`；
+- 后端系统数 `> 5`；
+- 新增一个后端需要改动 `> 3` 个文件才能接入 `ToolDispatcher`；
+- 出现跨进程 / 跨团队共享工具目录的实际需求（有产品或工单证据，不拿预期当需求）。
 
 **Design decision:**
 

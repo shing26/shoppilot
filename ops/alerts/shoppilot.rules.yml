@@ -53,14 +53,14 @@ groups:
           summary: "ShopPilot 工具成功后仍降级"
           description: "15 分钟窗口内存在工具拿到结果但会话仍落降级工单的模式。"
 
-      - alert: ShoppilotRepeatedSlotAsks
-        expr: sum(increase(shoppilot_quality_slot_asks_repeated_total[15m])) > 0
+      - alert: ShoppilotHandoffContextLoss
+        expr: sum(increase(shoppilot_handoff_context_loss_total[15m])) > 0
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "ShopPilot 出现重复追问槽位"
-          description: "15 分钟窗口内同一会话第二次及以上追问槽位的次数有增长。"
+          summary: "ShopPilot Handoff 后重复追问同一槽位"
+          description: "15 分钟窗口内 cross_handoff 且 sameSlot 的重复追问有增长；这是上下文丢失信号，不含同角色正常补槽。"
 
       - alert: ShoppilotFallbackRatioHigh
         # 两侧都要 sum()：shoppilot_fallback_total 带 reason 标签而 shoppilot_requests_total 不带，

@@ -314,7 +314,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 * **Part 10 Autonomy**：4 轮链 / 2 步链、反思三态（触发 / 不触发 / 次数用尽）与超限出口（单独成列，不给总分；dev 档 30 条，票 148/149）
 * **UX Golden 30**（`eval/golden-ux-30.jsonl`）：买家侧 30 条行为面回归，覆盖意图、工具结果、引用、缓存、降级工单、跨店隔离与可读答案关键词；独立成列，**不并入 180 条 gold 的分母**。运行：`python scripts/run_golden_set.py --base http://127.0.0.1:8082`（输出 `eval/results/golden-ux-*.md`，失败项原样登记）。
 * **Handoff Golden 23**（`eval/handoff-golden.jsonl`）：ADR 0072 的路由纯函数 / 角色工具面 / 有向边 / 同诉求升级 / 风险面原因判据，由 JVM 重算；覆盖售前意图、售后动作、UNKNOWN、行业门、允许边、反向边、深度超限、同角色、无办理证据的 route reset、首次路由与工具面拒绝原因，不连模型、不并分母。
-* **Quality Sidecar**（ADR 0072 H4）：`GET /api/v1/support/ops/quality/report` 只读汇总 Handoff 计数 / blocked 分布 / 决策耗时 / tool risk / friction（工具成功仍降级、重复追问槽位），并从 Redis `shoppilot:audit` 聚合最近 15 分钟坐席动作；需要 `X-Ops-Token`，不改路由、不加 LLM 调用。Prometheus 新增 blocked handoff、tool-success-fallback、repeated-slot-asks 三条告警，promtool 双侧测试入库。
+* **Quality Sidecar**（ADR 0072 H4）：`GET /api/v1/support/ops/quality/report` 只读汇总 Handoff 计数 / blocked 分布 / 决策耗时 / tool risk / friction（工具成功仍降级、重复追问槽位），并从 Redis `shoppilot:audit` 聚合最近 15 分钟坐席动作（报表内 30 秒缓存，只输出动作名不输出坐席 ID）；需要 `X-Ops-Token`，不改路由、不加 LLM 调用。Prometheus 新增 blocked handoff、tool-success-fallback、handoff-context-loss 三条告警，promtool 双侧测试入库。
 
 **CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **679 条** JVM 测试（tool-api 12 + biz-mock 75 + ticket 50 + gateway 542）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
 

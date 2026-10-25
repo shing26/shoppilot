@@ -162,7 +162,16 @@ public class AgentStateMachine {
                 .tag("outcome", "exhausted").register(registry);
         // H4：sidecar 的口径源。都不是 LLM 调用；blocked reason / friction 只进指标与工单，不改路由。
         this.handoffDecisionTimer = Timer.builder("shoppilot_handoff_decision_seconds")
-                .description("Handoff 触发器判定耗时").register(registry);
+                .description("Handoff 触发器判定耗时")
+                // 触发器是纯规则/图查询，正常在微秒级；桶按毫秒量级钉住，
+                // 否则默认秒级桶会把退化压进 100ms/250ms，告警失去区分度。
+                .publishPercentileHistogram()
+                .serviceLevelObjectives(
+                        java.time.Duration.ofMillis(1), java.time.Duration.ofMillis(5),
+                        java.time.Duration.ofMillis(10), java.time.Duration.ofMillis(25),
+                        java.time.Duration.ofMillis(50), java.time.Duration.ofMillis(100),
+                        java.time.Duration.ofMillis(250))
+                .register(registry);
     }
 
     private final Timer handoffDecisionTimer;
@@ -891,7 +900,7 @@ public class AgentStateMachine {
         String slot = dispatch.missingSlots().get(0);
         String question = dispatcher.question(dispatch.tool(), dispatch.missingSlots());
         if (session.slotAskCount() > 0) {
-            registry.counter("shoppilot_quality_slot_asks_repeated_total").increment();
+            recordRepeatedSlotAsk(session, slot);
         }
         step(trace, sink, AgentState.SLOT_ASK, dispatch.tool() + " 缺 " + slot);
         sink.slotAsk(slot, question);
@@ -901,6 +910,24 @@ public class AgentStateMachine {
         return new AgentResult(question, dispatch.tool().intent(), "SLOT", CacheService.Layer.NONE, List.of(), trace,
                 null, null, true, usage.prompt(), usage.completion(), false, false, promptCatalog.version(), List.of(),
                 AgentResult.ContextComposition.NONE, List.of());
+    }
+
+    /**
+     * H4 friction 口径：重复追问必须分相。
+     *
+     * <p>same_role = 本 session 还没有 handoff trail，重复追问大概率是买家补充/改主意；
+     * cross_handoff + sameSlot = 已经发生 Handoff 后仍把同一格槽位问第二遍，另计
+     * {@code shoppilot_handoff_context_loss_total}。phase 用 trail 是否为空判定，不猜角色意图。
+     */
+    private void recordRepeatedSlotAsk(SessionStore.Session session, String slot) {
+        String previousSlot = String.valueOf(session.pendingArgs().getOrDefault("askedSlot", ""));
+        boolean sameSlot = slot.equals(previousSlot);
+        String phase = session.handoffTrail().isEmpty() ? "same_role" : "cross_handoff";
+        registry.counter("shoppilot_quality_slot_asks_repeated_total",
+                "phase", phase, "sameSlot", String.valueOf(sameSlot)).increment();
+        if ("cross_handoff".equals(phase) && sameSlot) {
+            registry.counter("shoppilot_handoff_context_loss_total", "slot", slot).increment();
+        }
     }
 
     /** 网关自己派生出的工具调用：missing 非空即追问，missing 为空且是读工具即可代为执行。 */
@@ -1013,7 +1040,7 @@ public class AgentStateMachine {
                         styleTier, usage);
             }
             sink.slotAsk(slot, question);
-            registry.counter("shoppilot_quality_slot_asks_repeated_total").increment();
+            recordRepeatedSlotAsk(session, slot);
             sessionStore.save(tenantId, customerId, new SessionStore.Session(conversationId, session.turns(),
                     tool.apiName(), arguments, asks, session.currentRole(), session.handoffTrail()));
             return new AgentResult(question, tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(), trace,

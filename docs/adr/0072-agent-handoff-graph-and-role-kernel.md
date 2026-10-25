@@ -80,6 +80,10 @@ Consequences:
   session 状态、上下文丢失与回切规则未验证前就打开自由迁移。
 - **H4 update（2026-10-25）**：只读 quality sidecar 汇总 metrics 与 Redis audit；
   blocked / friction 异常模式配 Prometheus 告警。它不自动改路由，也不在请求路径加模型调用。
+  观测口径：handoff 决策计时是显式毫秒桶的 histogram（1/5/10/25/50/100/250ms）；
+  tool-success-fallback 在 fallback 出口读既有 trace，不加 per-request 状态；
+  slot-ask friction 带 `phase`（same_role/cross_handoff）与 `sameSlot` 标签，
+  只有 cross_handoff + sameSlot 记为 `shoppilot_handoff_context_loss_total` 并进入告警。
 - **H3 update（2026-10-25）**：`ToolName` 增加静态 `ToolRiskTier`，`ToolDispatcher` 记录
   `shoppilot_tool_risk_attempts_total{tool,risk,hitl,role}`；`ToolSurfacePolicy.decide`
   输出可解释 reason，状态机 trace 与 golden 共用。授权与 HITL 强制点仍在执行路径。
@@ -88,3 +92,5 @@ Consequences:
   活体验证已出现 `HANDOFF=PRE_SALES->AFTER_SALES depth=0 result=ALLOWED`。
 - MCP / LangGraph 不是本决策的一部分。未来若接入，协议层只做连接与发现；
   授权、幂等、审批与审计仍留在 ShopPilot。
+- MCP 评估的量化触发（满足先决条件后任意一条才开 ADR，不自动开工）：业务工具数 > 15、
+  后端系统数 > 5、新增一个后端要改 > 3 个文件、或出现有证据的跨进程/跨团队工具目录共享需求。

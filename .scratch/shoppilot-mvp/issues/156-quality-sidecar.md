@@ -53,11 +53,28 @@
 4. 报表需要 `X-Ops-Token`；缺失凭证 403。
 5. 告警只报异常模式，不做自动修复。触发后续 ADR 的证据由报表/告警读数登记，不在本票自动开轮。
 
+**观测口径（评审收口）**
+
+1. `shoppilot_handoff_decision_seconds` 是显式毫秒桶 histogram：1/5/10/25/50/100/250ms。
+   from/to/reason 都是封闭枚举，不用自由文本标签。
+2. `shoppilot_quality_tool_success_fallback_total` 埋在 fallback 出口，读**本请求已有 trace** 中的
+   `TOOL_EXEC=OK / IDEMPOTENT_REPLAY / PENDING_APPROVAL`；不维护 per-request 额外状态，也不反查
+   ToolDispatcher。counter 是进程内递增，没有远程调用。
+3. `shoppilot_quality_slot_asks_repeated_total` 带 `phase` 与 `sameSlot`：
+   - `phase=same_role`：session 尚无 handoff trail，重复追问大概率是买家补充/改主意，不告警；
+   - `phase=cross_handoff,sameSlot=true`：Handoff 后仍重复问同一格，另计
+     `shoppilot_handoff_context_loss_total{slot}` 并进入告警。
+4. Redis audit 报表窗口 15 分钟，结果在 sidecar 内 30 秒缓存；轮询不会每次打到 Redis。
+   读超时沿用网关 Redis client 的 `spring.data.redis.timeout=2s`，不是独立 200ms——这是刻意保留：
+   sidecar 是人工排查面，不在请求路径上，避免为一次低频读再造一套 Redis client。
+5. 报表只输出 audit **动作名计数**，不输出坐席 ID / actor；`X-Ops-Token` 复用运维面既有开关与轮转机制。
+
 **验证落点**
 
 - `mvnw verify` → 四模块 **679 tests / 116 suites** 全绿。
-- `QualitySidecarServiceTest` 3 条：空注册表零值、metrics 聚合、Redis audit 15 分钟窗口（过期事件不进分子）。
+- `QualitySidecarServiceTest` 3 条：空注册表零值、metrics 聚合（含 phase / context-loss 分布）、Redis audit 15 分钟窗口与 30 秒缓存。
 - `QualitySidecarControllerTest` 2 条：无凭证 403、ops 凭证可读报表。
+- CI 新增独立 `Handoff golden set` job，Actions 列表可直接定位 ADR 0072 判据失败。
 - Prometheus 新增 3 条质量告警，promtool 测试该响/不该响两侧均已入库；本机未装 promtool，以 CI 门禁为准。
 - 180 条 gold 零改动。
 

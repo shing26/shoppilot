@@ -26,9 +26,14 @@ public class QualitySidecarService {
 
     private static final int AUDIT_SCAN_COUNT = 1000;
     private static final int AUDIT_WINDOW_MINUTES = 15;
+    private static final int AUDIT_CACHE_TTL_SECONDS = 30;
 
     private final MeterRegistry registry;
     private final StringRedisTemplate redis;
+
+    /** 报表是人工排查面，不是高频数据源；audit 窗口 30s 内复用同一份读数，避免轮询打 Redis。 */
+    private volatile Instant auditCachedAt;
+    private volatile Map<String, Object> auditCache;
 
     public QualitySidecarService(MeterRegistry registry, StringRedisTemplate redis) {
         this.registry = registry;
@@ -67,6 +72,9 @@ public class QualitySidecarService {
         Map<String, Object> friction = new LinkedHashMap<>();
         friction.put("toolSuccessFallbacks", sum("shoppilot_quality_tool_success_fallback_total"));
         friction.put("repeatedSlotAsks", sum("shoppilot_quality_slot_asks_repeated_total"));
+        friction.put("repeatedSlotAsksByPhase",
+                rows("shoppilot_quality_slot_asks_repeated_total", "phase", "sameSlot"));
+        friction.put("handoffContextLosses", rows("shoppilot_handoff_context_loss_total", "slot"));
         report.put("friction", friction);
         report.put("audit", auditWindow());
         return report;
@@ -77,6 +85,12 @@ public class QualitySidecarService {
      * “工单动作面”的时间窗读数；Handoff / tool risk 的时间窗由 Prometheus rate/increase 查询。
      */
     private Map<String, Object> auditWindow() {
+        Instant cachedAt = auditCachedAt;
+        Map<String, Object> cached = auditCache;
+        if (cached != null && cachedAt != null
+                && cachedAt.isAfter(Instant.now().minusSeconds(AUDIT_CACHE_TTL_SECONDS))) {
+            return cached;
+        }
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("source", "redis-stream:" + AuditTopics.AUDIT);
         view.put("windowMinutes", AUDIT_WINDOW_MINUTES);
@@ -109,6 +123,8 @@ public class QualitySidecarService {
             view.put("available", false);
             view.put("actions", actions);
         }
+        auditCache = view;
+        auditCachedAt = Instant.now();
         return view;
     }
 

@@ -18,6 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** H4：只读 sidecar 缺指标按 0 报，不猜历史；能归并 handoff / risk / friction。 */
@@ -55,6 +57,10 @@ class QualitySidecarServiceTest {
                 .register(registry).increment(3);
         registry.counter("shoppilot_quality_tool_success_fallback_total").increment(4);
         registry.counter("shoppilot_quality_slot_asks_repeated_total").increment(5);
+        Counter.builder("shoppilot_quality_slot_asks_repeated_total").tag("phase", "cross_handoff")
+                .tag("sameSlot", "true").register(registry).increment(2);
+        Counter.builder("shoppilot_handoff_context_loss_total").tag("slot", "orderNo")
+                .register(registry).increment(2);
         Timer.builder("shoppilot_handoff_decision_seconds").register(registry)
                 .record(java.time.Duration.ofMillis(250));
 
@@ -69,7 +75,10 @@ class QualitySidecarServiceTest {
 
         Map<String, Object> friction = cast(report.get("friction"));
         assertThat(friction.get("toolSuccessFallbacks")).isEqualTo(4.0d);
-        assertThat(friction.get("repeatedSlotAsks")).isEqualTo(5.0d);
+        assertThat(friction.get("repeatedSlotAsks")).isEqualTo(7.0d);
+        assertThat(String.valueOf(friction.get("repeatedSlotAsksByPhase")))
+                .contains("cross_handoff").contains("sameSlot");
+        assertThat(String.valueOf(friction.get("handoffContextLosses"))).contains("orderNo");
 
         Map<String, Object> decision = cast(handoff.get("decisionSeconds"));
         assertThat((Double) decision.get("count")).isEqualTo(1.0d);
@@ -89,12 +98,15 @@ class QualitySidecarServiceTest {
         when(streams.reverseRange(eq(AuditTopics.AUDIT), any(), any()))
                 .thenReturn(List.of(recent, old));
 
-        Map<String, Object> report = new QualitySidecarService(registry, redis).report();
-        Map<String, Object> audit = cast(report.get("audit"));
+        QualitySidecarService service = new QualitySidecarService(registry, redis);
+        Map<String, Object> first = cast(service.report().get("audit"));
+        Map<String, Object> second = cast(service.report().get("audit"));
 
-        assertThat(audit.get("available")).isEqualTo(true);
-        assertThat(audit.get("eventsScanned")).isEqualTo(2);
-        Map<String, Object> actions = cast(audit.get("actions"));
+        assertThat(first).isSameAs(second);
+        verify(streams, times(1)).reverseRange(eq(AuditTopics.AUDIT), any(), any());
+        assertThat(first.get("available")).isEqualTo(true);
+        assertThat(first.get("eventsScanned")).isEqualTo(2);
+        Map<String, Object> actions = cast(first.get("actions"));
         assertThat(actions).containsEntry("TICKET_CLAIMED", 1.0d);
         assertThat(actions).doesNotContainKey("TICKET_RESOLVED");
     }

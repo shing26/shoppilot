@@ -155,25 +155,27 @@ tests:
         alertname: ShoppilotToolSuccessFallback
         exp_alerts: []
 
-  # ---- H4：重复追问槽位（increase > 0，持续 10 分钟）----------------------------
+  # ---- H4：Handoff 后同一槽位重复追问（increase > 0，持续 10 分钟）----------------
   - interval: 1m
     input_series:
-      - series: 'shoppilot_quality_slot_asks_repeated_total'
-        values: '0+2x16'
+      - series: 'shoppilot_handoff_context_loss_total{slot="orderNo"}'
+        values: '0+1x16'
     alert_rule_test:
       - eval_time: 16m
-        alertname: ShoppilotRepeatedSlotAsks
+        alertname: ShoppilotHandoffContextLoss
         exp_alerts:
           - exp_labels:
               severity: warning
             exp_annotations:
-              summary: "ShopPilot 出现重复追问槽位"
-              description: "15 分钟窗口内同一会话第二次及以上追问槽位的次数有增长。"
+              summary: "ShopPilot Handoff 后重复追问同一槽位"
+              description: "15 分钟窗口内 cross_handoff 且 sameSlot 的重复追问有增长；这是上下文丢失信号，不含同角色正常补槽。"
   - interval: 1m
     input_series:
-      - series: 'shoppilot_quality_slot_asks_repeated_total'
+      - series: 'shoppilot_quality_slot_asks_repeated_total{phase="same_role",sameSlot="true"}'
+        values: '0+2x16'
+      - series: 'shoppilot_handoff_context_loss_total{slot="orderNo"}'
         values: '0x16'
     alert_rule_test:
       - eval_time: 16m
-        alertname: ShoppilotRepeatedSlotAsks
+        alertname: ShoppilotHandoffContextLoss
         exp_alerts: []
