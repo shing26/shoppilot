@@ -5,6 +5,7 @@ Owner basis: 2026-10-24 所有者确认“覆盖更完整业务链路、让 AI �
 并明确第一阶段不是多 Agent 矩阵，而是**角色化执行内核 + 有向 Handoff**。
 Context source: 2026-10-24 外部多 Agent 编排建议与本仓现状对齐讨论。
 Rollout plan: [ORCHESTRATION_PLAN.md](../ORCHESTRATION_PLAN.md)（H1 session kernel → H2 blocked handoff → H3 tool risk → H4 quality sidecar → H5 optional MCP）。
+Builds on: [ADR 0071](0071-round37-llm-wiring-store-persona-and-product-entries.md)（先把真实模型接回主链路；本决策在其防御式运行时上扩角色编排，不推翻 0071 的模型接线与店铺上下文）。
 
 Context:
 
@@ -68,6 +69,7 @@ Non-goals（第一阶段明确不做）:
 - 不引入 MCP / LangGraph。
 - 不做实时质检 Agent。
 - 不做 `AFTER_SALES -> PRE_SALES` 回切。
+- H5 MCP 适配器**不自动开工**：满足先决条件后，只有量化触发条件出现才开 ADR 评估。
 - 不新增业务语料，只重组现有意图面。
 
 Consequences:

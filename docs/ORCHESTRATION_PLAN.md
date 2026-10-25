@@ -1,8 +1,8 @@
 # Orchestration Rollout Plan · ADR 0072
 
-> Status: **Executing**（2026-10-24 计划稿；H1 已实现）
-> Baseline: `7f84c03 feat(orchestration): add role kernel and directed handoff contract`
-> Baseline CI: `40095780918` success；JVM **653 tests / 107 suites**
+> Status snapshot (2026-10-25): **H1-H4 已完成并冻结；H5 未启动**。H5 只在下方量化触发条件出现时进入 ADR 评估，不因 H4 收口自动开工。
+> Latest: `4a40ce1 fix(quality): tighten H4 observability semantics`；CI `40148389371` success；JVM **679 tests / 116 suites**
+> Historical baseline: `7f84c03 feat(orchestration): add role kernel and directed handoff contract`；CI `40095780918` success；JVM **653 tests / 107 suites**
 > Authority: [ADR 0072](adr/0072-agent-handoff-graph-and-role-kernel.md)
 >
 > 本计划只编排 ADR 0072 之后的扩展路径。它不是“多 Agent 全量矩阵”计划；每个阶段的目标都是
