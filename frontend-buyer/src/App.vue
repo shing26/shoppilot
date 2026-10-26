@@ -20,7 +20,7 @@ import {
   streamAnswer,
 } from './api'
 import { PRIORITY_LABEL, STATUS_LABEL, minutesLeft, type CitationDetail, type Session, type Ticket } from './types'
-import type { MyOrder } from './api'
+import type { AgentRunStep, MyOrder } from './api'
 
 const STORAGE_KEY = 'shoppilot.buyer.session'
 
@@ -86,6 +86,8 @@ interface ChatMessage {
   retryQuery?: string
   stopped?: boolean
   failed?: boolean
+  /** Agent 运行轨迹：只显示面客可读的步骤，不展示内部 state detail。 */
+  trace?: AgentRunStep[]
 }
 
 const isGuest = computed(() => guestMode.value || session.value?.username === 'guest')
@@ -347,6 +349,7 @@ async function runAnswer(text: string, index: number) {
   target.note = undefined
   target.citations = undefined
   target.text = ''
+  target.trace = []
 
   const controller = new AbortController()
   inFlight.value = controller
@@ -356,6 +359,9 @@ async function runAnswer(text: string, index: number) {
     conversation,
     (chunk) => {
       target.text += chunk
+    },
+    (step) => {
+      appendAgentStep(target, step)
     },
     controller.signal,
   )
@@ -445,6 +451,34 @@ function slaText(ticket: Ticket): string {
 }
 
 /** 工单时间线用的短时间：同城演示只显示月-日 时:分，不引入日期库。 */
+const TOOL_STATUS_LABEL: Record<string, string> = {
+  OK: '成功',
+  NOT_FOUND: '未找到',
+  STATE_NOT_ALLOWED: '当前状态不允许',
+  PENDING_APPROVAL: '待人工审核',
+  IDEMPOTENT_REPLAY: '已处理过',
+  TIMEOUT: '响应超时',
+  UNAVAILABLE: '暂不可用',
+}
+
+function agentStepText(step: AgentRunStep): string {
+  if (step.kind === 'tool_result') {
+    return `业务系统返回${TOOL_STATUS_LABEL[step.status ?? ''] ?? (step.status || '结果')}`
+  }
+  if (step.kind === 'fallback') return '已转人工兜底，工单会出现在侧栏'
+  return step.label
+}
+
+function appendAgentStep(target: ChatMessage, step: AgentRunStep) {
+  const trace = target.trace ?? []
+  const previous = trace[trace.length - 1]
+  // 状态机可能连续发同名状态；对用户来说那是同一件事，去重后再展示。
+  if (previous && step.kind === 'state' && previous.kind === 'state' && previous.label === step.label) {
+    return
+  }
+  target.trace = [...trace, step]
+}
+
 function formatTime(value: string | null | undefined): string {
   if (!value) return ''
   const date = new Date(value)
@@ -559,6 +593,14 @@ function clearStoredSession() {
             <template v-else>{{ m.text }}</template>
           </div>
           <p v-if="m.note" class="fallback">{{ m.note }}</p>
+          <details v-if="m.trace?.length" class="agent-run" :open="!!m.pending">
+            <summary><span class="agent-dot"></span>Agent 运行 · {{ m.trace.length }} 步</summary>
+            <ol>
+              <li v-for="(step, si) in m.trace" :key="si" :class="step.kind">
+                <span>{{ agentStepText(step) }}</span>
+              </li>
+            </ol>
+          </details>
           <div v-if="m.stopped || m.failed" class="msg-actions">
             <button class="link" type="button" :disabled="asking" @click="retry(i)">重试</button>
             <span class="fine">问题已经留在上面，不用重新输入。</span>
@@ -863,6 +905,27 @@ function clearStoredSession() {
 @keyframes blink { 50% { opacity: 0; } }
 .typing { color: var(--ink-3); }
 .typing::after { content: '…'; }
+.agent-run {
+  margin: 8px 0 0; text-align: left; border: 1px solid var(--line);
+  border-radius: 10px; background: #fbfcfc; padding: 8px 10px; font-size: 12px;
+}
+.agent-run summary {
+  cursor: pointer; color: var(--ink-2); display: flex; align-items: center; gap: 6px;
+  user-select: none; list-style: none;
+}
+.agent-run summary::-webkit-details-marker { display: none; }
+.agent-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--teal);
+  box-shadow: 0 0 0 3px #eef8f6; flex: none;
+}
+.agent-run ol { list-style: none; margin: 8px 0 0; padding: 0 0 0 13px; display: grid; gap: 5px; border-left: 1px dashed #c9e6e1; }
+.agent-run li { position: relative; color: var(--ink-2); line-height: 1.45; }
+.agent-run li::before {
+  content: ''; position: absolute; left: -17px; top: 6px; width: 5px; height: 5px;
+  border-radius: 50%; background: #b7ddd8;
+}
+.agent-run li.tool::before, .agent-run li.tool_result::before { background: var(--teal); }
+.agent-run li.fallback::before { background: var(--amber); }
 .msg-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; text-align: left; }
 .msg-actions .fine { margin: 0; }
 .fallback {

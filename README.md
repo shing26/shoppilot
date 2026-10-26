@@ -7,7 +7,7 @@
 [![Java](https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/projects/loom/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
-[![ADR](https://img.shields.io/badge/Architecture-74%20ADRs-blueviolet)](docs/adr/)
+[![ADR](https://img.shields.io/badge/Architecture-75%20ADRs-blueviolet)](docs/adr/)
 [![JVM Tests](https://img.shields.io/badge/JVM%20Tests-684-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
 [![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
@@ -256,7 +256,7 @@ start http://127.0.0.1:8082
 ### 服务接入端点（本地回环绑定）
 
 * **产品首页**：`http://127.0.0.1:8082/`（买家端 / 坐席控制台 / 调试台三个入口，含服务状态）
-* **买家服务界面**：`http://127.0.0.1:8082/buyer/?store=T001`（对话主区 + 服务侧栏：我的订单、我的工单进度、服务范围；可用 T002 鲜果驿站、T003 云裳服饰、T004 云栖酒店）
+* **买家服务界面**：`http://127.0.0.1:8082/buyer/?store=T001`（对话主区 + 服务侧栏：我的订单、我的工单进度、服务范围，回答可展开 Agent 运行轨迹；可用 T002 鲜果驿站、T003 云裳服饰、T004 云栖酒店）
 * **坐席控制台**：`http://127.0.0.1:8082/workspace/`（工单队列 / 退款审核 / 编排质量三视图；质量报表只读，坐席或管理员登录令牌即可读取）
 * **运维调试台**：`http://127.0.0.1:8082/console.html`（别名 `/admin/debug`；静态页可读，写动作由 ops token / staff 令牌把门）
 * **网关 Metrics (Prometheus)**：`http://127.0.0.1:8082/actuator/prometheus`

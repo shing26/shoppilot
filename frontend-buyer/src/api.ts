@@ -122,12 +122,20 @@ export function ask(token: string, query: string, conversationId: string): Promi
   })
 }
 
+/** Agent Run 的一条可见轨迹。只收面客可读的步骤，不透传内部 state detail。 */
+export interface AgentRunStep {
+  kind: 'state' | 'tool' | 'tool_result' | 'fallback'
+  label: string
+  status?: string
+}
+
 /** SSE 流的响应体（`EventSource` 不支持 POST，所以逐帧手读，ADR 0006 的同款理由）。 */
 export async function streamAnswer(
   token: string,
   query: string,
   conversationId: string,
   onToken: (chunk: string) => void,
+  onTrace?: (step: AgentRunStep) => void,
   signal?: AbortSignal,
 ): Promise<ApiResult<{ ticketId: string | null; citations: Citation[]; citationDetails: CitationDetail[]; fallbackReason: string | null }>> {
   let res: Response
@@ -191,10 +199,25 @@ export async function streamAnswer(
                 answer += chunk
                 onToken(chunk)
               }
+            } else if (event === 'status') {
+              const parsed = asObject(safeParse(data))
+              const label = String(parsed.label ?? '')
+              if (label) onTrace?.({ kind: 'state', label })
+            } else if (event === 'tool_executing') {
+              const parsed = asObject(safeParse(data))
+              const label = String(parsed.label ?? '')
+              const tool = String(parsed.tool ?? '')
+              onTrace?.({ kind: 'tool', label: label || `调用 ${tool || '业务系统'}` })
+            } else if (event === 'tool_result') {
+              const parsed = asObject(safeParse(data))
+              const tool = String(parsed.tool ?? '')
+              const status = String(parsed.status ?? '')
+              onTrace?.({ kind: 'tool_result', label: `${tool || '业务系统'} 返回 ${status || '结果'}`, status })
             } else if (event === 'fallback') {
               const parsed = asObject(safeParse(data))
               fallbackReason = (parsed.reason as string) ?? fallbackReason
               ticketId = (parsed.ticketId as string) ?? ticketId
+              onTrace?.({ kind: 'fallback', label: '转人工兜底', status: fallbackReason ?? undefined })
             } else if (event === 'done') {
               const parsed = asObject(safeParse(data))
               // round33 / ADR 0067：详情优先，citations 那份字符串契约照旧留着（旧客户端读它）
