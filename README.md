@@ -40,7 +40,8 @@
   三分钟能复述**谁在问、走哪几步、哪一步转人、什么情况办不了、现在哪段没通**。
   它只讲业务、不复述指标；所有数字与未达成项仍只在本文与 [`docs/EVIDENCE.md`](docs/EVIDENCE.md) 维护。
 - **工程读者**：从下面的[架构与工程验证索引](#-架构与工程验证索引)进入，或直接看
-  [快速开始](#-快速开始一条命令)。
+  [快速开始](#-快速开始一条命令)。要降低模型依赖、修当前评测红点，按
+  [`docs/TUNING_PLAN.md`](docs/TUNING_PLAN.md) 的三周路线执行。
 - **外部评审者（60 秒）**：`python scripts/demo.py --up`（Docker + Python 3.11+ + Ollama `bge-m3`）——容器档 demo 档（意图感知模板）起全栈并跑三个场景。当前测试数/覆盖率/指标口径只看
   [`docs/STATUS.md`](docs/STATUS.md)；历史读数与未达成项在 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)，两处不要混读。
 - **Docker Hub 401 / Maven 网络不通**：用镜像站基础镜像（`SHOPPILOT_MAVEN_IMAGE` / `SHOPPILOT_JRE_IMAGE`，见 RUNBOOK），或 `python scripts/demo.py --prebuilt`（用本机已构建 jar，不走 Dockerfile 的 Maven stage）。
