@@ -366,6 +366,14 @@ public class AgentStateMachine {
                     usage);
         }
 
+        // ADR 0077 路线 A：只对一个确定性复合场景（订单详情 + 物流）走两步工具，
+        // 不把通用链路改成自主循环；未命中条件的请求仍走原状态机。
+        if (isCompoundOrderQuery(triage.intent(), query)) {
+            sink.meta(conversationId, triage.intent(), CacheService.Layer.NONE);
+            return runCompoundOrderRead(triage, query, idempotencyToken, tenantId, customerId,
+                    conversationId, session, trace, sink, styleTier, usage);
+        }
+
         if (triage.cacheAdmissible()) {
             step(trace, sink, AgentState.CACHE_READ, "intent=" + triage.intent());
             CacheService.Lookup lookup = cacheService.lookup(tenantId, domain, triage.intent(), query, epoch,
@@ -446,12 +454,139 @@ public class AgentStateMachine {
 
     }
 
+    /** 执行前的可读计划：按意图给出稳定步骤，不让模型自由生成计划。 */
+    private static List<String> plannedStepsFor(Intent intent) {
+        if (intent == null) {
+            return List.of("梳理问题", "生成回答");
+        }
+        return switch (intent) {
+            case ACTION_LOGISTICS -> List.of("核对订单", "查询实时物流", "汇总结果");
+            case ACTION_ORDER -> List.of("查询订单详情", "核对订单状态", "给出结果");
+            case ACTION_ADDRESS -> List.of("确认订单是否可改址", "修改收货地址", "回报修改结果");
+            case ACTION_REFUND -> List.of("确认订单是否可退款", "发起退款申请", "回报受理状态");
+            default -> List.of("检索店铺政策", "整理依据", "生成回答");
+        };
+    }
+
+    /** ADR 0077：确定性复合任务的唯一入口。 */
+    private AgentResult runCompoundOrderRead(TriageResult triage, String query, String idempotencyToken,
+                                             String tenantId, String customerId, String conversationId,
+                                             SessionStore.Session session, List<AgentResult.TraceStep> trace,
+                                             EventSink sink, StyleService.Tier styleTier, TokenUsage usage) {
+        List<String> planned = List.of("查询订单详情", "查询实时物流", "汇总订单与物流结果");
+        sink.plan(planned);
+        step(trace, sink, AgentState.PLAN, "compound=order+logistics");
+        long detailStarted = System.nanoTime();
+        ToolDispatcher.Dispatch detail = compoundDispatch(ToolName.QUERY_ORDER_DETAIL, query, idempotencyToken,
+                session, trace, sink);
+        if (detail.needsSlot() || detail.fabricated()) {
+            return askSlot(session, tenantId, customerId, conversationId, detail, query, trace, sink,
+                    styleTier, usage);
+        }
+        if (detail.degraded()) {
+            return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query,
+                    detail.json(), styleTier, usage);
+        }
+        long logisticsStarted = System.nanoTime();
+        ToolDispatcher.Dispatch logistics = compoundDispatch(ToolName.QUERY_LOGISTICS, query, idempotencyToken,
+                session, trace, sink);
+        if (logistics.needsSlot() || logistics.fabricated()) {
+            return askSlot(session, tenantId, customerId, conversationId, logistics, query, trace, sink,
+                    styleTier, usage);
+        }
+        if (logistics.degraded()) {
+            return fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE, query,
+                    logistics.json(), styleTier, usage);
+        }
+
+        String answer = compoundOrderAnswer(detail, logistics);
+        sink.token(answer);
+        sessionStore.save(tenantId, customerId, sessionStore.appendTurn(clearPending(session), query, answer));
+        registry.counter("shoppilot_compound_tasks_total", "result", "COMPLETED").increment();
+        List<AgentResult.PlanStep> plan = List.of(
+                new AgentResult.PlanStep(ToolName.QUERY_ORDER_DETAIL.apiName(), detail.status().name(),
+                        (System.nanoTime() - detailStarted) / 1_000_000, extractSlots(ToolName.QUERY_ORDER_DETAIL, query),
+                        1, false),
+                new AgentResult.PlanStep(ToolName.QUERY_LOGISTICS.apiName(), logistics.status().name(),
+                        (System.nanoTime() - logisticsStarted) / 1_000_000,
+                        extractSlots(ToolName.QUERY_LOGISTICS, query), 1, false));
+        return new AgentResult(answer, triage.intent(), triage.layer(), CacheService.Layer.NONE, List.of(),
+                trace, null, null, false, usage.prompt(), usage.completion(), true, false,
+                promptCatalog.version(), plan, AgentResult.ContextComposition.NONE, List.of());
+    }
+
+    private ToolDispatcher.Dispatch compoundDispatch(ToolName tool, String query, String idempotencyToken,
+                                                     SessionStore.Session session,
+                                                     List<AgentResult.TraceStep> trace, EventSink sink) {
+        LlmTypes.ToolCall call = new LlmTypes.ToolCall("compound-" + tool.apiName(), tool.apiName(),
+                extractSlots(tool, query));
+        ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken,
+                dialogueText(query, session), requestFingerprint(query, idempotencyToken));
+        step(trace, sink, AgentState.TOOL_EXEC, tool + "=" + dispatch.status());
+        if (!dispatch.needsSlot() && !dispatch.fabricated()) {
+            sink.toolExecuting(tool, dispatch.label());
+            sink.toolResult(tool, dispatch.status(), summarize(dispatch));
+        }
+        return dispatch;
+    }
+
+    private static boolean isCompoundOrderQuery(Intent intent, String query) {
+        if (intent != Intent.ACTION_LOGISTICS || query == null || query.isBlank()) {
+            return false;
+        }
+        boolean asksLogistics = query.contains("物流") || query.contains("快递");
+        boolean asksDetail = query.contains("详情") || query.contains("状态");
+        boolean hasOrderNo = query.matches("(?s).*\\b\\d{5,8}\\b.*");
+        return asksLogistics && asksDetail && hasOrderNo;
+    }
+
+    private static String compoundOrderAnswer(ToolDispatcher.Dispatch detail, ToolDispatcher.Dispatch logistics) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode order = TRACE_JSON.readTree(detail.json()).path("payload");
+            com.fasterxml.jackson.databind.JsonNode logisticsRoot = TRACE_JSON.readTree(logistics.json());
+            String orderNo = order.path("orderNo").asText("");
+            String category = order.path("categoryName").asText("");
+            long amountFen = order.path("amountFen").asLong();
+            String status = switch (order.path("status").asText("")) {
+                case "CREATED" -> "待付款";
+                case "PAID" -> "待发货";
+                case "SHIPPED" -> "运输中";
+                case "DELIVERED" -> "已送达";
+                case "COMPLETED" -> "已完成";
+                case "CANCELLED" -> "已取消";
+                case "REFUNDING" -> "退款中";
+                case "REFUNDED" -> "已退款";
+                default -> order.path("status").asText("状态未知");
+            };
+            StringBuilder answer = new StringBuilder("订单 ").append(orderNo).append("：")
+                    .append(category).append("，¥")
+                    .append(String.format(java.util.Locale.ROOT, "%.2f", amountFen / 100.0d))
+                    .append("，当前").append(status).append("。");
+            if ("OK".equals(logisticsRoot.path("status").asText())) {
+                com.fasterxml.jackson.databind.JsonNode nodes = logisticsRoot.path("payload").path("nodes");
+                if (nodes.isArray() && !nodes.isEmpty()) {
+                    answer.append("物流最新节点：")
+                            .append(nodes.get(nodes.size() - 1).path("description").asText("已更新"));
+                } else {
+                    answer.append("物流：暂时没有轨迹节点。");
+                }
+            } else {
+                String message = logisticsRoot.path("message").asText("");
+                answer.append("物流：").append(message.isBlank() ? "暂时没有物流信息。" : message);
+            }
+            return answer.toString();
+        } catch (Exception unparsable) {
+            return "订单与物流都已查到，但汇总时没有解析成功；请稍后再试一次。";
+        }
+    }
+
     private ModelRun runModelPath(TriageResult triage, CacheService.Lookup lookup,
                                   String query, String idempotencyToken, String tenantId, String customerId,
                                   String conversationId, SessionStore.Session session, long epoch, Domain domain,
                                   AgentRole route, List<AgentResult.TraceStep> trace, EventSink sink,
                                   String systemPrompt, StyleService.Tier styleTier, TokenUsage usage) {
         Intent intent = triage.intent();
+        sink.plan(plannedStepsFor(intent));
         String rolePrompt = route.promptSegment();
         List<LlmTypes.Message> messages = new ArrayList<>();
         messages.add(LlmTypes.Message.system(rolePrompt.isBlank() ? systemPrompt : systemPrompt + "\n" + rolePrompt));

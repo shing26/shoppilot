@@ -70,6 +70,13 @@ public class SseEventSink implements EventSink {
     }
 
     @Override
+    public void plan(List<String> steps) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("steps", steps == null ? List.of() : steps);
+        send("plan", data);
+    }
+
+    @Override
     public void meta(String conversationId, Intent intent, CacheService.Layer cacheLayer) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("conversationId", conversationId);

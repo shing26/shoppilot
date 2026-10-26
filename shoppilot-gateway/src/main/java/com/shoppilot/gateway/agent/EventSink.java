@@ -54,6 +54,10 @@ public interface EventSink {
     /** 意图与缓存落点确定后、正文开始之前推送，字段集合与 PLAN.md 的 meta 事件一致。 */
     void meta(String conversationId, Intent intent, CacheService.Layer cacheLayer);
 
+    /** 执行前的可读计划；默认空实现，只有需要展示轨迹的出口覆盖它。 */
+    default void plan(java.util.List<String> steps) {
+    }
+
     void fallback(FallbackReason reason, String ticketId);
 
     void toolExecuting(ToolName tool, String label);

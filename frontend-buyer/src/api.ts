@@ -124,7 +124,7 @@ export function ask(token: string, query: string, conversationId: string): Promi
 
 /** Agent Run 的一条可见轨迹。只收面客可读的步骤，不透传内部 state detail。 */
 export interface AgentRunStep {
-  kind: 'state' | 'tool' | 'tool_result' | 'fallback'
+  kind: 'plan' | 'state' | 'tool' | 'tool_result' | 'fallback'
   label: string
   status?: string
 }
@@ -199,6 +199,10 @@ export async function streamAnswer(
                 answer += chunk
                 onToken(chunk)
               }
+            } else if (event === 'plan') {
+              const parsed = asObject(safeParse(data))
+              const steps = Array.isArray(parsed.steps) ? parsed.steps.map(String) : []
+              if (steps.length) onTrace?.({ kind: 'plan', label: `计划：${steps.join(' → ')}` })
             } else if (event === 'status') {
               const parsed = asObject(safeParse(data))
               const label = String(parsed.label ?? '')
