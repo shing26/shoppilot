@@ -30,6 +30,10 @@
 
 ## 🧭 先看这里
 
+- **项目定位（2026-10-26 决策）**：本项目按 **“可验证、可审计、可回归的受控 Agent 运行时”** 讲，
+  不按“通用智能客服平台”讲。一页纸叙事、对比矩阵、3 分钟演示脚本与 14 天收口清单见
+  [`docs/ROUTE_A_TRUSTED_RUNTIME.md`](docs/ROUTE_A_TRUSTED_RUNTIME.md)；
+  三条路线的取舍依据见 [`docs/PRODUCT_POSITIONING_DECISION.md`](docs/PRODUCT_POSITIONING_DECISION.md)。
 - **业务侧读者（客服主管 / 运营 / 产品）**：先读
   [《两个能跑的场景：一份给业务侧的一页纸》](docs/round32-two-runnable-scenarios.md)——
   三分钟能复述**谁在问、走哪几步、哪一步转人、什么情况办不了、现在哪段没通**。
@@ -52,7 +56,7 @@
 
 | 评估维度 | 依据路径 | 关键设计考量与实测读数 |
 | :--- | :--- | :--- |
-| **架构决策演进** | [`docs/adr/`](docs/adr/) | 70 个编号 / 69 篇成文（ADR-0022 有意预留未占用），包含完整选型权衡、备选方案与后果推演。 |
+| **架构决策演进** | [`docs/adr/`](docs/adr/) | 77 个编号 / 76 篇成文（ADR-0022 有意预留未占用），包含完整选型权衡、备选方案与后果推演。 |
 | **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求实打 bge-m3 为 24–65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平。 |
 | **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0-token 判据抓出三个静默缺陷。 |
 | **全套技术栈本地运行** | [快速开始](#-快速开始一条命令) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |
