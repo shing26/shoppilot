@@ -3,6 +3,7 @@ package com.shoppilot.bizmock.repo;
 import com.shoppilot.bizmock.domain.Order;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -12,4 +13,7 @@ import java.util.Optional;
 public interface OrderRepository extends JpaRepository<Order, String> {
 
     Optional<Order> findByIdAndCustomerId(String id, String customerId);
+
+    /** 买家自己的最近订单：租户条件由 @TenantId 自动拼接，这里只加买家归属。 */
+    List<Order> findTop20ByCustomerIdOrderByCreatedAtDesc(String customerId);
 }

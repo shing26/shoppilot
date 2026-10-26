@@ -55,6 +55,28 @@ class TenantIsolationAndIdempotencyTest {
     JdbcTemplate jdbc;
 
     @Test
+    @DisplayName("我的订单只回当前租户 + 当前买家的最近订单")
+    void myOrdersAreScopedToTheVerifiedBuyer() throws Exception {
+        List<String> own = jdbc.queryForList(
+                "select id from orders where tenant_id = 'T001' and customer_id = 'C001'"
+                        + " order by created_at desc limit 20", String.class);
+        List<String> otherBuyer = jdbc.queryForList(
+                "select id from orders where tenant_id = 'T001' and customer_id <> 'C001' limit 40", String.class);
+        List<String> otherTenant = jdbc.queryForList(
+                "select id from orders where tenant_id <> 'T001' and customer_id = 'C001' limit 40", String.class);
+        assertThat(own).as("种子数据里应有 T001/C001 的订单").isNotEmpty();
+
+        JsonNode body = get("/api/orders/mine", "T001", "C001");
+        List<String> returned = new ArrayList<>();
+        body.forEach(node -> returned.add(node.path("orderNo").asText()));
+
+        assertThat(returned).containsExactlyElementsOf(own);
+        assertThat(returned).doesNotContainAnyElementsOf(otherBuyer);
+        assertThat(returned).doesNotContainAnyElementsOf(otherTenant);
+        body.forEach(node -> assertThat(node.has("tenantId")).isFalse());
+    }
+
+    @Test
     @DisplayName("没有内部 token 的工具调用一律 401")
     void rejectsCallsWithoutInternalToken() throws Exception {
         // 用 JDK HttpClient 而不是 TestRestTemplate：后者底层的 HttpURLConnection 在流式模式下
@@ -189,6 +211,13 @@ class TenantIsolationAndIdempotencyTest {
                 Instant.now().minusSeconds(6 * 24 * 3600));
         assertThat(found).as("种子数据里应存在可退款订单").isNotEmpty();
         return found.get(0);
+    }
+
+    private JsonNode get(String path, String tenantId, String customerId) throws Exception {
+        ResponseEntity<String> response = rest.exchange(path, HttpMethod.GET,
+                new HttpEntity<>(headers(null, tenantId, customerId)), String.class);
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        return JSON.readTree(response.getBody());
     }
 
     private JsonNode call(String path, String body, String tenantId, String customerId, String idempotencyToken)

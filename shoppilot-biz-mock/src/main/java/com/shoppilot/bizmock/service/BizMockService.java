@@ -87,6 +87,18 @@ public class BizMockService {
                 .register(registry);
     }
 
+    /** 买家自己的最近 20 单（只读）。没有买家上下文时返回空集，不越权查全租户。 */
+    @Transactional(readOnly = true)
+    public List<OrderView> myOrders() {
+        String customerId = TenantContextHolder.customerId();
+        if (customerId == null) {
+            return List.of();
+        }
+        return orderRepository.findTop20ByCustomerIdOrderByCreatedAtDesc(customerId).stream()
+                .map(this::toView)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public ToolResponse<OrderView> queryOrderDetail(String orderNo) {
         faultInjector.applyDelay();

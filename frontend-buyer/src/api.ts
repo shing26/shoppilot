@@ -94,6 +94,20 @@ export function myTickets(token: string): Promise<ApiResult<Ticket[]>> {
   return request<Ticket[]>('/api/v1/support/ops/tickets/mine', { token })
 }
 
+/** 买家自己的最近订单（ADR 0075）。同样不接受买家号参数，归属只在服务端判定。 */
+export interface MyOrder {
+  orderNo: string
+  amountFen: number
+  status: string
+  categoryName: string
+  serviceFlags: string[]
+  createdAt: string
+}
+
+export function myOrders(token: string): Promise<ApiResult<MyOrder[]>> {
+  return request<MyOrder[]>('/api/v1/support/orders/mine', { token })
+}
+
 /** 买家自己的单张工单详情（UX-03）：隔离由下游按令牌里的买家号再判一次。 */
 export function myTicket(token: string, ticketId: string): Promise<ApiResult<Ticket>> {
   return request<Ticket>('/api/v1/support/ops/tickets/mine/' + encodeURIComponent(ticketId), { token })

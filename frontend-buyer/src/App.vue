@@ -13,12 +13,14 @@ import {
   guestSession,
   login,
   messageOf,
+  myOrders,
   myTicket,
   myTickets,
   storeProfile,
   streamAnswer,
 } from './api'
 import { PRIORITY_LABEL, STATUS_LABEL, minutesLeft, type CitationDetail, type Session, type Ticket } from './types'
+import type { MyOrder } from './api'
 
 const STORAGE_KEY = 'shoppilot.buyer.session'
 
@@ -48,6 +50,9 @@ const messages = ref<ChatMessage[]>([])
 const tickets = ref<Ticket[]>([])
 const ticketsLoading = ref(false)
 const ticketError = ref('')
+const orders = ref<MyOrder[]>([])
+const ordersLoading = ref(false)
+const orderError = ref('')
 const now = ref(Date.now())
 let conversation = ''
 
@@ -121,7 +126,7 @@ async function enterAsDemoBuyer(): Promise<boolean> {
   demoMode.value = true
   guestMode.value = false
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result.body))
-  await Promise.all([refreshTickets(), loadStoreInfo()])
+  await Promise.all([refreshTickets(), refreshOrders(), loadStoreInfo()])
   return true
 }
 
@@ -172,7 +177,7 @@ async function doLogin() {
   showLogin.value = false
   password.value = ''
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result.body))
-  await Promise.all([refreshTickets(), loadStoreInfo()])
+  await Promise.all([refreshTickets(), refreshOrders(), loadStoreInfo()])
 }
 
 function signOut() {
@@ -183,6 +188,8 @@ function signOut() {
   clearStoredSession()
   tickets.value = []
   ticketError.value = ''
+  orders.value = []
+  orderError.value = ''
   messages.value = []
   conversation = ''
   asking.value = false
@@ -196,6 +203,40 @@ async function askQuick(question: string) {
     if (!entered) return
   }
   query.value = question
+  await ask()
+}
+
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  CREATED: '待付款',
+  PAID: '待发货',
+  SHIPPED: '运输中',
+  DELIVERED: '已送达',
+  COMPLETED: '已完成',
+  CANCELLED: '已取消',
+  REFUNDING: '退款中',
+  REFUNDED: '已退款',
+}
+
+async function refreshOrders() {
+  orderError.value = ''
+  if (!session.value || isGuest.value) {
+    orders.value = []
+    ordersLoading.value = false
+    return
+  }
+  ordersLoading.value = true
+  const result = await myOrders(session.value.token)
+  ordersLoading.value = false
+  if (result.status !== 200 || !Array.isArray(result.body)) {
+    orderError.value = describe(result, '')
+    orders.value = []
+    return
+  }
+  orders.value = result.body
+}
+
+async function askOrder(order: MyOrder) {
+  query.value = `帮我查一下订单 ${order.orderNo} 的物流`
   await ask()
 }
 
@@ -380,7 +421,10 @@ async function retry(index: number) {
 
 onMounted(() => {
   if (session.value) {
-    if (!isGuest.value) void refreshTickets()
+    if (!isGuest.value) {
+      void refreshTickets()
+      void refreshOrders()
+    }
     void loadStoreInfo()
   } else if (STORE_CODE && AUTO_GUEST) {
     void enterAsGuest()
@@ -545,6 +589,38 @@ function clearStoredSession() {
         </div>
 
         <aside class="buyer-side">
+      <section class="orders side-card">
+        <div class="section-head">
+          <h2>我的订单</h2>
+          <button v-if="!isGuest" class="link" type="button" @click="refreshOrders">刷新</button>
+        </div>
+        <p v-if="isGuest" class="notice">游客模式不展示订单：登录买家账号后可以查看自己的订单。</p>
+        <p v-else-if="orderError" class="err">{{ orderError }}</p>
+        <p v-else-if="ordersLoading" class="empty">正在读取订单…</p>
+        <div v-else-if="orders.length" class="order-list">
+          <article
+            v-for="order in orders"
+            :key="order.orderNo"
+            class="order-card"
+            role="button"
+            tabindex="0"
+            @click="askOrder(order)"
+            @keyup.enter="askOrder(order)"
+          >
+            <div class="order-top">
+              <strong class="mono">{{ order.orderNo }}</strong>
+              <span class="pill">{{ ORDER_STATUS_LABEL[order.status] ?? order.status }}</span>
+            </div>
+            <div class="order-meta">
+              <span>{{ order.categoryName }}</span>
+              <strong>¥{{ (order.amountFen / 100).toFixed(2) }}</strong>
+            </div>
+            <p class="order-foot">{{ formatTime(order.createdAt) }} 下单 · 点击询问</p>
+          </article>
+        </div>
+        <p v-else class="empty">你还没有订单</p>
+      </section>
+
       <section class="tickets side-card">
         <div class="section-head">
           <h2>我的工单</h2>
@@ -738,6 +814,18 @@ function clearStoredSession() {
   padding: 14px; box-sizing: border-box;
 }
 .side-card h2 { margin: 0 0 10px; font-size: 14px; }
+.order-list { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 2px; }
+.order-card {
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;
+  cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease;
+}
+.order-card:hover { border-color: #b7ddd8; box-shadow: 0 3px 12px rgba(15, 118, 110, .07); }
+.order-card:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.order-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.order-top strong { font-size: 12px; overflow-wrap: anywhere; }
+.order-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 12px; color: var(--ink-2); }
+.order-meta strong { color: var(--ink); font-size: 13px; }
+.order-foot { margin: 5px 0 0; color: var(--ink-3); font-size: 11px; }
 .service-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
 .service-card li { display: grid; gap: 1px; }
 .service-card strong { font-size: 13px; }
