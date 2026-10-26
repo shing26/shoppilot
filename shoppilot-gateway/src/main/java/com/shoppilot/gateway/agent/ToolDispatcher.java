@@ -42,6 +42,18 @@ public class ToolDispatcher {
     /** 订单号格式与 biz-mock 的造数一致；模型凭空编一个长串时按编造处理，不发起查询。 */
     private static final java.util.regex.Pattern ORDER_NO = java.util.regex.Pattern.compile("\\d{1,12}");
 
+    /** 改地址的六个自由文本槽位：模型填了就必须能在买家说过的话里找到出处。 */
+    private static final List<String> ADDRESS_SLOTS = List.of(
+            "receiverName", "receiverPhone", "province", "city", "district", "detailAddress");
+
+    private static final Map<String, String> SLOT_LABELS = Map.of(
+            "receiverName", "收件人姓名",
+            "receiverPhone", "收件人手机号",
+            "province", "省份",
+            "city", "城市",
+            "district", "区县",
+            "detailAddress", "详细地址");
+
     /**
      * @param fabricated 模型给出的订单号**不可信**：格式非法、或格式合法但买家在对话里没说过。
      *                   两种情况都不允许发起查询（ADR 0045 票 56）
@@ -86,6 +98,9 @@ public class ToolDispatcher {
         }
         Map<String, Object> arguments = call.arguments() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(call.arguments());
         recordToolRisk(tool);
+        // 票 165：模型会为了“把参数填满”编出整套收件信息。地址槽位没有出处就不能写，
+        // 否则一次多意图会被执行成“把地址改成演示收件人”。移除后按既有缺槽路径追问。
+        dropUntrustedAddressSlots(tool, arguments, dialogue);
         List<String> missing = missingSlots(tool, arguments);
         if (!missing.isEmpty()) {
             return new Dispatch(tool, null, null, missing, label(tool, arguments), false, false);
@@ -208,6 +223,28 @@ public class ToolDispatcher {
         return dialogue == null || !dialogue.contains(value);
     }
 
+    /**
+     * 票 165：地址槽位溯源。模型会把 schema 示例/演示值填满，工具层必须先删掉没有出处的值；
+     * 删完后缺必填会走既有 slotAsk，绝不会把“演示收件人”写进买家订单。
+     */
+    private void dropUntrustedAddressSlots(ToolName tool, Map<String, Object> arguments, String dialogue) {
+        if (tool != ToolName.MODIFY_DELIVERY_ADDRESS) {
+            return;
+        }
+        for (String slot : ADDRESS_SLOTS) {
+            Object raw = arguments.get(slot);
+            if (raw == null) {
+                continue;
+            }
+            String value = String.valueOf(raw).trim();
+            if (value.isEmpty() || dialogue == null || !dialogue.contains(value)) {
+                arguments.remove(slot);
+                registry.counter("shoppilot_tool_arg_untrusted_total",
+                        "tool", tool.apiName(), "slot", slot).increment();
+            }
+        }
+    }
+
     public List<String> missingSlots(ToolName tool, Map<String, Object> arguments) {
         List<String> missing = new ArrayList<>();
         for (String param : ToolSchemaGenerator.requiredParams(ToolContracts.requestType(tool))) {
@@ -228,7 +265,9 @@ public class ToolDispatcher {
             return "请提供您的订单号（订单详情页可查），我需要它才能为您查询或办理。";
         }
         if (tool == ToolName.MODIFY_DELIVERY_ADDRESS) {
-            return "还需要您补充收件信息：" + String.join("、", missingSlots) + "。";
+            List<String> labels = missingSlots.stream()
+                    .map(slot -> SLOT_LABELS.getOrDefault(slot, slot)).toList();
+            return "还需要您补充收件信息：" + String.join("、", labels) + "。";
         }
         return "还需要您补充：" + String.join("、", missingSlots) + "。";
     }

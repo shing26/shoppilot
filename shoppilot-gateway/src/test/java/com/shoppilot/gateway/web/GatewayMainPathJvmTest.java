@@ -254,6 +254,42 @@ class GatewayMainPathJvmTest {
     }
 
     @Test
+    @DisplayName("票 165：改地址 + 查状态的多意图，动作优先并走结构化槽位追问")
+    void addressActionBeatsOrderStatusLookup() throws Exception {
+        String query = "90001 这单帮我改个地址吧，另外现在是什么状态";
+        LlmGateway llm = mock(LlmGateway.class);
+        // 复现实机：模型不仅选错工具，还为了填满 schema 编了整套“演示收件信息”。
+        LlmTypes.ToolCall wrongTool = new LlmTypes.ToolCall("call-addr-1",
+                ToolName.QUERY_ORDER_DETAIL.apiName(), Map.of(
+                        "orderNo", "90001",
+                        "receiverName", "演示收件人",
+                        "receiverPhone", "13800001111",
+                        "province", "浙江省",
+                        "city", "杭州市",
+                        "district", "西湖区",
+                        "detailAddress", "文一西路 100 号"));
+        when(llm.complete(any())).thenReturn(new LlmTypes.Reply("", List.of(wrongTool), 10, 2, null),
+                LlmTypes.Reply.text("已为您处理"));
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ADDRESS, "T0", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"" + query + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("ACTION_ADDRESS"))
+                .andExpect(jsonPath("$.slotAsked").value(true))
+                .andExpect(jsonPath("$.answer").value(containsString("补充收件信息")))
+                .andExpect(jsonPath("$.answer").value(containsString("收件人姓名")));
+
+        // 如果没改绑，模型选的 queryOrderDetail 会带着 orderNo 真的打业务系统；这里必须是零调用。
+        verifyNoInteractions(bizMock);
+    }
+
+    @Test
     @DisplayName("显式转人工：fallback 原因与工单号进入响应，模型不参与")
     void explicitEscalationReturnsAQueryableTicket() throws Exception {
         FallbackService fallback = mock(FallbackService.class);

@@ -16,7 +16,7 @@
 
 | 评测 | 当前读数 | 说明 |
 | --- | --- | --- |
-| JVM | **696 tests / 117 suites** | CI 全绿 |
+| JVM | **697 tests / 117 suites** | CI 全绿 |
 | UX Golden 30 · demo | **30/30** | 模板档，不证明模型能力 |
 | UX Golden 30 · dev（qwen-plus） | **30/30** | 2026-10-24 epoch24 |
 | UX Golden 30 · local（qwen2.5:3b） | **27/30** | 失败：G-006 / G-026 缺“48”，G-029 缺“早餐” |
@@ -75,11 +75,11 @@
 - 保留：带“详情/状态”的多意图不抢
 - 验收：LOGISTICS 88.9% → ≥95%（待 180 复跑证明）
 
-#### 1.2 ACTION_ORDER：散文追问新地址
+#### 1.2 ACTION_ORDER：散文追问新地址 — 已收口（票 165）
 
 - 问题：1 条模型用散文追问，没有发结构化工具
-- 修复：订单动作意图下，缺槽位必须走 slotAsk，禁止散文追问；服务端校验兜底
-- 验收：ORDER 94.4% → ≥95%
+- 修复：改地址多意图下动作优先；误选 queryOrderDetail 时改绑 modifyDeliveryAddress；地址槽位溯源后走 slotAsk
+- 验收：ORDER 94.4% → ≥95%（待 180 复跑证明）
 
 #### 1.3 ESCALATE：升级措辞漏判
 
@@ -180,7 +180,7 @@
 | local UX 30 | ≥29/30 | 当前 27/30 |
 | dev UX 30 | 30/30 | 不回落 |
 | POLICY 180 | 100% | 不回落 |
-| JVM | 696 / 117 全绿 | 新增测试只增不减 |
+| JVM | 697 / 117 全绿 | 新增测试只增不减 |
 | CI | success | 每次提交 |
 
 ## 六、明确不做
@@ -220,11 +220,19 @@
 - 第一人称不再单独作为动作证据，三句闲聊判 UNKNOWN；
 - 696 tests / 117 suites 全绿；活体两句物流选对工具、三句闲聊零工具。
 
-## 十、下一步
+## 十、执行进度
 
-**票 165：多意图优先级与结构化槽位**
+**票 165：多意图优先级与结构化槽位 — 已收口**（[票面](../.scratch/shoppilot-mvp/issues/165-multi-intent-address-priority.md)）
 
-- `ACT-ORD-13`：改地址 + 查状态同时出现时，动作优先，缺槽位必须结构化追问；
-- 不允许散文追问替代 `slotAsk`；
-- 补 JVM 用例，180 gold 复跑前后对照；
-- 不改 gold / 阈值 / 分母。
+- ACT-ORD-13 改地址动作优先，误选订单查询时改绑 modifyDeliveryAddress；
+- 地址槽位溯源，模型编造收件信息被移除并走 slotAsk；追问文案中文化；
+- 697 tests / 117 suites 全绿；活体 slotAsked=true、零业务调用。
+
+## 十一、下一步
+
+**票 166：阶段 1 收口 —— 180 gold 复跑（需有效 key）**
+
+- 复跑 180 gold，核对 ACTION_LOGISTICS / ACTION_ORDER / ESCALATE / UNKNOWN 四个分区；
+- 复跑 local UX 30 或至少 G-006 / G-026 / G-029；
+- 四个分区不到 95% 时按失败分类回炉，不调阈值；
+- 本机无 key 时不得用旧产物声称“已达标”。

@@ -290,6 +290,17 @@ public class T0RuleLayer {
     }
 
     /**
+     * 明确要改地址，而不是问地址是什么。
+     *
+     * <p>票 165：多意图“改地址 + 查状态”要动作优先；但“地址是什么”是读。
+     * 只认“地址词 + 改/修改/换”，不把任意地址提问都改成写动作。
+     */
+    public static boolean isAddressModificationQuery(String query) {
+        return query != null && containsAny(query, ADDRESS_WORDS)
+                && (query.contains("改") || query.contains("修改") || query.contains("换"));
+    }
+
+    /**
      * 政策形状判定（round37 / ADR 0071 的失败安全网）。
      *
      * <p>用途只有一个：当意图被判成 {@code UNKNOWN} 时，决定还要不要走条款检索与空召回出口。
