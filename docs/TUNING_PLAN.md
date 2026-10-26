@@ -230,9 +230,16 @@
 
 ## 十一、下一步
 
-**票 166：阶段 1 收口 —— 180 gold 复跑（需有效 key）**
+**票 166：阶段 1 收口 —— 180 gold 复跑（blocked：缺有效 LLM key）**
 
+- [票面](../.scratch/shoppilot-mvp/issues/166-stage1-gold-rerun.md)；
 - 复跑 180 gold，核对 ACTION_LOGISTICS / ACTION_ORDER / ESCALATE / UNKNOWN 四个分区；
 - 复跑 local UX 30 或至少 G-006 / G-026 / G-029；
 - 四个分区不到 95% 时按失败分类回炉，不调阈值；
 - 本机无 key 时不得用旧产物声称“已达标”。
+
+**无 key 时可先做：票 167 本地 3B 答案保真（阶段 2）**
+
+- 只针对 G-006 / G-026 / G-029 三条，不改 180 dev 判据；
+- 先跑一次 local UX 30 作为前后对照（约 11 分钟）；
+- 目标是 local ≥29/30，dev 不回落。
