@@ -33,7 +33,8 @@
 - **项目定位（2026-10-26 决策）**：本项目按 **“可验证、可审计、可回归的受控 Agent 运行时”** 讲，
   不按“通用智能客服平台”讲。一页纸叙事、对比矩阵、3 分钟演示脚本与 14 天收口清单见
   [`docs/ROUTE_A_TRUSTED_RUNTIME.md`](docs/ROUTE_A_TRUSTED_RUNTIME.md)；
-  三条路线的取舍依据见 [`docs/PRODUCT_POSITIONING_DECISION.md`](docs/PRODUCT_POSITIONING_DECISION.md)。
+  三条路线的取舍依据见 [`docs/PRODUCT_POSITIONING_DECISION.md`](docs/PRODUCT_POSITIONING_DECISION.md)；
+  对外技术文章见 [`docs/WHY_VERIFIABLE_BEATS_SMARTER.md`](docs/WHY_VERIFIABLE_BEATS_SMARTER.md)。
 - **业务侧读者（客服主管 / 运营 / 产品）**：先读
   [《两个能跑的场景：一份给业务侧的一页纸》](docs/round32-two-runnable-scenarios.md)——
   三分钟能复述**谁在问、走哪几步、哪一步转人、什么情况办不了、现在哪段没通**。

@@ -178,9 +178,9 @@ ShopPilot 是一个可验证、可审计、可回归的受控 Agent 运行时。
 
 ### 第 6–9 天：技术文章
 
-- [ ] 主题：为什么“可验证”比“更智能”更重要
-- [ ] 用 blocked handoff 与 HITL 做两个具体案例
-- [ ] 不放无法复跑的数字
+- [x] 主题：为什么“可验证”比“更智能”更重要 → [WHY_VERIFIABLE_BEATS_SMARTER.md](WHY_VERIFIABLE_BEATS_SMARTER.md)
+- [x] 用 blocked handoff 与 HITL 做两个具体案例
+- [x] 不放无法复跑的数字
 
 ### 第 10–12 天：5 位技术评审
 
