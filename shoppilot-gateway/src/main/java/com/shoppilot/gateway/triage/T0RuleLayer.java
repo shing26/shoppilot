@@ -31,10 +31,10 @@ public class T0RuleLayer {
      * 代价是少拦一部分流量，这正是 ADR 0003 选的取舍方向。
      */
     private static final List<String> POSSESSIVE = List.of("我的", "我买的", "我订的", "帮我", "给我", "我这单", "这单", "该单", "我这边");
-    private static final List<String> LOGISTICS_WORDS = List.of("物流", "快递到哪", "到哪", "签收", "运单", "轨迹", "发货没", "发了没");
+    private static final List<String> LOGISTICS_WORDS = List.of("物流", "快递到哪", "到哪", "签收", "代收", "运单", "轨迹", "发货没", "发了没");
     private static final List<String> REFUND_WORDS = List.of("退款", "退钱", "返款", "退回到");
     private static final List<String> ADDRESS_WORDS = List.of("地址", "收货人", "收件地址", "改址");
-    private static final List<String> ORDER_WORDS = List.of("订单", "单子", "这单");
+    private static final List<String> ORDER_WORDS = List.of("订单", "单子", "这单", "啥情况", "什么情况", "啥状态", "什么状态");
 
     /**
      * 生鲜词表只收**行业对象词**（round33 / ADR 0067）。
@@ -220,8 +220,16 @@ public class T0RuleLayer {
 
         if (hasEntity || personalCase) {
             Intent action = actionIntent(query);
-            // 扫到实体或第一人称却认不出是哪个动作时，仍按业务办理处理：宁可多打模型
-            return Optional.of(TriageResult.dynamic(action, "T0", hasEntity));
+            // 实体是硬证据；第一人称只是“可能跟我有关”，不是动作证据。
+            // 票 164："给我讲个笑话 / 帮我写首诗 / 便宜点卖给我" 这类只有第一人称、
+            // 没有任何动作/订单/政策语义的句子，若仍判动作就会拿到 queryOrderDetail，
+            // 把越界闲聊变成“请提供订单号”。
+            boolean actionEvidence = hasActionVerb(query) || policyIntent(query) != null;
+            if (actionEvidence || looksPolicyShaped(query)) {
+                // 扫到实体或动作证据却认不出具体动作时，仍按业务办理处理：宁可多打模型。
+                return Optional.of(TriageResult.dynamic(action, "T0", hasEntity));
+            }
+            return Optional.of(TriageResult.dynamic(Intent.UNKNOWN, "T0", false));
         }
 
         if (containsAny(query, EXPLICIT_ACTION_PHRASES)) {
@@ -267,6 +275,18 @@ public class T0RuleLayer {
     public boolean hasActionVerb(String query) {
         return query != null && (containsAny(query, ADDRESS_WORDS) || containsAny(query, REFUND_WORDS)
                 || containsAny(query, LOGISTICS_WORDS) || containsAny(query, ORDER_WORDS));
+    }
+
+    /**
+     * 纯物流问法：有物流词，且没有“详情/状态”这类订单详情诉求。
+     *
+     * <p>票 164：AGENT 已判 ACTION_LOGISTICS 时，模型偶尔仍会选 queryOrderDetail；
+     * 这个谓词只用于把这种明确的“问物流”改绑到 queryLogistics，不参与意图判定。
+     */
+    public static boolean isLogisticsFocusedQuery(String query) {
+        return query != null && containsAny(query, LOGISTICS_WORDS)
+                && !query.contains("详情") && !query.contains("状态")
+                && !query.contains("什么情况") && !query.contains("啥情况");
     }
 
     /**

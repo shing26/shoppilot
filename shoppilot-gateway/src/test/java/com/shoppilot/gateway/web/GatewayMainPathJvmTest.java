@@ -225,6 +225,35 @@ class GatewayMainPathJvmTest {
     }
 
     @Test
+    @DisplayName("票 164：物流意图下模型误选 queryOrderDetail 时，确定性改绑 queryLogistics")
+    void logisticsIntentRebindsAwayFromOrderLookup() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        LlmTypes.ToolCall wrongTool = new LlmTypes.ToolCall("call-log-1",
+                ToolName.QUERY_ORDER_DETAIL.apiName(), Map.of("orderNo", "90003"));
+        LlmTypes.Reply toolPlan = new LlmTypes.Reply("", List.of(wrongTool), 10, 2, null);
+        when(llm.complete(any())).thenReturn(toolPlan, LlmTypes.Reply.text("已为您查询物流"));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("已为您查询物流"));
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_LOGISTICS), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"快递已签收\"}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_LOGISTICS, "T0", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"90003 有没有人代收\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("ACTION_LOGISTICS"))
+                .andExpect(jsonPath("$.toolUsed").value(true));
+
+        verify(bizMock).call(eq(ToolName.QUERY_LOGISTICS), anyMap(), eq(null));
+        verify(bizMock, never()).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any());
+    }
+
+    @Test
     @DisplayName("显式转人工：fallback 原因与工单号进入响应，模型不参与")
     void explicitEscalationReturnsAQueryableTicket() throws Exception {
         FallbackService fallback = mock(FallbackService.class);

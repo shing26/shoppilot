@@ -73,6 +73,41 @@ class T0RuleLayerTest {
         assertThat(result.filter(TriageResult::policyHuman)).isEmpty();
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "90003 有没有人代收, ACTION_LOGISTICS",
+            "90002 这单发了没, ACTION_LOGISTICS",
+    })
+    @DisplayName("票 164：物流口语（代收 / 发了没）命中物流意图，不被这单/实体抢成 ACTION_ORDER")
+    void logisticsPhrasesWinOverOrderAction(String query, Intent expected) {
+        var result = layer.classify(query).orElseThrow();
+
+        assertThat(result.intent()).isEqualTo(expected);
+        assertThat(result.cacheAdmissible()).isFalse();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "给我讲个笑话",
+            "能不能便宜点卖给我",
+            "帮我写一首诗",
+    })
+    @DisplayName("票 164：只有第一人称、没有动作/政策语义的闲聊判 UNKNOWN，不挂订单工具")
+    void possessiveSmallTalkIsUnknown(String query) {
+        var result = layer.classify(query).orElseThrow();
+
+        assertThat(result.intent()).isEqualTo(Intent.UNKNOWN);
+        assertThat(result.layer()).isEqualTo("T0");
+        assertThat(result.cacheAdmissible()).isFalse();
+    }
+
+    @Test
+    @DisplayName("票 164：第一人称订单状态问法仍是动作，不误伤 ACT-ORD-12")
+    void possessiveOrderStatusStillActions() {
+        assertThat(layer.classify("我买的东西现在啥情况了").orElseThrow().intent())
+                .isEqualTo(Intent.ACTION_ORDER);
+    }
+
     @Test
     @DisplayName("round33：酒店租户的酒店问句即使带第一人称也判政策（行业门在实体/第一人称之前）")
     void hotelWordsWinOverPossessiveSoNoShopToolsAreAttached() {

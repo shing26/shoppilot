@@ -28,6 +28,7 @@ import com.shoppilot.gateway.sentiment.SentimentGate;
 import com.shoppilot.gateway.store.StoreProfileProperties;
 import com.shoppilot.gateway.store.StoreProfileService;
 import com.shoppilot.gateway.style.StyleService;
+import com.shoppilot.gateway.triage.T0RuleLayer;
 import com.shoppilot.gateway.triage.TriageEngine;
 import com.shoppilot.gateway.triage.TriageResult;
 import com.shoppilot.tool.Intent;
@@ -727,7 +728,8 @@ public class AgentStateMachine {
                 return ModelRun.solo(fallback(AgentState.TOOL_EXEC, trace, sink, FallbackReason.TOOL_UNAVAILABLE,
                         query, "参数表达式不合法，已拒绝执行：" + resolution.rejectedExpression(), styleTier, usage));
             }
-            LlmTypes.ToolCall call = new LlmTypes.ToolCall(rawCall.id(), rawCall.name(), resolution.arguments());
+            LlmTypes.ToolCall boundCall = bindReadTool(intent, rawCall, query, trace, sink);
+            LlmTypes.ToolCall call = new LlmTypes.ToolCall(boundCall.id(), boundCall.name(), resolution.arguments());
             messages.add(LlmTypes.Message.assistant(lastReply.content(), List.of(call)));
             long dispatchStarted = System.nanoTime();
             ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken,
@@ -1085,6 +1087,25 @@ public class AgentStateMachine {
      *
      * @return null 表示不接管；否则 gap 非空即追问，槽位齐备且是读工具时才允许代为执行
      */
+    /**
+     * 票 164：意图已是物流、模型却选了订单查询时，按确定性意图改绑。
+     *
+     * <p>只改“纯物流问法”（有物流词、无详情/状态词）；多意图仍交给模型，避免把
+     * “订单状态 + 物流”只剩物流。改绑发生在 dispatch 前，鉴权/槽位/幂等/行业门照旧。
+     */
+    private LlmTypes.ToolCall bindReadTool(Intent intent, LlmTypes.ToolCall call, String query,
+                                            List<AgentResult.TraceStep> trace, EventSink sink) {
+        if (intent != Intent.ACTION_LOGISTICS || call == null
+                || !ToolName.QUERY_ORDER_DETAIL.apiName().equals(call.name())
+                || !T0RuleLayer.isLogisticsFocusedQuery(query)) {
+            return call;
+        }
+        registry.counter("shoppilot_tool_binding_total",
+                "intent", "ACTION_LOGISTICS", "from", "queryOrderDetail", "to", "queryLogistics").increment();
+        step(trace, sink, AgentState.TOOL_EXEC, "tool-bound queryLogistics from queryOrderDetail");
+        return new LlmTypes.ToolCall(call.id(), ToolName.QUERY_LOGISTICS.apiName(), call.arguments());
+    }
+
     private DerivedCall deriveActionCall(Intent intent, String query) {
         ToolName tool = ToolName.forIntent(intent);
         if (tool == null) {
