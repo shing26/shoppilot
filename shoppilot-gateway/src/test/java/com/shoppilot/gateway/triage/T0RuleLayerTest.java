@@ -243,6 +243,11 @@ class T0RuleLayerTest {
             "我要转个人工",
             "叫你们人工客服来",
             "这个问题机器人解决不了吧，转接人工",
+            // 票 163：口语化升级，不能因为没说“转人工”三个字就漏掉
+            "这个问题我要真人给我答复",
+            "给我接一个能拍板的客服",
+            "满减算错了我要求赔偿，机器人办不了就叫人",
+            "这事没个活人说不清楚",
     })
     @DisplayName("显式转人工在 T0 定案：判定不依赖 embedding，模型或向量服务挂了也能转出去")
     void explicitEscalationSettlesAtT0(String query) {
@@ -267,6 +272,9 @@ class T0RuleLayerTest {
     void negatedEscalationDoesNotFire() {
         assertThat(layer.classify("别转人工，我就要机器人回")).isEmpty();
         assertThat(layer.classify("我不想转人工，先说清楚规则")).isEmpty();
+        // 票 163：新增口语词也守否定；“别叫人”“不想找真人”不是升级
+        assertThat(layer.classify("别叫人，先让机器人把规则说完")).isEmpty();
+        assertThat(layer.classify("我不想找真人，先看政策")).isEmpty();
         // 中间隔了逗号也要判成转人工：整句扫否定词会把这句漏掉
         assertThat(layer.classify("这个不合规，转人工").orElseThrow().intent())
                 .isEqualTo(Intent.ESCALATE);

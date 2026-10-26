@@ -248,6 +248,34 @@ class GatewayMainPathJvmTest {
     }
 
     @Test
+    @DisplayName("票 163：口语化升级在 T0 定案，真实落单且不进入工具/模型")
+    void colloquialEscalationSettlesAtT0AndCreatesATicket() throws Exception {
+        String query = "满减算错了我要求赔偿，机器人办不了就叫人";
+        // 用真实的 T0 判定，而不是手搓 ESCALATE：这张票要钉的正是“口语说法也能被入口识别”。
+        TriageResult triage = new T0RuleLayer().classify(query, Domain.ECOMMERCE).orElseThrow();
+        assertEquals(Intent.ESCALATE, triage.intent(), "T0 必须把口语化升级定案为 ESCALATE");
+
+        FallbackService fallback = mock(FallbackService.class);
+        when(fallback.escalate(eq(FallbackReason.USER_REQUESTED), eq(query), eq(null)))
+                .thenReturn(Optional.of("T-163"));
+        LlmGateway llm = mock(LlmGateway.class);
+        ToolDispatcher dispatcher = mock(ToolDispatcher.class);
+
+        MockMvc mvc = mockMvc(triage, mock(CacheService.class), llm, dispatcher, fallback);
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"" + query + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fallbackReason").value("USER_REQUESTED"))
+                .andExpect(jsonPath("$.ticketId").value("T-163"));
+
+        verify(fallback).escalate(FallbackReason.USER_REQUESTED, query, null);
+        verifyNoInteractions(llm);
+        // lookupReplay 是允许的；这里钉的是“升级后不再执行任何业务工具”。
+        verify(dispatcher, never()).dispatch(any(), anyString(), anyString(), any());
+    }
+
+    @Test
     @DisplayName("空召回转人工（2026-10-17）：政策意图检索 0 条不再让模型自由发挥——确定性 INTENT_UNRESOLVED + 负缓存")
     void emptyPolicyRecallEscalatesInsteadOfFreeFormAnswer() throws Exception {
         // 实机复现：酒店租户问电商问题、电商租户问酒店问题时检索为空（可见范围内没有条款），
