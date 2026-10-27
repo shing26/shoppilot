@@ -53,6 +53,9 @@ const ticketError = ref('')
 const orders = ref<MyOrder[]>([])
 const ordersLoading = ref(false)
 const orderError = ref('')
+const sideTab = ref<'orders' | 'tickets'>('orders')
+const showAllOrders = ref(false)
+const showAllTickets = ref(false)
 const now = ref(Date.now())
 let conversation = ''
 
@@ -65,6 +68,10 @@ let detailTimer = 0
 
 // 登录前拿不到店名时显示「本店」，不把内部租户号 T001 当产品文案。
 const storeLabel = computed(() => storeName.value || '本店')
+
+// P0 侧栏：默认只露出 2 条，避免工单历史把聊天淹没。
+const visibleOrders = computed(() => (showAllOrders.value ? orders.value : orders.value.slice(0, 2)))
+const visibleTickets = computed(() => (showAllTickets.value ? tickets.value : tickets.value.slice(0, 2)))
 
 const QUICK_QUESTIONS = computed(() => {
   if (tenant.value === 'T004') {
@@ -476,7 +483,80 @@ function appendAgentStep(target: ChatMessage, step: AgentRunStep) {
   if (previous && step.kind === 'state' && previous.kind === 'state' && previous.label === step.label) {
     return
   }
-  target.trace = [...trace, step]
+  target.trace = [...trace, { ...step, at: Date.now() }]
+}
+
+interface AgentPhase {
+  key: string
+  title: string
+  hint: string
+  steps: AgentRunStep[]
+}
+
+/** 把内部 trace 折成三段人话：理解 → 调用 → 回复。 */
+function agentPhases(trace: AgentRunStep[]): AgentPhase[] {
+  const phases: AgentPhase[] = [
+    { key: 'understand', title: '理解需求', hint: '识别意图与政策', steps: [] },
+    { key: 'act', title: '调用系统', hint: '查订单 / 物流 / 办理', steps: [] },
+    { key: 'reply', title: '生成回复', hint: '汇总结果与引用', steps: [] },
+  ]
+  const isActStep = (step: AgentRunStep) =>
+    step.kind === 'tool' || step.kind === 'tool_result' || step.kind === 'fallback'
+    || (step.kind === 'state' && (step.label.includes('调用业务系统') || step.label.includes('调用工具')))
+  const actIndexes = trace
+    .map((step, index) => ({ step, index }))
+    .filter(({ step }) => isActStep(step))
+    .map(({ index }) => index)
+  const firstAct = actIndexes.length ? actIndexes[0] : -1
+  const lastAct = actIndexes.length ? actIndexes[actIndexes.length - 1] : -1
+  trace.forEach((step, index) => {
+    if (step.kind === 'plan') return
+    let phase: AgentPhase
+    if (isActStep(step)) {
+      phase = phases[1]
+    } else if (firstAct >= 0 && index > lastAct) {
+      phase = phases[2]
+    } else if (firstAct < 0 && (step.label.includes('生成回复') || step.label.includes('写入缓存'))) {
+      phase = phases[2]
+    } else {
+      phase = phases[0]
+    }
+    phase.steps.push(step)
+  })
+  return phases.filter((phase) => phase.steps.length)
+}
+
+/** plan 事件把步骤串成一句“计划：A → B”，这里拆成 checklist。 */
+function agentPlanSteps(trace: AgentRunStep[]): string[] {
+  const plan = trace.find((step) => step.kind === 'plan')
+  if (!plan) return []
+  return plan.label
+    .replace(/^计划[:：]\s*/, '')
+    .split('→')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function agentDuration(trace: AgentRunStep[]): string {
+  const times = trace.map((step) => step.at).filter((value): value is number => typeof value === 'number')
+  if (times.length < 2) return ''
+  const elapsed = Math.max(...times) - Math.min(...times)
+  if (elapsed < 1000) return `${elapsed}ms`
+  return `${(elapsed / 1000).toFixed(1)}s`
+}
+
+function countLabel(value: number): string {
+  return value > 99 ? '99+' : String(value)
+}
+
+function agentStepTone(step: AgentRunStep): string {
+  if (step.kind === 'fallback') return 'danger'
+  if (step.kind === 'tool_result') {
+    if (step.status === 'OK' || step.status === 'PENDING_APPROVAL') return 'ok'
+    if (step.status === 'TIMEOUT' || step.status === 'UNAVAILABLE') return 'danger'
+    return 'warn'
+  }
+  return 'neutral'
 }
 
 function formatTime(value: string | null | undefined): string {
@@ -594,12 +674,37 @@ function clearStoredSession() {
           </div>
           <p v-if="m.note" class="fallback">{{ m.note }}</p>
           <details v-if="m.trace?.length" class="agent-run" :open="!!m.pending">
-            <summary><span class="agent-dot"></span>Agent 运行 · {{ m.trace.length }} 步</summary>
-            <ol>
-              <li v-for="(step, si) in m.trace" :key="si" :class="step.kind">
-                <span>{{ agentStepText(step) }}</span>
-              </li>
-            </ol>
+            <summary>
+              <span class="agent-dot" :class="{ running: m.pending }"></span>
+              <span class="agent-title">{{ m.pending ? 'Agent 正在执行' : 'Agent 执行记录' }}</span>
+              <span class="agent-meta">{{ m.trace.length }} 步<template v-if="agentDuration(m.trace)"> · {{ agentDuration(m.trace) }}</template></span>
+              <span class="agent-chevron">›</span>
+            </summary>
+            <div class="agent-body">
+              <ol v-if="agentPlanSteps(m.trace).length" class="agent-plan">
+                <li v-for="(item, pi) in agentPlanSteps(m.trace)" :key="pi">
+                  <span class="plan-dot"></span><span>{{ item }}</span>
+                </li>
+              </ol>
+              <section v-for="phase in agentPhases(m.trace)" :key="phase.key" class="agent-phase">
+                <header>
+                  <span class="phase-title">{{ phase.title }}</span>
+                  <span class="phase-hint">{{ phase.hint }}</span>
+                </header>
+                <ol>
+                  <li v-for="(step, si) in phase.steps" :key="si" :class="[step.kind, agentStepTone(step)]">
+                    <span class="step-dot"></span>
+                    <span>{{ agentStepText(step) }}</span>
+                  </li>
+                </ol>
+              </section>
+              <details class="agent-raw">
+                <summary>查看原始步骤</summary>
+                <ol>
+                  <li v-for="(step, si) in m.trace" :key="si" :class="step.kind">{{ agentStepText(step) }}</li>
+                </ol>
+              </details>
+            </div>
           </details>
           <div v-if="m.stopped || m.failed" class="msg-actions">
             <button class="link" type="button" :disabled="asking" @click="retry(i)">重试</button>
@@ -631,76 +736,107 @@ function clearStoredSession() {
         </div>
 
         <aside class="buyer-side">
-      <section class="orders side-card">
-        <div class="section-head">
-          <h2>我的订单</h2>
-          <button v-if="!isGuest" class="link" type="button" @click="refreshOrders">刷新</button>
-        </div>
-        <p v-if="isGuest" class="notice">游客模式不展示订单：登录买家账号后可以查看自己的订单。</p>
-        <p v-else-if="orderError" class="err">{{ orderError }}</p>
-        <p v-else-if="ordersLoading" class="empty">正在读取订单…</p>
-        <div v-else-if="orders.length" class="order-list">
-          <article
-            v-for="order in orders"
-            :key="order.orderNo"
-            class="order-card"
-            role="button"
-            tabindex="0"
-            @click="askOrder(order)"
-            @keyup.enter="askOrder(order)"
+      <section class="side-card side-activity">
+        <div class="side-tabs" role="tablist" aria-label="订单与工单">
+          <button
+            class="side-tab"
+            :class="{ active: sideTab === 'orders' }"
+            type="button"
+            role="tab"
+            :aria-selected="sideTab === 'orders'"
+            @click="sideTab = 'orders'"
           >
-            <div class="order-top">
-              <strong class="mono">{{ order.orderNo }}</strong>
-              <span class="pill">{{ ORDER_STATUS_LABEL[order.status] ?? order.status }}</span>
-            </div>
-            <div class="order-meta">
-              <span>{{ order.categoryName }}</span>
-              <strong>¥{{ (order.amountFen / 100).toFixed(2) }}</strong>
-            </div>
-            <p class="order-foot">{{ formatTime(order.createdAt) }} 下单 · 点击询问</p>
-          </article>
+            订单<span class="tab-count">{{ countLabel(orders.length) }}</span>
+          </button>
+          <button
+            class="side-tab"
+            :class="{ active: sideTab === 'tickets' }"
+            type="button"
+            role="tab"
+            :aria-selected="sideTab === 'tickets'"
+            @click="sideTab = 'tickets'"
+          >
+            工单<span class="tab-count">{{ countLabel(tickets.length) }}</span>
+          </button>
         </div>
-        <p v-else class="empty">你还没有订单</p>
-      </section>
 
-      <section class="tickets side-card">
-        <div class="section-head">
-          <h2>我的工单</h2>
-          <button v-if="!isGuest" class="link" type="button" @click="refreshTickets">刷新</button>
-        </div>
-        <p v-if="isGuest" class="notice">游客模式不展示工单：先登录买家账号，才能看到自己的售后进度。</p>
-        <p v-else-if="ticketError" class="err">{{ ticketError }}</p>
-        <p v-else-if="ticketsLoading" class="empty">正在读取…</p>
-        <div v-else-if="tickets.length" class="ticket-list">
-          <article
-            v-for="t in tickets"
-            :key="t.id"
-            class="ticket-card clickable"
-            role="button"
-            tabindex="0"
-            @click="openTicket(t)"
-            @keyup.enter="openTicket(t)"
-          >
-            <div class="ticket-top">
-              <strong class="mono">{{ t.id }}</strong>
-              <span class="pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
-            </div>
-            <p class="ticket-query">{{ t.userQuery }}</p>
-            <div class="ticket-timeline">
-              <span class="step done">已提交 <time>{{ formatTime(t.createdAt) }}</time></span>
-              <span v-if="t.escalatedAt" class="step warn">已超时升级 <time>{{ formatTime(t.escalatedAt) }}</time></span>
-              <span class="step" :class="{ done: t.status === 'RESOLVED' }">
-                {{ STATUS_LABEL[t.status] ?? t.status }}<template v-if="t.status !== 'RESOLVED'"> · {{ slaText(t) }}</template>
-              </span>
-            </div>
-            <div class="ticket-meta">
-              <span>{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</span>
-              <span>{{ t.assignee ?? '待分配' }}</span>
-              <span class="ticket-open">查看进度 →</span>
-            </div>
-          </article>
-        </div>
-        <p v-else class="empty">你还没有需要人工处理的工单</p>
+        <template v-if="sideTab === 'orders'">
+          <div class="section-head">
+            <h2>最近订单</h2>
+            <button v-if="!isGuest" class="link" type="button" @click="refreshOrders">刷新</button>
+          </div>
+          <p v-if="isGuest" class="notice">游客模式不展示订单：登录买家账号后可以查看自己的订单。</p>
+          <p v-else-if="orderError" class="err">{{ orderError }}</p>
+          <p v-else-if="ordersLoading" class="empty">正在读取订单…</p>
+          <div v-else-if="orders.length" class="order-list">
+            <article
+              v-for="order in visibleOrders"
+              :key="order.orderNo"
+              class="order-card"
+              role="button"
+              tabindex="0"
+              @click="askOrder(order)"
+              @keyup.enter="askOrder(order)"
+            >
+              <div class="order-top">
+                <strong class="mono">{{ order.orderNo }}</strong>
+                <span class="pill">{{ ORDER_STATUS_LABEL[order.status] ?? order.status }}</span>
+              </div>
+              <div class="order-meta">
+                <span>{{ order.categoryName }}</span>
+                <strong>¥{{ (order.amountFen / 100).toFixed(2) }}</strong>
+              </div>
+              <p class="order-foot">{{ formatTime(order.createdAt) }} 下单 · 点击询问</p>
+            </article>
+          </div>
+          <p v-else class="empty">你还没有订单</p>
+          <button v-if="orders.length > 2" class="link side-more" type="button" @click="showAllOrders = !showAllOrders">
+            {{ showAllOrders ? '收起' : '查看全部订单' }}
+          </button>
+        </template>
+
+        <template v-else>
+          <div class="section-head">
+            <h2>最近工单</h2>
+            <button v-if="!isGuest" class="link" type="button" @click="refreshTickets">刷新</button>
+          </div>
+          <p v-if="isGuest" class="notice">游客模式不展示工单：先登录买家账号，才能看到自己的售后进度。</p>
+          <p v-else-if="ticketError" class="err">{{ ticketError }}</p>
+          <p v-else-if="ticketsLoading" class="empty">正在读取…</p>
+          <div v-else-if="tickets.length" class="ticket-list">
+            <article
+              v-for="t in visibleTickets"
+              :key="t.id"
+              class="ticket-card clickable"
+              role="button"
+              tabindex="0"
+              @click="openTicket(t)"
+              @keyup.enter="openTicket(t)"
+            >
+              <div class="ticket-top">
+                <strong class="mono">{{ t.id }}</strong>
+                <span class="pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
+              </div>
+              <p class="ticket-query">{{ t.userQuery }}</p>
+              <div class="ticket-timeline">
+                <span class="step done">已提交 <time>{{ formatTime(t.createdAt) }}</time></span>
+                <span v-if="t.escalatedAt" class="step warn">已超时升级 <time>{{ formatTime(t.escalatedAt) }}</time></span>
+                <span class="step" :class="{ done: t.status === 'RESOLVED' }">
+                  {{ STATUS_LABEL[t.status] ?? t.status }}<template v-if="t.status !== 'RESOLVED'"> · {{ slaText(t) }}</template>
+                </span>
+              </div>
+              <div class="ticket-meta">
+                <span>{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</span>
+                <span>{{ t.assignee ?? '待分配' }}</span>
+                <span class="ticket-open">查看进度 →</span>
+              </div>
+            </article>
+          </div>
+          <p v-else class="empty">你还没有需要人工处理的工单</p>
+          <button v-if="tickets.length > 2" class="link side-more" type="button" @click="showAllTickets = !showAllTickets">
+            {{ showAllTickets ? '收起' : '查看全部工单' }}
+          </button>
+        </template>
       </section>
 
       <section class="side-card service-card">
@@ -846,16 +982,40 @@ function clearStoredSession() {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 22px;
-  align-items: start;
+  align-items: stretch;
   flex: 1;
+  min-height: calc(100vh - 200px);
 }
-.buyer-main { min-width: 0; display: flex; flex-direction: column; min-height: 62vh; }
-.buyer-side { position: sticky; top: 76px; display: grid; gap: 12px; }
+.buyer-main {
+  min-width: 0; display: flex; flex-direction: column;
+  height: calc(100vh - 200px); min-height: 520px;
+}
+.buyer-side {
+  position: sticky; top: 76px; display: grid; gap: 12px; align-content: start;
+  max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 2px;
+}
 .side-card {
   background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
   padding: 14px; box-sizing: border-box;
 }
 .side-card h2 { margin: 0 0 10px; font-size: 14px; }
+.side-tabs {
+  display: flex; gap: 4px; padding: 3px; margin: 0 0 12px;
+  background: var(--bg); border-radius: 10px;
+}
+.side-tab {
+  flex: 1; border: none; background: transparent; color: var(--ink-3);
+  border-radius: 8px; padding: 7px 8px; cursor: pointer; font-size: 13px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.side-tab.active { background: var(--panel); color: var(--ink); box-shadow: 0 1px 4px rgba(20, 22, 26, .08); font-weight: 600; }
+.tab-count {
+  min-width: 18px; padding: 0 5px; border-radius: 999px; background: #e7f4f2;
+  color: var(--teal); font-size: 11px; line-height: 18px; text-align: center;
+}
+.side-tab:not(.active) .tab-count { background: var(--line); color: var(--ink-3); }
+.side-activity .section-head { margin-bottom: 8px; }
+.side-more { display: block; margin: 8px auto 0; font-size: 12px; }
 .order-list { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 2px; }
 .order-card {
   border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;
@@ -876,6 +1036,7 @@ function clearStoredSession() {
 .welcome {
   background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
   padding: 26px; box-shadow: 0 10px 32px rgba(20, 22, 26, .05);
+  flex: 1;
 }
 .welcome h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.25; }
 .welcome p { margin: 0 0 16px; color: var(--ink-2); }
@@ -892,7 +1053,7 @@ function clearStoredSession() {
 }
 .chip:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
 .chip:disabled { opacity: 0.55; cursor: default; }
-.thread { display: flex; flex-direction: column; gap: 14px; padding: 8px 0 4px; }
+.thread { display: flex; flex-direction: column; gap: 14px; padding: 8px 4px 4px 0; flex: 1; min-height: 0; overflow-y: auto; }
 .msg { max-width: 88%; }
 .msg.user { align-self: flex-end; text-align: right; }
 .msg-who { font-size: 12px; color: var(--ink-3); margin-bottom: 3px; }
@@ -907,25 +1068,52 @@ function clearStoredSession() {
 .typing::after { content: '…'; }
 .agent-run {
   margin: 8px 0 0; text-align: left; border: 1px solid var(--line);
-  border-radius: 10px; background: #fbfcfc; padding: 8px 10px; font-size: 12px;
+  border-radius: 12px; background: var(--panel); font-size: 12px; overflow: hidden;
 }
 .agent-run summary {
-  cursor: pointer; color: var(--ink-2); display: flex; align-items: center; gap: 6px;
-  user-select: none; list-style: none;
+  cursor: pointer; color: var(--ink-2); display: flex; align-items: center; gap: 8px;
+  user-select: none; list-style: none; padding: 10px 12px;
 }
 .agent-run summary::-webkit-details-marker { display: none; }
+.agent-run[open] summary { border-bottom: 1px solid var(--line); }
 .agent-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--teal);
+  width: 8px; height: 8px; border-radius: 50%; background: var(--teal);
   box-shadow: 0 0 0 3px #eef8f6; flex: none;
 }
-.agent-run ol { list-style: none; margin: 8px 0 0; padding: 0 0 0 13px; display: grid; gap: 5px; border-left: 1px dashed #c9e6e1; }
-.agent-run li { position: relative; color: var(--ink-2); line-height: 1.45; }
-.agent-run li::before {
-  content: ''; position: absolute; left: -17px; top: 6px; width: 5px; height: 5px;
+.agent-dot.running { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(15, 118, 110, .12); } }
+.agent-title { color: var(--ink); font-weight: 600; }
+.agent-meta { color: var(--ink-3); font-size: 11px; }
+.agent-chevron { margin-left: auto; color: var(--ink-3); transition: transform .15s ease; }
+.agent-run[open] .agent-chevron { transform: rotate(90deg); }
+.agent-body { padding: 10px 12px 12px; display: grid; gap: 12px; }
+.agent-plan {
+  list-style: none; margin: 0; padding: 8px 10px; display: grid; gap: 5px;
+  background: #f4faf9; border: 1px solid #d9eeeb; border-radius: 9px;
+}
+.agent-plan li { display: flex; align-items: flex-start; gap: 7px; color: var(--ink-2); line-height: 1.45; }
+.plan-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--teal); flex: none; margin-top: 6px;
+}
+.agent-phase header { display: flex; align-items: baseline; gap: 8px; margin: 0 0 5px; }
+.phase-title { color: var(--ink); font-weight: 600; font-size: 12px; }
+.phase-hint { color: var(--ink-3); font-size: 11px; }
+.agent-phase ol { list-style: none; margin: 0; padding: 0 0 0 3px; display: grid; gap: 4px; }
+.agent-phase li { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-2); line-height: 1.45; }
+.step-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: #b7ddd8; flex: none; margin-top: 6px;
+}
+.agent-phase li.ok .step-dot { background: var(--green); }
+.agent-phase li.warn .step-dot { background: var(--amber); }
+.agent-phase li.danger .step-dot { background: var(--rose); }
+.agent-raw { border-top: 1px dashed var(--line); padding-top: 8px; }
+.agent-raw summary { cursor: pointer; color: var(--ink-3); font-size: 11px; padding: 0; border: none; }
+.agent-raw ol { list-style: none; margin: 6px 0 0; padding: 0 0 0 12px; display: grid; gap: 4px; border-left: 1px dashed #c9e6e1; }
+.agent-raw li { position: relative; color: var(--ink-3); line-height: 1.45; }
+.agent-raw li::before {
+  content: ''; position: absolute; left: -16px; top: 6px; width: 4px; height: 4px;
   border-radius: 50%; background: #b7ddd8;
 }
-.agent-run li.tool::before, .agent-run li.tool_result::before { background: var(--teal); }
-.agent-run li.fallback::before { background: var(--amber); }
 .msg-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; text-align: left; }
 .msg-actions .fine { margin: 0; }
 .fallback {
@@ -1028,9 +1216,10 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 }
 
 @media (max-width: 960px) {
-  .buyer-layout { grid-template-columns: 1fr; }
-  .buyer-side { position: static; grid-template-columns: 1fr; }
-  .buyer-main { min-height: 0; }
+  .buyer-layout { grid-template-columns: 1fr; min-height: 0; }
+  .buyer-side { position: static; grid-template-columns: 1fr; max-height: none; overflow: visible; }
+  .buyer-main { height: auto; min-height: 0; }
+  .thread { max-height: 62vh; }
 }
 
 @media (max-width: 640px) {

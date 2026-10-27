@@ -127,6 +127,8 @@ export interface AgentRunStep {
   kind: 'plan' | 'state' | 'tool' | 'tool_result' | 'fallback'
   label: string
   status?: string
+  /** 前端收到该步的时间，用于 Execution Card 的耗时汇总。 */
+  at?: number
 }
 
 /** SSE 流的响应体（`EventSource` 不支持 POST，所以逐帧手读，ADR 0006 的同款理由）。 */
