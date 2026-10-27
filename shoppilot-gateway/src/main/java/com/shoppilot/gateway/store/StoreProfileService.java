@@ -1,5 +1,7 @@
 package com.shoppilot.gateway.store;
 
+import com.shoppilot.gateway.scenario.ScenarioPackService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -23,8 +25,15 @@ public class StoreProfileService {
                     + "不要编造具体商品名、价格或库存；条款标注【本店】与【平台】，同一事项口径不同时"
                     + "以【本店】为准，只复述条款原文明确写出的时限、次数与金额，不要补全或合并出更宽的承诺）";
     private final Map<String, StoreProfileProperties.Profile> profiles;
+    private final ScenarioPackService scenarios;
 
     public StoreProfileService(StoreProfileProperties properties) {
+        this(properties, ScenarioPackService.empty());
+    }
+
+    @Autowired
+    public StoreProfileService(StoreProfileProperties properties, ScenarioPackService scenarios) {
+        this.scenarios = scenarios;
         if (properties == null || properties.profiles() == null) {
             this.profiles = Map.of();
             return;
@@ -44,6 +53,10 @@ public class StoreProfileService {
         if (tenantId == null || tenantId.isBlank()) {
             return Optional.empty();
         }
+        StoreProfileProperties.Profile fromPack = scenarios.profileFor(tenantId);
+        if (fromPack != null) {
+            return Optional.of(fromPack);
+        }
         return Optional.ofNullable(profiles.get(tenantId.trim()));
     }
 
@@ -58,6 +71,10 @@ public class StoreProfileService {
         appendIfPresent(section, "店名", value.name());
         appendIfPresent(section, "主营", value.business());
         // 刻意不拼 guarantees：承诺类事实只由【政策条款】给出（见类注释）。
+        String addendum = scenarios.addendumFor(tenantId);
+        if (!addendum.isBlank()) {
+            section.append("【场景补充】").append(addendum).append('\n');
+        }
         return baseSystemPrompt + "\n" + section;
     }
 

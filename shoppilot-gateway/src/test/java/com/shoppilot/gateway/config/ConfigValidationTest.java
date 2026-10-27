@@ -41,6 +41,8 @@ class ConfigValidationTest {
             "SHOPPILOT_AGENT_MAX_TOOL_ROUNDS",
             "SHOPPILOT_BIZMOCK_URL",
             "SHOPPILOT_CENTROID_CACHE",
+            // 票 172：场景包目录可配。
+            "SHOPPILOT_SCENARIO_PACKS_DIR",
             "SHOPPILOT_EMBED_MODEL",
             "SHOPPILOT_ES_URL",
             "SHOPPILOT_INTERNAL_TOKEN",

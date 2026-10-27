@@ -23,7 +23,8 @@
 | `ingest` | Markdown 政策切块与离线入库 | `MarkdownChunker`、`IngestRunner` |
 | `llm` | local/dev/perf 三种模型实现、超时/预算、显式输出上限与 LLM 故障注入 | `LlmGateway`、`OllamaLlmClient`、`OpenAiCompatibleLlmClient`、`MockLlmClient`、`TokenBudget` |
 | `agent` | 10 状态编排、工具派发、会话、幂等、fallback 与工单；计划步骤与上下文组成的观测出口（ADR 0044 票 48/49）；**请求级幂等回放**（模型之前，ADR 0046 票 58）与**退款受理出口**（ADR 0047 票 59） | `AgentStateMachine`、`AgentResult`、`ToolDispatcher`、`BizMockClient`、`FallbackService`、`IdempotencyService`、`ReplayReply` |
-| `store` | 按已验签 `tenantId` 提供对话层店铺资料（店名/主营/本店承诺），拼进系统提示词（round37 / ADR 0071） | `StoreProfileProperties`（配置 `shoppilot.store-profiles`）、`StoreProfileService`；读面 `web/StoreProfileController` |
+| `store` | 按已验签 `tenantId` 提供对话层店铺资料（店名/主营/本店承诺），拼进系统提示词（round37 / ADR 0071）；场景包覆盖优先 | `StoreProfileProperties`（配置 `shoppilot.store-profiles`）、`StoreProfileService`；读面 `web/StoreProfileController` |
+| `scenario` | 场景包 v1（票 172）：加载 `config/scenarios/*.json`，提供 domain、店铺人格与可选补充提示；重复 tenant/非法 domain 拒启 | `ScenarioPackService`、`ScenarioPackService.Pack`；接入 `TenantDomainRegistry`、`StoreProfileService` |
 | `web` | 同步/SSE 聊天入口、运维接口、错误信封、调试台事件出口；店铺资料只读端点与调试台入口重定向；**`/ops/**` 默认拒绝守卫**（2026-10-22） | `ChatController`、`SseEventSink`、`OpsController`、`OpsAuthorizationInterceptor`、`StoreProfileController`、`DebugEntryController`、`ApiErrorWriter` |
 | `config` | 配置绑定/校验、健康组、dev 默认值、线程与 HTTP 客户端、运行时指标、MVC 拦截器注册 | `GatewayProperties`、`ValidatedServerProperties`、`DevDefaultsPolicy`、`RuntimeStateMetrics`、`WebMvcConfig` |
 

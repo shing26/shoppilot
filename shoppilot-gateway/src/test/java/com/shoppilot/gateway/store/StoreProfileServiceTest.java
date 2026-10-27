@@ -1,14 +1,21 @@
 package com.shoppilot.gateway.store;
 
+import com.shoppilot.gateway.scenario.ScenarioPackService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** 店铺人格的边界：登记租户追加三段，未登记租户一字不加。 */
 class StoreProfileServiceTest {
+
+    @TempDir
+    Path tempDir;
 
     private final StoreProfileService service = new StoreProfileService(new StoreProfileProperties(Map.of(
             "T001", new StoreProfileProperties.Profile(
@@ -42,5 +49,27 @@ class StoreProfileServiceTest {
     void profilesAreTenantSpecific() {
         assertThat(service.augment("", "T001")).contains("星选生活旗舰店").doesNotContain("云栖酒店");
         assertThat(service.augment("", "T004")).contains("云栖酒店").doesNotContain("星选生活旗舰店");
+    }
+
+    @Test
+    @DisplayName("场景包覆盖店铺人格，并追加场景补充提示")
+    void scenarioPackOverridesProfileAndAddsAddendum() throws Exception {
+        Files.writeString(tempDir.resolve("hotel.json"), """
+                { "id": "hotel", "domain": "HOTEL",
+                  "stores": { "T001": { "name": "场景包店铺", "business": "场景包主营", "guarantees": "不要进 Prompt" } },
+                  "promptAddendum": "当前场景为测试场景。" }
+                """);
+        StoreProfileService withPack = new StoreProfileService(
+                new StoreProfileProperties(Map.of("T001", new StoreProfileProperties.Profile(
+                        "旧店铺", "旧主营", "旧承诺"))),
+                new ScenarioPackService(tempDir.toString()));
+
+        String prompt = withPack.augment("基座正文", "T001");
+
+        assertThat(prompt).contains("店名：场景包店铺");
+        assertThat(prompt).contains("主营：场景包主营");
+        assertThat(prompt).contains("【场景补充】当前场景为测试场景。");
+        assertThat(prompt).doesNotContain("旧店铺");
+        assertThat(prompt).doesNotContain("不要进 Prompt");
     }
 }

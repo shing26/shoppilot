@@ -154,6 +154,9 @@ shoppilot:
   triage:
     # T1 意图质心的本地缓存，按样本指纹失效；删掉它会重新向量化 90 条样本
     centroid-cache: ${SHOPPILOT_CENTROID_CACHE:.cache/intent-centroids.json}
+  scenario-packs:
+    # 票 172：每个 JSON 定义一个场景包（域 + 店铺人格 + 可选补充提示），覆盖下面的散配置。
+    dir: ${SHOPPILOT_SCENARIO_PACKS_DIR:config/scenarios}
   tenant-domains:
     # round33：行业隔离的单位。未登记租户 fail-closed 为 UNKNOWN，不自动看平台电商政策。
     domains:

@@ -1,6 +1,8 @@
 package com.shoppilot.gateway.config;
 
 import com.shoppilot.gateway.knowledge.Domain;
+import com.shoppilot.gateway.scenario.ScenarioPackService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -15,17 +17,28 @@ import java.util.Map;
 public class TenantDomainRegistry {
 
     private final Map<String, String> configured;
+    private final ScenarioPackService scenarios;
 
     public TenantDomainRegistry(GatewayProperties properties) {
+        this(properties, ScenarioPackService.empty());
+    }
+
+    @Autowired
+    public TenantDomainRegistry(GatewayProperties properties, ScenarioPackService scenarios) {
         GatewayProperties.TenantDomains tenantDomains = properties.tenantDomains();
         this.configured = tenantDomains == null || tenantDomains.domains() == null
                 ? Map.of()
                 : Map.copyOf(tenantDomains.domains());
+        this.scenarios = scenarios;
     }
 
     public Domain resolve(String tenantId) {
         if (tenantId == null || tenantId.isBlank()) {
             return Domain.UNKNOWN;
+        }
+        Domain fromPack = scenarios.domainFor(tenantId);
+        if (fromPack != null) {
+            return fromPack;
         }
         return Domain.from(configured.get(tenantId));
     }

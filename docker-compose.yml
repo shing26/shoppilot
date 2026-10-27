@@ -285,8 +285,10 @@ services:
       SHOPPILOT_BIZMOCK_URL: http://biz-mock:8091
       SHOPPILOT_TICKET_URL: http://ticket:8092
       SHOPPILOT_KNOWLEDGE_DIR: /workspace/knowledge
+      SHOPPILOT_SCENARIO_PACKS_DIR: /workspace/config/scenarios
     volumes:
       - ./knowledge:/workspace/knowledge:ro
+      - ./config/scenarios:/workspace/config/scenarios:ro
     depends_on:
       ingest: { condition: service_completed_successfully }
       biz-mock: { condition: service_started }
