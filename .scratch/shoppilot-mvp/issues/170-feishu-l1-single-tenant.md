@@ -1,6 +1,6 @@
 # 170 飞书 L1：单租户真实渠道跑通
 
-**Status:** in_progress（代码就绪；真实飞书活体 blocked on credentials，2026-10-27）
+**Status:** implemented（2026-10-27，飞书单租户 L1 活体已跑通）
 
 **Claimed by:** zcode session 2026-10-27
 
@@ -58,16 +58,20 @@
 - GatewayProperties.Feishu 增加 tenant / customer，默认 T001 / C001；
 - FeishuLongConnectionClient 使用配置身份，不再写死 tenantId=feishu；
 - application.yml / .env.example 增加 SHOPPILOT_IM_FEISHU_TENANT / CUSTOMER；
-- JVM：Feishu 26 条测试通过，新增“配置身份不写死”用例；
-- 全量 verify：703 tests / 117 suites 全绿；
+- JVM：Feishu 27 条测试通过（含 post 富文本与配置身份用例）；
+- 全量 verify：704 tests / 117 suites 全绿；
 - 联调步骤：[FEISHU_L1_RUNBOOK.md](../../../docs/FEISHU_L1_RUNBOOK.md)。
 
-## 还未完成（必须等凭据）
+## 活体验证（2026-10-27，真实飞书）
 
-- 真实飞书长连接启动；
-- 真实消息收发；
-- 转人工工单在工作台可见；
-- 同会话追问上下文。
+- 长连接启动：20:55:10 飞书长连接已启动；20:55:11 connected to wss://msg-frontier.feishu.cn [conn_id=7701330353419603220]；
+- 首轮失败：事件已到但 message_type=post，被旧适配器拒绝；
+- 修复：FeishuAdapter 支持 post 富文本；飞书 27 条测试通过；
+- 真实消息：订单 90001 物流查询有回复；追问“那90002呢”能接上下文（Redis 会话键 T001/C001）；
+- 转人工：ticket 库有两条 channel=feishu、tenant=T001、query=转人工、status=OPEN 的工单：T1793103363180-1、T1793103345700-0；
+- 证据：[FEISHU_L1_LIVE_EVIDENCE.md](../../../docs/FEISHU_L1_LIVE_EVIDENCE.md)。
+
+**仍未做：** 多租户映射、群聊/图片/文件、重复 message id 活体幂等、坐席飞书内回复。
 
 ## Handoff notes
 
@@ -75,7 +79,7 @@
 
 1. L1 只做一个机器人绑定一个租户/买家，多租户映射放 L2；
 2. 不把 tenant 写死成 feishu，也不引入复杂映射表；配置默认值 + 显式 env 覆盖；
-3. 真实活体未跑，不把 JVM 通过写成“已接入飞书”。
+3. 真实活体已跑；但仍只对外说“飞书单租户 L1 已跑通”，不说“已接入飞书平台”。
 
 **验证落点**
 

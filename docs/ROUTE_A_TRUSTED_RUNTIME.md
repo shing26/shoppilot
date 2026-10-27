@@ -18,7 +18,7 @@ ShopPilot 是一个可验证、可审计、可回归的受控 Agent 运行时。
 
 它用确定性路由与有界状态机约束自主性，用工具风险分级与 HITL 约束资金动作，用 trace、Agent Run
 与工单 payload 让行为可解释，用租户/买家隔离、幂等、审计守住边界，用 180 条 gold、Handoff golden、
-任务级判据、promtool 与 703 条 JVM 测试让结果可复跑。
+任务级判据、promtool 与 704 条 JVM 测试让结果可复跑。
 
 它不是通用客服 SaaS，也不是自主 Agent 框架；它是一套“LLM 在受监管业务里如何可靠工作”的工程答案。
 
@@ -36,7 +36,7 @@ ShopPilot 是一个可验证、可审计、可回归的受控 Agent 运行时。
 **证据：**
 - [ADR 0072](adr/0072-agent-handoff-graph-and-role-kernel.md)
 - `ToolDispatcher` / `HandoffGraph` / `ToolSurfacePolicy`
-- 703 JVM tests
+- 704 JVM tests
 
 ### 承诺 2：每一步可解释，不是只看最终答案
 
@@ -53,7 +53,7 @@ ShopPilot 是一个可验证、可审计、可回归的受控 Agent 运行时。
 
 - 180 条 gold、UX 30、Handoff 23、promtool 告警测试
 - 离线 rescore、任务级判据、覆盖率棘轮
-- 703 tests / 117 suites，CI 每次 push 强制跑
+- 704 tests / 117 suites，CI 每次 push 强制跑
 - 关键失败在 EVIDENCE 里照登，不藏
 
 **证据：**
@@ -143,7 +143,7 @@ ShopPilot 是一个可验证、可审计、可回归的受控 Agent 运行时。
 
 展示：
 
-- 703 tests / 117 suites
+- 704 tests / 117 suites
 - CI 全绿
 - gold / handoff golden / promtool
 - EVIDENCE 里未达成项也照登

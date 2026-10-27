@@ -122,6 +122,26 @@ class FeishuAdapterReplayTest {
     }
 
     @Test
+    @DisplayName("L1：飞书 post 富文本也归一成纯文本，不再因 message_type=post 丢消息")
+    void feishuPostMessageNormalizesToText() {
+        Map<String, Object> payload = Map.of("event", Map.of(
+                "message", Map.of(
+                        "message_id", "om_post_001",
+                        "chat_id", "oc_post_chat",
+                        "chat_type", "p2p",
+                        "message_type", "post",
+                        "content", "{\"title\":\"\",\"content\":[[{\"tag\":\"text\",\"text\":\"帮我查订单 \"},{\"tag\":\"text\",\"text\":\"90001 的物流\"}]]}"
+                )
+        ));
+
+        ChannelAdapter.NormalizedChat chat = FEISHU.normalize(payload);
+
+        assertThat(chat.query()).isEqualTo("帮我查订单 90001 的物流");
+        assertThat(chat.conversationId()).isEqualTo("feishu:chat:oc_post_chat");
+        assertThat(chat.clientToken()).isEqualTo("feishu:msg:om_post_001");
+    }
+
+    @Test
     @DisplayName("spec §3 之一 跨渠道会话不串：同人同参数，飞书与 webhook 的会话键不同")
     void sessionsDoNotLeakAcrossPlatforms() throws Exception {
         Map<String, JsonNode> fixtures = loadFixtures();

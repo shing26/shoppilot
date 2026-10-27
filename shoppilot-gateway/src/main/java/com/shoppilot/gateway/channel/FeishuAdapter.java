@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,8 +22,11 @@ import java.util.Map;
  *   <li>**contact 恒为 null**：回复走长连接出站 API（SDK），不存在「送回哪儿」这个问题。</li>
  * </ul>
  *
- * <p>范围（round31 spec §5）：**仅单聊（p2p）文本**。群聊、富媒体、卡片登记不做；
- * 非本范围的形状当场拒（IllegalArgumentException → 上层 400 语义），不静默吞。
+ * <p>范围（round31 spec §5 / L1 修订）：**仅单聊（p2p）文本与富文本 post**。群聊、图片、文件、
+ * 卡片登记不做；非本范围的形状当场拒（IllegalArgumentException → 上层 400 语义），不静默吞。
+ *
+ * <p>飞书客户端在部分输入法/粘贴场景会把用户文本标成 {@code message_type=post}（富文本），
+ * 若只认 {@code text}，用户明明发了字却收不到回复。这里把 post 里的 text 节点按段落拼回纯文本。
  */
 @Component
 public class FeishuAdapter implements ChannelAdapter {
@@ -56,13 +61,18 @@ public class FeishuAdapter implements ChannelAdapter {
             throw new IllegalArgumentException("round31 仅支持单聊（p2p）消息，收到 chat_type=" + chatType);
         }
         String messageType = message.path("message_type").asText("");
-        if (!"text".equals(messageType)) {
-            throw new IllegalArgumentException("round31 仅支持 text 消息，收到 message_type=" + messageType);
+        // content 是**字符串化的 JSON**（飞书事件契约）：text 是 {"text":"你好"}，
+        // post 是 {"content":[[{"tag":"text","text":"..."}]]}——二次解析取文本。
+        String text;
+        if ("text".equals(messageType)) {
+            text = extractText(message.path("content").asText(""));
+        } else if ("post".equals(messageType)) {
+            text = extractPostText(message.path("content").asText(""));
+        } else {
+            throw new IllegalArgumentException("L1 仅支持 text/post 消息，收到 message_type=" + messageType);
         }
-        // content 是**字符串化的 JSON**（飞书事件契约）："{\"text\":\"你好\"}"——二次解析取文本
-        String text = extractText(message.path("content").asText(""));
         if (text == null || text.isBlank()) {
-            throw new IllegalArgumentException("text 消息的 content 里没有可用的 text 字段");
+            throw new IllegalArgumentException(messageType + " 消息的 content 里没有可用的 text 字段");
         }
         // 两格派生（票 96 辅助）：渠道标签来自 channel()（长连接线程没有 ChannelContext）；
         // 聊天维度 = chat_id（单聊里与该联系人一一对应，群聊将来也是它，形状不变）
@@ -82,6 +92,35 @@ public class FeishuAdapter implements ChannelAdapter {
         }
         try {
             return MAPPER.readTree(content).path("text").asText(null);
+        } catch (Exception malformed) {
+            return null;
+        }
+    }
+
+    /**
+     * 飞书 post（富文本）：content 是二维数组，每个段落是一组节点；只取 tag=text 的文本，
+     * at/图片/链接等不拼进 query（@机器人 不应该变成用户诉求的一部分）。
+     */
+    private static String extractPostText(String content) {
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = MAPPER.readTree(content);
+            JsonNode post = root.has("content") ? root : root.path("zh_cn");
+            List<String> paragraphs = new ArrayList<>();
+            for (JsonNode paragraph : post.path("content")) {
+                StringBuilder text = new StringBuilder();
+                for (JsonNode node : paragraph) {
+                    if ("text".equals(node.path("tag").asText(""))) {
+                        text.append(node.path("text").asText(""));
+                    }
+                }
+                if (!text.isEmpty()) {
+                    paragraphs.add(text.toString());
+                }
+            }
+            return paragraphs.isEmpty() ? null : String.join("\n", paragraphs);
         } catch (Exception malformed) {
             return null;
         }
