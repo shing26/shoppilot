@@ -198,6 +198,9 @@ shoppilot:
     enabled: ${SHOPPILOT_IM_FEISHU_ENABLED:false}
     app-id: ${SHOPPILOT_IM_FEISHU_APP_ID:}
     app-secret: ${SHOPPILOT_IM_FEISHU_APP_SECRET:}
+    # L1 单租户身份：飞书无 JWT，必须显式绑定到某个店铺/买家。
+    tenant: ${SHOPPILOT_IM_FEISHU_TENANT:T001}
+    customer: ${SHOPPILOT_IM_FEISHU_CUSTOMER:C001}
 
 ---
 spring:

@@ -176,9 +176,12 @@ public class FeishuLongConnectionClient {
         String conversationId = chat.conversationId();
         String chatId = extractChatId(conversationId);
 
-        // 设置上下文（飞书无 JWT，使用默认身份）
+        // 设置上下文（飞书无 JWT）：租户/买家由配置注入，不能写死 "feishu"。
+        GatewayProperties.Feishu feishu = properties == null ? null : properties.feishu();
+        String tenantId = feishu == null ? "T001" : feishu.tenant();
+        String customerId = feishu == null ? "C001" : feishu.customer();
         TenantContext.Identity identity = new TenantContext.Identity(
-                "feishu", chatId, conversationId);
+                tenantId, customerId, conversationId);
         TenantContext.set(identity);
         ChannelContext.set(Channel.FEISHU);
 
