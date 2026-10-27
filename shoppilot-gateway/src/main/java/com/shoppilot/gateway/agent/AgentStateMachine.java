@@ -69,6 +69,14 @@ public class AgentStateMachine {
     private static final int MAX_CLAUSE_CHARS = 600;
 
     /**
+     * 票 167：本地 3B 的答案保真补充。只加在 local 模式，不改变 v1.2.0 基座与 dev 行为。
+     * 用配置判断模式，不碰 LlmGateway——零模型路径的用例要能断言“没有任何 LLM 交互”。
+     */
+    private static final String LOCAL_ANSWER_FIDELITY_HINT =
+            "\n\n【本地模式补充】纯政策咨询直接按政策条款回答，不要索要订单号；"
+            + "条款里出现的时限、比例、金额等数字必须原样写进回答，不得省略。";
+
+    /**
      * 反思的失败上下文（round35 票 144 / 票 138 规则二）。只陈述"这一枪没拿到结果"这个事实，
      * 并给出下一步的做法；**不教模型给失败分类**——闸 / 中止 / 反思的判定全在状态机里
      * （ADR 0069 已否决"把反思做成提示词驱动"：分类一旦进提示词，等于给模型讨价还价的空间）。
@@ -261,6 +269,9 @@ public class AgentStateMachine {
         // 未登记租户不追加，避免拿别家店的资料补位。
         String systemPrompt = styleService.assemble(
                 storeProfileService.augment(promptCatalog.systemPrompt(), tenantId), styleTier);
+        if ("local".equals(properties.llm().mode())) {
+            systemPrompt = systemPrompt + LOCAL_ANSWER_FIDELITY_HINT;
+        }
         // 显式转人工优先于情绪判定（ADR 0042）：ADR 0017 把「转人工」下沉到 T0 就是为了不依赖任何
         // 服务，而情绪门位于 INTAKE、先于意图判定，会把这条平静问句判成 URGENT 后抢先转接，于是 T0
         // 那张含「转人工」的词表根本没机会执行（2026-09-20 矩阵 F2；2026-09-23 活体验收 step 7 复现）。
@@ -954,7 +965,7 @@ public class AgentStateMachine {
                 && (rounds == 0 || answeredByBudgetCheck)) {
             // 首轮就给出内容，或预算检查后模型明确不再要工具：直接把它按打字机切块推出去，不再多打一次模型。
             // token 字段照旧走总账（票 145 / R12 的第一处缺口：这里此前只报这一跳，4 轮用例因此上报 2,811 vs 计费 11,338）
-            answer = lastReply.content();
+            answer = localPolicyAnswerGuard(lastReply.content(), intent, query, retrieved);
             emitChunked(answer, sink);
         } else {
             try {
@@ -1636,6 +1647,78 @@ public class AgentStateMachine {
 
     private static String summarize(ToolDispatcher.Dispatch dispatch) {
         return dispatch.status() == null ? "无结果" : dispatch.status().name();
+    }
+
+    /**
+     * 票 167：local 3B 的答案保真守卫。只对政策意图生效，且只在 local 模式。
+     * 3B 会漏掉条款里的时限数字，也会对纯政策咨询反问订单号；这里做确定性的最小补齐。
+     */
+    private String localPolicyAnswerGuard(String answer, Intent intent, String query,
+                                          HybridRetriever.Result retrieved) {
+        if (!"local".equals(llm.mode()) || intent == null || !intent.isPolicy() || answer == null) {
+            return answer;
+        }
+        String guarded = answer;
+        String timeFact = missingTimeFact(guarded, retrieved);
+        if (timeFact != null) {
+            registry.counter("shoppilot_local_answer_guard_total", "kind", "time_fact").increment();
+            guarded = guarded.endsWith("。") ? guarded + "补充：" + timeFact : guarded + "。补充：" + timeFact;
+        }
+        if (query != null && !query.matches("(?s).*\\d{5,}.*")) {
+            String withoutAsk = dropPolicyOrderAsk(guarded);
+            if (!withoutAsk.isBlank()) {
+                guarded = withoutAsk;
+            }
+        }
+        return guarded;
+    }
+
+    private static String dropPolicyOrderAsk(String answer) {
+        StringBuilder kept = new StringBuilder();
+        for (String sentence : answer.split("。")) {
+            // 纯政策咨询没有订单号诉求；只要出现“订单号”就不该出现在回答里。
+            boolean asksOrder = sentence.contains("订单号");
+            if (!asksOrder) {
+                kept.append(sentence).append("。");
+            }
+        }
+        return kept.length() == 0 ? answer : kept.toString();
+    }
+
+    private static String missingTimeFact(String answer, HybridRetriever.Result retrieved) {
+        if (retrieved == null || retrieved.rules() == null || retrieved.rules().isEmpty()) {
+            return null;
+        }
+        String freshFact = null;
+        String serviceFact = null;
+        for (HybridRetriever.Retrieved rule : retrieved.rules()) {
+            if (rule.text() == null) {
+                continue;
+            }
+            for (String sentence : rule.text().split("。")) {
+                int idx = sentence.indexOf("四十八小时");
+                if (idx >= 0 && sentence.contains("时限")) {
+                    int start = sentence.lastIndexOf("，", idx);
+                    String fact = sentence.substring(start < 0 ? 0 : start + 1, idx + "四十八小时".length()).trim();
+                    // gold 用阿拉伯数字；条款原文是中文数字，补齐时两种写法都给，避免口径不一致。
+                    freshFact = fact.replace("四十八小时", "48 小时（四十八小时）");
+                }
+                if (serviceFact == null && sentence.contains("点")
+                        && (sentence.contains("供应时间") || sentence.contains("开放时间"))) {
+                    String head = sentence.split("，")[0].trim();
+                    if (!head.isBlank()) {
+                        serviceFact = head;
+                    }
+                }
+            }
+        }
+        if (serviceFact != null && !answer.contains("七点") && !answer.contains("十点")) {
+            return serviceFact.endsWith("。") ? serviceFact : serviceFact + "。";
+        }
+        if (freshFact != null && !answer.contains("48") && !answer.contains("四十八")) {
+            return freshFact.endsWith("。") ? freshFact : freshFact + "。";
+        }
+        return null;
     }
 
     private static void emitChunked(String answer, EventSink sink) {

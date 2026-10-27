@@ -855,6 +855,36 @@ class GatewayMainPathJvmTest {
     }
 
     @Test
+    @DisplayName("票 167：local 政策答案漏时限时补齐条款数字，并去掉纯咨询的订单号反问")
+    void localPolicyAnswerGuardAddsTimeFactAndDropsOrderAsk() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        when(llm.mode()).thenReturn("local");
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text(
+                "生鲜坏了可以按实付金额退款。请提供订单号，以便查询具体订单。"));
+        HybridRetriever.Result retrieved = new HybridRetriever.Result(List.of(
+                new HybridRetriever.Retrieved("fresh-01-claim-window", 0.9d, 1, 1, "platform", "生鲜理赔",
+                        "受理时限", "fresh-01-claim-window",
+                        "冷藏类商品的理赔时限为签收后二十四小时，常温果蔬类为签收后四十八小时。")),
+                1, 1, 7L);
+        SessionStore store = mock(SessionStore.class);
+        when(store.load(anyString(), anyString(), anyString()))
+                .thenReturn(SessionStore.Session.empty(CONVERSATION));
+        when(store.appendTurn(any(), anyString(), anyString())).thenAnswer(call -> call.getArgument(0));
+
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.POLICY_FRESH, "T1", true),
+                mock(CacheService.class), llm, mock(ToolDispatcher.class), mock(FallbackService.class),
+                perfModeGate(), retrieved, store);
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"生鲜坏了怎么赔\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value(org.hamcrest.Matchers.containsString("四十八小时")))
+                .andExpect(jsonPath("$.answer").value(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("请提供订单号"))));
+    }
+
+    @Test
     @DisplayName("零召回：context.ruleIds 是空数组，且 Prompt 仍输出「未检索到相关条款」占位（票 49）")
     void zeroRecallKeepsEmptyRuleIdsAndThePlaceholder() throws Exception {
         ArgumentCaptor<LlmTypes.Request> planRound = ArgumentCaptor.forClass(LlmTypes.Request.class);

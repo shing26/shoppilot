@@ -86,7 +86,7 @@ payload 带 `handoffTrail`、`blockedReason`、`confirmedSlots`、`promptVersion
 - 离线 rescore
 - 任务级判据
 - 覆盖率棘轮
-- 700 条 JVM 测试 / 117 suites
+- 701 条 JVM 测试 / 117 suites
 
 它们不是“有空再跑”的脚本，而是 CI 每次 push 必须通过的闸门。
 关键失败在 `EVIDENCE.md` 里照登，不藏。
