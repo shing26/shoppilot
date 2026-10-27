@@ -129,7 +129,13 @@ ACTION_ADDRESS 用定向 18/18 补齐到 **100%**；gold / 阈值零改动。证
 - 估算每组用哪个模型的质量与 token；
 - 选一个“质量不降、token 明显降”的组合。
 
-**Gate：** 质量不降；token / 延迟有实测收益；不引入新的失败模式。
+**Gate：** 离线评估完成，见 [STAGE3_MODEL_ROUTING.md](STAGE3_MODEL_ROUTING.md)。
+
+- 政策组（5 个 POLICY + UNKNOWN + ESCALATE，126 条）local 100% = dev 100%；
+- 动作组 local 50–94.4%，不达标，保留 dev；
+- 政策组切 local 可省 qwen-plus **214,616 token / 180 条（40.2%）**；
+- 代价：政策平均延迟 3.3s → 10.1s（约 3x），需要所有者决定 SLA 是否接受；
+- **尚未改线上路由**，下一步是“是否实现影子路由”的决策票。
 
 ### 阶段 4：是否微调（可选，最后做）
 
