@@ -12,8 +12,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -21,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -36,6 +40,9 @@ import static org.mockito.Mockito.when;
 class FeishuLongConnectionClientJvmTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    @TempDir
+    Path tempDir;
 
     private FeishuAdapter adapter;
     private AgentStateMachine agentStateMachine;
@@ -123,7 +130,7 @@ class FeishuLongConnectionClientJvmTest {
     @DisplayName("L1：租户/买家来自配置，不写死 feishu")
     void handleEventUsesConfiguredTenantAndCustomer() {
         when(properties.feishu()).thenReturn(new GatewayProperties.Feishu(
-                true, "app-id", "app-secret", "T002", "C009"));
+                true, "app-id", "app-secret", "T002", "C009", null));
         Map<String, Object> payload = Map.of("event", Map.of(
                 "message", Map.of(
                         "message_id", "om_cfg_001",
@@ -147,6 +154,38 @@ class FeishuLongConnectionClientJvmTest {
         assertThat(captured[0]).isNotNull();
         assertThat(captured[0].tenantId()).isEqualTo("T002");
         assertThat(captured[0].customerId()).isEqualTo("C009");
+    }
+
+    @Test
+    @DisplayName("L2：未知飞书身份拒绝执行，并回复绑定提示")
+    void handleEventRejectsUnmappedIdentity() throws Exception {
+        Path file = tempDir.resolve("feishu-identities.json");
+        Files.writeString(file, """
+                {
+                  "users": {
+                    "ou_known": { "tenant": "T002", "customer": "C001" }
+                  }
+                }
+                """);
+        when(properties.feishu()).thenReturn(new GatewayProperties.Feishu(
+                true, "app-id", "app-secret", "T001", "C001", file.toString()));
+        Map<String, Object> payload = Map.of("event", Map.of(
+                "sender", Map.of("sender_id", Map.of("open_id", "ou_unknown")),
+                "message", Map.of(
+                        "message_id", "om_unmapped_001",
+                        "chat_id", "oc_unmapped",
+                        "chat_type", "p2p",
+                        "message_type", "text",
+                        "content", "{\"text\":\"你好\"}"
+                )
+        ));
+
+        client.handleEvent(payload);
+
+        verify(agentStateMachine, never()).run(anyString(), anyString(), any(EventSink.class));
+        ArgumentCaptor<String> reply = ArgumentCaptor.forClass(String.class);
+        verify(replySender).send(eq("oc_unmapped"), reply.capture());
+        assertThat(reply.getValue()).contains("尚未绑定");
     }
 
     @Test
@@ -312,7 +351,7 @@ class FeishuLongConnectionClientJvmTest {
     @Test
     @DisplayName("非回环 + 启用 + 空 APP_ID → 拒启")
     void startRejectsNonLoopbackWithBlankAppId() {
-        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "some-secret", "T001", "C001");
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "some-secret", "T001", "C001", null);
         when(properties.feishu()).thenReturn(feishu);
 
         FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
@@ -327,7 +366,7 @@ class FeishuLongConnectionClientJvmTest {
     @Test
     @DisplayName("非回环 + 启用 + 空 APP_SECRET → 拒启")
     void startRejectsNonLoopbackWithBlankAppSecret() {
-        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "some-app-id", "", "T001", "C001");
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "some-app-id", "", "T001", "C001", null);
         when(properties.feishu()).thenReturn(feishu);
 
         FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
@@ -342,7 +381,7 @@ class FeishuLongConnectionClientJvmTest {
     @Test
     @DisplayName("非回环 + 启用 + 两个凭据都空 → 拒启，消息含两个凭据名")
     void startRejectsNonLoopbackWithBothBlank() {
-        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "", "T001", "C001");
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "", "T001", "C001", null);
         when(properties.feishu()).thenReturn(feishu);
 
         FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
@@ -357,7 +396,7 @@ class FeishuLongConnectionClientJvmTest {
     @Test
     @DisplayName("回环 + 启用 + 空凭据 → WARN + 不注册长连接（不抛异常）")
     void startWarnsOnLoopbackWithBlankCredentials() {
-        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "", "T001", "C001");
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "", "T001", "C001", null);
         when(properties.feishu()).thenReturn(feishu);
 
         FeishuLongConnectionClient loopbackClient = new FeishuLongConnectionClient(
@@ -379,7 +418,7 @@ class FeishuLongConnectionClientJvmTest {
     @Test
     @DisplayName("回环 + 启用 + 凭据非空 → 正常启动（不拒启）")
     void startAllowsLoopbackWithValidCredentials() {
-        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "test-app-id", "test-secret", "T001", "C001");
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "test-app-id", "test-secret", "T001", "C001", null);
         when(properties.feishu()).thenReturn(feishu);
 
         FeishuLongConnectionClient loopbackClient = new FeishuLongConnectionClient(
@@ -392,7 +431,7 @@ class FeishuLongConnectionClientJvmTest {
     @Test
     @DisplayName("非回环 + 未启用 → 跳过（不检查凭据）")
     void startSkipsWhenDisabled() {
-        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(false, "", "", "T001", "C001");
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(false, "", "", "T001", "C001", null);
         when(properties.feishu()).thenReturn(feishu);
 
         FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
@@ -408,7 +447,7 @@ class FeishuLongConnectionClientJvmTest {
         // 这个测试验证：如果 start() 里的拒启条件被改成「凭据非空才拒」，
         // 那么空凭据就会漏进来（不会抛异常），测试就会红。
         // 当前实现：空凭据 + 非回环 → 必抛 IllegalStateException
-        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "", "T001", "C001");
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "", "T001", "C001", null);
         when(properties.feishu()).thenReturn(feishu);
 
         FeishuLongConnectionClient nonLoopbackClient = new FeishuLongConnectionClient(
@@ -424,7 +463,7 @@ class FeishuLongConnectionClientJvmTest {
     @Test
     @DisplayName("start 注册 im.message.receive_v1 handler：事件进来后走 handleEvent")
     void startRegistersMessageHandler() {
-        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "test-app-id", "test-secret", "T001", "C001");
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "test-app-id", "test-secret", "T001", "C001", null);
         when(properties.feishu()).thenReturn(feishu);
 
         FeishuLongConnectionClient testClient = new FeishuLongConnectionClient(

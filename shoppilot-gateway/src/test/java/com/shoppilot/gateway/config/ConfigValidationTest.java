@@ -76,6 +76,8 @@ class ConfigValidationTest {
             // L1：飞书无 JWT，租户/买家身份必须可配；默认 T001/C001，多租户映射放 L2。
             "SHOPPILOT_IM_FEISHU_TENANT",
             "SHOPPILOT_IM_FEISHU_CUSTOMER",
+            // L2：可选身份映射文件。
+            "SHOPPILOT_IM_FEISHU_IDENTITY_FILE",
             // round37：演示账号口令只供回环一键体验登录；不配置时该端点 503。
             "SHOPPILOT_IDENTITY_DEMO_PASSWORD");
 

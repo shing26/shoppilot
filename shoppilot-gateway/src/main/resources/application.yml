@@ -201,6 +201,8 @@ shoppilot:
     # L1 单租户身份：飞书无 JWT，必须显式绑定到某个店铺/买家。
     tenant: ${SHOPPILOT_IM_FEISHU_TENANT:T001}
     customer: ${SHOPPILOT_IM_FEISHU_CUSTOMER:C001}
+    # L2：可选；配置后按 chat_id/open_id 映射租户与买家，未知身份拒绝。
+    identity-file: ${SHOPPILOT_IM_FEISHU_IDENTITY_FILE:}
 
 ---
 spring:

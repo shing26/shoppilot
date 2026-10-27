@@ -175,15 +175,18 @@ public record GatewayProperties(
      * <p>凭据家法（PostureGuard 集成）在票 114 落地；本票先用占位配置打通解析层。
      * {@code enabled=true} 且凭据非空时长连接客户端才会注册到 SDK。
      */
-    public record Feishu(boolean enabled, String appId, String appSecret, String tenant, String customer) {
+    public record Feishu(boolean enabled, String appId, String appSecret, String tenant, String customer,
+                         String identityFile) {
 
         /** L1 单租户默认身份；飞书无 JWT，必须由配置注入，不能写死 "feishu"。 */
-        public Feishu(boolean enabled, String appId, String appSecret, String tenant, String customer) {
+        public Feishu(boolean enabled, String appId, String appSecret, String tenant, String customer,
+                      String identityFile) {
             this.enabled = enabled;
             this.appId = appId;
             this.appSecret = appSecret;
             this.tenant = tenant == null || tenant.isBlank() ? "T001" : tenant.trim();
             this.customer = customer == null || customer.isBlank() ? "C001" : customer.trim();
+            this.identityFile = identityFile == null ? "" : identityFile.trim();
         }
     }
 }

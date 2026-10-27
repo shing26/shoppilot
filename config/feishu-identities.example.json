@@ -1,0 +1,9 @@
+{
+  "default": { "tenant": "T001", "customer": "C001" },
+  "chats": {
+    "oc_replace_with_chat_id": { "tenant": "T004", "customer": "C001" }
+  },
+  "users": {
+    "ou_replace_with_open_id": { "tenant": "T002", "customer": "C001" }
+  }
+}

@@ -42,3 +42,6 @@ ShopPilot-项目梳理-*.md
 
 # B2 备份产物（pg_dump 二进制），永不入库（ADR 0062）
 backups/
+
+# 飞书实际身份映射含真实 chat_id/open_id，不入库；示例文件保留
+config/feishu-identities.json

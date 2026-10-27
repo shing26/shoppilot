@@ -39,10 +39,9 @@ import java.util.Map;
  * 不依赖真实 WebSocket 连接。SDK 客户端的启动/断开由 {@link #start()} 和 {@link #stop()} 管理，
  * 测试时直接调用 {@code handleEvent()} 即可。
  *
- * <p><b>身份推导</b>：飞书长连接没有 JWT，无法从令牌解析租户和买家。
- * 使用默认身份：{@code tenantId="feishu"}，{@code customerId=chatId}，
- * {@code conversationId} 由 FeishuAdapter 派生（{@code "feishu:chat:<chatId>"}）。
- * 这是票 96 确定的两字段派生方案。
+ * <p><b>身份推导</b>：飞书长连接没有 JWT。L1 使用配置的默认 tenant/customer；
+ * L2（票 171）支持身份映射文件，按 chat_id → open_id → default 解析；未知身份拒绝执行，
+ * 不静默落到默认租户。{@code conversationId} 由 FeishuAdapter 派生（{@code "feishu:chat:<chatId>"}）。
  *
  * <p><b>断连语义</b>：SDK 的 {@code autoReconnect=true} 自动重连。
  * {@link #stop()} 在应用关闭时断开连接。
@@ -64,6 +63,7 @@ public class FeishuLongConnectionClient {
     private final AgentStateMachine agentStateMachine;
     private final FeishuReplySender replySender;
     private final GatewayProperties properties;
+    private final FeishuIdentityResolver identityResolver;
     private final String bindAddress;
     private final ObjectMapper objectMapper;
 
@@ -78,6 +78,7 @@ public class FeishuLongConnectionClient {
         this.agentStateMachine = agentStateMachine;
         this.replySender = replySender;
         this.properties = properties;
+        this.identityResolver = new FeishuIdentityResolver(properties);
         this.bindAddress = bindAddress;
         this.objectMapper = objectMapper;
     }
@@ -176,12 +177,19 @@ public class FeishuLongConnectionClient {
         String conversationId = chat.conversationId();
         String chatId = extractChatId(conversationId);
 
-        // 设置上下文（飞书无 JWT）：租户/买家由配置注入，不能写死 "feishu"。
-        GatewayProperties.Feishu feishu = properties == null ? null : properties.feishu();
-        String tenantId = feishu == null ? "T001" : feishu.tenant();
-        String customerId = feishu == null ? "C001" : feishu.customer();
+        // L2：先按 chat_id / open_id 解析身份；未知身份拒绝，不静默落到默认租户。
+        String openId = objectMapper.valueToTree(payload).path("event")
+                .path("sender").path("sender_id").path("open_id").asText("");
+        FeishuIdentityResolver.Identity resolved = identityResolver.resolve(chatId, openId).orElse(null);
+        if (resolved == null) {
+            log.warn("飞书身份未绑定，拒绝执行 chatId={} openId={}", chatId, openId);
+            replySender.send(chatId, "当前飞书账号尚未绑定店铺，请联系管理员完成绑定。");
+            return;
+        }
+        log.info("飞书消息身份 chatId={} tenant={} customer={}",
+                chatId, resolved.tenant(), resolved.customer());
         TenantContext.Identity identity = new TenantContext.Identity(
-                tenantId, customerId, conversationId);
+                resolved.tenant(), resolved.customer(), conversationId);
         TenantContext.set(identity);
         ChannelContext.set(Channel.FEISHU);
 
