@@ -254,6 +254,64 @@ class GatewayMainPathJvmTest {
     }
 
     @Test
+    @DisplayName("票 166：动作意图 + 政策形状（坏了怎么赔，先看物流）不得被 policy-hint 追问短路")
+    void actionIntentIsNotShortCircuitedByPolicyShape() throws Exception {
+        String query = "90003 签收了我还没拆，坏了怎么赔，先帮我看看物流";
+        LlmGateway llm = mock(LlmGateway.class);
+        LlmTypes.ToolCall logCall = new LlmTypes.ToolCall("call-log-2",
+                ToolName.QUERY_LOGISTICS.apiName(), Map.of("orderNo", "90003"));
+        when(llm.complete(any())).thenReturn(new LlmTypes.Reply("", List.of(logCall), 10, 2, null),
+                LlmTypes.Reply.text("已为您查询物流"));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("已为您查询物流"));
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_LOGISTICS), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"快递已签收\"}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_LOGISTICS, "T0", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"" + query + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("ACTION_LOGISTICS"))
+                .andExpect(jsonPath("$.toolUsed").value(true));
+
+        verify(bizMock).call(eq(ToolName.QUERY_LOGISTICS), anyMap(), eq(null));
+    }
+
+    @Test
+    @DisplayName("票 166：订单进度问法被模型选成物流查询时，改绑回 queryOrderDetail")
+    void orderIntentRebindsAwayFromLogisticsLookup() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        LlmTypes.ToolCall wrongTool = new LlmTypes.ToolCall("call-ord-1",
+                ToolName.QUERY_LOGISTICS.apiName(), Map.of("orderNo", "90003"));
+        when(llm.complete(any())).thenReturn(new LlmTypes.Reply("", List.of(wrongTool), 10, 2, null),
+                LlmTypes.Reply.text("已为您查询订单进度"));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("已为您查询订单进度"));
+
+        BizMockClient bizMock = mock(BizMockClient.class);
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null)))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
+        ToolDispatcher dispatcher = new ToolDispatcher(bizMock, mock(IdempotencyService.class), registry);
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_ORDER, "T0", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"订单号 90003 麻烦看下进度\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("ACTION_ORDER"))
+                .andExpect(jsonPath("$.toolUsed").value(true));
+
+        verify(bizMock).call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), eq(null));
+        verify(bizMock, never()).call(eq(ToolName.QUERY_LOGISTICS), anyMap(), any());
+    }
+
+    @Test
     @DisplayName("票 165：改地址 + 查状态的多意图，动作优先并走结构化槽位追问")
     void addressActionBeatsOrderStatusLookup() throws Exception {
         String query = "90001 这单帮我改个地址吧，另外现在是什么状态";

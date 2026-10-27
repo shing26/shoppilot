@@ -30,7 +30,7 @@
 | 资产 | 现状 | 价值 |
 | --- | --- | --- |
 | 四模块运行时 | gateway / biz-mock / ticket / tool-api | 真实跨进程链路，不是单体演示 |
-| 测试与门禁 | **697 tests / 117 suites**，CI 全绿 | 可回归、可交接 |
+| 测试与门禁 | **700 tests / 117 suites**，CI 全绿 | 可回归、可交接 |
 | 编排 | 确定性 triage、角色、Handoff、工具轮次 | 可控、可审计 |
 | 安全 | 租户隔离、买家归属、HITL、幂等、审计 | 能碰真实售后场景 |
 | 评测 | 180 gold、UX 30、Handoff 23、promtool | 结果可比较、可复跑 |

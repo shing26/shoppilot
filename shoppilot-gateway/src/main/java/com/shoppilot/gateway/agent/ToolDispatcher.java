@@ -101,6 +101,7 @@ public class ToolDispatcher {
         // 票 165：模型会为了“把参数填满”编出整套收件信息。地址槽位没有出处就不能写，
         // 否则一次多意图会被执行成“把地址改成演示收件人”。移除后按既有缺槽路径追问。
         dropUntrustedAddressSlots(tool, arguments, dialogue);
+        normalizeAddressDetail(tool, arguments);
         List<String> missing = missingSlots(tool, arguments);
         if (!missing.isEmpty()) {
             return new Dispatch(tool, null, null, missing, label(tool, arguments), false, false);
@@ -243,6 +244,32 @@ public class ToolDispatcher {
                         "tool", tool.apiName(), "slot", slot).increment();
             }
         }
+    }
+
+    /**
+     * 票 166：模型常把区县重复进详址（"朝阳区建国路1号"）。区县/城市已有独立槽位，
+     * 详址只保留街道门牌，避免重复拼接和 gold 参数比对失败。
+     */
+    public static void normalizeAddressDetail(ToolName tool, Map<String, Object> arguments) {
+        if (tool != ToolName.MODIFY_DELIVERY_ADDRESS) {
+            return;
+        }
+        Object raw = arguments.get("detailAddress");
+        if (raw == null) {
+            return;
+        }
+        String detail = String.valueOf(raw).trim();
+        for (String key : List.of("district", "city", "province")) {
+            Object prefixRaw = arguments.get(key);
+            if (prefixRaw == null) {
+                continue;
+            }
+            String prefix = String.valueOf(prefixRaw).trim();
+            if (!prefix.isEmpty() && detail.startsWith(prefix) && detail.length() > prefix.length()) {
+                detail = detail.substring(prefix.length()).trim();
+            }
+        }
+        arguments.put("detailAddress", detail);
     }
 
     public List<String> missingSlots(ToolName tool, Map<String, Object> arguments) {

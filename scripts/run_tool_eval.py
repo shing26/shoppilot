@@ -28,6 +28,7 @@
 
 import argparse
 import concurrent.futures
+import os
 import csv
 import datetime as dt
 import json
@@ -550,7 +551,7 @@ def main() -> int:
     parser.add_argument("--concurrency", type=int, default=2)
     parser.add_argument("--dry-run", action="store_true", help="只打印预估与口径，不发请求")
     parser.add_argument("--force", action="store_true", help="跳过预算熔断预检")
-    parser.add_argument("--ops-token", default="dev-ops-token")
+    parser.add_argument("--ops-token", default=os.environ.get("SHOPPILOT_OPS_TOKEN", "dev-ops-token"))
     parser.add_argument("--tag", default="", help="输出文件名后缀，区分同模式不同端点（如 dev-localcompat）")
     parser.add_argument("--selfcheck", action="store_true",
                         help="只跑量具夹具就退出：不发任何请求，供人当场复核评分器")

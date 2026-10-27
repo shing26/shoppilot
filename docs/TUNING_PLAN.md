@@ -16,12 +16,12 @@
 
 | 评测 | 当前读数 | 说明 |
 | --- | --- | --- |
-| JVM | **697 tests / 117 suites** | CI 全绿 |
+| JVM | **700 tests / 117 suites** | CI 全绿 |
 | UX Golden 30 · demo | **30/30** | 模板档，不证明模型能力 |
 | UX Golden 30 · dev（qwen-plus） | **30/30** | 2026-10-24 epoch24 |
 | UX Golden 30 · local（qwen2.5:3b） | **27/30** | 失败：G-006 / G-026 缺“48”，G-029 缺“早餐” |
-| Gold 180 · qwen-plus | **ACTION 69/72 = 95.8%**；POLICY 72/72 = 100% | 2026-10-20 r7r14，当前最新正式基线 |
-| 分意图红点 | LOGISTICS **88.9%**、ORDER **94.4%**、ESCALATE **88.9%**、UNKNOWN **83.3%** | 4 个意图低于 95% |
+| Gold 180 · qwen-plus | **LOGISTICS / ORDER / ESCALATE / UNKNOWN = 100%**；ACTION_ADDRESS 定向 18/18 = 100% | 2026-10-27 stage1-rerun2 + stage1-address |
+| 分意图红点 | 已清零 | 票 163 / 164 / 165 / 166 收口 |
 | 参数准确率 | ACTION 参数基本 100%（可比口径） | 参数不是当前主矛盾 |
 
 > README 里 93.3% / 90.5% 是更早一轮历史读数；本文用 2026-10-20 的 tool-eval-...qwenplus-r7r14，两者不能直接比。
@@ -61,39 +61,39 @@
 > 再多意图，最后小模型答案保真。
 > 依据：[TUNING_BASELINE.md](TUNING_BASELINE.md)。票 163 已收口。
 
-#### 1.0 ESCALATE：显式升级独立裁决（先做）
+#### 1.0 ESCALATE：显式升级独立裁决 — 已收口（票 163；180 复跑 100%）
 
 - 问题：用户明确要求真人，系统有时只在话术里说“转人工”，没有实际升级；
-- 其中 ESC-14/18 被分成 POLICY_PROMO/UNKNOWN，升级依赖 intent 的写法漏掉；
-- 修复：新增不依赖最终 intent 的显式升级检测，在工具选择前裁决；
-- 验收：ESC-03/05/14/18 全部实际升级且工单可查。
+- 修复：T0 补口语化升级短语，命中走既有 USER_REQUESTED 出口；
+- 验收：180 复跑 ESCALATE **100%**。
 
 #### 1.1 ACTION_LOGISTICS：物流词优先 — 已收口（票 164）
 
 - 问题：2 条 query 被模型选成 queryOrderDetail 而不是 queryLogistics
 - 修复：补“代收”物流词；纯物流问法下模型误选时确定性改绑 queryLogistics
 - 保留：带“详情/状态”的多意图不抢
-- 验收：LOGISTICS 88.9% → ≥95%（待 180 复跑证明）
+- 验收：180 复跑 LOGISTICS **100%**
 
 #### 1.2 ACTION_ORDER：散文追问新地址 — 已收口（票 165）
 
 - 问题：1 条模型用散文追问，没有发结构化工具
 - 修复：改地址多意图下动作优先；误选 queryOrderDetail 时改绑 modifyDeliveryAddress；地址槽位溯源后走 slotAsk
-- 验收：ORDER 94.4% → ≥95%（待 180 复跑证明）
+- 验收：180 复跑 ORDER **100%**
 
-#### 1.3 ESCALATE：升级措辞漏判
+#### 1.3 ESCALATE：升级措辞漏判 — 已收口（票 163）
 
 - 问题：4 条升级措辞未被 T0/模型实际转人
-- 修复：扩充 T0 显式转人工词表（投诉、监管、曝光、起诉、找负责人等），并加“升级意图”回归用例
-- 验收：ESCALATE 88.9% → ≥95%
+- 修复：补口语化升级短语并加否定反例
+- 验收：180 复跑 ESCALATE **100%**
 
 #### 1.4 UNKNOWN：越界请求不要查单 — 已收口（票 164）
 
 - 问题：3 条越界请求被调 queryOrderDetail 追问单号
 - 修复：第一人称不再单独作为动作证据；三句闲聊判 UNKNOWN，活体零工具
-- 验收：UNKNOWN 83.3% → ≥95%（待 180 复跑证明）
+- 验收：180 复跑 UNKNOWN **100%**
 
-**Gate：** 180 gold 重新跑，总分不下降；四个意图达到 95%；gold / 阈值零改动。
+**Gate：** 已通过。180 gold 复跑后 LOGISTICS / ORDER / ESCALATE / UNKNOWN 均 **100%**；
+ACTION_ADDRESS 用定向 18/18 补齐到 **100%**；gold / 阈值零改动。证据见票 166。
 
 ### 阶段 2：小模型答案保真（3–4 天）
 
@@ -180,7 +180,7 @@
 | local UX 30 | ≥29/30 | 当前 27/30 |
 | dev UX 30 | 30/30 | 不回落 |
 | POLICY 180 | 100% | 不回落 |
-| JVM | 697 / 117 全绿 | 新增测试只增不减 |
+| JVM | 700 / 117 全绿 | 新增测试只增不减 |
 | CI | success | 每次提交 |
 
 ## 六、明确不做
@@ -228,17 +228,18 @@
 - 地址槽位溯源，模型编造收件信息被移除并走 slotAsk；追问文案中文化；
 - 697 tests / 117 suites 全绿；活体 slotAsked=true、零业务调用。
 
-## 十一、下一步
+## 十一、执行进度
 
-**票 166：阶段 1 收口 —— 180 gold 复跑（blocked：缺有效 LLM key）**
+**票 166：阶段 1 收口 —— 已实现**（[票面](../.scratch/shoppilot-mvp/issues/166-stage1-gold-rerun.md)）
 
-- [票面](../.scratch/shoppilot-mvp/issues/166-stage1-gold-rerun.md)；
-- 复跑 180 gold，核对 ACTION_LOGISTICS / ACTION_ORDER / ESCALATE / UNKNOWN 四个分区；
-- 复跑 local UX 30 或至少 G-006 / G-026 / G-029；
-- 四个分区不到 95% 时按失败分类回炉，不调阈值；
-- 本机无 key 时不得用旧产物声称“已达标”。
+- 第一次 180：LOG 94.4 / ORDER 88.9 / ADDRESS 93.3 / ESC 100 / UNKNOWN 100%；
+- 第二次 180：LOG 100 / ORDER 100 / ESC 100 / UNKNOWN 100；ADDRESS 仍 93.3（仅 ACT-ADR-06 detail）；
+- 详址归一化前移后，ACTION_ADDRESS 定向 18/18 = 100%；
+- token 1,022,992 / 1,300,000；JVM 700 / 117。
 
-**无 key 时可先做：票 167 本地 3B 答案保真（阶段 2）**
+## 十二、下一步
+
+**票 167：阶段 2 —— 本地 3B 答案保真**
 
 - 只针对 G-006 / G-026 / G-029 三条，不改 180 dev 判据；
 - 先跑一次 local UX 30 作为前后对照（约 11 分钟）；

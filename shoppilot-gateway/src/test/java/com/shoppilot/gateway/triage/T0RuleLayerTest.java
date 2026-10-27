@@ -73,6 +73,15 @@ class T0RuleLayerTest {
         assertThat(result.filter(TriageResult::policyHuman)).isEmpty();
     }
 
+    @Test
+    @DisplayName("票 166：能改地址吗是资格询问，不是写动作")
+    void addressEligibilityIsOrderRead() {
+        assertThat(layer.classify("90001 现在能改地址吗").orElseThrow().intent())
+                .isEqualTo(Intent.ACTION_ORDER);
+        assertThat(layer.classify("90001 能帮我改地址吗").orElseThrow().intent())
+                .isEqualTo(Intent.ACTION_ADDRESS);
+    }
+
     @ParameterizedTest
     @CsvSource({
             "90003 有没有人代收, ACTION_LOGISTICS",

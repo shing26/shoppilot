@@ -255,7 +255,8 @@ public class T0RuleLayer {
     private Intent actionIntent(String query) {
         // 动作意图内部优先级：改址 > 退款 > 物流 > 订单（"改地址并退款"要的是改址）
         if (containsAny(query, ADDRESS_WORDS)) {
-            return Intent.ACTION_ADDRESS;
+            // "现在能改地址吗"是资格询问，不是写动作；"能帮我改地址吗"才是办理。
+            return isAddressEligibilityQuestion(query) ? Intent.ACTION_ORDER : Intent.ACTION_ADDRESS;
         }
         if (containsAny(query, REFUND_WORDS)) {
             return Intent.ACTION_REFUND;
@@ -284,9 +285,21 @@ public class T0RuleLayer {
      * 这个谓词只用于把这种明确的“问物流”改绑到 queryLogistics，不参与意图判定。
      */
     public static boolean isLogisticsFocusedQuery(String query) {
-        return query != null && containsAny(query, LOGISTICS_WORDS)
+        return hasLogisticsSignal(query)
                 && !query.contains("详情") && !query.contains("状态")
                 && !query.contains("什么情况") && !query.contains("啥情况");
+    }
+
+    /** 是否有任何物流语义；供状态机判断“订单意图被模型选成物流查询”时是否该改绑。 */
+    public static boolean hasLogisticsSignal(String query) {
+        return query != null && containsAny(query, LOGISTICS_WORDS);
+    }
+
+    /** 明确的订单详情诉求；不含物流词。用于把模型误选的物流查询改回订单详情。 */
+    public static boolean isOrderDetailFocusedQuery(String query) {
+        return query != null && !hasLogisticsSignal(query)
+                && (query.contains("进度") || query.contains("状态") || query.contains("情况")
+                || query.contains("详情"));
     }
 
     /**
@@ -297,7 +310,23 @@ public class T0RuleLayer {
      */
     public static boolean isAddressModificationQuery(String query) {
         return query != null && containsAny(query, ADDRESS_WORDS)
+                && !isAddressEligibilityQuestion(query)
                 && (query.contains("改") || query.contains("修改") || query.contains("换"));
+    }
+
+    /**
+     * 资格询问："能改地址吗 / 可以改地址吗" 是在问能不能办，不是让系统直接改。
+     * 带"帮我/给我/麻烦"的仍是办理请求。
+     */
+    public static boolean isAddressEligibilityQuestion(String query) {
+        if (query == null || !containsAny(query, ADDRESS_WORDS)) {
+            return false;
+        }
+        boolean asksWhether = query.contains("能改地址") || query.contains("可以改地址")
+                || query.contains("能否改地址") || query.contains("是否能改地址")
+                || query.contains("是否可以改地址") || query.contains("能修改地址")
+                || query.contains("可以修改地址");
+        return asksWhether && !query.contains("帮我") && !query.contains("给我") && !query.contains("麻烦");
     }
 
     /**

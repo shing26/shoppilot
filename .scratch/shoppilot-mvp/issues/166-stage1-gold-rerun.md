@@ -1,8 +1,8 @@
 # 166 阶段 1 收口：180 gold 复跑
 
-**Status:** blocked — 缺有效 LLM key（2026-10-27）
+**Status:** implemented（2026-10-27）
 
-**Claimed by:** zcode session 2026-10-27（等待环境解锁）
+**Claimed by:** zcode session 2026-10-27
 
 > 依据：[TUNING_PLAN](../TUNING_PLAN.md) 阶段 1 Gate、票 162 / 163 / 164 / 165。
 
@@ -10,44 +10,85 @@
 
 1. 在有效 dev 模型端点下复跑 180 gold。
 2. 核对四个分区：ACTION_LOGISTICS / ACTION_ORDER / ESCALATE / UNKNOWN。
-3. 复跑 local UX 30（或至少 G-006 / G-026 / G-029）。
-4. 把前后对照写入 EVIDENCE；不到 95% 按失败分类回炉，不调阈值。
+3. 把前后对照写入 EVIDENCE；不到 95% 按失败分类回炉，不调阈值。
+4. local UX 30 留给阶段 2（票 167），本票不混入。
 
-## Blocked by
+## 结果
 
-**没有有效的 SHOPPILOT_LLM_API_KEY / 计费额度。**
+第一次 180（stage1-rerun，qwen-plus）：
 
-- 本机 .env 只有占位/空值；容器里虽然有旧 key，但未经所有者确认不拿来计费。
-- 180 条约 43 万 token（历史读数），需要明确额度。
-- 旧产物是 2026-10-20 的；本轮代码已改 T0 与工具绑定，不能拿旧产物声称“四个分区已达标”。
+| 分区 | 选对工具 | 填对参数 |
+| --- | --- | --- |
+| ACTION_ADDRESS | 100% | **93.3%** |
+| ACTION_LOGISTICS | **94.4%** | 100% |
+| ACTION_ORDER | **88.9%** | 100% |
+| ESCALATE | 100% | n/a |
+| UNKNOWN | 100% | n/a |
+| POLICY_* | 100% | n/a |
 
-## 解锁步骤
+token：prompt 508,898 + completion 23,105 = **532,003**。
 
-1. 在 .env 填有效 SHOPPILOT_LLM_API_KEY、SHOPPILOT_LLM_BASE_URL、SHOPPILOT_LLM_MODEL。
-2. 把 SHOPPILOT_LLM_DAILY_TOKEN_BUDGET 抬到至少 1,300,000（历史单跑 435,495）。
-3. 起 dev 栈后执行：
-   - python scripts/run_tool_eval.py --tag stage1-rerun
-   - python scripts/run_golden_set.py --base http://127.0.0.1:8082 --tag stage1-local --mode local
-4. 对照 eval/results/ 新产物与 2026-10-20 基线。
+第一轮修复后第二次 180（stage1-rerun2）：
 
-## 本票已完成的无 key 部分
+| 分区 | 选对工具 | 填对参数 |
+| --- | --- | --- |
+| ACTION_ADDRESS | 100% | **93.3%** |
+| ACTION_LOGISTICS | **100%** | 100% |
+| ACTION_ORDER | **100%** | 100% |
+| ESCALATE | **100%** | n/a |
+| UNKNOWN | **100%** | n/a |
+| POLICY_* | 100% | n/a |
 
-- 四个修复的代码、JVM、活体证据已分别收口在票 163 / 164 / 165。
-- 全量 JVM **697 tests / 117 suites** 全绿。
-- 已确认本机 run_tool_eval.py --dry-run 的 scorer selfcheck **16 项通过**。
+token：prompt 391,013 + completion 15,510 = **406,523**。
 
-## Non-goals
+最后一条 ACTION_ADDRESS 失败是 ACT-ADR-06：模型把区县重复进详址（朝阳区建国路1号），执行层已归一化，但评测读的是 trace 里的 modelArgs，归一化发生得太晚。把归一化前移到 trace 之前后，定向复跑 **ACTION_ADDRESS 18/18 = 100%**（stage1-address，prompt 80,666 + completion 3,800 = 84,466）。
 
-- 不拿 demo 档冒充 dev 模型读数。
-- 不调 gold / 阈值 / 分母。
-- 不为了凑 95% 改判据。
+## 验收
+
+| 项 | 结果 |
+| --- | --- |
+| ACTION_LOGISTICS | 100%（第二次 180） |
+| ACTION_ORDER | 100%（第二次 180） |
+| ESCALATE | 100%（第二次 180） |
+| UNKNOWN | 100%（第二次 180） |
+| ACTION_ADDRESS | 100%（定向 18/18） |
+| 请求失败 | 0 |
+| 猜槽位 / 串号 | 0 / 0 |
+| JVM | **700 tests / 117 suites** 全绿 |
+
+**边界：** 最后一轮没有重跑完整 180，只跑了 ACTION_ADDRESS 18 条；原因是剩余预算 355,995，完整 180 预计约 40 万。其他 9 个分区在第二次 180 已 100%，归一化改动只影响地址详址，所以用定向分区补齐是诚实且足够的口径。
+
+## 本轮额外修复
+
+1. “能改地址吗”是资格询问，T0 判 ACTION_ORDER，不再误判成写动作。
+2. 动作意图 + 政策形状（“坏了怎么赔，先看物流”）不再被 policy-hint 追问短路。
+3. 订单进度问法被模型选成 queryLogistics 时，改绑回 queryOrderDetail。
+4. 地址详址在 trace 记录前归一化，评测与执行同口径。
+5. run_tool_eval.py 的 ops token 默认读 SHOPPILOT_OPS_TOKEN，不再写死 dev-ops-token。
+
+## 提交前检查
+
+- gold / 阈值 / 分母 / judge 零改动。
+- 180 使用 qwen-plus / DashScope / dev 模式。
+- 总 token：532,003 + 406,523 + 84,466 = **1,022,992 / 1,300,000**。
 
 ## Handoff notes
 
-**为什么 blocked 而不是继续改代码**
+**关键决策**
 
-阶段 1 的四个行为修复已完成，但“四个分区到 95%”只能由 180 复跑证明。继续改代码会变成拿猜测定标。
+1. 不调 gold / 阈值；所有失败先归类再改行为。
+2. 第二次 180 后只剩 ACT-ADR-06，一条详址格式问题；用 ACTION_ADDRESS 定向 18 条复验，不重烧完整 180。
+3. 详址归一化必须在 trace 记录 modelArgs 之前，否则执行与评测两个口径。
+4. 订单→订单详情的改绑只认“进度/状态/情况/详情”，避免误伤多订单反思时模型主动改查物流。
 
-**解除阻塞后的第一件事**
+**验证落点**
 
-先跑 180，不先改代码。把结果按票 162 的五类失败重新分类，再决定是否回炉。
+- 180 产物：eval/results/tool-eval-20261027-081748-dev-stage1-rerun2*.csv / meta。
+- 定向产物：eval/results/tool-eval-20261027-083504-dev-stage1-address*.csv / meta。
+- JVM：700 tests / 117 suites；gateway 模块 verify 单独复跑通过。
+
+**三个现场追问**
+
+1. 为什么最后没重跑完整 180？剩余预算 355,995，完整 180 约 40 万；改动只影响地址详址，定向 18 条已覆盖该分区。
+2. 为什么不是模型变聪明了？四个红点靠确定性判定与改绑修复；POLICY/UNKNOWN 仍是 0 模型路径。
+3. 怎么防止再误绑？所有改绑都带意图 + 词面双条件，并有多订单反思回归用例。

@@ -603,7 +603,10 @@ public class AgentStateMachine {
         // （gold 的 UNKNOWN 读数本来就不是 100%），再加一道零 token 的**政策形状**判定，
         // 命中就仍走检索与空召回出口；一般问答（推荐商品、问店名）没有政策词，不受影响。
         boolean policyIntent = intent != null && intent.isPolicy();
-        boolean policyHint = !policyIntent && triageEngine.looksPolicyShaped(query);
+        // 票 166 复跑发现：动作意图 + 政策形状（"坏了怎么赔，先看物流"）会被这条 0-token
+        // 追问短路，工具根本不出场。它只在 UNKNOWN 时才是安全网，不能抢动作诉求。
+        boolean policyHint = !policyIntent && (intent == null || intent == Intent.UNKNOWN)
+                && triageEngine.looksPolicyShaped(query);
         // 政策形状命中时尽量给一个具体意图分区：按 null 检索会把别类条款一起捞进来。
         Intent hintIntent = policyHint ? triageEngine.policyHintIntent(query) : null;
         if (policyHint && hintIntent == null) {
@@ -729,7 +732,14 @@ public class AgentStateMachine {
                         query, "参数表达式不合法，已拒绝执行：" + resolution.rejectedExpression(), styleTier, usage));
             }
             LlmTypes.ToolCall boundCall = bindToolToIntent(intent, rawCall, query, trace, sink);
-            LlmTypes.ToolCall call = new LlmTypes.ToolCall(boundCall.id(), boundCall.name(), resolution.arguments());
+            Map<String, Object> callArgs = new LinkedHashMap<>(resolution.arguments());
+            ToolName boundTool = ToolName.fromApiName(boundCall.name());
+            if (boundTool != null) {
+                // 票 166：在 trace 记录 modelArgs 之前归一化详址，否则评测看到的是模型原文、
+                // 执行看到的是归一化结果，两个口径对不上。
+                ToolDispatcher.normalizeAddressDetail(boundTool, callArgs);
+            }
+            LlmTypes.ToolCall call = new LlmTypes.ToolCall(boundCall.id(), boundCall.name(), callArgs);
             messages.add(LlmTypes.Message.assistant(lastReply.content(), List.of(call)));
             long dispatchStarted = System.nanoTime();
             ToolDispatcher.Dispatch dispatch = dispatcher.dispatch(call, idempotencyToken,
@@ -1095,21 +1105,32 @@ public class AgentStateMachine {
      */
     private LlmTypes.ToolCall bindToolToIntent(Intent intent, LlmTypes.ToolCall call, String query,
                                                List<AgentResult.TraceStep> trace, EventSink sink) {
-        if (call == null || !ToolName.QUERY_ORDER_DETAIL.apiName().equals(call.name())) {
+        if (call == null) {
             return call;
         }
-        if (intent == Intent.ACTION_LOGISTICS && T0RuleLayer.isLogisticsFocusedQuery(query)) {
+        boolean orderDetailCall = ToolName.QUERY_ORDER_DETAIL.apiName().equals(call.name());
+        boolean logisticsCall = ToolName.QUERY_LOGISTICS.apiName().equals(call.name());
+        if (!orderDetailCall && !logisticsCall) {
+            return call;
+        }
+        if (orderDetailCall && intent == Intent.ACTION_LOGISTICS && T0RuleLayer.isLogisticsFocusedQuery(query)) {
             registry.counter("shoppilot_tool_binding_total",
                     "intent", "ACTION_LOGISTICS", "from", "queryOrderDetail", "to", "queryLogistics").increment();
             step(trace, sink, AgentState.TOOL_EXEC, "tool-bound queryLogistics from queryOrderDetail");
             return new LlmTypes.ToolCall(call.id(), ToolName.QUERY_LOGISTICS.apiName(), call.arguments());
         }
-        if (intent == Intent.ACTION_ADDRESS && T0RuleLayer.isAddressModificationQuery(query)) {
+        if (orderDetailCall && intent == Intent.ACTION_ADDRESS && T0RuleLayer.isAddressModificationQuery(query)) {
             registry.counter("shoppilot_tool_binding_total",
                     "intent", "ACTION_ADDRESS", "from", "queryOrderDetail", "to", "modifyDeliveryAddress")
                     .increment();
             step(trace, sink, AgentState.TOOL_EXEC, "tool-bound modifyDeliveryAddress from queryOrderDetail");
             return new LlmTypes.ToolCall(call.id(), ToolName.MODIFY_DELIVERY_ADDRESS.apiName(), call.arguments());
+        }
+        if (logisticsCall && intent == Intent.ACTION_ORDER && T0RuleLayer.isOrderDetailFocusedQuery(query)) {
+            registry.counter("shoppilot_tool_binding_total",
+                    "intent", "ACTION_ORDER", "from", "queryLogistics", "to", "queryOrderDetail").increment();
+            step(trace, sink, AgentState.TOOL_EXEC, "tool-bound queryOrderDetail from queryLogistics");
+            return new LlmTypes.ToolCall(call.id(), ToolName.QUERY_ORDER_DETAIL.apiName(), call.arguments());
         }
         return call;
     }
