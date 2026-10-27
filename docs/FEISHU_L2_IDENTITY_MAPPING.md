@@ -49,6 +49,14 @@ JSON（可从 `config/feishu-identities.example.json` 复制）：
 - 严格模式未知身份拒绝，且不调用 Agent；
 - 映射到 T004 的会话键应是 `T004:<customer>:feishu:chat:<chatId>`，不能复用 T001 会话。
 
+## 活体验证（2026-10-28）
+
+- 当前 chat 映射到 T004，日志出现 `tenant=T004 customer=C001`；
+- Redis 只有 `T004:C001:feishu:chat:<chatId>`，没有 T001 键；
+- 回复“酒店几点可以入住”得到 14:00 入住 / 12:00 退房 / 提前入住收费的 T004 口径。
+
+完整证据：[FEISHU_L2_LIVE_EVIDENCE.md](FEISHU_L2_LIVE_EVIDENCE.md)。
+
 ## 边界
 
 - 映射文件是启动时加载，改完要重启；

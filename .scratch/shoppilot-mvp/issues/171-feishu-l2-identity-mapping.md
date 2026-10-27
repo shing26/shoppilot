@@ -1,6 +1,6 @@
 # 171 飞书 L2：多租户身份映射
 
-**Status:** implemented（2026-10-27，代码与 JVM 验收；真实跨租户活体待映射）
+**Status:** implemented（2026-10-28，代码 + JVM + 真实跨租户活体验证）
 
 **Claimed by:** zcode session 2026-10-27
 
@@ -59,7 +59,7 @@ JSON：
 
 - JVM：FeishuIdentityResolverTest 3 条 + 客户端未知身份拒绝 1 条；飞书相关 56 条通过；
 - 全量 verify：708 tests / 118 suites 全绿；
-- 未做：真实跨租户活体（需要把某个 chat_id/open_id 映射到 T002/T004 后发消息验证会话键）。
+- 真实跨租户活体：把当前飞书 chat_id 映射到 T004，日志显示 `tenant=T004 customer=C001`，Redis 只有 `T004:C001:feishu:chat:...`，回复“14:00 后入住”的酒店口径；证据 [FEISHU_L2_LIVE_EVIDENCE.md](../../../docs/FEISHU_L2_LIVE_EVIDENCE.md)。
 
 ## Handoff notes
 
@@ -80,4 +80,4 @@ JSON：
 
 1. 为什么 chat 优先于 user？同一群/单聊的归属应稳定，个人身份只在没有 chat 映射时兜底。
 2. 为什么未知身份不落 default？default 只用于显式配置的兜底；没有 default 时必须拒绝，否则等于把所有人塞进一个店。
-3. 活体怎么验？把当前飞书 chat_id 映射到 T004，重启后发“酒店几点入住”，Redis 会话键应变成 T004:C001:feishu:chat:<id>。
+3. 活体已验证：把当前飞书 chat_id 映射到 T004，重启后发“酒店几点可以入住”，日志为 tenant=T004、Redis 会话键为 T004:C001:feishu:chat:<id>，回复是 T004 酒店口径。
