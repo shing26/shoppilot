@@ -18,9 +18,9 @@
 | --- | --- | --- |
 | JVM | **701 tests / 117 suites** | CI 全绿 |
 | UX Golden 30 · demo | **30/30** | 模板档，不证明模型能力 |
-| UX Golden 30 · dev（qwen-plus） | **30/30** | 2026-10-24 epoch24；2026-10-27 因 DashScope 欠费未复验 |
+| UX Golden 30 · dev（qwen-plus） | **30/30** | 2026-10-24 epoch24；2026-10-27 复验 30/30（139.6s） |
 | UX Golden 30 · local（qwen2.5:3b） | **30/30** | 2026-10-27 票 167，224.0s |
-| Gold 180 · qwen-plus | **LOGISTICS / ORDER / ESCALATE / UNKNOWN = 100%**；ACTION_ADDRESS 定向 18/18 = 100% | 2026-10-27 stage1-rerun2 + stage1-address |
+| Gold 180 · qwen-plus | **全分区 100%**（180 全量 179/180 + ACTION_REFUND 定向 18/18） | 2026-10-27 dev-167 / refund-168b；ACT-RFD-13 已修 |
 | 分意图红点 | 已清零 | 票 163 / 164 / 165 / 166 收口 |
 | 参数准确率 | ACTION 参数基本 100%（可比口径） | 参数不是当前主矛盾 |
 
@@ -111,8 +111,8 @@ ACTION_ADDRESS 用定向 18/18 补齐到 **100%**；gold / 阈值零改动。证
 3. **回答约束**：政策答案要求“先给结论 + 引用关键数字”，缺数字视为失败；
 4. **未知问题边界**：酒店早餐属于政策/店铺信息，不应触发订单槽位追问。
 
-**Gate：** local **30/30 已通过**；dev 30/30 **未复验**（DashScope 账户欠费，最小请求返回 400 Arrearage）；
-180 gold 政策分区未重跑。代码改动由 local 模式门控，但不得在欠费解除前声称 dev 无回落。证据见票 167。
+**Gate：** **已通过**。local **30/30**；dev 复验 **30/30**；180 gold 五个 POLICY 分区全 **100%**；总分 179/180。
+唯一红点 ACT-RFD-13 属多意图退款优先级，另票处理。证据见票 167。
 
 ### 阶段 3：模型分级与成本（2–3 天，可与阶段 2 并行）
 
@@ -181,7 +181,7 @@ ACTION_ADDRESS 用定向 18/18 补齐到 **100%**；gold / 阈值零改动。证
 | local UX 30 | ≥29/30 | 当前 27/30 |
 | dev UX 30 | 30/30 | 不回落 |
 | POLICY 180 | 100% | 不回落 |
-| JVM | 701 / 117 全绿 | 新增测试只增不减 |
+| JVM | 702 / 117 全绿 | 新增测试只增不减 |
 | CI | success | 每次提交 |
 
 ## 六、明确不做
@@ -240,14 +240,22 @@ ACTION_ADDRESS 用定向 18/18 补齐到 **100%**；gold / 阈值零改动。证
 
 ## 十二、执行进度
 
-**票 167：阶段 2 —— 本地 3B 答案保真 — 已实现（dev 回归待补）**（[票面](../.scratch/shoppilot-mvp/issues/167-local-3b-answer-fidelity.md)）
+**票 167：阶段 2 —— 本地 3B 答案保真 — 已实现**（[票面](../.scratch/shoppilot-mvp/issues/167-local-3b-answer-fidelity.md)）
 
 - local UX30 27/30 → **30/30**；G-006 / G-026 / G-029 全绿；
 - local 专用提示 + 确定性答案守卫；不改 v1.2.0 基座与 dev 路径；
 - JVM 701 / 117 全绿；
-- dev UX30 未复验：DashScope 欠费（400 Arrearage），照实登记。
+- dev UX30 复验 **30/30**（139.6s）；180 gold POLICY 全 100%，总分 179/180；
+- 唯一红点 ACT-RFD-13 “到哪了 + 直接退款”被选成 queryLogistics，定向复跑仍 94.4%。
 
 ## 十三、下一步
 
-1. **恢复 DashScope 账户后补 dev UX30 与 180 gold 政策分区**，确认票 167 未造成 dev 回落；
-2. 阶段 3：模型分级与成本（按意图/置信度离线路由表，先评估不改线上）。
+**票 168：多意图退款优先级 — 已实现**（[票面](../.scratch/shoppilot-mvp/issues/168-multi-intent-refund-priority.md)）
+
+- 显式退款 + queryLogistics 误选时改绑 applyRefund；
+- ACTION_REFUND 18/18 = 100%；ACT-RFD-13 转绿；
+- JVM 702 / 117 全绿。
+
+## 十四、下一步
+
+阶段 3：模型分级与成本（按意图/置信度离线路由表，先评估不改线上）。

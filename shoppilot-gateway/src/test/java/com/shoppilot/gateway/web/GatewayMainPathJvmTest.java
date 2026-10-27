@@ -312,6 +312,36 @@ class GatewayMainPathJvmTest {
     }
 
     @Test
+    @DisplayName("票 168：显式退款 + 物流同时出现时，改绑 applyRefund")
+    void explicitRefundRebindsAwayFromLogisticsLookup() throws Exception {
+        LlmGateway llm = mock(LlmGateway.class);
+        LlmTypes.ToolCall wrongTool = new LlmTypes.ToolCall("call-refund-1",
+                ToolName.QUERY_LOGISTICS.apiName(), Map.of("orderNo", "90002"));
+        when(llm.complete(any())).thenReturn(new LlmTypes.Reply("", List.of(wrongTool), 10, 2, null),
+                LlmTypes.Reply.text("退款申请已提交"));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("退款申请已提交"));
+
+        ToolDispatcher dispatcher = mock(ToolDispatcher.class);
+        when(dispatcher.dispatch(any(), any(), any(), any())).thenReturn(
+                new ToolDispatcher.Dispatch(ToolName.APPLY_REFUND, ToolStatus.OK,
+                        "{\"status\":\"OK\",\"message\":\"退款已受理\"}", List.of(), "退款", false, false));
+        MockMvc mvc = mockMvc(TriageResult.dynamic(Intent.ACTION_REFUND, "T0", true),
+                mock(CacheService.class), llm, dispatcher, mock(FallbackService.class));
+
+        mvc.perform(post("/api/v1/support/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"query\":\"90002 到哪了？太慢了直接给我退款\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("ACTION_REFUND"))
+                .andExpect(jsonPath("$.toolUsed").value(true));
+
+        org.mockito.ArgumentCaptor<LlmTypes.ToolCall> call =
+                org.mockito.ArgumentCaptor.forClass(LlmTypes.ToolCall.class);
+        verify(dispatcher).dispatch(call.capture(), any(), any(), any());
+        org.assertj.core.api.Assertions.assertThat(call.getValue().name()).isEqualTo("applyRefund");
+    }
+
+    @Test
     @DisplayName("票 165：改地址 + 查状态的多意图，动作优先并走结构化槽位追问")
     void addressActionBeatsOrderStatusLookup() throws Exception {
         String query = "90001 这单帮我改个地址吧，另外现在是什么状态";

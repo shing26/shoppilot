@@ -1143,6 +1143,12 @@ public class AgentStateMachine {
             step(trace, sink, AgentState.TOOL_EXEC, "tool-bound queryOrderDetail from queryLogistics");
             return new LlmTypes.ToolCall(call.id(), ToolName.QUERY_ORDER_DETAIL.apiName(), call.arguments());
         }
+        if (logisticsCall && intent == Intent.ACTION_REFUND && T0RuleLayer.isExplicitRefundRequest(query)) {
+            registry.counter("shoppilot_tool_binding_total",
+                    "intent", "ACTION_REFUND", "from", "queryLogistics", "to", "applyRefund").increment();
+            step(trace, sink, AgentState.TOOL_EXEC, "tool-bound applyRefund from read query");
+            return new LlmTypes.ToolCall(call.id(), ToolName.APPLY_REFUND.apiName(), call.arguments());
+        }
         return call;
     }
 

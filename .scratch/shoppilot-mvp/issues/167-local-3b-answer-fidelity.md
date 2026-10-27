@@ -1,6 +1,6 @@
 # 167 阶段 2：本地 3B 答案保真
 
-**Status:** implemented（local 达标；dev 回归未验证，DashScope 欠费）
+**Status:** implemented（local 30/30；dev 30/30 已补验）
 
 **Claimed by:** zcode session 2026-10-27
 
@@ -40,14 +40,14 @@
 - JVM：**701 tests / 117 suites** 全绿（全量 verify）。
 - 未改 gold / 阈值 / 分母 / FallbackReason。
 
-## 未验证项（必须照登）
+## 补验（2026-10-27 10:40，DashScope 恢复后）
 
-**dev UX30 没有跑绿，原因是 DashScope 账户欠费，不是代码回归。**
+- **dev UX30：30/30 PASS**（139.6s，标签 dev-167c）；
+- **180 gold：POLICY_FRESH / PROMO / RETURN / SHIPPING 全 100%**，ACTION_ADDRESS / LOGISTICS / ORDER / ESCALATE / UNKNOWN 全 100%；
+- 总分 179/180；唯一失败是 **ACT-RFD-13**“90002 到哪了？太慢了直接给我退款”被模型选成 queryLogistics，定向复跑仍 94.4%，是独立的多意图退款优先级问题，不属于票 167；
+- 结论：票 167 的 local 与 dev 验收均通过；ACT-RFD-13 另开票处理。
 
-- 最小 chat 请求返回 400：Arrearage（Access denied, account not in good standing）；
-- dev UX30 两次都是 6/30，全部答案 LLM_CIRCUIT_OPEN + 工单，属于云模型不可用；
-- 代码改动全部由 local 模式门控，dev 路径不会追加提示或执行守卫，但**未得到 30/30 实测**；
-- 解锁后第一件事：充值/恢复账户，清缓存，跑 dev UX30 与 180 gold 政策分区。
+> 欠费期间两次 dev 6/30 的 `LLM_CIRCUIT_OPEN` 已不作为最终读数；恢复后已重跑。
 
 ## Handoff notes
 
@@ -55,7 +55,7 @@
 
 1. 不用按 id 的特判；守卫只按“政策意图 + 条款事实 + 是否带订单号”做通用处理。
 2. 不把 local 提示写进 v1.2.0，避免版本契约与 dev 行为变化；local 专用补充由配置门控。
-3. dev 回归不能靠推断宣称通过；欠费导致未验证，照实登记。
+3. dev 回归不在欠费期间推断通过；恢复后重跑 30/30 才收口。
 
 **验证落点**
 
@@ -66,5 +66,5 @@
 **三个现场追问**
 
 1. 为什么 local 能 30/30？两条确定性守卫 + 一条本地提示，不依赖 3B 自己记住数字。
-2. 会不会影响 dev？不会执行：提示看 properties.llm().mode()，守卫看 llm.mode()，dev 都不满足；但未实测。
+2. 会不会影响 dev？不会执行：提示看 properties.llm().mode()，守卫看 llm.mode()，dev 都不满足；恢复后 dev UX30 实测 30/30。
 3. 为什么不是改检索？G-006/G-026 的 citations 为真，说明条款已召回；缺的是答案复述，不是召回。

@@ -290,6 +290,15 @@ public class T0RuleLayer {
                 && !query.contains("什么情况") && !query.contains("啥情况");
     }
 
+    /** 显式退款诉求："直接/给我/申请/我要/马上/立刻" + 退款/退钱；"能退款吗"不算。 */
+    public static boolean isExplicitRefundRequest(String query) {
+        if (query == null || (!query.contains("退款") && !query.contains("退钱"))) {
+            return false;
+        }
+        return query.contains("直接") || query.contains("给我") || query.contains("申请")
+                || query.contains("我要") || query.contains("马上") || query.contains("立刻");
+    }
+
     /** 是否有任何物流语义；供状态机判断“订单意图被模型选成物流查询”时是否该改绑。 */
     public static boolean hasLogisticsSignal(String query) {
         return query != null && containsAny(query, LOGISTICS_WORDS);
