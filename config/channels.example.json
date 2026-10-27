@@ -1,0 +1,10 @@
+{
+  "feishu": {
+    "enabled": true,
+    "appId": "cli_replace_with_app_id",
+    "appSecret": "replace_with_app_secret",
+    "tenant": "T001",
+    "customer": "C001",
+    "identityFile": ""
+  }
+}

@@ -195,6 +195,9 @@ shoppilot:
     # 演示账号口令（与 biz-mock 播种用的是同一个键）。只供回环上的一键体验登录使用；
     # 为空时该端点直接 503，不创建也不猜测任何口令（ADR 0056）。
     demo-password: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:}
+  channels:
+    # 票 173：渠道连接配置；没有文件时回退 feishu 的环境变量。
+    file: ${SHOPPILOT_CHANNELS_FILE:config/channels.json}
   feishu:
     # 飞书长连接（round31 票 113/114 / ADR 0065）。
     # 凭据走 .env，不入库；非回环绑定 + 空凭据 → 拒启（PostureGuard 家法）。

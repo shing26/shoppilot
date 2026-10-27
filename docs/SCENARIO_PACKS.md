@@ -63,5 +63,5 @@
 
 ## 容器档
 
-`docker-compose.yml` 已把 `./config/scenarios` 只读挂到 `/workspace/config/scenarios`，并设置
-`SHOPPILOT_SCENARIO_PACKS_DIR`。改包后重启网关即可。
+`docker-compose.yml` 已把整个 `./config` 只读挂到 `/workspace/config`，并设置
+`SHOPPILOT_SCENARIO_PACKS_DIR`。改包后重启网关即可；同一挂载也覆盖 `config/channels.json`。

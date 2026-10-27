@@ -288,7 +288,7 @@ services:
       SHOPPILOT_SCENARIO_PACKS_DIR: /workspace/config/scenarios
     volumes:
       - ./knowledge:/workspace/knowledge:ro
-      - ./config/scenarios:/workspace/config/scenarios:ro
+      - ./config:/workspace/config:ro
     depends_on:
       ingest: { condition: service_completed_successfully }
       biz-mock: { condition: service_started }

@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * 飞书 L2 身份映射（票 171）：把飞书 chat_id / sender open_id 映射到店铺租户与买家。
@@ -25,7 +26,7 @@ final class FeishuIdentityResolver {
     record Identity(String tenant, String customer) {
     }
 
-    private final GatewayProperties properties;
+    private final Supplier<GatewayProperties.Feishu> configSupplier;
     private String identityFile;
     private Identity fallback;
     private final Map<String, Identity> chats = new HashMap<>();
@@ -35,12 +36,16 @@ final class FeishuIdentityResolver {
     private volatile boolean loaded;
 
     FeishuIdentityResolver(GatewayProperties properties) {
-        this.properties = properties;
+        this(() -> properties == null ? null : properties.feishu());
+    }
+
+    FeishuIdentityResolver(Supplier<GatewayProperties.Feishu> configSupplier) {
+        this.configSupplier = configSupplier;
     }
 
     /** 测试入口：直接给文件路径与默认身份。 */
     FeishuIdentityResolver(String identityFile, String tenant, String customer) {
-        this.properties = null;
+        this.configSupplier = null;
         this.identityFile = identityFile == null ? "" : identityFile.trim();
         this.fallback = new Identity(
                 tenant == null || tenant.isBlank() ? "T001" : tenant.trim(),
@@ -67,8 +72,8 @@ final class FeishuIdentityResolver {
         if (loaded) {
             return;
         }
-        if (properties != null) {
-            GatewayProperties.Feishu feishu = properties.feishu();
+        if (configSupplier != null) {
+            GatewayProperties.Feishu feishu = configSupplier.get();
             this.identityFile = feishu == null ? "" : feishu.identityFile();
             this.fallback = new Identity(
                     feishu == null ? "T001" : feishu.tenant(),

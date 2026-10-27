@@ -14,6 +14,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -64,6 +65,9 @@ public class FeishuLongConnectionClient {
     private final FeishuReplySender replySender;
     private final GatewayProperties properties;
     private final FeishuIdentityResolver identityResolver;
+
+    @Autowired(required = false)
+    private ChannelConnectionStore channelConnectionStore;
     private final String bindAddress;
     private final ObjectMapper objectMapper;
 
@@ -78,7 +82,7 @@ public class FeishuLongConnectionClient {
         this.agentStateMachine = agentStateMachine;
         this.replySender = replySender;
         this.properties = properties;
-        this.identityResolver = new FeishuIdentityResolver(properties);
+        this.identityResolver = new FeishuIdentityResolver(this::currentFeishu);
         this.bindAddress = bindAddress;
         this.objectMapper = objectMapper;
     }
@@ -93,9 +97,16 @@ public class FeishuLongConnectionClient {
      *   <li>凭据非空 → 正常启动 SDK 长连接</li>
      * </ul>
      */
+    private GatewayProperties.Feishu currentFeishu() {
+        if (channelConnectionStore != null) {
+            return channelConnectionStore.current();
+        }
+        return properties == null ? null : properties.feishu();
+    }
+
     @PostConstruct
     void start() {
-        GatewayProperties.Feishu feishu = properties.feishu();
+        GatewayProperties.Feishu feishu = currentFeishu();
         if (feishu == null || !feishu.enabled()) {
             log.info("飞书长连接未启用（enabled=false）");
             return;

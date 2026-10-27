@@ -45,3 +45,5 @@ backups/
 
 # 飞书实际身份映射含真实 chat_id/open_id，不入库；示例文件保留
 config/feishu-identities.json
+# 渠道连接文件含飞书 appSecret，不入库
+config/channels.json

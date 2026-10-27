@@ -43,6 +43,8 @@ class ConfigValidationTest {
             "SHOPPILOT_CENTROID_CACHE",
             // 票 172：场景包目录可配。
             "SHOPPILOT_SCENARIO_PACKS_DIR",
+            // 票 173：渠道连接配置文件可覆盖。
+            "SHOPPILOT_CHANNELS_FILE",
             "SHOPPILOT_EMBED_MODEL",
             "SHOPPILOT_ES_URL",
             "SHOPPILOT_INTERNAL_TOKEN",
