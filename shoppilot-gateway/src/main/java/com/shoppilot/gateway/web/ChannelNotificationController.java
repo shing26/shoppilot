@@ -43,8 +43,11 @@ public class ChannelNotificationController {
         if (!isHttpsEndpoint(request.endpoint())) {
             return ResponseEntity.badRequest().body(Map.of("error", "endpoint 必须是 HTTPS 推送地址"));
         }
-        store.save(tenant(), new ChannelPushSubscriptionStore.Subscription(
+        boolean saved = store.save(tenant(), new ChannelPushSubscriptionStore.Subscription(
                 request.endpoint(), request.p256dh(), request.auth()));
+        if (!saved) {
+            return ResponseEntity.status(503).body(Map.of("error", "订阅存储暂不可用"));
+        }
         return ResponseEntity.ok(Map.of("subscribed", true));
     }
 

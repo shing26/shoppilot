@@ -118,6 +118,17 @@ Redis 单节点，TTL 7 天：
 
 截图：[workspace-conversations-service-worker.png](workspace-conversations-service-worker.png)。
 
+## 固定 VAPID / 推送重试指标（票 182）
+
+- 本机 `.env` 固定 VAPID 公钥/私钥/subject，公钥接口与 `.env` 一致；
+- `.env.example` 只放占位，私钥不进仓库；
+- 发送失败：404/410 删订阅；429/5xx/异常退避 100ms、200ms 重试；
+- 指标：`shoppilot_push_send_total{result=...}`、`shoppilot_push_latency_seconds`；
+- 订阅保存失败返回 503，前端回退页面通知；
+- 日志只打印 endpoint host。
+
+**真实 FCM 边界**：持久化 Chrome 已能拿到真实 FCM endpoint；本机 Java/Node 发送均被 DevSidecar MITM 代理阻断（Java PKIX / 代理 500），未完成送达。
+
 ## 边界
 
 - Redis TTL 7 天，不是审计归档；

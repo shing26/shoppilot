@@ -12,6 +12,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,11 +30,24 @@ class ChannelPushSubscriptionStoreTest {
     void saveWritesHashAndTtl() {
         when(redis.opsForHash()).thenReturn(hash);
 
-        store.save("T001", new ChannelPushSubscriptionStore.Subscription(
+        boolean saved = store.save("T001", new ChannelPushSubscriptionStore.Subscription(
                 "https://push.example/ep1", "p256dh", "auth"));
 
+        assertThat(saved).isTrue();
         verify(hash).put(anyString(), any(), anyString());
         verify(redis).expire(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("Redis 写失败时 save 返回 false，不谎报订阅成功")
+    void saveFailureReturnsFalse() {
+        when(redis.opsForHash()).thenReturn(hash);
+        doThrow(new RuntimeException("redis down")).when(hash).put(anyString(), any(), anyString());
+
+        boolean saved = store.save("T001", new ChannelPushSubscriptionStore.Subscription(
+                "https://push.example/ep1", "p256dh", "auth"));
+
+        assertThat(saved).isFalse();
     }
 
     @Test

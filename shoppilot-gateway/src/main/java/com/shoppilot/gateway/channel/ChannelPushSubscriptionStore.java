@@ -29,13 +29,15 @@ public class ChannelPushSubscriptionStore {
         this.mapper = mapper;
     }
 
-    public void save(String tenantId, Subscription subscription) {
+    public boolean save(String tenantId, Subscription subscription) {
         try {
             String key = key(tenantId);
             redis.opsForHash().put(key, subscription.endpoint(), mapper.writeValueAsString(subscription));
             redis.expire(key, TTL);
+            return true;
         } catch (Exception failure) {
             log.warn("保存 Web Push 订阅失败: {}", failure.getMessage());
+            return false;
         }
     }
 

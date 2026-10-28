@@ -1,6 +1,7 @@
 package com.shoppilot.gateway.channel;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +18,7 @@ class WebPushNotifierTest {
 
     private final ChannelPushSubscriptionStore store = mock(ChannelPushSubscriptionStore.class);
     private final WebPushNotifier notifier = new WebPushNotifier(
-            store, new ObjectMapper(), "", "", "mailto:ops@shoppilot.local");
+            store, new ObjectMapper(), new SimpleMeterRegistry(), "", "", "mailto:ops@shoppilot.local");
 
     @Test
     @DisplayName("生成的 VAPID 公钥非空")

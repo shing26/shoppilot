@@ -1,6 +1,9 @@
 package com.shoppilot.gateway.channel;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import nl.martijndwars.webpush.Notification;
 import nl.martijndwars.webpush.PushService;
 import nl.martijndwars.webpush.Subscription;
@@ -33,22 +36,34 @@ public class WebPushNotifier {
 
     private static final Logger log = LoggerFactory.getLogger(WebPushNotifier.class);
 
+    private static final int MAX_RETRIES = 2;
+
     private final ChannelPushSubscriptionStore store;
     private final ObjectMapper mapper;
     private final PushService pushService;
     private final String publicKey;
+    private final Counter sent;
+    private final Counter retried;
+    private final Counter gone;
+    private final Counter failed;
+    private final Timer latency;
     private final ExecutorService executor = Executors.newFixedThreadPool(2, task -> {
         Thread thread = new Thread(task, "web-push");
         thread.setDaemon(true);
         return thread;
     });
 
-    public WebPushNotifier(ChannelPushSubscriptionStore store, ObjectMapper mapper,
+    public WebPushNotifier(ChannelPushSubscriptionStore store, ObjectMapper mapper, MeterRegistry registry,
                            @Value("${shoppilot.push.vapid-public-key:}") String configuredPublicKey,
                            @Value("${shoppilot.push.vapid-private-key:}") String configuredPrivateKey,
                            @Value("${shoppilot.push.subject:mailto:ops@shoppilot.local}") String subject) {
         this.store = store;
         this.mapper = mapper;
+        this.sent = registry.counter("shoppilot_push_send_total", "result", "sent");
+        this.retried = registry.counter("shoppilot_push_send_total", "result", "retried");
+        this.gone = registry.counter("shoppilot_push_send_total", "result", "gone");
+        this.failed = registry.counter("shoppilot_push_send_total", "result", "failed");
+        this.latency = Timer.builder("shoppilot_push_latency_seconds").register(registry);
         try {
             if (Security.getProvider("BC") == null) {
                 Security.addProvider(new BouncyCastleProvider());
@@ -104,20 +119,71 @@ public class WebPushNotifier {
     }
 
     private void send(String tenantId, ChannelPushSubscriptionStore.Subscription subscription, String payload) {
-        try {
-            Subscription webPushSubscription = new Subscription(
-                    subscription.endpoint(),
-                    new Subscription.Keys(subscription.p256dh(), subscription.auth()));
-            int status = pushService.send(new Notification(webPushSubscription, payload))
-                    .getStatusLine().getStatusCode();
-            if (status == 404 || status == 410) {
-                store.remove(tenantId, subscription.endpoint());
-                log.info("Web Push 订阅已失效，删除 endpoint={}", subscription.endpoint());
-            } else if (status >= 400) {
-                log.warn("Web Push 发送失败 status={} endpoint={}", status, subscription.endpoint());
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            long startedAt = System.nanoTime();
+            try {
+                Subscription webPushSubscription = new Subscription(
+                        subscription.endpoint(),
+                        new Subscription.Keys(subscription.p256dh(), subscription.auth()));
+                int status = pushService.send(new Notification(webPushSubscription, payload))
+                        .getStatusLine().getStatusCode();
+                latency.record(System.nanoTime() - startedAt, java.util.concurrent.TimeUnit.NANOSECONDS);
+                if (status >= 200 && status < 300) {
+                    sent.increment();
+                    return;
+                }
+                if (status == 404 || status == 410) {
+                    gone.increment();
+                    store.remove(tenantId, subscription.endpoint());
+                    log.info("Web Push 订阅已失效，删除 host={}", host(subscription.endpoint()));
+                    return;
+                }
+                if ((status == 429 || status >= 500) && attempt < MAX_RETRIES) {
+                    retried.increment();
+                    if (!backoff(attempt)) {
+                        failed.increment();
+                        return;
+                    }
+                    continue;
+                }
+                failed.increment();
+                log.warn("Web Push 发送失败 status={} host={}", status, host(subscription.endpoint()));
+                return;
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                failed.increment();
+                return;
+            } catch (Exception failure) {
+                latency.record(System.nanoTime() - startedAt, java.util.concurrent.TimeUnit.NANOSECONDS);
+                if (attempt < MAX_RETRIES) {
+                    retried.increment();
+                    if (!backoff(attempt)) {
+                        failed.increment();
+                        return;
+                    }
+                    continue;
+                }
+                failed.increment();
+                log.warn("Web Push 发送异常: {}", failure.getMessage());
             }
-        } catch (Exception failure) {
-            log.warn("Web Push 发送异常: {}", failure.getMessage());
+        }
+    }
+
+    private boolean backoff(int attempt) {
+        try {
+            Thread.sleep(100L << attempt);
+            return true;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    private String host(String endpoint) {
+        try {
+            return java.net.URI.create(endpoint).getHost();
+        } catch (IllegalArgumentException malformed) {
+            return "invalid";
         }
     }
 }
