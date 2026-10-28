@@ -80,6 +80,9 @@ public class ChannelConnectionStore {
             throw new IllegalArgumentException("连接配置不能为空");
         }
         String appId = update.appId() == null ? "" : update.appId().trim();
+        if (appId.isBlank()) {
+            appId = current.appId();
+        }
         String secret = update.appSecret() == null ? "" : update.appSecret().trim();
         if (secret.isBlank()) {
             secret = current.appSecret();

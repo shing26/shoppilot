@@ -69,6 +69,16 @@
 - 启用但 appId/secret 缺失 → 400；
 - 保存后返回 `restartRequired: true`。
 
+## 前端入口
+
+坐席/管理员登录 `/workspace/` 后，左侧「渠道连接」：
+
+- 展示 enabled、遮罩 appId、租户/买家、配置来源、restartRequired；
+- appId/appSecret 留空表示沿用，测试凭据直接调 token 接口；
+- 保存后提示“重启网关后生效”。
+
+截图：`docs/workspace-channels.png`、`docs/workspace-channels-test.png`、`docs/workspace-channels-mobile.png`。
+
 ## 为什么保存后要重启
 
 飞书 SDK 的 `Client.disconnect()` 是 protected，没有公开的优雅关闭；在进程内重建客户端可能留下两个 WebSocket 同时收事件，导致重复回复/幂等 token 碰撞。v1 明确“保存配置 → 重启网关”，不假装热切换。
@@ -76,7 +86,7 @@
 ## 边界
 
 - 单节点、单飞书应用；
-- 没有前端管理页（下一票）；
+- 前端入口在坐席工作台「渠道连接」视图（状态 / 测试 / 保存 / 重启提示）；
 - 没有数据库/密钥管理服务，secret 落在本机文件；
 - 没有多渠道多实例；
 - 测试接口只验证凭据可换 token，不验证机器人事件订阅。

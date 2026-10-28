@@ -12,14 +12,19 @@ import {
   claimTicket,
   demoLogin,
   describe,
+  listChannels,
   listPendingRefunds,
   listTickets,
   login,
+  saveFeishu,
+  testFeishu,
   messageOf,
   qualityReport,
   releaseTicket,
   resolveTicket,
   reviewRefund,
+  type ChannelConnection,
+  type ChannelProbe,
   type QualityReport,
   type RefundItem,
   type Session,
@@ -61,8 +66,24 @@ const refundDialogNote = ref('')
 const refundDialogError = ref('')
 
 // ADR 0073：工作台是三视图控制台；质量视图只读，不做任何干预动作。
-type WorkspaceView = 'queue' | 'refunds' | 'quality'
+type WorkspaceView = 'queue' | 'refunds' | 'quality' | 'channels'
 const view = ref<WorkspaceView>('queue')
+
+const channel = ref<ChannelConnection | null>(null)
+const channelLoading = ref(false)
+const channelError = ref('')
+const channelNote = ref('')
+const channelSaving = ref(false)
+const channelTesting = ref(false)
+const channelProbe = ref<ChannelProbe | null>(null)
+const channelForm = ref({
+  enabled: true,
+  appId: '',
+  appSecret: '',
+  tenant: 'T001',
+  customer: 'C001',
+  identityFile: '',
+})
 const quality = ref<QualityReport | null>(null)
 const qualityLoading = ref(false)
 const qualityError = ref('')
@@ -260,6 +281,78 @@ function selectView(next: WorkspaceView) {
   view.value = next
   if (next === 'refunds') void refreshRefunds()
   if (next === 'quality' && (!quality.value || qualityError.value)) void refreshQuality()
+  if (next === 'channels') void refreshChannels()
+}
+
+async function refreshChannels() {
+  channelError.value = ''
+  channelProbe.value = null
+  if (!session.value) {
+    channel.value = null
+    return
+  }
+  channelLoading.value = true
+  const result = await listChannels(session.value)
+  channelLoading.value = false
+  if (result.status !== 200) {
+    channelError.value = describe(result, '')
+    channel.value = null
+    return
+  }
+  const list = (result.body as { channels?: ChannelConnection[] }).channels ?? []
+  channel.value = list[0] ?? null
+  if (channel.value) {
+    channelForm.value = {
+      enabled: channel.value.enabled,
+      appId: '',
+      appSecret: '',
+      tenant: channel.value.tenant,
+      customer: channel.value.customer,
+      identityFile: '',
+    }
+  }
+}
+
+async function testChannel() {
+  if (!session.value || channelTesting.value) return
+  channelTesting.value = true
+  channelProbe.value = null
+  channelError.value = ''
+  const result = await testFeishu(
+    session.value,
+    channelForm.value.appId.trim(),
+    channelForm.value.appSecret.trim(),
+  )
+  channelTesting.value = false
+  if (result.status !== 200) {
+    channelError.value = describe(result, '')
+    return
+  }
+  channelProbe.value = result.body as ChannelProbe
+}
+
+async function saveChannel() {
+  if (!session.value || channelSaving.value) return
+  channelSaving.value = true
+  channelNote.value = ''
+  channelError.value = ''
+  const result = await saveFeishu(session.value, {
+    enabled: channelForm.value.enabled,
+    appId: channelForm.value.appId.trim(),
+    appSecret: channelForm.value.appSecret.trim(),
+    tenant: channelForm.value.tenant.trim(),
+    customer: channelForm.value.customer.trim(),
+    identityFile: channelForm.value.identityFile.trim(),
+  })
+  channelSaving.value = false
+  if (result.status >= 200 && result.status < 300) {
+    channelForm.value.appSecret = ''
+    channelForm.value.appId = ''
+    channelNote.value = '已保存。重启网关后生效。'
+    await refreshChannels()
+    return
+  }
+  channelError.value = describe(result, '')
 }
 
 async function refreshRefunds() {
@@ -443,6 +536,9 @@ function clearStoredSession() {
           <button class="nav-item" :class="{ active: view === 'quality' }" type="button" @click="selectView('quality')">
             <span>编排质量</span><em aria-hidden="true">●</em>
           </button>
+          <button class="nav-item" :class="{ active: view === 'channels' }" type="button" @click="selectView('channels')">
+            <span>渠道连接</span><em aria-hidden="true">●</em>
+          </button>
           <div class="nav-foot">
             <strong>{{ session.tenantId }}</strong>
             <span>SLA 每 10 秒刷新</span>
@@ -600,6 +696,63 @@ function clearStoredSession() {
             </div>
           </article>
         </div>
+      </section>
+
+      <section v-else-if="view === 'channels'" class="view-panel channel-panel">
+        <div class="pane-head">
+          <h2>渠道连接</h2>
+          <button class="ghost" type="button" :disabled="channelLoading" @click="refreshChannels">
+            {{ channelLoading ? '读取中…' : '刷新状态' }}
+          </button>
+        </div>
+        <p class="hint">飞书单连接。保存只写配置并标记重启，不会在进程内热切长连接；密钥只存本机文件，页面不回显。</p>
+
+        <p v-if="channelError" class="err">{{ channelError }}</p>
+        <p v-if="channelNote" class="note">{{ channelNote }}</p>
+
+        <article v-if="channel" class="channel-card">
+          <header class="channel-head">
+            <div>
+              <p class="eyebrow">飞书 Long Connection</p>
+              <h3>{{ channel.enabled ? '长连接已启用' : '长连接已停用' }}</h3>
+            </div>
+            <span class="status-pill" :class="{ off: !channel.enabled }">
+              {{ channel.enabled ? 'ENABLED' : 'DISABLED' }}
+            </span>
+          </header>
+          <div class="channel-grid">
+            <div><span>appId</span><strong class="mono">{{ channel.appId }}</strong></div>
+            <div><span>租户</span><strong>{{ channel.tenant }}</strong></div>
+            <div><span>默认买家</span><strong>{{ channel.customer }}</strong></div>
+            <div><span>配置来源</span><strong>{{ channel.source === 'file' ? '文件' : '环境变量' }}</strong></div>
+          </div>
+          <p v-if="channel.restartRequired" class="channel-warn">配置已保存，需重启网关后生效。</p>
+        </article>
+
+        <form class="channel-form" @submit.prevent="saveChannel">
+          <div class="pane-head"><h2>连接配置</h2><span class="count">写文件</span></div>
+          <p class="fine">appId / appSecret 留空表示沿用当前值；测试凭据会调用飞书 token 接口，不会保存。</p>
+          <label class="channel-check">
+            <input v-model="channelForm.enabled" type="checkbox" />
+            <span>启用飞书长连接</span>
+          </label>
+          <div class="channel-form-grid">
+            <label>appId<input v-model="channelForm.appId" type="text" placeholder="留空沿用当前" autocomplete="off" /></label>
+            <label>appSecret<input v-model="channelForm.appSecret" type="password" placeholder="留空沿用当前" autocomplete="new-password" /></label>
+            <label>租户<input v-model="channelForm.tenant" type="text" placeholder="T001" /></label>
+            <label>默认买家<input v-model="channelForm.customer" type="text" placeholder="C001" /></label>
+            <label class="wide">身份映射文件<input v-model="channelForm.identityFile" type="text" placeholder="可空：config/feishu-identities.json" /></label>
+          </div>
+          <div class="channel-actions">
+            <button class="primary" type="submit" :disabled="channelSaving">
+              {{ channelSaving ? '保存中…' : '保存并标记重启' }}
+            </button>
+            <button class="ghost" type="button" :disabled="channelTesting" @click="testChannel">
+              {{ channelTesting ? '测试中…' : '测试凭据' }}
+            </button>
+          </div>
+          <p v-if="channelProbe" class="note" :class="{ err: !channelProbe.ok }">{{ channelProbe.message }}</p>
+        </form>
       </section>
 
       <section v-else class="view-panel quality-panel">
@@ -936,12 +1089,35 @@ function clearStoredSession() {
 .err { color: var(--rose); font-size: 13px; }
 .note { color: var(--green); font-size: 13px; }
 
+.status-pill.off { color: var(--ink-3); background: var(--bg); border-color: var(--line); }
+.channel-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: #fbfcfc; }
+.channel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.channel-head h3 { margin: 2px 0 0; font-size: 15px; }
+.channel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+.channel-grid div { display: grid; gap: 3px; min-width: 0; }
+.channel-grid span { color: var(--ink-3); font-size: 12px; }
+.channel-grid strong { font-size: 13px; overflow-wrap: anywhere; }
+.channel-warn { margin: 12px 0 0; padding: 7px 10px; border: 1px solid #fed7aa; border-radius: 8px;
+  background: #fff7ed; color: #9a3412; font-size: 12px; }
+.channel-form { margin-top: 16px; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); }
+.channel-form .pane-head { margin-bottom: 6px; }
+.channel-check { display: flex; align-items: center; gap: 8px; margin: 10px 0 12px; color: var(--ink-2); font-size: 13px; }
+.channel-check input { width: 16px; height: 16px; accent-color: var(--teal); }
+.channel-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.channel-form-grid label { display: grid; gap: 5px; color: var(--ink-2); font-size: 12px; }
+.channel-form-grid label.wide { grid-column: 1 / -1; }
+.channel-form-grid input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 8px; font: inherit; background: #fff; }
+.channel-form-grid input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px #eef8f6; }
+.channel-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
 @media (max-width: 960px) {
   .workspace { grid-template-columns: 1fr; }
   .detail-pane { position: static; max-height: none; }
   .summary { grid-template-columns: repeat(3, 1fr); }
   .console { grid-template-columns: 1fr; }
-  .side-nav { position: static; grid-template-columns: repeat(3, 1fr); align-items: center; }
+  .side-nav { position: static; grid-template-columns: repeat(4, 1fr); align-items: center; }
+  .channel-grid { grid-template-columns: repeat(2, 1fr); }
   .nav-title, .nav-foot { display: none; }
   .nav-item { justify-content: center; }
   .quality-kpis, .quality-grid { grid-template-columns: 1fr; }
@@ -955,5 +1131,6 @@ function clearStoredSession() {
   .detail-meta { grid-template-columns: 1fr; }
   .side-nav { grid-template-columns: 1fr; }
   .quality-block { overflow-x: auto; }
+  .channel-grid, .channel-form-grid { grid-template-columns: 1fr; }
 }
 </style>

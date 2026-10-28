@@ -137,6 +137,55 @@ export function listPendingRefunds(session: Session): Promise<ApiResult<RefundIt
   return api<RefundItem[]>('GET', '/refunds/pending', { token: session.token })
 }
 
+// ── 渠道连接（票 173）────────────────────────────────────────────────────
+
+export interface ChannelConnection {
+  type: string
+  enabled: boolean
+  appId: string
+  tenant: string
+  customer: string
+  source: string
+  restartRequired: boolean
+}
+
+export interface ChannelList {
+  channels: ChannelConnection[]
+}
+
+export interface ChannelProbe {
+  ok: boolean
+  message: string
+}
+
+export function listChannels(session: Session): Promise<ApiResult<ChannelList>> {
+  return api<ChannelList>('GET', '/channels', { token: session.token })
+}
+
+export function testFeishu(
+  session: Session,
+  appId: string,
+  appSecret: string,
+): Promise<ApiResult<ChannelProbe>> {
+  return api<ChannelProbe>('POST', '/channels/feishu/test', {
+    token: session.token,
+    body: { appId, appSecret },
+  })
+}
+
+export interface FeishuUpdate {
+  enabled: boolean
+  appId: string
+  appSecret: string
+  tenant: string
+  customer: string
+  identityFile: string
+}
+
+export function saveFeishu(session: Session, update: FeishuUpdate): Promise<ApiResult<unknown>> {
+  return api<unknown>('PUT', '/channels/feishu', { token: session.token, body: update })
+}
+
 // ── 编排质量（ADR 0072 H4 / ADR 0073）───────────────────────────────────────
 
 /** 通用指标行：标签字段随指标名变化，count 恒为次数。 */

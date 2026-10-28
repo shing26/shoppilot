@@ -64,8 +64,11 @@ class ChannelConnectionStoreTest {
     @Test
     @DisplayName("启用但缺 appId/appSecret：拒绝保存")
     void rejectsEnabledWithoutCredentials() {
+        GatewayProperties blank = mock(GatewayProperties.class);
+        when(blank.feishu()).thenReturn(new GatewayProperties.Feishu(
+                false, "", "", "T001", "C001", ""));
         ChannelConnectionStore store = new ChannelConnectionStore(
-                properties(), tempDir.resolve("channels.json").toString());
+                blank, tempDir.resolve("channels.json").toString());
 
         assertThatThrownBy(() -> store.save(new ChannelConnectionStore.FeishuConnection(
                 true, "", "", "T001", "C001", "")))

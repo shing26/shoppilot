@@ -30,7 +30,7 @@
 - 热重启 SDK 长连接；
 - 多渠道多实例；
 - 数据库/密钥管理服务；
-- 前端管理页（下一票）。
+- 前端管理页（已实现：坐席工作台「渠道连接」视图）。
 
 ## 已实现
 
@@ -38,14 +38,17 @@
 - FeishuLongConnectionClient / FeishuIdentityResolver 启动时读 store，保存后重启即生效；
 - ChannelAdminController：GET 状态、POST /feishu/test、PUT /feishu；secret 不回显；
 - config/channels.example.json、docs/CHANNEL_CONNECTIONS.md；
-- .gitignore 忽略实际 channels.json。
+- .gitignore 忽略实际 channels.json；
+- 工作台第四个视图「渠道连接」：状态、遮罩 appId、来源、重启提示、测试凭据、保存配置；
+- 前端 typecheck/build 通过，产物同步 static/workspace。
 
 ## 验证
 
 - ChannelConnectionStoreTest 5 条：env 回退、保存/重载、缺凭据拒绝、无凭据测试、坏文件拒启；
 - 飞书相关测试与 ConfigValidationTest 通过；
 - 全量 verify：720 tests / 120 suites 全绿；
-- 未做：HTTP 端点活体、前端管理页。
+- 前端：工作台 typecheck/build 通过；Playwright 1440×900 / 390×936 实拍；点击“测试凭据”返回“飞书凭据有效，已获取 tenant_access_token”（前端 → 渠道 API → 飞书 token 接口）。
+- 未做：保存后的真实重启验证（会改写本地配置，留给联调）。
 
 ## Handoff notes
 

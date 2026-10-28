@@ -6,6 +6,7 @@ import com.shoppilot.gateway.knowledge.Domain;
 import com.shoppilot.gateway.store.StoreProfileProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -43,6 +44,7 @@ public class ScenarioPackService {
     private final Map<String, StoreProfileProperties.Profile> profiles;
     private final Map<String, String> addenda;
 
+    @Autowired
     public ScenarioPackService(@Value("${shoppilot.scenario-packs.dir:config/scenarios}") String dir) {
         this(loadPacks(dir));
     }
