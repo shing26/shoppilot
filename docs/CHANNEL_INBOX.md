@@ -87,6 +87,15 @@ Redis 单节点，TTL 7 天：
 
 截图：[workspace-conversations-live-sse.png](workspace-conversations-live-sse.png)。
 
+## 多实例 SSE（票 179）
+
+- 会话变更发布到 Redis 频道 `shoppilot:channel-inbox-events`；
+- 每个网关副本的 `RedisMessageListenerContainer` 订阅该频道，收到后 fan-out 给本机 SSE 客户端；
+- 发布成功不再本地推，避免同一事件两次；发布失败/无订阅者才本地 fallback；
+- 消息内仍按 tenant 过滤。
+
+活体验证：本机 SSE 连接后，用 `redis-cli PUBLISH` 模拟另一实例发布，收到 `event:conversation` 与完整会话 JSON。
+
 ## 边界
 
 - Redis TTL 7 天，不是审计归档；

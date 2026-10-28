@@ -3,6 +3,7 @@ package com.shoppilot.gateway.channel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -10,13 +11,16 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * 渠道会话 SSE 事件总线（票 177）：按租户把 conversation 变更推给工作台。
+ * 渠道会话 SSE 事件总线（票 177 / 179）。
  *
- * <p>只推“发生了什么”，不推全量列表；客户端收到后替换单条会话。
- * 连接断开就移除，不阻塞后续发布。
+ * <p>本地 fan-out 只负责连在本实例上的 SseEmitter；发布走 Redis pub/sub，
+ * 所有实例的监听器收到后各自 fan-out。这样坐席连 A、消息落 B 也能收到。
+ * Redis 发布失败或无订阅者时回退本地 fan-out，单实例仍可用。
  */
 @Component
 public class ChannelInboxEventBus {
+
+    public static final String CHANNEL = "shoppilot:channel-inbox-events";
 
     private static final Logger log = LoggerFactory.getLogger(ChannelInboxEventBus.class);
 
@@ -25,9 +29,11 @@ public class ChannelInboxEventBus {
 
     private final List<Subscription> subscriptions = new CopyOnWriteArrayList<>();
     private final ObjectMapper mapper;
+    private final StringRedisTemplate redis;
 
-    public ChannelInboxEventBus(ObjectMapper mapper) {
+    public ChannelInboxEventBus(ObjectMapper mapper, StringRedisTemplate redis) {
         this.mapper = mapper;
+        this.redis = redis;
     }
 
     public SseEmitter subscribe(String tenantId) {
@@ -51,6 +57,35 @@ public class ChannelInboxEventBus {
         if (conversation == null) {
             return;
         }
+        String json;
+        try {
+            json = mapper.writeValueAsString(conversation);
+        } catch (Exception failure) {
+            log.warn("渠道会话事件序列化失败: {}", failure.getMessage());
+            return;
+        }
+        try {
+            Long receivers = redis.convertAndSend(CHANNEL, json);
+            if (receivers != null && receivers > 0) {
+                return;
+            }
+            log.warn("渠道会话事件无 Redis 订阅者，回退本地 fan-out");
+        } catch (Exception unavailable) {
+            log.warn("渠道会话事件发布失败，回退本地 fan-out: {}", unavailable.getMessage());
+        }
+        fanOut(conversation);
+    }
+
+    /** Redis listener 调用：其他实例/本实例收到的消息，只做本地 fan-out，不再发布。 */
+    public void onRedisMessage(String json) {
+        try {
+            fanOut(mapper.readValue(json, ChannelConversationStore.Conversation.class));
+        } catch (Exception malformed) {
+            log.warn("渠道会话事件解析失败: {}", malformed.getMessage());
+        }
+    }
+
+    private void fanOut(ChannelConversationStore.Conversation conversation) {
         String json;
         try {
             json = mapper.writeValueAsString(conversation);
