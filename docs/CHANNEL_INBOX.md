@@ -78,6 +78,15 @@ Redis 单节点，TTL 7 天：
 
 截图：[workspace-conversations-unread.png](workspace-conversations-unread.png)。
 
+## 真实新消息 SSE（2026-10-28）
+
+- 工作台页面保持打开、不刷新；
+- 真实飞书消息 20:51:21 到达；
+- nav 自动从 0 变 1，会话卡片出现 `unread=1`；
+- 脚本只做一次登录/进入视图，之后只等待 `.unread-pill`，没有刷新或轮询 API。
+
+截图：[workspace-conversations-live-sse.png](workspace-conversations-live-sse.png)。
+
 ## 边界
 
 - Redis TTL 7 天，不是审计归档；
