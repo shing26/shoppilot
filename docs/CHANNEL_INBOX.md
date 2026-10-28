@@ -96,6 +96,16 @@ Redis 单节点，TTL 7 天：
 
 活体验证：本机 SSE 连接后，用 `redis-cli PUBLISH` 模拟另一实例发布，收到 `event:conversation` 与完整会话 JSON。
 
+## 浏览器通知（票 180）
+
+- 渠道页「开启浏览器通知」申请 Notification 权限；
+- 仅当 SSE 事件 unread>0 且最后一条是买家消息时弹；
+- 当前选中会话且页面可见时不弹；
+- 点击通知回渠道会话、选中并已读；
+- 权限/开关存 localStorage。
+
+截图：[workspace-conversations-notification.png](workspace-conversations-notification.png)。
+
 ## 边界
 
 - Redis TTL 7 天，不是审计归档；

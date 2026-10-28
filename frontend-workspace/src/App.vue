@@ -107,6 +107,15 @@ const channelForm = ref({
   customer: 'C001',
   identityFile: '',
 })
+
+const NOTIFY_KEY = 'shoppilot.channel.notify'
+const notificationsEnabled = ref(
+  localStorage.getItem(NOTIFY_KEY) === '1' &&
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    Notification.permission === 'granted',
+)
+const notificationError = ref('')
 const quality = ref<QualityReport | null>(null)
 const qualityLoading = ref(false)
 const qualityError = ref('')
@@ -344,7 +353,49 @@ function selectConversation(id: string) {
   void readConversation(id)
 }
 
+async function enableNotifications() {
+  notificationError.value = ''
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    notificationError.value = '当前浏览器不支持桌面通知'
+    return
+  }
+  if (Notification.permission === 'denied') {
+    notificationError.value = '浏览器已拒绝通知，请在站点权限里改为允许'
+    return
+  }
+  const permission = await Notification.requestPermission()
+  if (permission === 'granted') {
+    notificationsEnabled.value = true
+    localStorage.setItem(NOTIFY_KEY, '1')
+    return
+  }
+  notificationsEnabled.value = false
+  localStorage.removeItem(NOTIFY_KEY)
+  notificationError.value = '未获得通知权限'
+}
+
+function notifyConversation(conversation: ChannelConversation) {
+  if (!notificationsEnabled.value || !conversation || (conversation.unread ?? 0) <= 0) return
+  const last = conversation.messages[conversation.messages.length - 1]
+  if (!last || last.role !== 'user') return
+  if (conversation.conversationId === selectedConversationId.value && document.visibilityState === 'visible') {
+    return
+  }
+  const notification = new Notification(`新的渠道消息 · ${conversation.channel}`, {
+    body: conversation.lastMessage || '买家发来一条新消息',
+    tag: conversation.conversationId,
+  })
+  notification.onclick = () => {
+    window.focus()
+    view.value = 'conversations'
+    selectedConversationId.value = conversation.conversationId
+    void readConversation(conversation.conversationId)
+    notification.close()
+  }
+}
+
 function applyConversationStream(updated: ChannelConversation) {
+  notifyConversation(updated)
   replaceConversation(updated)
   if (updated.conversationId === selectedConversationId.value && (updated.unread ?? 0) > 0) {
     void readConversation(updated.conversationId)
@@ -835,11 +886,17 @@ function clearStoredSession() {
       <section v-else-if="view === 'conversations'" class="view-panel conversation-panel">
         <div class="pane-head">
           <h2>渠道会话</h2>
-          <button class="ghost" type="button" :disabled="conversationLoading" @click="refreshConversations">
-            {{ conversationLoading ? '读取中…' : '刷新会话' }}
-          </button>
+          <div class="channel-head-actions">
+            <button class="ghost" type="button" @click="enableNotifications">
+              {{ notificationsEnabled ? '通知已开启' : '开启浏览器通知' }}
+            </button>
+            <button class="ghost" type="button" :disabled="conversationLoading" @click="refreshConversations">
+              {{ conversationLoading ? '读取中…' : '刷新会话' }}
+            </button>
+          </div>
         </div>
-        <p class="hint">飞书会话收件箱。接管后 Agent 不再自动回复，坐席回复会直接发回飞书；先轮询，未做实时推送。</p>
+        <p class="hint">飞书会话收件箱。接管后 Agent 不再自动回复，坐席回复会直接发回飞书；新消息走 SSE 实时推送。</p>
+        <p v-if="notificationError" class="err">{{ notificationError }}</p>
         <p v-if="conversationError" class="err">{{ conversationError }}</p>
         <p v-if="conversationNote" class="note">{{ conversationNote }}</p>
         <p v-if="conversationLoading" class="empty">正在读取渠道会话…</p>
@@ -1398,6 +1455,8 @@ function clearStoredSession() {
 .conversation-tags { display: flex; align-items: center; gap: 6px; }
 .unread-pill { min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--rose); color: #fff;
   font-size: 11px; line-height: 18px; text-align: center; }
+
+.channel-head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 @media (max-width: 960px) {
   .workspace { grid-template-columns: 1fr; }
