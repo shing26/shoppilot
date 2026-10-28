@@ -83,6 +83,15 @@
 
 飞书 SDK 的 `Client.disconnect()` 是 protected，没有公开的优雅关闭；在进程内重建客户端可能留下两个 WebSocket 同时收事件，导致重复回复/幂等 token 碰撞。v1 明确“保存配置 → 重启网关”，不假装热切换。
 
+## 保存 → 重启验证（2026-10-28）
+
+- 工作台把租户从 T001 改为 T003，appId/appSecret 留空；保存后 source=file、restartRequired=true；
+- 重启日志：`渠道连接配置从文件加载 ... tenant=T003`、`飞书长连接已启动`；
+- 重启后 API：`source=file`、`tenant=T003`、`restartRequired=false`；
+- 测试文件已删除，恢复 .env 行为。
+
+保存截图：[workspace-channels-saved.png](workspace-channels-saved.png)。
+
 ## 边界
 
 - 单节点、单飞书应用；
