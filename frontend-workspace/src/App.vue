@@ -119,6 +119,9 @@ const notificationsEnabled = ref(
     Notification.permission === 'granted',
 )
 const notificationError = ref('')
+const SOUND_KEY = 'shoppilot.channel.sound'
+const soundEnabled = ref(localStorage.getItem(SOUND_KEY) === '1')
+let audioContext: AudioContext | null = null
 const pushSubscribed = ref(false)
 let serviceWorkerRegistration: ServiceWorkerRegistration | null = null
 let pendingConversation = new URLSearchParams(window.location.search).get('conversation') ?? ''
@@ -469,14 +472,46 @@ async function enableNotifications() {
   notificationError.value = '未获得通知权限'
 }
 
+async function toggleSound() {
+  notificationError.value = ''
+  if (soundEnabled.value) {
+    soundEnabled.value = false
+    localStorage.removeItem(SOUND_KEY)
+    return
+  }
+  try {
+    audioContext ??= new AudioContext()
+    await audioContext.resume()
+    soundEnabled.value = true
+    localStorage.setItem(SOUND_KEY, '1')
+  } catch {
+    notificationError.value = '浏览器未能启用音频，请检查站点声音权限'
+  }
+}
+
+function playChime() {
+  if (!soundEnabled.value || !audioContext) return
+  const oscillator = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+  oscillator.type = 'sine'
+  oscillator.frequency.value = 880
+  gain.gain.setValueAtTime(0.08, audioContext.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.25)
+  oscillator.connect(gain)
+  gain.connect(audioContext.destination)
+  oscillator.start()
+  oscillator.stop(audioContext.currentTime + 0.26)
+}
+
 function notifyConversation(conversation: ChannelConversation) {
-  if (pushSubscribed.value) return
-  if (!notificationsEnabled.value || !conversation || (conversation.unread ?? 0) <= 0) return
+  if (!conversation || (conversation.unread ?? 0) <= 0) return
   const last = conversation.messages[conversation.messages.length - 1]
   if (!last || last.role !== 'user') return
   if (conversation.conversationId === selectedConversationId.value && document.visibilityState === 'visible') {
     return
   }
+  playChime()
+  if (pushSubscribed.value || !notificationsEnabled.value) return
   const notification = new Notification(`新的渠道消息 · ${conversation.channel}`, {
     body: conversation.lastMessage || '买家发来一条新消息',
     tag: conversation.conversationId,
@@ -994,6 +1029,9 @@ function clearStoredSession() {
           <div class="channel-head-actions">
             <button class="ghost" type="button" @click="toggleNotifications">
               {{ notificationsEnabled ? '通知已开启' : '开启浏览器通知' }}
+            </button>
+            <button class="ghost" type="button" @click="toggleSound">
+              {{ soundEnabled ? '提示音已开' : '开启提示音' }}
             </button>
             <button class="ghost" type="button" :disabled="conversationLoading" @click="refreshConversations">
               {{ conversationLoading ? '读取中…' : '刷新会话' }}

@@ -129,6 +129,12 @@ Redis 单节点，TTL 7 天：
 
 **真实 FCM 边界**：持久化 Chrome 已能拿到真实 FCM endpoint；本机 Java/Node 发送均被 DevSidecar MITM 代理阻断（Java PKIX / 代理 500），未完成送达。
 
+## 提示音（票 183）
+
+- 渠道页「开启提示音」创建/恢复 AudioContext；
+- 新买家消息（未选中/页面不可见）播放 880Hz 短音；
+- 开关存 localStorage，与通知/Push 独立。
+
 ## 边界
 
 - Redis TTL 7 天，不是审计归档；
