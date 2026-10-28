@@ -186,6 +186,69 @@ export function saveFeishu(session: Session, update: FeishuUpdate): Promise<ApiR
   return api<unknown>('PUT', '/channels/feishu', { token: session.token, body: update })
 }
 
+// ── 渠道会话收件箱（票 175）────────────────────────────────────────────────
+
+export interface ChannelMessage {
+  role: string
+  text: string
+  at: string
+}
+
+export interface ChannelConversation {
+  conversationId: string
+  channel: string
+  tenantId: string
+  customerId: string
+  status: string
+  assignee: string | null
+  messages: ChannelMessage[]
+  lastMessage: string
+  lastAt: string
+  handoffTicketId: string | null
+}
+
+export function listChannelConversations(
+  session: Session,
+): Promise<ApiResult<{ conversations: ChannelConversation[] }>> {
+  return api<{ conversations: ChannelConversation[] }>('GET', '/channel-conversations', {
+    token: session.token,
+  })
+}
+
+export function takeoverConversation(
+  session: Session,
+  id: string,
+): Promise<ApiResult<{ conversation: ChannelConversation }>> {
+  return api<{ conversation: ChannelConversation }>(
+    'POST',
+    `/channel-conversations/${encodeURIComponent(id)}/takeover`,
+    { token: session.token },
+  )
+}
+
+export function releaseConversation(
+  session: Session,
+  id: string,
+): Promise<ApiResult<{ conversation: ChannelConversation }>> {
+  return api<{ conversation: ChannelConversation }>(
+    'POST',
+    `/channel-conversations/${encodeURIComponent(id)}/release`,
+    { token: session.token },
+  )
+}
+
+export function replyConversation(
+  session: Session,
+  id: string,
+  text: string,
+): Promise<ApiResult<{ conversation: ChannelConversation }>> {
+  return api<{ conversation: ChannelConversation }>(
+    'POST',
+    `/channel-conversations/${encodeURIComponent(id)}/reply`,
+    { token: session.token, body: { text } },
+  )
+}
+
 // ── 编排质量（ADR 0072 H4 / ADR 0073）───────────────────────────────────────
 
 /** 通用指标行：标签字段随指标名变化，count 恒为次数。 */

@@ -68,6 +68,9 @@ public class FeishuLongConnectionClient {
 
     @Autowired(required = false)
     private ChannelConnectionStore channelConnectionStore;
+
+    @Autowired(required = false)
+    private ChannelConversationStore conversationStore;
     private final String bindAddress;
     private final ObjectMapper objectMapper;
 
@@ -199,6 +202,14 @@ public class FeishuLongConnectionClient {
         }
         log.info("飞书消息身份 chatId={} tenant={} customer={}",
                 chatId, resolved.tenant(), resolved.customer());
+        if (conversationStore != null) {
+            conversationStore.recordInbound(resolved.tenant(), resolved.customer(),
+                    conversationId, "feishu", chat.query());
+            if (conversationStore.isAgent(resolved.tenant(), conversationId)) {
+                log.info("渠道会话已被坐席接管，跳过 Agent 自动回复: {}", conversationId);
+                return;
+            }
+        }
         TenantContext.Identity identity = new TenantContext.Identity(
                 resolved.tenant(), resolved.customer(), conversationId);
         TenantContext.set(identity);
@@ -211,6 +222,9 @@ public class FeishuLongConnectionClient {
             // 发送回复
             if (result.answer() != null && !result.answer().isBlank()) {
                 replySender.send(chatId, result.answer());
+                if (conversationStore != null) {
+                    conversationStore.recordBotReply(resolved.tenant(), conversationId, result.answer());
+                }
             }
         } finally {
             TenantContext.clear();
