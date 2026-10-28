@@ -3,6 +3,7 @@ package com.shoppilot.gateway.channel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -30,6 +31,9 @@ public class ChannelInboxEventBus {
     private final List<Subscription> subscriptions = new CopyOnWriteArrayList<>();
     private final ObjectMapper mapper;
     private final StringRedisTemplate redis;
+
+    @Autowired(required = false)
+    private WebPushNotifier pushNotifier;
 
     public ChannelInboxEventBus(ObjectMapper mapper, StringRedisTemplate redis) {
         this.mapper = mapper;
@@ -63,6 +67,9 @@ public class ChannelInboxEventBus {
         } catch (Exception failure) {
             log.warn("渠道会话事件序列化失败: {}", failure.getMessage());
             return;
+        }
+        if (pushNotifier != null) {
+            pushNotifier.notify(conversation);
         }
         try {
             Long receivers = redis.convertAndSend(CHANNEL, json);

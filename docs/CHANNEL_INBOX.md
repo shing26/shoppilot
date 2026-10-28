@@ -106,6 +106,18 @@ Redis 单节点，TTL 7 天：
 
 截图：[workspace-conversations-notification.png](workspace-conversations-notification.png)。
 
+## Service Worker / Web Push（票 181）
+
+- 工作台注册 `/workspace/sw.js`；
+- 有 Push 能力时订阅并 POST 到 `/api/v1/support/ops/channel-notifications/subscribe`；
+- 后端按租户存 Redis hash `shoppilot:channel-push:{tenant}`，发 Web Push；
+- SW `push` 展示通知，`notificationclick` 聚焦/打开工作台并回会话；
+- 没有 Push 能力时回退页面内通知。
+
+**边界**：VAPID 未配置时用启动生成的临时密钥，重启后旧订阅失效；真实 Web Push 发送未在 headless 验收（无可用 push service）。
+
+截图：[workspace-conversations-service-worker.png](workspace-conversations-service-worker.png)。
+
 ## 边界
 
 - Redis TTL 7 天，不是审计归档；

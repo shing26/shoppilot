@@ -9,6 +9,7 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
+  channelPushPublicKey,
   claimTicket,
   demoLogin,
   describe,
@@ -20,7 +21,9 @@ import {
   releaseConversation,
   replyConversation,
   streamChannelConversations,
+  subscribeChannelPush,
   takeoverConversation,
+  unsubscribeChannelPush,
   login,
   saveFeishu,
   testFeishu,
@@ -116,6 +119,9 @@ const notificationsEnabled = ref(
     Notification.permission === 'granted',
 )
 const notificationError = ref('')
+const pushSubscribed = ref(false)
+let serviceWorkerRegistration: ServiceWorkerRegistration | null = null
+let pendingConversation = new URLSearchParams(window.location.search).get('conversation') ?? ''
 const quality = ref<QualityReport | null>(null)
 const qualityLoading = ref(false)
 const qualityError = ref('')
@@ -337,7 +343,12 @@ async function refreshConversations() {
   }
   const list = (result.body as { conversations?: ChannelConversation[] }).conversations ?? []
   conversations.value = list
-  if (!list.some((c) => c.conversationId === selectedConversationId.value)) {
+  const pendingMatches = pendingConversation && list.some((c) => c.conversationId === pendingConversation)
+  if (pendingMatches) {
+    selectedConversationId.value = pendingConversation
+    pendingConversation = ''
+    conversationReply.value = ''
+  } else if (!list.some((c) => c.conversationId === selectedConversationId.value)) {
     selectedConversationId.value = list[0]?.conversationId ?? ''
     conversationReply.value = ''
   }
@@ -351,6 +362,89 @@ function selectConversation(id: string) {
   conversationError.value = ''
   conversationNote.value = ''
   void readConversation(id)
+}
+
+function base64UrlToArrayBuffer(value: string): ArrayBuffer {
+  const padding = '='.repeat((4 - (value.length % 4)) % 4)
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = window.atob(base64)
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0))).buffer as ArrayBuffer
+}
+
+async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+  if (!('serviceWorker' in navigator)) return null
+  if (serviceWorkerRegistration) return serviceWorkerRegistration
+  try {
+    serviceWorkerRegistration = await navigator.serviceWorker.register('/workspace/sw.js')
+    await navigator.serviceWorker.ready
+    return serviceWorkerRegistration
+  } catch {
+    return null
+  }
+}
+
+async function enablePush(): Promise<boolean> {
+  if (!session.value || !('PushManager' in window)) return false
+  const registration = await registerServiceWorker()
+  if (!registration) return false
+  try {
+    let subscription = await registration.pushManager.getSubscription()
+    if (!subscription) {
+      const key = await channelPushPublicKey(session.value)
+      const publicKey = key.status === 200 ? (key.body as { publicKey?: string }).publicKey : undefined
+      if (!publicKey) return false
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlToArrayBuffer(publicKey),
+      })
+    }
+    const json = subscription.toJSON()
+    const p256dh = json.keys?.p256dh
+    const auth = json.keys?.auth
+    if (!p256dh || !auth) return false
+    const result = await subscribeChannelPush(session.value, {
+      endpoint: subscription.endpoint,
+      p256dh,
+      auth,
+    })
+    if (result.status < 200 || result.status >= 300) return false
+    pushSubscribed.value = true
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function restorePush() {
+  if (!notificationsEnabled.value || !session.value) return
+  const registration = await registerServiceWorker()
+  if (!registration) return
+  const existing = await registration.pushManager.getSubscription()
+  if (existing) await enablePush()
+}
+
+function handleServiceWorkerMessage(event: MessageEvent) {
+  const data = event.data as { type?: string; conversationId?: string } | null
+  if (data?.type !== 'channel-notification-click' || !data.conversationId) return
+  view.value = 'conversations'
+  selectedConversationId.value = data.conversationId
+  void refreshConversations()
+}
+
+async function toggleNotifications() {
+  if (notificationsEnabled.value) {
+    notificationsEnabled.value = false
+    pushSubscribed.value = false
+    localStorage.removeItem(NOTIFY_KEY)
+    const registration = await registerServiceWorker()
+    const subscription = await registration?.pushManager.getSubscription()
+    if (subscription) {
+      if (session.value) await unsubscribeChannelPush(session.value, subscription.endpoint)
+      await subscription.unsubscribe()
+    }
+    return
+  }
+  await enableNotifications()
 }
 
 async function enableNotifications() {
@@ -367,6 +461,7 @@ async function enableNotifications() {
   if (permission === 'granted') {
     notificationsEnabled.value = true
     localStorage.setItem(NOTIFY_KEY, '1')
+    await enablePush()
     return
   }
   notificationsEnabled.value = false
@@ -375,6 +470,7 @@ async function enableNotifications() {
 }
 
 function notifyConversation(conversation: ChannelConversation) {
+  if (pushSubscribed.value) return
   if (!notificationsEnabled.value || !conversation || (conversation.unread ?? 0) <= 0) return
   const last = conversation.messages[conversation.messages.length - 1]
   if (!last || last.role !== 'user') return
@@ -617,6 +713,12 @@ async function confirmRefund() {
 }
 
 onMounted(() => {
+  void registerServiceWorker().then(() => {
+    if (notificationsEnabled.value) void restorePush()
+  })
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
+  }
   if (session.value) {
     void refresh()
     void refreshRefunds()
@@ -631,6 +733,9 @@ onMounted(() => {
 onUnmounted(() => {
   window.clearInterval(timer)
   stopConversationStream()
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+  }
 })
 
 function isOverdue(ticket: Ticket): boolean {
@@ -887,7 +992,7 @@ function clearStoredSession() {
         <div class="pane-head">
           <h2>渠道会话</h2>
           <div class="channel-head-actions">
-            <button class="ghost" type="button" @click="enableNotifications">
+            <button class="ghost" type="button" @click="toggleNotifications">
               {{ notificationsEnabled ? '通知已开启' : '开启浏览器通知' }}
             </button>
             <button class="ghost" type="button" :disabled="conversationLoading" @click="refreshConversations">

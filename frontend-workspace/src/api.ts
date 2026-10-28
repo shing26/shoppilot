@@ -216,6 +216,35 @@ export function listChannelConversations(
   })
 }
 
+export interface ChannelPushSubscription {
+  endpoint: string
+  p256dh: string
+  auth: string
+}
+
+export function channelPushPublicKey(
+  session: Session,
+): Promise<ApiResult<{ publicKey: string }>> {
+  return api<{ publicKey: string }>('GET', '/channel-notifications/public-key', { token: session.token })
+}
+
+export function subscribeChannelPush(
+  session: Session,
+  subscription: ChannelPushSubscription,
+): Promise<ApiResult<{ subscribed: boolean }>> {
+  return api('POST', '/channel-notifications/subscribe', {
+    token: session.token,
+    body: subscription,
+  })
+}
+
+export function unsubscribeChannelPush(
+  session: Session,
+  endpoint: string,
+): Promise<ApiResult<{ subscribed: boolean }>> {
+  return api('POST', '/channel-notifications/unsubscribe', { token: session.token, body: { endpoint } })
+}
+
 export function markConversationRead(
   session: Session,
   id: string,
