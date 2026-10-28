@@ -79,7 +79,7 @@ public class ChannelInboxController {
         if (conversation == null) {
             return ResponseEntity.notFound().build();
         }
-        boolean noticeSent = sendNotice(id, "人工坐席 " + actor + " 已接入，请稍候。");
+        boolean noticeSent = sendNotice(id, "人工坐席 " + actor + " 已接入，请稍候。", conversation.channel());
         return ResponseEntity.ok(Map.of("conversation", conversation, "noticeSent", noticeSent));
     }
 
@@ -89,7 +89,7 @@ public class ChannelInboxController {
         if (conversation == null) {
             return ResponseEntity.notFound().build();
         }
-        boolean noticeSent = sendNotice(id, "已切回智能助手，继续为您服务。");
+        boolean noticeSent = sendNotice(id, "已切回智能助手，继续为您服务。", conversation.channel());
         return ResponseEntity.ok(Map.of("conversation", conversation, "noticeSent", noticeSent));
     }
 
@@ -110,17 +110,22 @@ public class ChannelInboxController {
         if (current.assignee() != null && !current.assignee().equals(actor)) {
             return ResponseEntity.status(409).body(Map.of("error", "这张会话已由 " + current.assignee() + " 接管"));
         }
-        try {
-            replySender.send(chatId(id), text);
-        } catch (Exception failure) {
-            return ResponseEntity.status(502).body(Map.of("error", "飞书发送失败，未写入会话记录"));
+        if ("feishu".equals(current.channel())) {
+            try {
+                replySender.send(chatId(id), text);
+            } catch (Exception failure) {
+                return ResponseEntity.status(502).body(Map.of("error", "飞书发送失败，未写入会话记录"));
+            }
         }
         ChannelConversationStore.Conversation conversation =
                 store.recordAgentReply(tenant(), id, actor, text);
         return ResponseEntity.ok(Map.of("conversation", conversation));
     }
 
-    private boolean sendNotice(String conversationId, String text) {
+    private boolean sendNotice(String conversationId, String text, String channel) {
+        if (!"feishu".equals(channel)) {
+            return false;
+        }
         try {
             replySender.send(chatId(conversationId), text);
             return true;

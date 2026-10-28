@@ -32,6 +32,10 @@ class StaticEntryExemptionTest {
         assertThat(exempted("/buyer/")).isTrue();
         assertThat(exempted("/buyer/index.html")).isTrue();
         assertThat(exempted("/buyer/assets/index-abc.js")).isTrue();
+        assertThat(exempted("/widget/")).isTrue();
+        assertThat(exempted("/widget/index.html")).isTrue();
+        assertThat(exempted("/widget/widget.js")).isTrue();
+        assertThat(exempted("/api/v1/widget/chat")).isTrue();
         assertThat(exempted("/console.html")).isTrue();
         assertThat(exempted("/admin/debug")).isTrue();
         assertThat(exempted("/admin/debug/")).isTrue();

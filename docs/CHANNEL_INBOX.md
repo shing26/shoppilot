@@ -135,6 +135,16 @@ Redis 单节点，TTL 7 天：
 - 新买家消息（未选中/页面不可见）播放 880Hz 短音；
 - 开关存 localStorage，与通知/Push 独立。
 
+## Web Widget（票 184）
+
+- 入口 `/widget/`（可 iframe 嵌入，`?key=` 覆盖）；
+- `POST /api/v1/widget/chat` 用 `X-Widget-Key` 换固定租户/买家，复用 Agent；
+- 消息进收件箱 `web:<visitor>`，坐席可接管/回复；web 会话回复不调飞书；
+- `GET /api/v1/widget/chat/{visitorId}` 2 秒轮询历史；
+- 默认 demo key，生产用 `SHOPPILOT_WIDGET_*`。
+
+截图：[widget-live.png](widget-live.png)。
+
 ## 边界
 
 - Redis TTL 7 天，不是审计归档；

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ShopPilot 在线客服</title>
+  <style>
+    :root { --ink:#1d2530; --muted:#6b7280; --line:#e6e9ef; --brand:#0f766e; --bg:#f6f8f7; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:14px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
+    .widget { display:flex; flex-direction:column; height:100vh; }
+    header { padding:14px 16px; background:#fff; border-bottom:1px solid var(--line); }
+    header strong { display:block; font-size:15px; }
+    header span { color:var(--muted); font-size:12px; }
+    #messages { flex:1; overflow:auto; padding:14px; display:flex; flex-direction:column; gap:10px; }
+    .msg { max-width:85%; padding:9px 11px; border-radius:12px; white-space:pre-wrap; word-break:break-word; }
+    .msg.user { align-self:flex-end; background:var(--brand); color:#fff; border-bottom-right-radius:4px; }
+    .msg.agent { align-self:flex-start; background:#fff; border:1px solid var(--line); border-bottom-left-radius:4px; }
+    .meta { color:var(--muted); font-size:11px; margin-bottom:3px; }
+    form { display:flex; gap:8px; padding:12px; background:#fff; border-top:1px solid var(--line); }
+    input { flex:1; border:1px solid var(--line); border-radius:9px; padding:9px 11px; font:inherit; }
+    button { border:0; border-radius:9px; padding:9px 14px; background:var(--brand); color:#fff; font:inherit; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:default; }
+    .hint { color:var(--muted); font-size:11px; padding:0 14px 10px; }
+  </style>
+</head>
+<body>
+<div class="widget">
+  <header><strong>星选生活 · 在线客服</strong><span>智能助手优先接待，可转人工</span></header>
+  <div id="messages"></div>
+  <div class="hint">消息会进入坐席工作台；刷新后历史仍可恢复。</div>
+  <form id="form"><input id="input" maxlength="500" placeholder="输入你的问题…" autocomplete="off"><button id="send">发送</button></form>
+</div>
+<script src="widget.js"></script>
+</body>
+</html>

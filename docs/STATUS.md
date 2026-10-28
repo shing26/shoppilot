@@ -5,8 +5,8 @@
 <!-- STATUS:BEGIN -->
 > 自动生成，勿手改。命令：`python scripts/gen_status.py`；CI 用 `--check` 防漂移。
 
-- JVM：**733** tests / 0 failures / 0 errors / 0 skipped（124 suites）
-- 覆盖率（LINE）：tool-api **45.54%** / biz-mock **81.01%** / gateway **68.42%** / ticket **78.20%**
+- JVM：**738** tests / 0 failures / 0 errors / 0 skipped（126 suites）
+- 覆盖率（LINE）：tool-api **45.54%** / biz-mock **81.01%** / gateway **68.35%** / ticket **78.20%**
 - CI：[ci-subset](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)（badge 为准）
 
 | 指标 | 当前值 | 判据 | 状态 | 条件 / 证据 |

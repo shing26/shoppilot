@@ -31,4 +31,10 @@ public class StaticEntryController {
     public String openBuyer() {
         return "forward:/buyer/index.html";
     }
+
+    /** Web Widget 入口（票 184）：可被 iframe 嵌入，不需要 JWT。 */
+    @GetMapping({"/widget", "/widget/"})
+    public String openWidget() {
+        return "forward:/widget/index.html";
+    }
 }

@@ -55,6 +55,8 @@ public class AuthFilter extends OncePerRequestFilter {
         return uri.startsWith("/actuator/") || uri.startsWith("/auth/") || uri.equals("/")
                 || uri.equals("/workspace/") || uri.startsWith("/workspace/")
                 || uri.equals("/buyer/") || uri.startsWith("/buyer/")
+                || uri.equals("/widget") || uri.equals("/widget/") || uri.startsWith("/widget/")
+                || uri.startsWith("/api/v1/widget/")
                 || uri.equals("/admin/debug") || uri.equals("/admin/debug/")
                 || uri.endsWith(".html") || uri.endsWith(".js") || uri.endsWith(".css") || uri.endsWith(".ico");
     }
