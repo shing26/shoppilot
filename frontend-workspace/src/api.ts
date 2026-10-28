@@ -201,6 +201,7 @@ export interface ChannelConversation {
   customerId: string
   status: string
   assignee: string | null
+  unread: number
   messages: ChannelMessage[]
   lastMessage: string
   lastAt: string
@@ -213,6 +214,58 @@ export function listChannelConversations(
   return api<{ conversations: ChannelConversation[] }>('GET', '/channel-conversations', {
     token: session.token,
   })
+}
+
+export function markConversationRead(
+  session: Session,
+  id: string,
+): Promise<ApiResult<{ conversation: ChannelConversation }>> {
+  return api<{ conversation: ChannelConversation }>(
+    'POST',
+    `/channel-conversations/${encodeURIComponent(id)}/read`,
+    { token: session.token },
+  )
+}
+
+/**
+ * SSE 订阅：fetch 流带 Authorization 头，避免把令牌放进 query。
+ * 回调收到单条会话变更；断开由调用方重连。
+ */
+export async function streamChannelConversations(
+  session: Session,
+  onConversation: (conversation: ChannelConversation) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${BASE}/channel-conversations/stream`, {
+    headers: { Authorization: `Bearer ${session.token}`, Accept: 'text/event-stream' },
+    signal,
+  })
+  if (!response.ok || !response.body) {
+    throw new Error(`channel stream HTTP ${response.status}`)
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) return
+    buffer += decoder.decode(value, { stream: true })
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary >= 0) {
+      const raw = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      let event = 'message'
+      const dataLines: string[] = []
+      for (const line of raw.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim()
+        if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
+      }
+      if (event === 'conversation' && dataLines.length) {
+        onConversation(JSON.parse(dataLines.join('\n')) as ChannelConversation)
+      }
+      boundary = buffer.indexOf('\n\n')
+    }
+  }
 }
 
 export function takeoverConversation(

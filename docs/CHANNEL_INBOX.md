@@ -69,10 +69,20 @@ Redis 单节点，TTL 7 天：
 
 截图：[workspace-conversations-live.png](workspace-conversations-live.png)。
 
+## 实时未读（票 177）
+
+- 买家入站 unread +1；接管、已读、坐席回复清零；
+- SSE：`GET /api/v1/support/ops/channel-conversations/stream`，按租户推送 `conversation` 事件；
+- 前端用 fetch 流带 Authorization 头，断开 5 秒重连；
+- 工作台 nav 显示未读总数，单会话显示 unread pill，选中会话自动已读。
+
+截图：[workspace-conversations-unread.png](workspace-conversations-unread.png)。
+
 ## 边界
 
 - Redis TTL 7 天，不是审计归档；
-- 轮询刷新，没有实时推送；
+- SSE 实时推送 + 5 秒重连，断线时手动刷新兜底；
+- 不做浏览器通知/声音；
 - 只接飞书；
 - 回复发送复用 `FeishuReplySender`；真实活体已用飞书读接口核对（2026-10-28）；
 - 接管期间“Agent 跳过自动回复”未做活体对照，只有代码与状态机测试覆盖。

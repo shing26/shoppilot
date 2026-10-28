@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -33,7 +34,7 @@ public class ChannelConversationStore {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Conversation(String conversationId, String channel, String tenantId, String customerId,
-                               String status, String assignee, List<Message> messages,
+                               String status, String assignee, int unread, List<Message> messages,
                                String lastMessage, String lastAt, String handoffTicketId) {
 
         public Conversation {
@@ -41,13 +42,16 @@ public class ChannelConversationStore {
         }
 
         public static Conversation empty(String conversationId, String channel, String tenantId, String customerId) {
-            return new Conversation(conversationId, channel, tenantId, customerId, "BOT", null,
+            return new Conversation(conversationId, channel, tenantId, customerId, "BOT", null, 0,
                     List.of(), "", Instant.now().toString(), null);
         }
     }
 
     private final StringRedisTemplate redis;
     private final ObjectMapper mapper;
+
+    @Autowired(required = false)
+    private ChannelInboxEventBus eventBus;
 
     public ChannelConversationStore(StringRedisTemplate redis, ObjectMapper mapper) {
         this.redis = redis;
@@ -83,6 +87,18 @@ public class ChannelConversationStore {
         return load(tenantId, conversationId);
     }
 
+    public Conversation markRead(String tenantId, String conversationId) {
+        Conversation current = load(tenantId, conversationId);
+        if (current == null || current.unread() == 0) {
+            return current;
+        }
+        Conversation next = new Conversation(current.conversationId(), current.channel(), current.tenantId(),
+                current.customerId(), current.status(), current.assignee(), 0, current.messages(),
+                current.lastMessage(), current.lastAt(), current.handoffTicketId());
+        save(next);
+        return next;
+    }
+
     public Conversation recordInbound(String tenantId, String customerId, String conversationId,
                                       String channel, String text) {
         Conversation current = load(tenantId, conversationId);
@@ -114,7 +130,7 @@ public class ChannelConversationStore {
             return null;
         }
         Conversation next = new Conversation(current.conversationId(), current.channel(), current.tenantId(),
-                current.customerId(), "AGENT", assignee, current.messages(), current.lastMessage(),
+                current.customerId(), "AGENT", assignee, 0, current.messages(), current.lastMessage(),
                 current.lastAt(), current.handoffTicketId());
         save(next);
         return next;
@@ -126,7 +142,7 @@ public class ChannelConversationStore {
             return null;
         }
         Conversation next = new Conversation(current.conversationId(), current.channel(), current.tenantId(),
-                current.customerId(), "BOT", null, current.messages(), current.lastMessage(),
+                current.customerId(), "BOT", null, 0, current.messages(), current.lastMessage(),
                 current.lastAt(), current.handoffTicketId());
         save(next);
         return next;
@@ -150,8 +166,9 @@ public class ChannelConversationStore {
         }
         String status = "agent".equals(role) ? "AGENT" : current.status();
         String owner = "agent".equals(role) && assignee != null ? assignee : current.assignee();
+        int unread = "user".equals(role) ? current.unread() + 1 : ("agent".equals(role) ? 0 : current.unread());
         Conversation next = new Conversation(current.conversationId(), current.channel(), current.tenantId(),
-                current.customerId(), status, owner, messages, preview, at, current.handoffTicketId());
+                current.customerId(), status, owner, unread, messages, preview, at, current.handoffTicketId());
         save(next);
         return next;
     }
@@ -175,6 +192,9 @@ public class ChannelConversationStore {
                     mapper.writeValueAsString(conversation), TTL);
             redis.opsForSet().add(indexKey(conversation.tenantId()), conversation.conversationId());
             redis.expire(indexKey(conversation.tenantId()), TTL);
+            if (eventBus != null) {
+                eventBus.publish(conversation);
+            }
         } catch (Exception failure) {
             log.warn("保存渠道会话失败: {}", failure.getMessage());
         }

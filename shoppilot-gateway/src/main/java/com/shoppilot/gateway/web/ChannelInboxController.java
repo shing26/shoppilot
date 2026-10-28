@@ -1,8 +1,10 @@
 package com.shoppilot.gateway.web;
 
 import com.shoppilot.gateway.channel.ChannelConversationStore;
+import com.shoppilot.gateway.channel.ChannelInboxEventBus;
 import com.shoppilot.gateway.channel.FeishuReplySender;
 import com.shoppilot.gateway.identity.TenantContext;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
@@ -27,10 +30,13 @@ public class ChannelInboxController {
     private static final String FEISHU_CHAT_PREFIX = "feishu:chat:";
 
     private final ChannelConversationStore store;
+    private final ChannelInboxEventBus events;
     private final FeishuReplySender replySender;
 
-    public ChannelInboxController(ChannelConversationStore store, FeishuReplySender replySender) {
+    public ChannelInboxController(ChannelConversationStore store, ChannelInboxEventBus events,
+                                  FeishuReplySender replySender) {
         this.store = store;
+        this.events = events;
         this.replySender = replySender;
     }
 
@@ -43,6 +49,11 @@ public class ChannelInboxController {
         return Map.of("conversations", conversations);
     }
 
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream() {
+        return events.subscribe(tenant());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> detail(@PathVariable String id) {
         ChannelConversationStore.Conversation conversation = store.find(tenant(), id);
@@ -50,6 +61,15 @@ public class ChannelInboxController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(conversation);
+    }
+
+    @PostMapping("/{id}/read")
+    public ResponseEntity<?> read(@PathVariable String id) {
+        ChannelConversationStore.Conversation conversation = store.markRead(tenant(), id);
+        if (conversation == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of("conversation", conversation));
     }
 
     @PostMapping("/{id}/takeover")

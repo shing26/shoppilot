@@ -16,8 +16,10 @@ import {
   listChannels,
   listPendingRefunds,
   listTickets,
+  markConversationRead,
   releaseConversation,
   replyConversation,
+  streamChannelConversations,
   takeoverConversation,
   login,
   saveFeishu,
@@ -84,6 +86,11 @@ const conversationReply = ref('')
 const selectedConversation = computed(() =>
   conversations.value.find((c) => c.conversationId === selectedConversationId.value) ?? null,
 )
+const conversationUnread = computed(() =>
+  conversations.value.reduce((sum, c) => sum + (c.unread ?? 0), 0),
+)
+let conversationStreamAbort: AbortController | null = null
+let conversationRetry = 0
 
 const channel = ref<ChannelConnection | null>(null)
 const channelLoading = ref(false)
@@ -170,12 +177,16 @@ async function acceptSession(logged: Session) {
   password.value = ''
   showLogin.value = false
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(logged))
-  await Promise.all([refresh(), refreshRefunds()])
+  startConversationStream()
+  await Promise.all([refresh(), refreshRefunds(), refreshConversations()])
 }
 
 function signOut() {
+  stopConversationStream()
   session.value = null
   clearStoredSession()
+  conversations.value = []
+  selectedConversationId.value = ''
   tickets.value = []
   selectedId.value = ''
   loadError.value = ''
@@ -321,6 +332,8 @@ async function refreshConversations() {
     selectedConversationId.value = list[0]?.conversationId ?? ''
     conversationReply.value = ''
   }
+  const chosen = list.find((c) => c.conversationId === selectedConversationId.value)
+  if (chosen?.unread) void readConversation(chosen.conversationId)
 }
 
 function selectConversation(id: string) {
@@ -328,6 +341,47 @@ function selectConversation(id: string) {
   conversationReply.value = ''
   conversationError.value = ''
   conversationNote.value = ''
+  void readConversation(id)
+}
+
+function applyConversationStream(updated: ChannelConversation) {
+  replaceConversation(updated)
+  if (updated.conversationId === selectedConversationId.value && (updated.unread ?? 0) > 0) {
+    void readConversation(updated.conversationId)
+  }
+}
+
+async function readConversation(id: string) {
+  if (!session.value) return
+  const current = conversations.value.find((c) => c.conversationId === id)
+  if (!current || !current.unread) return
+  const result = await markConversationRead(session.value, id)
+  if (result.status >= 200 && result.status < 300) {
+    const body = result.body as { conversation?: ChannelConversation }
+    if (body.conversation) replaceConversation(body.conversation)
+  }
+}
+
+function startConversationStream() {
+  if (!session.value || conversationStreamAbort) return
+  const controller = new AbortController()
+  conversationStreamAbort = controller
+  void streamChannelConversations(session.value, applyConversationStream, controller.signal)
+    .catch(() => {
+      // 断开后由 finally 统一重连
+    })
+    .finally(() => {
+      if (controller.signal.aborted) return
+      conversationStreamAbort = null
+      window.clearTimeout(conversationRetry)
+      conversationRetry = window.setTimeout(startConversationStream, 5_000)
+    })
+}
+
+function stopConversationStream() {
+  window.clearTimeout(conversationRetry)
+  conversationStreamAbort?.abort()
+  conversationStreamAbort = null
 }
 
 function replaceConversation(updated: ChannelConversation) {
@@ -515,6 +569,8 @@ onMounted(() => {
   if (session.value) {
     void refresh()
     void refreshRefunds()
+    void refreshConversations()
+    startConversationStream()
   }
   timer = window.setInterval(() => {
     now.value = Date.now()
@@ -523,6 +579,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.clearInterval(timer)
+  stopConversationStream()
 })
 
 function isOverdue(ticket: Ticket): boolean {
@@ -629,7 +686,7 @@ function clearStoredSession() {
             <span>工单队列</span><em>{{ tickets.length }}</em>
           </button>
           <button class="nav-item" :class="{ active: view === 'conversations' }" type="button" @click="selectView('conversations')">
-            <span>渠道会话</span><em>{{ conversations.length }}</em>
+            <span>渠道会话</span><em :class="{ 'unread-badge': conversationUnread > 0 }">{{ conversationUnread }}</em>
           </button>
           <button class="nav-item" :class="{ active: view === 'refunds' }" type="button" @click="selectView('refunds')">
             <span>退款审核</span><em>{{ refunds.length }}</em>
@@ -800,7 +857,10 @@ function clearStoredSession() {
             >
               <div class="conversation-top">
                 <span class="conversation-channel">{{ c.channel }}</span>
-                <span class="status-pill" :class="{ agent: c.status === 'AGENT' }">{{ c.status }}</span>
+                <span class="conversation-tags">
+                  <span v-if="c.unread" class="unread-pill">{{ c.unread }}</span>
+                  <span class="status-pill" :class="{ agent: c.status === 'AGENT' }">{{ c.status }}</span>
+                </span>
               </div>
               <p class="conversation-last">{{ c.lastMessage || '（暂无消息）' }}</p>
               <div class="conversation-meta">
@@ -1333,6 +1393,11 @@ function clearStoredSession() {
 .conversation-reply textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line);
   border-radius: 8px; font: inherit; resize: vertical; margin-bottom: 8px; }
 .conversation-reply textarea:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px #eef8f6; }
+
+.nav-item em.unread-badge { color: #fff; background: var(--rose); border-radius: 999px; min-width: 20px; text-align: center; }
+.conversation-tags { display: flex; align-items: center; gap: 6px; }
+.unread-pill { min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--rose); color: #fff;
+  font-size: 11px; line-height: 18px; text-align: center; }
 
 @media (max-width: 960px) {
   .workspace { grid-template-columns: 1fr; }

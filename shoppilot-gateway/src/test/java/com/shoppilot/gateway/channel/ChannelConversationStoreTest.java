@@ -60,15 +60,19 @@ class ChannelConversationStoreTest {
         assertThat(list).hasSize(1);
         assertThat(list.get(0).status()).isEqualTo("BOT");
         assertThat(list.get(0).lastMessage()).isEqualTo("订单到哪了");
+        assertThat(list.get(0).unread()).isEqualTo(1);
 
         store.takeover("T001", "feishu:chat:oc1", "agent");
         assertThat(store.isAgent("T001", "feishu:chat:oc1")).isTrue();
+        assertThat(store.find("T001", "feishu:chat:oc1").unread()).isZero();
 
         store.recordInbound("T001", "C001", "feishu:chat:oc1", "feishu", "我要人工");
         ChannelConversationStore.Conversation after = store.find("T001", "feishu:chat:oc1");
         assertThat(after.status()).isEqualTo("AGENT");
         assertThat(after.assignee()).isEqualTo("agent");
         assertThat(after.messages()).hasSize(2);
+        assertThat(after.unread()).isEqualTo(1);
+        assertThat(store.markRead("T001", "feishu:chat:oc1").unread()).isZero();
     }
 
     @Test
@@ -82,6 +86,7 @@ class ChannelConversationStoreTest {
         store.takeover("T001", "feishu:chat:oc1", "agent");
         store.recordAgentReply("T001", "feishu:chat:oc1", "agent", "我来处理");
         ChannelConversationStore.Conversation after = store.find("T001", "feishu:chat:oc1");
+        assertThat(after.unread()).isZero();
         assertThat(after.messages()).hasSize(3);
         assertThat(after.messages().get(2).role()).isEqualTo("agent");
 
