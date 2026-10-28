@@ -57,9 +57,22 @@ Redis 单节点，TTL 7 天：
 - 工作台 typecheck/build 通过；
 - Playwright 1440×900 / 390×936 实拍；种子会话接管后状态变 AGENT 并出现回复框。
 
+## 真实活体（2026-10-28）
+
+- 飞书用户发消息 → 收件箱出现会话，Agent 自动回复；
+- 坐席接管：status=AGENT、assignee=agent，飞书收到“人工坐席已接入”；
+- 坐席回复：飞书 `im/v1/messages` 读回“您好，我是人工坐席，已收到您的测试消息。”；
+- 释放：status=BOT，飞书收到“已切回智能助手”；
+- 释放后用户再发一条，Agent 自动回复并带工单号。
+
+注意：第一次回复用 PowerShell 拼 JSON，中文被编码成 `??` 发到飞书；改用 UTF-8 JSON 后正常。这是测试脚本的编码问题，不是服务端。
+
+截图：[workspace-conversations-live.png](workspace-conversations-live.png)。
+
 ## 边界
 
 - Redis TTL 7 天，不是审计归档；
 - 轮询刷新，没有实时推送；
 - 只接飞书；
-- 回复发送复用 `FeishuReplySender`；本轮用种子会话验证了接管 UI，**没有真的向真实飞书会话发送坐席回复**（避免对演示账号发未经确认的消息）。
+- 回复发送复用 `FeishuReplySender`；真实活体已用飞书读接口核对（2026-10-28）；
+- 接管期间“Agent 跳过自动回复”未做活体对照，只有代码与状态机测试覆盖。
