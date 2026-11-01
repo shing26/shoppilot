@@ -172,6 +172,9 @@ services:
     environment:
       <<: *service-env
       SHOPPILOT_KNOWLEDGE_DIR: /workspace/knowledge
+      # round43：入库多了一个 biz-mock 依赖（拉取已发布知识修订，失败即中止，ADR 0078）。
+      # 容器内 127.0.0.1 是 ingest 自己，必须显式指到 biz-mock 服务名。
+      SHOPPILOT_BIZMOCK_URL: http://biz-mock:8091
       # bge-m3 在 CPU 上单条可超过默认 5s；入库时放宽，避免半途超时留下部分纪元。
       SHOPPILOT_EMBEDDING_TIMEOUT: ${SHOPPILOT_EMBEDDING_TIMEOUT:-30s}
       LOG_APP: ingest
@@ -181,6 +184,8 @@ services:
     depends_on:
       qdrant: { condition: service_healthy }
       elasticsearch: { condition: service_healthy }
+      # 修订拉取是 ingest 的第一动作：biz-mock 的 web 层没起来就拉 = 白白中止一次入库
+      biz-mock: { condition: service_healthy }
 
   biz-mock:
     build:
@@ -213,6 +218,15 @@ services:
       SHOPPILOT_IDENTITY_DEMO_PASSWORD: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:-}
       # 容器档演示默认播种 90001/90002 固定单；持久档本可不开，但 demo 需要可复述的订单。
       SHOPPILOT_BIZMOCK_DEMO_SEED: ${SHOPPILOT_BIZMOCK_DEMO_SEED:-true}
+    healthcheck:
+      # readiness（不是 /health）：web 绑定即 UP，但 SeedRunner 还在插 5 万订单；
+      # ingest 的修订拉取要等「ApplicationRunner 全部返回」的 ACCEPTING_TRAFFIC。
+      # 全新卷首播 5 万单要几分钟：retries×interval 必须盖过 seed 时长（实测 140s 不够）。
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8091/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 120
+      start_period: 30s
     depends_on:
       redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
