@@ -180,6 +180,7 @@
 | **round35** | **agent 自主性升级：4 轮有界工具循环 + 反思重试**（票 143-150） | [`agent-autonomy-spec-v2.md`](agent-autonomy-spec-v2.md)（= round35 spec；调查票 136-142 见 [map 135](issues/135-wayfinder-agent-autonomy-map.md)）；**ADR 0069**（开轮依据 = 所有者政策覆盖） | **done**（票 143-150 全部收口；机制 143-146 + 面 147-149 + 收口 150；dev 档 part10 实测 22.2 万 token / 触发 7-不触发 23-用尽 0） |
 | **round36** | **产品面履约：两个产品入口从「验收夹具」到可用界面**（票 151，单票三段 A/B/C） | [`151-product-surface-ux-gaps.md`](issues/151-product-surface-ux-gaps.md)（票面即 spec）；**ADR 0070**（开轮依据 = 所有者政策覆盖；A1 另按 ADR 0059 缺陷修复） | **done**（票 151 三段全部落地；JVM **591**、两工程 typecheck/build 绿、390px 实测；**三个活体门禁实跑于 round37**） |
 | **round37** | **把真实模型接回主链路：LLM 接线 + 店铺人格 + 产品入口**（票 152） | [`152-llm-store-persona-and-product-entries.md`](issues/152-llm-store-persona-and-product-entries.md)（票面即 spec）；**ADR 0071**（第 1 项配置缺陷，其余所有者政策覆盖） | **done**（JVM **596**；四店活体各答各的主营；政策路径零回归；买家 13/13 / 工作台 14/14 / 调试台 45/45；根路径改导航、调试台移 `/console.html`） |
+| **round43** | **知识反向沉淀从登记到执行**：点踩 → 复核 → 附稿 → 发布 → ingest 第二语料源（票 185-187） | [`round43-spec-knowledge-backflow.md`](round43-spec-knowledge-backflow.md)；**ADR 0078**（所有者政策覆盖，round19 登记第 8 项转执行） | **done**（2026-11-01，票 185-187 全部收口；JVM **754 / 128 suites**；两条变异对照实跑变红后还原；活体脚本 `verify-knowledge-backflow.mjs` **照登未实跑**） |
 | **round31** | **B4：飞书长连接真连**（票 96、97、113-116） | [`round31-spec-b4-feishu-live.md`](round31-spec-b4-feishu-live.md)；**ADR 0064**（考察）、**0065**（开线决策） | **done**（票 96/97/113-116 全部收口；wss 握手 + 事件收发全链路 + 重启自动重连三项活体通过；JVM **505**） |
 | **round29** | **B2：凭据生产态 + 按库用户隔离 + 备份恢复演练**（票 104-107） | [`round29-spec-b2-credentials-and-backup.md`](round29-spec-b2-credentials-and-backup.md)；**ADR 0062** | **done**（票 104-107 全部收口；演练 14/14；Redis 不备份/R5/TLS 带触发条件登记） |
 | **round30** | **B3：资金动作不可抵赖**（票 108-112） | [`round30-spec-b3-non-repudiation.md`](round30-spec-b3-non-repudiation.md)；**ADR 0063** | **done**（票 108-112 全部收口；JVM 466） |
@@ -346,6 +347,9 @@
 | 150 | [`150-round35-closeout.md`](issues/150-round35-closeout.md) | implemented | round35 收口：JVM + 审计 + 叙事换代 + tracker/债务台账收口 |
 | 151 | [`151-product-surface-ux-gaps.md`](issues/151-product-surface-ux-gaps.md) | implemented | round36 产品面履约（A 坐席端信息完整性 / B 买家端产品化 / C 视觉与工程收口）；开轮依据 ADR 0070；浏览器门禁未实跑照登 |
 | 152 | [`152-llm-store-persona-and-product-entries.md`](issues/152-llm-store-persona-and-product-entries.md) | implemented | round37：LLM 模式接线（`local`→env 可选）、店铺人格注入、`UNKNOWN` 不检索政策、买家游客/坐席一键体验/根路径导航；开轮依据 ADR 0071 |
+| 185 | [`185-knowledge-revision-entity.md`](issues/185-knowledge-revision-entity.md) | implemented | round43：知识修订实体与复核前置（biz-mock `knowledge_revisions` V10 + REVIEWED 前置 + 生命周期）；开轮依据 ADR 0078（所有者政策覆盖，round19 登记第 8 项转执行） |
+| 186 | [`186-gateway-publish-and-ingest-source.md`](issues/186-gateway-publish-and-ingest-source.md) | implemented | round43：网关发布面（复核完成写口 + 修订/发布代理）+ ingest 语料源扩展（PUBLISHED 修订并入全量重建）+ 指标 |
+| 187 | [`187-knowledge-backflow-evidence-and-closeout.md`](issues/187-knowledge-backflow-evidence-and-closeout.md) | implemented | round43 收口：咬合证据 + 两条变异对照 + 文档换代（CODE_MAP/EVIDENCE/CONTEXT/README）+ 活体脚本照登未实跑 |
 
 ## 如何新增或领取工作
 

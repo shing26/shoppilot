@@ -15,6 +15,11 @@ public final class AuditActions {
     public static final String REFUND_REJECTED = "REFUND_REJECTED";
     public static final String FEEDBACK_REVIEWED = "FEEDBACK_REVIEWED";
 
+    /** 知识修订（round43 票 185 / ADR 0078）：附稿、发布、驳回都是人工动作，各自留痕。 */
+    public static final String KNOWLEDGE_REVISION_FILED = "KNOWLEDGE_REVISION_FILED";
+    public static final String KNOWLEDGE_REVISION_PUBLISHED = "KNOWLEDGE_REVISION_PUBLISHED";
+    public static final String KNOWLEDGE_REVISION_REJECTED = "KNOWLEDGE_REVISION_REJECTED";
+
     public static final String ROUTING_RULE_CREATED = "ROUTING_RULE_CREATED";
     public static final String ROUTING_RULE_TOGGLED = "ROUTING_RULE_TOGGLED";
 

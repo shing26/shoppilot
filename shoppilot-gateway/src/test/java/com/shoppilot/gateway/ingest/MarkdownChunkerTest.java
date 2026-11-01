@@ -215,4 +215,69 @@ class MarkdownChunkerTest {
         assertTrue(chunks.get(1).text().contains("壬"));
         assertFalse(chunks.get(0).text().contains("壬"), "长段落不该被并进短块");
     }
+
+    /**
+     * round43 票 186（ADR 0078）：知识修订不走文件，frontmatter 由调用方显式给出。
+     * "rev-" 前缀没有意图含义 —— 前缀猜测那条路对修订稿必须失效，intent 只能来自修订行；
+     * 同理 tenant_id/scope 缺省会挂平台级，而修订稿的归属是发布时人工确认的，不许吃缺省。
+     */
+    @Test
+    @DisplayName("字符串重载：frontmatter 显式给出就一字不差地落进块；rev- 前缀不吃文件名猜测")
+    void stringOverloadCarriesTheExplicitFrontMatter() {
+        List<RuleChunk> chunks = MarkdownChunker.chunk("rev-KR1", """
+                ## 生效范围
+                %s
+                """.formatted(longBody("甲")), java.util.Map.of(
+                        "title", "退换货口径",
+                        "intent", "POLICY_RETURN",
+                        "domain", "ECOMMERCE",
+                        "scope", "SHOP",
+                        "tenant_id", "T001"), EPOCH);
+
+        assertEquals(1, chunks.size());
+        RuleChunk chunk = chunks.get(0);
+        assertEquals("POLICY_RETURN", chunk.intent(), "意图只认显式修订行，不吃前缀猜测");
+        assertEquals("SHOP", chunk.scope());
+        assertEquals("T001", chunk.tenantId(), "修订稿的租户归属是人工确认的，缺省成平台级就是跨租户污染");
+        assertEquals("ECOMMERCE", chunk.domain().name());
+        // title 沿用文件语料的语义：带标题的块取标题行，文档标题进 headingPath。
+        assertEquals("生效范围", chunk.title());
+        assertTrue(chunk.headingPath().contains("退换货口径") && chunk.headingPath().contains("生效范围"));
+        assertEquals(EPOCH, chunk.kbEpoch());
+    }
+
+    @Test
+    @DisplayName("字符串重载：ruleId 仍是 hash(sourceDoc|headingPath)，重跑幂等")
+    void stringOverloadRuleIdsStayDeterministic() {
+        String markdown = "## 口径\n%s".formatted(longBody("乙"));
+        java.util.Map<String, String> frontMatter = java.util.Map.of("title", "修订标题");
+
+        List<RuleChunk> first = MarkdownChunker.chunk("rev-KR9", markdown, frontMatter, EPOCH);
+        List<RuleChunk> second = MarkdownChunker.chunk("rev-KR9", markdown, frontMatter, EPOCH);
+
+        assertEquals(first.get(0).ruleId(), second.get(0).ruleId());
+        assertEquals(MarkdownChunker.sha256Hex("rev-KR9|修订标题 > 口径"), first.get(0).ruleId(),
+                "ruleId 公式与文件语料一字不差：两侧同 id 才能同走幂等 upsert");
+    }
+
+    @Test
+    @DisplayName("Path 委托解析文件内 frontmatter（title 进 headingPath），不靠调用方重传")
+    void pathOverloadParsesFrontMatterItself(@TempDir Path dir) throws IOException {
+        Path file = write(dir, "promo-96-demo.md", """
+                ---
+                title: 演示政策
+                ---
+                ## 叠加
+                %s
+                """.formatted(longBody("丙")));
+
+        RuleChunk chunk = MarkdownChunker.chunk(file, EPOCH).get(0);
+
+        assertEquals("POLICY_PROMO", MarkdownChunker.chunk("promo-96-demo",
+                Files.readString(file, StandardCharsets.UTF_8), java.util.Map.of(), EPOCH).get(0).intent(),
+                "同一份语料走两条入口，意图必须一致（promo- 前缀）");
+        assertTrue(chunk.headingPath().contains("演示政策"),
+                "Path 入口的 title 来自文件内 frontmatter，丢了它 headingPath 就退回文件名");
+        assertEquals("POLICY_PROMO", chunk.intent());
+    }
 }

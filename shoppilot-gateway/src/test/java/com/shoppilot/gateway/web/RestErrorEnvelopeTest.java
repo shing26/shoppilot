@@ -85,7 +85,8 @@ class RestErrorEnvelopeTest {
     private MockMvc mvc() {
         OpsController ops = new OpsController(http, properties, mock(BizMockClient.class), JSON,
                 faultInjector, cacheService, mock(KbEpoch.class), mock(TokenBudget.class),
-                mock(HybridRetriever.class), mock(TenantDomainRegistry.class), mock(DevDefaultsPolicy.class), writer);
+                mock(HybridRetriever.class), mock(TenantDomainRegistry.class), mock(DevDefaultsPolicy.class), writer,
+                registry);
         ChatController chat = new ChatController(mock(AgentStateMachine.class), JSON, registry, new PromptCatalog(),
                 mock(FeedbackService.class), new ChatAdmission(cacheService, mock(RateLimitService.class),
                         mock(FallbackService.class), registry));

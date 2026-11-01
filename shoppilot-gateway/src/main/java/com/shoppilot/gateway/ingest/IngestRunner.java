@@ -48,15 +48,18 @@ public class IngestRunner implements ApplicationRunner {
     private final EsRestClient es;
     private final KbEpoch kbEpoch;
     private final GatewayProperties properties;
+    private final KnowledgeRevisionSource revisionSource;
     private final ConfigurableApplicationContext context;
 
     public IngestRunner(EmbeddingClient embedding, QdrantRestClient qdrant, EsRestClient es, KbEpoch kbEpoch,
-                        GatewayProperties properties, ConfigurableApplicationContext context) {
+                        GatewayProperties properties, KnowledgeRevisionSource revisionSource,
+                        ConfigurableApplicationContext context) {
         this.embedding = embedding;
         this.qdrant = qdrant;
         this.es = es;
         this.kbEpoch = kbEpoch;
         this.properties = properties;
+        this.revisionSource = revisionSource;
         this.context = context;
     }
 
@@ -90,6 +93,10 @@ public class IngestRunner implements ApplicationRunner {
         }
         probeDependenciesOrThrow();
 
+        // 修订稿先拉：失败即中止（抛 IllegalStateException），绝不"文件语料照常入库、修订下次再说"——
+        // 那等于发布一个缺了人工核准条款的知识库（ADR 0078）。
+        List<KnowledgeRevisionSource.Revision> revisions = revisionSource.fetchPublished();
+
         long current = kbEpoch.current();
         long target = current + 1;
         List<RuleChunk> chunks = new ArrayList<>();
@@ -102,7 +109,16 @@ public class IngestRunner implements ApplicationRunner {
         for (Path doc : docs) {
             chunks.addAll(MarkdownChunker.chunk(doc, target));
         }
-        log.info("切分完成：文档 {} 篇，规则块 {} 块，目标纪元 {}", docs.size(), chunks.size(), target);
+        // 修订与文件语料并列的第二个来源：sourceDoc = rev-<id>，ruleId 仍是 hash(sourceDoc|headingPath)，
+        // 重跑幂等 upsert。frontmatter 由修订行显式给出，不靠文件名前缀猜。
+        for (KnowledgeRevisionSource.Revision revision : revisions) {
+            chunks.addAll(MarkdownChunker.chunk("rev-" + revision.id(), revision.body(),
+                    Map.of("title", revision.title(), "intent", revision.intent(), "domain", revision.domain(),
+                            "scope", revision.scope(), "tenant_id", revision.tenantId()),
+                    target));
+        }
+        log.info("切分完成：文档 {} 篇，知识修订 {} 条，规则块 {} 块，目标纪元 {}",
+                docs.size(), revisions.size(), chunks.size(), target);
 
         Map<String, Integer> scopeCounts = new TreeMap<>();
         Map<String, Integer> intentCounts = new TreeMap<>();

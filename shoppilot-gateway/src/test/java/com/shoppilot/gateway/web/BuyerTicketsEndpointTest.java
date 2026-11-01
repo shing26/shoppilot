@@ -84,7 +84,8 @@ class BuyerTicketsEndpointTest {
         return MockMvcBuilders.standaloneSetup(new OpsController(http, properties, mock(BizMockClient.class), JSON,
                 mock(LlmFaultInjector.class), mock(CacheService.class), mock(KbEpoch.class),
                 mock(TokenBudget.class), mock(HybridRetriever.class), mock(TenantDomainRegistry.class),
-                mock(DevDefaultsPolicy.class), writer))
+                mock(DevDefaultsPolicy.class), writer,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry()))
                 .build();
     }
 

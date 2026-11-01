@@ -31,11 +31,20 @@ public final class MarkdownChunker {
     public static List<RuleChunk> chunk(Path markdownFile, long kbEpoch) throws IOException {
         String raw = Files.readString(markdownFile, StandardCharsets.UTF_8);
         String sourceDoc = markdownFile.getFileName().toString().replace(".md", "");
-        Map<String, String> frontMatter = parseFrontMatter(raw);
+        return chunk(sourceDoc, raw, parseFrontMatter(raw), kbEpoch);
+    }
+
+    /**
+     * 字符串重载（round43 票 186 / ADR 0078）：知识修订稿不走文件，frontmatter 由调用方显式给出
+     * （intent / domain / scope / tenant_id 来自人工发布时确认的修订行），不靠文件名前缀猜。
+     * 切分规则与文件语料一字不差：同一条"按二级标题切、不重叠"的纪律。
+     */
+    public static List<RuleChunk> chunk(String sourceDoc, String markdown, Map<String, String> frontMatter,
+                                        long kbEpoch) {
         String docTitle = frontMatter.getOrDefault("title", sourceDoc);
 
         List<RuleChunk> chunks = new ArrayList<>();
-        List<Section> sections = splitSections(stripFrontMatter(raw));
+        List<Section> sections = splitSections(stripFrontMatter(markdown));
         StringBuilder pending = new StringBuilder();
         String pendingHeading = null;
         for (Section section : sections) {

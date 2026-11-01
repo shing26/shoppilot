@@ -68,12 +68,14 @@ public class OpsController {
     private final TenantDomainRegistry domainRegistry;
     private final DevDefaultsPolicy devDefaults;
     private final ApiErrorWriter errors;
+    private final io.micrometer.core.instrument.MeterRegistry registry;
 
     public OpsController(HttpClient http, GatewayProperties properties, BizMockClient bizMockClient,
                          ObjectMapper mapper, LlmFaultInjector llmFaultInjector, CacheService cacheService,
                          KbEpoch kbEpoch, TokenBudget tokenBudget,
                          HybridRetriever retriever, TenantDomainRegistry domainRegistry,
-                         DevDefaultsPolicy devDefaults, ApiErrorWriter errors) {
+                         DevDefaultsPolicy devDefaults, ApiErrorWriter errors,
+                         io.micrometer.core.instrument.MeterRegistry registry) {
         this.http = http;
         this.properties = properties;
         this.bizMockClient = bizMockClient;
@@ -86,6 +88,7 @@ public class OpsController {
         this.domainRegistry = domainRegistry;
         this.devDefaults = devDefaults;
         this.errors = errors;
+        this.registry = registry;
     }
 
     /**
@@ -131,6 +134,66 @@ public class OpsController {
     @GetMapping("/feedback/review-queue")
     public ResponseEntity<String> feedbackReviewQueue() {
         return forward("GET", "/api/feedback/review-queue", null, true);
+    }
+
+    /**
+     * 复核完成写口（round43 票 186 / ADR 0078）：复核队列此前只有读口，
+     * {@code markReviewed} 只能拿内部令牌直调 biz-mock——浏览器到不了，
+     * 反向沉淀链在网关断头，这是补上的第一环。
+     */
+    @PatchMapping("/feedback/{feedbackId}/review")
+    public ResponseEntity<String> reviewFeedback(@PathVariable String feedbackId,
+                                                 @RequestBody Map<String, Object> body,
+                                                 @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        return guardedBizMock("PATCH", "/api/feedback/" + feedbackId + "/review", body, opsToken);
+    }
+
+    /**
+     * 附修订稿（round43 票 186 / ADR 0078）：正文必须出自人工，系统不生成、不润色
+     * （ADR 0039 红线，机器落点在 biz-mock 的复核前置与发布门）。非资金动作，
+     * ops token 合法（ADR 0063），守卫与工单口同款「两条准入线取或」。
+     */
+    @PostMapping("/feedback/{feedbackId}/revision")
+    public ResponseEntity<String> fileKnowledgeRevision(@PathVariable String feedbackId,
+                                                        @RequestBody Map<String, Object> body,
+                                                        @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        ResponseEntity<String> response = guardedBizMock("POST", "/api/feedback/" + feedbackId + "/revision",
+                body, opsToken);
+        if (response.getStatusCode().is2xxSuccessful()) {
+            registry.counter("shoppilot_knowledge_revisions_total", "result", "filed").increment();
+        }
+        return response;
+    }
+
+    /** 本店修订列表（发布面前置）。 */
+    @GetMapping("/knowledge/revisions")
+    public ResponseEntity<String> knowledgeRevisions(
+            @RequestParam(value = "status", required = false) String status,
+            @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        String query = status == null || status.isBlank() ? "" : "?status=" + status;
+        return guardedBizMock("GET", "/api/knowledge/revisions" + query, null, opsToken);
+    }
+
+    @PostMapping("/knowledge/revisions/{id}/publish")
+    public ResponseEntity<String> publishKnowledgeRevision(@PathVariable String id,
+                                                           @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        ResponseEntity<String> response = guardedBizMock("POST", "/api/knowledge/revisions/" + id + "/publish",
+                null, opsToken);
+        if (response.getStatusCode().is2xxSuccessful()) {
+            registry.counter("shoppilot_knowledge_revisions_total", "result", "published").increment();
+        }
+        return response;
+    }
+
+    @PostMapping("/knowledge/revisions/{id}/reject")
+    public ResponseEntity<String> rejectKnowledgeRevision(@PathVariable String id,
+                                                          @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        ResponseEntity<String> response = guardedBizMock("POST", "/api/knowledge/revisions/" + id + "/reject",
+                null, opsToken);
+        if (response.getStatusCode().is2xxSuccessful()) {
+            registry.counter("shoppilot_knowledge_revisions_total", "result", "rejected").increment();
+        }
+        return response;
     }
 
     /**
@@ -420,6 +483,21 @@ public class OpsController {
         } catch (JsonProcessingException failure) {
             return ResponseEntity.ok("{\"l1KeysDeleted\":-1}");
         }
+    }
+
+    /**
+     * 知识修订面的守卫（round43 票 186 / ADR 0078）：与 {@link #guardedTicket} 同一条
+     * 「运维凭证或坐席账号」取或语义，目标是 biz-mock 而不是工单服务。
+     * 操作人一律从令牌解；只有运维凭证时落到 system 占位（没有真人可署）。
+     */
+    private ResponseEntity<String> guardedBizMock(String method, String path, Map<String, Object> body,
+                                                  String opsToken) {
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed() && !staff()) {
+            return access == OpsAccess.DISABLED ? denied(access)
+                    : errors.entity(HttpStatus.FORBIDDEN.value(), "role.denied", "知识修订需要坐席或管理员账号");
+        }
+        return forward(method, path, body, true, selfReported(null));
     }
 
     private ResponseEntity<String> guarded(String method, String path, Map<String, Object> body, String opsToken) {

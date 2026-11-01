@@ -66,12 +66,16 @@ class RoleGuardAndActorTest {
         TenantContext.clear();
     }
 
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
     private MockMvc mvc() {
         ApiErrorWriter writer = new ApiErrorWriter(JSON);
         return MockMvcBuilders.standaloneSetup(new OpsController(http, properties, mock(BizMockClient.class), JSON,
                 mock(LlmFaultInjector.class), mock(CacheService.class), mock(KbEpoch.class),
                 mock(TokenBudget.class), mock(HybridRetriever.class), mock(TenantDomainRegistry.class),
-                mock(DevDefaultsPolicy.class), writer))
+                mock(DevDefaultsPolicy.class), writer,
+                registry))
                 .build();
     }
 
@@ -155,6 +159,75 @@ class RoleGuardAndActorTest {
 
         verify(http).send(captured.capture(), any());
         assertThat(captured.getValue().headers().firstValue("X-Actor")).contains("agent");
+    }
+
+    /**
+     * round43 票 186（ADR 0078）：知识修订三件套（提交 / 发布 / 驳回）走 guardedBizMock——
+     * 两条准入线取或：坐席账号不用持运维凭证；只有运维凭证的老路径也放行（非资金动作，ADR 0063）。
+     * 身份头由网关补，浏览器不带；成功路径各自埋一个修订计数。
+     */
+    @Test
+    @DisplayName("坐席提交修订：路径与身份头由网关补齐，请求体逐字节透传")
+    void staffFilesRevisionThroughProxy() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-rev-1", UserRole.AGENT, "U0007"));
+        String body = "{\"title\":\"退换货口径\",\"body\":\"## 生效范围\",\"intent\":\"POLICY_RETURN\","
+                + "\"domain\":\"ECOMMERCE\",\"scope\":\"SHOP\"}";
+        stubTicketService(200, "{\"id\":\"KR1\",\"status\":\"DRAFT\"}");
+        ArgumentCaptor<HttpRequest> captured = ArgumentCaptor.forClass(HttpRequest.class);
+
+        MockHttpServletResponse response = mvc().perform(post("/api/v1/support/ops/feedback/FB1/revision")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(http).send(captured.capture(), any());
+        HttpRequest sent = captured.getValue();
+        assertThat(sent.method()).isEqualTo("POST");
+        assertThat(sent.uri().toString()).isEqualTo("http://127.0.0.1:8091/api/feedback/FB1/revision");
+        assertThat(sent.headers().firstValue("X-Internal-Token")).contains("internal");
+        assertThat(sent.headers().firstValue("X-Tenant-Id")).contains("T001");
+        assertThat(sent.headers().firstValue("X-Customer-Id")).contains("C001");
+        assertThat(sent.headers().firstValue("X-Actor")).contains("U0007");
+        assertThat(sent.bodyPublisher().orElseThrow().contentLength())
+                .as("请求体逐字节透传，网关不重排字段").isEqualTo(body.getBytes(StandardCharsets.UTF_8).length);
+        assertThat(registry.get("shoppilot_knowledge_revisions_total")
+                .tag("result", "filed").counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("买家无运维凭证不能提交修订：403，且请求没出网关")
+    void buyerCannotFileRevision() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-rev-2", UserRole.BUYER, null));
+
+        MockHttpServletResponse response = mvc().perform(post("/api/v1/support/ops/feedback/FB1/revision")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"x\",\"body\":\"y\",\"intent\":\"POLICY_RETURN\","
+                                + "\"domain\":\"ECOMMERCE\",\"scope\":\"SHOP\"}"))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(envelope(response).path("code").asText()).isEqualTo("role.denied");
+        verify(http, never()).send(any(), any());
+    }
+
+    @Test
+    @DisplayName("发布修订是人工门：坐席即可；成功一次计一次 published")
+    void staffPublishesRevisionAndCounterCounts() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-rev-3", UserRole.AGENT, "U0007"));
+        stubTicketService(200, "{\"id\":\"KR1\",\"status\":\"PUBLISHED\"}");
+
+        MockHttpServletResponse response = mvc().perform(post("/api/v1/support/ops/knowledge/revisions/KR1/publish"))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        ArgumentCaptor<HttpRequest> captured = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(http).send(captured.capture(), any());
+        assertThat(captured.getValue().method()).isEqualTo("POST");
+        assertThat(captured.getValue().uri().toString())
+                .isEqualTo("http://127.0.0.1:8091/api/knowledge/revisions/KR1/publish");
+        assertThat(registry.get("shoppilot_knowledge_revisions_total")
+                .tag("result", "published").counter().count()).isEqualTo(1.0);
     }
 
     private MockHttpServletResponse claim(String opsToken, String selfReported) throws Exception {

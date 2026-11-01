@@ -20,7 +20,7 @@
 | `triage` | T0 规则、T1 质心、T2 模型级联；cacheable/dynamic 判定 | `TriageEngine`、`T0RuleLayer`、`T1CentroidLayer` |
 | `cache` | L1/L2 查询、语义阈值、极性守卫、写回资格与异步池 | `CacheService`、`L2SemanticCache`、`PolarityGuard`、`WriteBackPolicy`、`WriteBackPool` |
 | `knowledge` | embedding、Qdrant/ES 客户端、RRF 混合检索、知识纪元 | `HybridRetriever`、`EmbeddingClient`、`QdrantRestClient`、`EsRestClient`、`KbEpoch` |
-| `ingest` | Markdown 政策切块与离线入库 | `MarkdownChunker`、`IngestRunner` |
+| `ingest` | Markdown 政策切块与离线入库；**round43 起第二个语料源**：`KnowledgeRevisionSource` 从 biz-mock 拉 PUBLISHED 知识修订（拉取失败 → 中止入库，不静默缺条款，ADR 0078） | `MarkdownChunker`、`IngestRunner`、`KnowledgeRevisionSource` |
 | `llm` | local/dev/perf 三种模型实现、超时/预算、显式输出上限与 LLM 故障注入 | `LlmGateway`、`OllamaLlmClient`、`OpenAiCompatibleLlmClient`、`MockLlmClient`、`TokenBudget` |
 | `agent` | 10 状态编排、工具派发、会话、幂等、fallback 与工单；计划步骤与上下文组成的观测出口（ADR 0044 票 48/49）；**请求级幂等回放**（模型之前，ADR 0046 票 58）与**退款受理出口**（ADR 0047 票 59） | `AgentStateMachine`、`AgentResult`、`ToolDispatcher`、`BizMockClient`、`FallbackService`、`IdempotencyService`、`ReplayReply` |
 | `store` | 按已验签 `tenantId` 提供对话层店铺资料（店名/主营/本店承诺），拼进系统提示词（round37 / ADR 0071）；场景包覆盖优先 | `StoreProfileProperties`（配置 `shoppilot.store-profiles`）、`StoreProfileService`；读面 `web/StoreProfileController` |
@@ -35,8 +35,8 @@
 | `bizmock/domain` | Hibernate 实体和业务状态枚举 | `Order`、`Refund`、`Ticket`、`TicketStatus` |
 | `bizmock/repo` | tenant-aware repository 与唯一约束 | `OrderRepository`、`RefundRepository`、`TicketRepository` |
 | `bizmock/db/migration`（资源） | **模式的唯一产生源（H2，默认档）**：Flyway 版本化迁移（`ddl-auto` 已是 `validate`）。索引的真相源在这里，实体上的 `@Index` 注解在 `validate` 下不再被校验、只作文档。**换代（round28 / ADR 0061）**：`bizmock/db/migration-postgresql/`（**平级目录，不是子目录**——Flyway 对 `classpath:db/migration` 递归扫描，子目录会同版本撞车）是持久档的 PG 方言产生源，两侧版本钟由 `PostgresMigrationParityTest` 钉住；持久档配置在 `application-postgres.yml`。**2026-10-22**：`V9__refund_active_uniqueness.sql` 增加 `refunds.active_order_id` 可空唯一列（一单最多一笔在办退款） | `V1__baseline.sql`、`V2__index_feedback_review.sql`、`V9__refund_active_uniqueness.sql`；回滚约定在 `db/rollback/U1__baseline_down.sql`（PG 回滚演练登记给 B2） |
-| `bizmock/service` | 查询、改地址、退款、**退款审核（受理/放行/驳回 + 推导回滚）**、工单、归属和状态前置校验；**2026-10-22** 起退款受理由 `refunds.active_order_id` 唯一索引守并发，审批单调用移出事务（afterCommit + `shoppilot_refund_ticket_missing_total`） | `BizMockService` |
-| `bizmock/web` | 内部工具接口、工单接口、**退款审核端点**（B3 起 `review` 要求 `X-Actor-Authenticated: true`，未认证 → 403）、内部 token 校验、故障注入 | `ToolController`、`TicketController`、`RefundReviewController`、`InternalAuthFilter` |
+| `bizmock/service` | 查询、改地址、退款、**退款审核（受理/放行/驳回 + 推导回滚）**、工单、归属和状态前置校验；**2026-10-22** 起退款受理由 `refunds.active_order_id` 唯一索引守并发，审批单调用移出事务（afterCommit + `shoppilot_refund_ticket_missing_total`）；**round43 起知识修订**（附稿/发布/驳回，跨租户 404，归属显式比对） | `BizMockService`、`KnowledgeRevisionService` |
+| `bizmock/web` | 内部工具接口、工单接口、**退款审核端点**（B3 起 `review` 要求 `X-Actor-Authenticated: true`，未认证 → 403）、内部 token 校验、故障注入；**round43 起** `KnowledgeRevisionController`（`/api/feedback/{id}/revision`、`/api/knowledge/revisions/*` 租户口、`/api/admin/knowledge/revisions` ingest 拉取口） | `ToolController`、`TicketController`、`RefundReviewController`、`InternalAuthFilter`、`KnowledgeRevisionController` |
 | `tool/request` / `tool/view` | 跨模块请求和响应 DTO | `QueryOrderDetailRequest`、`ToolResponse`（`ToolStatus.PENDING_APPROVAL`）、`OrderView`（`RefundReviewState`）、`TicketView` |
 | `tool/schema` | 工具 JSON schema 生成 | `ToolSchemaGenerator` |
 
@@ -59,6 +59,7 @@
 | 状态机与工具循环 | `agent/AgentStateMachine`、`agent/AgentState`、`agent/ToolDispatcher` |
 | 业务调用 | `agent/BizMockClient` -> `bizmock/web/ToolController` -> `bizmock/service/BizMockService` |
 | 退款审核（人工闸门） | `bizmock/web/RefundReviewController` -> `bizmock/service/BizMockService.reviewRefund`；网关代理 `web/OpsController`（`/ops/refunds/*`，B3 起 `reviewRefund` 与 `refundReviewQueue()` 均为 `staff()`-only）；调试台面板 `static/console.html`（B3 起只读；round37 前是 `static/index.html`）；坐席工作台 `static/workspace/`（B3 起可审核） |
+| 知识反向沉淀（人工闸门，round43 / ADR 0078） | `bizmock/service/KnowledgeRevisionService`（附稿前置 = 反馈 `REVIEWED`；DRAFT → PUBLISHED 显式发布，驳回终态；修订表 Flyway `V10__knowledge_revisions.sql`，两侧迁移同步）；网关代理 `web/OpsController`（`/ops/feedback/{id}/review`、`/ops/feedback/{id}/revision`、`/ops/knowledge/revisions/*`，走 `guardedBizMock`：坐席角色或运维凭证取或，非资金动作）；入库侧 `ingest/KnowledgeRevisionSource`（fetch 失败即中止）+ `ingest/IngestRunner`（修订与文件语料并列切块，`sourceDoc = rev-<id>`，纪元蓝绿照旧）；活体验收 `scripts/verify-knowledge-backflow.mjs` |
 | SSE 事件 | `agent/EventSink`、`web/SseEventSink` |
 | 降级与工单 | `agent/FallbackService`、`agent/FallbackReason` |
 | 缓存写回 | `cache/WriteBackPolicy`、`cache/WriteBackPool` |
@@ -82,6 +83,7 @@
 | 退款在办唯一性 / 工单移出事务（2026-10-22） | `bizmock/RefundInvariantTest`（绕网关并发测试 + 工单不可达） |
 | `/ops/**` 默认拒绝（2026-10-22） | `web/OpsAuthorizationInterceptorTest`（买家 403 / allowlist / staff / ops 关闭）、`web/RestErrorEnvelopeTest`（保留 token_mismatch 语义） |
 | 退款审批闸门 | `agent/ToolDispatcherApprovalTest`（受理态落幂等）、`bizmock/RefundReviewTest`（三态迁移 / 推导回滚 / 跨租户 / 重复审核；独立 H2）、`web/GatewayMainPathJvmTest.refundApprovalStopsAtTheGateWithoutASecondModelHop`、`web/RestErrorEnvelopeTest.refundReviewProxiesWithTenantContext` |
+| 知识修订链（round43 / ADR 0078） | `bizmock/KnowledgeRevisionTest`（附稿前置 / 残稿 400 / 跨租户 404 / 终态 / admin 拉取口）、`gateway ingest/KnowledgeRevisionSourceTest`（JDK HttpServer 假下游：解析 / 非 2xx / 不可达 / 坏形状，全部必须抛）、`ingest/MarkdownChunkerTest`（字符串重载：frontmatter 显式、rev- 前缀不吃猜测、ruleId 同式）、`web/RoleGuardAndActorTest`（修订代理三件套：身份头补全 / 买家 403 / 计数器）；变异对照两处（去 REVIEWED 前置、吞拉取失败）随票 187 登记并实跑变红 |
 | 跨模块工具契约（审批策略与新状态值） | `shoppilot-tool-api/src/test/java/.../ToolContractApprovalTest` |
 | 检索融合录放门（round22 票 64） | `knowledge/RetrievalFusionReplayTest`（JVM，重算的唯一 owner）、`ingest/MarkdownChunkerTest`、`scripts/retrieval_gate.py`（只校验不复算）+ `eval/retrieval-fixture-*.json`（append-only，录制器 `scripts/record_retrieval_fixture.py`） |
 | task 级判据（round22 票 65） | `scripts/eval_task.py`（判据 + 14 条夹具）+ `eval/cases-part8-task.jsonl`；活体入口 `run_tool_eval.py --task` |
