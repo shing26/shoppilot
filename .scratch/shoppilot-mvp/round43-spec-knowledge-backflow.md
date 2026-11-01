@@ -3,6 +3,8 @@
 **收口状态（2026-11-01）**：三票 185-187 全部 implemented。全量 verify BUILD SUCCESS（757 tests /
 128 suites，含复审补钉 3 条）；两条变异对照实跑变红后还原；活体脚本照登未实跑（边界见票 187 Handoff）。
 读数与证据边界：[docs/EVIDENCE.md](../../docs/EVIDENCE.md) round43 条目。
+**活体补跑（2026-11-02）**：起栈后脚本实跑 **10/10**，ingest 纪元推进与旧纪元缓存失效活体证实；
+过程中修复残稿缺字段 NPE 500（详见票 187 活体补记），原“照登未实跑”边界闭合。
 
 开轮依据：[ADR 0078](../../docs/adr/0078-round43-knowledge-backflow-reopen-basis.md)（所有者政策覆盖，
 round19 登记第 8 项转执行；触发线未到这件事在 ADR 里显式记账，不伪装成触发已成立）。

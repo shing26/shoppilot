@@ -65,6 +65,20 @@ node --check scripts/verify-knowledge-backflow.mjs
 
 **登记不修（判断题，留给后续票）**：① 修订状态用裸字符串而非 `TicketStatus` 式枚举（biz-mock domain 家法）；② `IllegalArgumentException` 在 submit 链上既映射 400 又映射 404，靠 catch 位置区分；③ ops-token-only 路径经 `selfReported(null)` 得到的 actor 语义（谁按的发布门）值得下轮核对 ADR 0063 口径；④ `OpsController` 三处计数与 `guardedBizMock`/`guardedTicket` 的取或逻辑有重复，可抽 helper。
 
+**活体补跑（2026-11-02，起栈后执行）**
+
+票面“照登未实跑”的边界就此闭合。实测记录：
+
+1. **活体脚本 10/10 PASS**：`SHOPPILOT_INTERNAL_TOKEN=… node scripts/verify-knowledge-backflow.mjs` 全链过（mock-token→问答带引用→点踩→REVIEWED→DRAFT→残稿 400→PUBLISHED→重发布 409→admin 拉取面→计数器）。脚本前置即票面所写“网关 :8082 + biz-mock :8091 + 容器栈（中间件）”：`/auth/mock-token` 是严格回环（AuthController 请求期校验 remoteAddr），容器档下宿主请求经 NAT 不是回环、且 compose 不发布 biz-mock 端口——所以脚本的本命环境是**本机 JVM 三服务 + 容器中间件**，实测一致。
+2. **活体实测出真缺陷并修复**：残稿缺 `intent`/`scope`（JSON 字段缺失反序列化为 null）时，`Set.of(...).contains(null)` 在 `KnowledgeRevisionService.validateDraft` 抛 NPE → 500，而形状错误按设计是 400。JVM 用例只覆盖“值不合法”，未覆盖“字段缺失”。修复 = 两处判空；`malformedDraftsAreRejected` 补两条 null 用例钉住口径。修复后重跑脚本 4b 转 PASS。
+3. **ingest 纪元推进实测**：发布修订后重跑 ingest（宿主 JVM `--spring.profiles.active=ingest`，指向同一批中间件与 biz-mock）：`拉取已发布知识修订 1 条 → 切分 文档 37 篇、知识修订 1 条、规则块 112（111+1）→ 纪元 4→5`，入库 32 秒。
+4. **纪元咬合的活体证实**：推进前已写进 L1 的同一问，推进后（网关重启）再问 `cacheLayer=NONE`——旧纪元键整体失效；新首答 citations 含修订块，正文出现修订口径（“自 2026-11 起……买家承担；质量问题……商家承担”）；再问 `cacheLayer=L1`，新纪元写回/命中正常。
+5. 容器档三场景演示（`scripts/demo.py --prebuilt`）全过作附证；注意 dev 口径下 `SentimentGate` LLM 分类位于缓存查询之前，命中路径模型增量 +1 是 ADR 0043 的既定口径（票 46），演示断言按容器 demo 口径跑绿，不是判据变更。
+
+**验证落点（活体补跑新增）**
+
+- `shoppilot-biz-mock` 定向测试 6/6 绿（含新增 null 用例）；`git diff --check` / `git status --short` 收口复查。
+
 **三个现场追问**
 
 1. 纪元什么时候真的推进一次？下一次人工跑 ingest 时（`spring-boot:run -P ingest`），修订随之进语料——本链路不提供"发布即生效"；
