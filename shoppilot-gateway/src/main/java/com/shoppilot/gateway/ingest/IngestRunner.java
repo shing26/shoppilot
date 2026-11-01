@@ -85,7 +85,8 @@ public class IngestRunner implements ApplicationRunner {
         }
     }
 
-    private void ingest() throws Exception {
+    /** 包内可见是给变异对照用的测试缝（票 187）：run() 会 System.exit，用例只能断言抛错路径。 */
+    void ingest() throws Exception {
         Path dir = Path.of(properties.ingest().dir()).toAbsolutePath();
         if (!Files.isDirectory(dir)) {
             throw new DependencyMissing("政策语料目录不存在：" + dir + "。请在仓库根目录执行，"

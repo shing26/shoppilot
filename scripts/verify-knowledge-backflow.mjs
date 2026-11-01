@@ -88,13 +88,13 @@ const revisionId = revision.body?.id;
 check('4 附稿成 DRAFT', revision.status === 200 && revision.body?.status === 'DRAFT',
   `id=${revisionId} status=${revision.status}`);
 
-// 4b) 校验口在网关前：缺 intent 的稿子 400，不打下游。
+// 4b) 残稿 400：形状校验在 biz-mock 前置（网关只透传），400 文案出自下游（票 186 Handoff）。
 const bad = await call(`${BASE}/api/v1/support/ops/feedback/${feedbackId}/revision`, {
   method: 'POST',
   headers: json({ 'X-Ops-Token': OPS_TOKEN }),
   body: JSON.stringify({ title: 'x', body: 'y' }),
 });
-check('4b 残稿被网关前校验拦下', bad.status === 400, `status=${bad.status}`);
+check('4b 残稿被 400 拦下（校验在 biz-mock）', bad.status === 400, `status=${bad.status}`);
 
 // 5) 显式发布：DRAFT → PUBLISHED；重复发布 409（单向、终态语义的一部分）。
 const publish = await call(`${BASE}/api/v1/support/ops/knowledge/revisions/${revisionId}/publish`, {

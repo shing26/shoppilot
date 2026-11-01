@@ -37,6 +37,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
@@ -228,6 +229,43 @@ class RoleGuardAndActorTest {
                 .isEqualTo("http://127.0.0.1:8091/api/knowledge/revisions/KR1/publish");
         assertThat(registry.get("shoppilot_knowledge_revisions_total")
                 .tag("result", "published").counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("复核完成写口：坐席可标 REVIEWED，PATCH 方法、路径与租户头由网关补齐（ADR 0078 Decision 5）")
+    void staffMarksFeedbackReviewedThroughProxy() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-rev-4", UserRole.AGENT, "U0007"));
+        stubTicketService(200, "{\"reviewStatus\":\"REVIEWED\"}");
+        ArgumentCaptor<HttpRequest> captured = ArgumentCaptor.forClass(HttpRequest.class);
+
+        MockHttpServletResponse response = mvc().perform(patch("/api/v1/support/ops/feedback/FB1/review")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REVIEWED\"}"))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(http).send(captured.capture(), any());
+        HttpRequest sent = captured.getValue();
+        assertThat(sent.method()).isEqualTo("PATCH");
+        assertThat(sent.uri().toString()).isEqualTo("http://127.0.0.1:8091/api/feedback/FB1/review");
+        assertThat(sent.headers().firstValue("X-Internal-Token")).contains("internal");
+        assertThat(sent.headers().firstValue("X-Tenant-Id")).contains("T001");
+        assertThat(sent.headers().firstValue("X-Actor")).contains("U0007");
+    }
+
+    @Test
+    @DisplayName("买家不能写复核状态：403，且请求没出网关")
+    void buyerCannotMarkFeedbackReviewed() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-rev-5", UserRole.BUYER, null));
+
+        MockHttpServletResponse response = mvc().perform(patch("/api/v1/support/ops/feedback/FB1/review")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REVIEWED\"}"))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(envelope(response).path("code").asText()).isEqualTo("role.denied");
+        verify(http, never()).send(any(), any());
     }
 
     private MockHttpServletResponse claim(String opsToken, String selfReported) throws Exception {

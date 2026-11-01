@@ -57,8 +57,8 @@ ADR: 0078　Status: implemented　Blocked by: 185
 
 **验证落点**
 
-- `KnowledgeRevisionSourceTest` 4 条（JDK HttpServer 假下游）：解析、非 2xx、不可达、坏形状，全部断言抛 `IllegalStateException`。
-- `MarkdownChunkerTest` 7→10 条；`RoleGuardAndActorTest` 6→9 条（修订代理三件套）。
+- `KnowledgeRevisionSourceTest` 5 条（JDK HttpServer 假下游）：解析、非 2xx、不可达、坏形状（全部断言抛 `IllegalStateException`）+ IngestRunner 中止路径（拉取失败先于任何写入，复审补记见票 187）。
+- `MarkdownChunkerTest` 7→10 条；`RoleGuardAndActorTest` 6→11 条（修订代理三件套 + 复核写口两条，复审补）。
 - 全量 verify BUILD SUCCESS；README 指标名计数换代在本票 187 顺手完成（72/74，含复点漂移说明）。
 
 **三个现场追问**

@@ -1,7 +1,7 @@
 # round43 spec：知识反向沉淀咬合
 
-**收口状态（2026-11-01）**：三票 185-187 全部 implemented。全量 verify BUILD SUCCESS（754 tests /
-128 suites）；两条变异对照实跑变红后还原；活体脚本照登未实跑（边界见票 187 Handoff）。
+**收口状态（2026-11-01）**：三票 185-187 全部 implemented。全量 verify BUILD SUCCESS（757 tests /
+128 suites，含复审补钉 3 条）；两条变异对照实跑变红后还原；活体脚本照登未实跑（边界见票 187 Handoff）。
 读数与证据边界：[docs/EVIDENCE.md](../../docs/EVIDENCE.md) round43 条目。
 
 开轮依据：[ADR 0078](../../docs/adr/0078-round43-knowledge-backflow-reopen-basis.md)（所有者政策覆盖，

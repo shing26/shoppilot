@@ -2,11 +2,16 @@ package com.shoppilot.gateway.ingest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.config.GatewayProperties;
+import com.shoppilot.gateway.knowledge.EmbeddingClient;
+import com.shoppilot.gateway.knowledge.EsRestClient;
+import com.shoppilot.gateway.knowledge.KbEpoch;
+import com.shoppilot.gateway.knowledge.QdrantRestClient;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -20,7 +25,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -132,5 +141,37 @@ class KnowledgeRevisionSourceTest {
         assertThatThrownBy(() -> source().fetchPublished())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("形状");
+    }
+
+    /**
+     * 票 186 验收项「拉取失败 → 进程 exit 非 0」的用例缝：run() 会 System.exit（JVM 里不能真跑），
+     * 所以钉在 {@link IngestRunner#ingest()}——修订拉取失败时异常向上抛，且**先于任何写入**：
+     * embedding 不调用、Qdrant/ES 不写、纪元不推进。"先拉取后写入"的顺序就是这条用例钉的。
+     */
+    @Test
+    @DisplayName("修订拉取失败：ingest 在任何写入之前中止，纪元不动")
+    void ingestAbortsBeforeAnyWriteWhenRevisionFetchFails(@TempDir java.nio.file.Path dir) throws IOException {
+        KnowledgeRevisionSource failingSource = mock(KnowledgeRevisionSource.class);
+        when(failingSource.fetchPublished()).thenThrow(new IllegalStateException("拉取失败"));
+        EmbeddingClient embedding = mock(EmbeddingClient.class);
+        QdrantRestClient qdrant = mock(QdrantRestClient.class);
+        when(qdrant.ping()).thenReturn(true);
+        EsRestClient es = mock(EsRestClient.class);
+        KbEpoch kbEpoch = mock(KbEpoch.class);
+        GatewayProperties properties = mock(GatewayProperties.class);
+        when(properties.ingest()).thenReturn(new GatewayProperties.Ingest(dir.toString()));
+        // probe 阶段会读 retrieval() 拿 ES 索引名；es 是 mock，给个占位即可。
+        when(properties.retrieval()).thenReturn(new GatewayProperties.Retrieval(
+                "http://127.0.0.1:1", "http://127.0.0.1:2", "rules", "answer_cache", "policy_rules", 10, 10, 5, 60));
+
+        IngestRunner runner = new IngestRunner(embedding, qdrant, es, kbEpoch, properties,
+                failingSource, mock(org.springframework.context.ConfigurableApplicationContext.class));
+
+        assertThatThrownBy(runner::ingest).isInstanceOf(IllegalStateException.class);
+        // probe 阶段有一次连通性 embedding，是允许的唯一一次；语料向量化与任何写入都不许发生。
+        verify(embedding, times(1)).embedWarmup(any());
+        verify(qdrant, never()).upsert(any(), any());
+        verify(es, never()).index(any(), any(), any());
+        verify(kbEpoch, never()).bump();
     }
 }
