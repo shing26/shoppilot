@@ -126,13 +126,14 @@ public class KnowledgeRevisionService {
         if (body == null || body.isBlank() || body.length() > 20_000) {
             throw new IllegalArgumentException("body 必填且不超过 20000 字");
         }
-        if (!POLICY_INTENTS.contains(intent)) {
+        // Set.of 的 contains(null) 是 NPE 不是 false：缺字段的残稿必须答 400 而不是炸 500。
+        if (intent == null || !POLICY_INTENTS.contains(intent)) {
             throw new IllegalArgumentException("intent 必须是政策意图之一：" + POLICY_INTENTS);
         }
         if (domain == null || domain.isBlank() || domain.length() > 16) {
             throw new IllegalArgumentException("domain 必填");
         }
-        if (!SCOPES.contains(scope)) {
+        if (scope == null || !SCOPES.contains(scope)) {
             throw new IllegalArgumentException("scope 只收 SHOP | PLATFORM");
         }
     }

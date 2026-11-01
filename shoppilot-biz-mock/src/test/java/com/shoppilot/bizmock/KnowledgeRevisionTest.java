@@ -70,7 +70,7 @@ class KnowledgeRevisionTest {
     }
 
     @Test
-    @DisplayName("形状校验：动作意图、非法 scope、空标题都是 400")
+    @DisplayName("形状校验：动作意图、非法 scope、空标题、缺字段（null）都是 400")
     void malformedDraftsAreRejected() throws Exception {
         String reviewed = createAndReview("C103", "kr-conv-5", "T001", "C103");
         assertThat(submitRaw(reviewed, "kr-conv-5", "标题", "正文",
@@ -79,6 +79,12 @@ class KnowledgeRevisionTest {
                 "POLICY_RETURN", "ECOMMERCE", "UNIVERSE", "T001", "C103").statusCode()).isEqualTo(400);
         assertThat(submitRaw(reviewed, "kr-conv-5", " ", "正文",
                 "POLICY_RETURN", "ECOMMERCE", "SHOP", "T001", "C103").statusCode()).isEqualTo(400);
+        // 字段缺失（反序列化后是 null）：Set.of 的 contains(null) 是 NPE，不判空就炸成 500
+        // ——活体验收实测踩中，这里把 null 口径钉住（2026-11-02）。
+        assertThat(submitRaw(reviewed, "kr-conv-5", "标题", "正文",
+                null, "ECOMMERCE", "SHOP", "T001", "C103").statusCode()).isEqualTo(400);
+        assertThat(submitRaw(reviewed, "kr-conv-5", "标题", "正文",
+                "POLICY_RETURN", "ECOMMERCE", null, "T001", "C103").statusCode()).isEqualTo(400);
     }
 
     @Test
