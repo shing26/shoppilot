@@ -61,11 +61,63 @@
 | 退款审核（人工闸门） | `bizmock/web/RefundReviewController` -> `bizmock/service/BizMockService.reviewRefund`；网关代理 `web/OpsController`（`/ops/refunds/*`，B3 起 `reviewRefund` 与 `refundReviewQueue()` 均为 `staff()`-only）；调试台面板 `static/console.html`（B3 起只读；round37 前是 `static/index.html`）；坐席工作台 `static/workspace/`（B3 起可审核） |
 | 知识反向沉淀（人工闸门，round43 / ADR 0078） | `bizmock/service/KnowledgeRevisionService`（附稿前置 = 反馈 `REVIEWED`；DRAFT → PUBLISHED 显式发布，驳回终态；修订表 Flyway `V10__knowledge_revisions.sql`，两侧迁移同步）；网关代理 `web/OpsController`（`/ops/feedback/{id}/review`、`/ops/feedback/{id}/revision`、`/ops/knowledge/revisions/*`，走 `guardedBizMock`：坐席角色或运维凭证取或，非资金动作）；入库侧 `ingest/KnowledgeRevisionSource`（fetch 失败即中止）+ `ingest/IngestRunner`（修订与文件语料并列切块，`sourceDoc = rev-<id>`，纪元蓝绿照旧）；活体验收 `scripts/verify-knowledge-backflow.mjs` |
 | 买家订单读面（round44 / 票 189） | 网关 `web/BuyerOrdersController`（`/api/v1/support/orders/mine`、`/{orderNo}`、`/{orderNo}/logistics`；订单号先过 `[A-Za-z0-9_-]{1,32}` 白名单再拼下游 URL，下游 404 原样传 404）→ biz-mock `web/OrderQueryController` → `BizMockService.buyerOrderDetail` / `buyerOrderLogistics`（`buyerOwned` 两个条件都必填，不复用坐席路径的整店回退；`maskPhone` 出站前脱敏）；买家页面 `frontend-buyer/src/components/OrderCard.vue` |
+| 知识飞轮产品面（round44 / 票 190） | 工作台 `frontend-workspace/src/App.vue`（反馈队列/修订列表/动作状态）+ `src/components/KnowledgeView.vue`（五步条 → 复核 → 附稿 → 发布/驳回 → ingest 提示）→ `src/api.ts`（`feedbackReviewQueue` / `reviewFeedback` / `fileRevision` / `listKnowledgeRevisions` / `publishRevision` / `rejectRevision`，基址 `/api/v1/support/ops`）→ 网关 `web/OpsController`（`/ops/feedback/review-queue`、`/ops/feedback/{id}/review`、`/ops/feedback/{id}/revision`、`/ops/knowledge/revisions[/{id}/publish|reject]`，走 `guardedBizMock`）→ `bizmock/service/KnowledgeRevisionService`。**发布不立即生效**：修订要等 `scripts/ingest.ps1` 重跑才进检索语料，页面把这句写在已发布卡上 |
 | SSE 事件 | `agent/EventSink`、`web/SseEventSink` |
 | 降级与工单 | `agent/FallbackService`、`agent/FallbackReason` |
 | 缓存写回 | `cache/WriteBackPolicy`、`cache/WriteBackPool` |
 
 调试台是 `gateway/src/main/resources/static/console.html`（round37 起；`/admin/debug` 重定向到它，根路径 `/` 是产品导航），它只访问 gateway 同源接口；浏览器验收在 `scripts/verify-console.mjs`（目标地址已跟到 `/console.html`）。
+
+## 前端组件表（round44 / 票 188-190）
+
+两个产品入口都是**根壳管状态、子组件管呈现**：所有 `ref`、API 调用、定时器与 SSE 留在
+`src/App.vue`，子组件只收 props / 发 emits；表单字段用 `defineModel`（值是双向的，**所有权仍归根**）。
+没有路由、状态库与前端测试 runner——这是 ADR 0079 的显式决定，不是尚未做。
+改文案或布局先找组件；改状态、请求与错误分支先找 `App.vue`。
+
+### 买家端 `frontend-buyer`（源码 `src/` → 产物 `static/buyer/`）
+
+| 文件 | 职责 | 状态归属 |
+| --- | --- | --- |
+| `src/App.vue`（646 行） | 根壳：会话与登录、`ask()` 流式提问、订单/工单/详情加载、`now` 定时器（30 s，`onUnmounted` 清理） | 全部 ref 与请求 |
+| `components/TopBar.vue` | 品牌、当前账号署名、体验/访客徽标、退出 | props `demoMode/guestMode/hasSession/who`；emit `signOut` |
+| `components/StoreCard.vue` | 店铺名片（店名 / 业态 / 保障） | props only |
+| `components/LoginGate.vue` | 未登录整页门：一键体验、账号登录、口令表单 | `defineModel` 三个表单字段；emit `demoEnter/submit` |
+| `components/ChatThread.vue` | 对话气泡、助手 trace（阶段）/计划步骤、**依据面板**（按文档分组的 `citationDetails`） | props `messages/asking`；emit `retry` |
+| `components/Composer.vue` | 输入框 + 发送/停止 | `defineModel query`；emit `submit/stop` |
+| `components/SideActivity.vue` | 侧栏「订单 / 工单」两页签、加载三态、订单深度卡与工单抽屉的入口 | `defineModel` 页签与「看全部」；其余 props；emit 刷新/展开/提问等 |
+| `components/OrderCard.vue` | 票 189 订单深度卡：状态推进条、金额/品类/服务标、脱敏地址、物流时间轴 | props `order/expanded/detail/logistics/loading/error`；emit `toggle/ask` |
+| `components/ServiceCard.vue` | 服务能力小卡 | props only |
+| `components/TicketDrawer.vue` | 单张工单详情抽屉（SLA、转人工上下文） | props；emit `close/refresh` |
+| `src/lib/format.ts` | 纯函数：状态/渠道/工具名映射、SLA 文案、agent trace 归并、`groupCitations` | 无状态 |
+
+### 坐席工作台 `frontend-workspace`（源码 `src/` → 产物 `static/workspace/`）
+
+| 文件 | 职责 | 状态归属 |
+| --- | --- | --- |
+| `src/App.vue`（1203 行） | 根壳：登录、六个视图的加载与动作、SSE 渠道流、通知/提示音、未读计数 | 全部 ref、请求与副作用 |
+| `components/TopBar.vue` | 品牌、当前坐席、刷新、退出 | props `who/hasSession`；emit `refresh/signOut` |
+| `components/LoginCard.vue` | 未登录整页门：一键体验（坐席/管理员）、账号口令表单 | `defineModel` 表单字段；emit `demoLogin/submit` |
+| `components/SideNav.vue` | 六个视图导航 + 三个角标（队列 / 退款 / 知识待办） | props `view/ticketCount/unread/refundCount/knowledgeCount/tenantId`；emit `select` |
+| `components/QueueView.vue` | 队列列表（卡片）、筛选、详情栏、生命周期时间轴、领取/释放/结单 | props；emit `changeQueue/setFilter/select/refresh/claim/release/resolve/openRefunds` |
+| `components/RefundsView.vue` | 退款队列：金额/原因/决策路径 + 对应工单 | props `refunds/refundError/refundNote/refundInFlight/refundTickets`；emit `open` |
+| `components/ChannelsView.vue` | 渠道连接状态、凭据测试、保存 | props `channel/channelForm/...`；emit `refresh/save/test` |
+| `components/ConversationsView.vue` | 渠道会话收件箱：列表/详情/接管/回复/释放、通知与提示音开关 | `defineModel reply`；emit 接管/回复等 |
+| `components/QualityView.vue` | 编排质量报告（拦截原因、审计动作、交接上下文丢失） | props；emit `refresh` |
+| `components/KnowledgeView.vue` | **票 190 知识飞轮**：五步条、待复核队列、附稿表单、修订卡（发布/驳回）、ingest 提示 | `defineModel draft`；props 反馈/修订/动作态；emit `refresh/review/pickFeedback/cancelDraft/file/publish/reject` |
+| `components/ResolveDialog.vue` | 结单确认对话框（意见必填） | `defineModel note`；emit `close/confirm` |
+| `components/RefundDialog.vue` | 退款放行/驳回对话框（备注必填） | `defineModel note`；emit `close/confirm` |
+| `src/lib/format.ts` | 纯函数：SLA、超时、比例/秒数、payload 取值 | 无状态 |
+| `src/lib/ui.ts` | 视图枚举、筛选枚举、渠道表单形状、**知识视图下拉选项**（政策意图/范围/行业域）与状态标签 | 无状态；选项只是下拉候选，校验仍在 biz-mock |
+| `public/sw.js` | Web Push 接收与点击跳转；原样拷进 `static/workspace/sw.js`，改动要重建并入库 | 无状态 |
+
+### 共享层 `frontend-shared`（`file:../frontend-shared` 接入，不是 npm workspaces）
+
+`tokens.css` 是两端唯一的视觉基线（圆角/间距/字号/阴影/动效/语义色三件套 + focus 环 +
+`.chip`/`.kpi`/`.timeline` 原子）；`index.ts` 放跨端纯函数与契约（`request`/`messageOf`/
+`TicketSummary`/`STATUS_LABEL`/`PRIORITY_LABEL`/`priorityRank`/`minutesLeft`/`formatStamp`/
+`shortId`/`countLabel`）。**布局类不进共享层**——两个入口的产品语义不同，只统一令牌。
+
 
 ## Test Map
 

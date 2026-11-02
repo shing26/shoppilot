@@ -1,7 +1,7 @@
 # 票 190：知识飞轮可视化、三入口视觉收口与收口
 
 Round: 44（spec：[round44-spec-product-surface.md](../round44-spec-product-surface.md)）
-ADR: 0079　Status: ready-for-agent　Blocked by: 189
+ADR: 0079　Status: implemented　Blocked by: 189
 
 ## What to build
 
@@ -71,4 +71,57 @@ git status --short
 
 ## Handoff notes
 
-（收口时补：关键决策 / 验证落点 / 三个现场追问）
+### 关键决策
+
+1. **知识视图不做成「流水线进度条」，而是五步说明条 + 两块可操作面板。** 后端状态机不允许跳步
+   （附稿的前置是 `REVIEWED`），进度条会让人以为可以点「下一步」。真正的动作只有四个：标为已复核、
+   附稿、发布、驳回，各自长在对应的卡片上；五步条只回答「现在在哪一格」。
+2. **复核后的反馈必须在会话内留一份副本。** `GET /feedback/review-queue` 只回 `PENDING`，复核成功
+   这一行就从队列里消失了，而下一步「附稿」要的正是这一行。这里用 `reviewedFeedback` 本地副本承接，
+   **不去加一个 REVIEWED 列表口**——那是新接口，票面没批。代价写在现场追问 1。
+3. **附稿表单不预判后端合法性。** 下拉只给政策意图 / `SHOP|PLATFORM` / `ECOMMERCE|HOTEL`，标题与
+   正文必填在提交前拦；但「这条反馈是不是 REVIEWED」「这稿能不能发」完全由后端 409/400 决定，
+   前端只把 400/409 的原话与可读解释透出来（`describeKnowledge`），不复制状态机。
+4. **「发布不立即生效」做成已发布卡上的常驻提示，不是一次性 toast。** 这是整条链最容易误读的语义，
+   toast 会消失；只要稿子还是 `PUBLISHED`，那句「需重跑 ingest」就该在那儿，并带上命令。
+5. **买家依据面板只在真有 `citationDetails` 时渲染，且视图不重排。** `groupCitations` 按
+   `doc` 分组、组内保持后端给的相关度序、组间按首次出现——重排等于替检索器重排。
+6. **`console.html` 只动样式，字面量一个没改。** 加的是 `--r-*` / `--shadow-*` / `--dur-*` /
+   `--ease` / `--ring`、`:focus-visible` 环与 `prefers-reduced-motion`；`id="opsToken"` 的
+   `placeholder`、`id="agentPass" size="10" placeholder="口令"`、不预填、无密钥字面量这些被
+   `ServedConsoleHidesDevDefaultsTest` 钉住的属性零改动。
+7. **`verify-console.mjs` 的两处等待从 `networkidle` 改成 `load` + 有界等待。** 不是页面变慢，是
+   `/actuator/health/deps` 在本机（ES/Qdrant 不可达）挂 **40.04 s** 才回 503，`networkidle`
+   永远等不到；另把「缓存命中」那条**没有 catch** 的等待改成有界等待 + 照常判红，否则一处超时就让
+   整轮脚本崩掉、后面二十多条断言一条都跑不到。**判据没改**：仍是 `hitSeen && hitChips === 1`，
+   另外三条检索类断言与两条读数格断言原样留红（见验证落点）。
+8. **产物与源码同步入库**（round30 事故的教训）：两端各 `typecheck` + `build` 一次，`static/buyer`
+   与 `static/workspace` 的**新增与删除**全部入库；CI 的 `git status --porcelain` 门禁本轮也已在位。
+
+### 验证落点
+
+| 命令 | 结果 |
+| --- | --- |
+| `node --check scripts/verify-buyer.mjs` / `verify-workspace.mjs` / `verify-console.mjs` / `capture-r44-screens.mjs` | 四个都通过 |
+| `node scripts/verify-buyer.mjs`（活体，NODE_PATH=.tools） | **13/13 PASS**；依据面板那格因无 `citationDetails` 打 **INFO**（检索降级，不冒充 PASS） |
+| `node scripts/verify-workspace.mjs`（活体） | **21/21 PASS + 1 WARN**；知识飞轮五步、`DRAFT` 卡、ingest 提示三格全绿；WARN = 队列只有一种优先级（普通×10），排序断言未覆盖 |
+| `node scripts/verify-console.mjs`（活体） | **39/45**，6 红：`citations rendered` / done 帧 `ruleIds` / `cache hit`（三条依赖检索）、`no failed requests`（503+500+403 同源环境缺口）、两条读数格「另一格保持 live」（`/ops/**` 默认拒绝后前提不成立）。判据未改 |
+| `cd frontend-buyer && npm run typecheck && npm run build` | 绿；`index-BVVfRdyG.js` 105.80 kB / `index-B36rZRpY.css` 25.33 kB |
+| `cd frontend-workspace && npm run typecheck && npm run build` | 绿；`index-BvbFBYiI.js` 137.63 kB / `index-B0lDk8NQ.css` 28.73 kB |
+| `bash ./mvnw -B -ntp verify` | BUILD SUCCESS；四模块 **12 / 89 / 617 / 50 = 768 tests / 129 suites**，0 失败 |
+| `python scripts/check_coverage.py` | OK；tool-api 44.70% / biz-mock 83.57% / gateway 68.88% / ticket 78.62% |
+| `python scripts/gen_status.py` | 已重生 `docs/STATUS.md`（768 / 129 suites） |
+| `node scripts/capture-r44-screens.mjs` | 10 张，桌面 1440×900 与 390×844 各半，无页面异常 |
+| `git diff --check` / `git status --short` | 干净；无日志、无崩溃转储、无过期快照 |
+
+### 三个现场追问
+
+1. **已复核但还没附稿的反馈，刷新页面后就从 UI 上消失了。** 复核队列只回 `PENDING`，会话内副本
+   只活在这一次打开里。要收口需要一条「按状态列反馈」的读口（或让复核口顺带返回刚复核的条目），
+   这是新接口，得单开一票。
+2. **票面「每一步的状态与操作人可见」只做到「本会话内当前账号」。** `FeedbackView` 与
+   `RevisionView` 都不带 actor 字段，历史操作人无法回显；页面只能把本次会话里自己做的动作标成
+   「当前账号」。要全量可见就得在 biz-mock 两张表上补 actor 列并迁移——不是纯前端能补的。
+3. **`verify-console.mjs` 里的检索类断言在 ES/Qdrant 不可用时恒红。** 这三条与产品面无关，却是
+   同一份门禁的一部分；每次环境降级都会把 console 读成「产品坏了」。要不要给它们一个显式的
+   SKIP 状态（像工作台的 WARN 那样），还是坚持「环境不全就是红」，需要所有者裁定——本轮没有改。
