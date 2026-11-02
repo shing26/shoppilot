@@ -243,6 +243,41 @@ check(
   (await page.locator('.ingest-note').first().innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 60),
 );
 
+// 驳回是这条链的**另一个终态**，票 190 验收项写的是「读、附稿、发布、驳回」四件事。
+// 只测发布等于只测了一半：发布与驳回共用 DRAFT 前置，但出口、卡片样式与后续提示都不同。
+// 这里再造一条反馈走完整链，最后驳回，断言它变成 rejected 且不再留在待发布里。
+const rejectConversation = `ws-kb-reject-${Date.now()}`;
+const rejectAck = await (await fetch(`${BASE}/api/v1/support/chat/feedback`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${buyerToken}` },
+  body: JSON.stringify({
+    conversationId: rejectConversation,
+    verdict: 'DOWN',
+    reason: '工作台门禁：驳回路径',
+  }),
+})).json().catch(() => ({}));
+const rejectFeedbackId = rejectAck.feedbackId;
+check('驳回路径的反馈也落到了复核队列', Boolean(rejectFeedbackId), rejectFeedbackId ?? '(无 feedbackId)');
+
+await page.locator('.kb-head button:has-text("刷新")').click({ noWaitAfter: true }).catch(() => {});
+const rejectRow = page.locator('.review-row', { hasText: rejectFeedbackId ?? '(none)' });
+await rejectRow.waitFor({ timeout: 8000 }).catch(() => {});
+await rejectRow.locator('button:has-text("标为已复核")').click({ noWaitAfter: true }).catch(() => {});
+await page.waitForSelector('.draft-form', { timeout: 10000 }).catch(() => {});
+await page.fill('.draft-form input[type="text"]', '驳回路径的修订稿（门禁写入）');
+await page.fill('.draft-form textarea', '这一稿会被驳回，用来验证终态。');
+await page.locator('.draft-form button[type="submit"]').click({ noWaitAfter: true }).catch(() => {});
+await page.waitForSelector('.revision-card.draft', { timeout: 10000 }).catch(() => {});
+await page.locator('.revision-card.draft button:has-text("驳回")').first().click({ noWaitAfter: true }).catch(() => {});
+await page.waitForSelector('.revision-card.rejected', { timeout: 10000 }).catch(() => {});
+const rejectedCount = await page.locator('.revision-card.rejected').count();
+const draftLeft = await page.locator('.revision-card.draft').count();
+check(
+  '驳回后修订卡进入终态（REJECTED），不再留在待发布',
+  rejectedCount > 0 && draftLeft === 0,
+  `${rejectedCount} 版已驳回 / ${draftLeft} 版待发布`,
+);
+
 // 窄屏（round36 / 票 151）：宽表格进容器内滚动，页面本身不横向溢出。
 await page.setViewportSize({ width: 390, height: 780 });
 await page.waitForTimeout(200);
