@@ -170,6 +170,9 @@ const filtered = computed(() => {
 
 const selected = computed(() => tickets.value.find((ticket) => ticket.id === selectedId.value) ?? null)
 
+/** 退款审批工单：退款队列靠 `payload.refundId` 与它们对上（票 189）。 */
+const refundTickets = computed(() => tickets.value.filter((ticket) => ticket.source === 'REFUND_APPROVAL'))
+
 const blockedReasonEntries = computed(() => entriesOf(quality.value?.handoff.blockedByReason))
 const auditActionEntries = computed(() => entriesOf(quality.value?.audit.actions))
 const handoffContextLossCount = computed(() =>
@@ -900,6 +903,7 @@ function clearStoredSession() {
             :refund-error="refundError"
             :refund-note="refundNote"
             :refund-in-flight="refundInFlight"
+            :refund-tickets="refundTickets"
             @open="openRefund"
           />
 

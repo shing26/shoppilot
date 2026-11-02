@@ -20,11 +20,13 @@ import {
   myOrders,
   myTicket,
   myTickets,
+  orderDetail as loadOrderDetail,
+  orderLogistics as loadOrderLogistics,
   storeProfile,
   streamAnswer,
 } from './api'
 import { STATUS_LABEL, type CitationDetail, type Session, type Ticket } from './types'
-import type { MyOrder } from './api'
+import type { MyOrder, OrderDetail, OrderLogistics } from './api'
 import { appendAgentStep, type ChatMessage } from './lib/format'
 import TopBar from './components/TopBar.vue'
 import StoreCard from './components/StoreCard.vue'
@@ -66,6 +68,12 @@ const ticketError = ref('')
 const orders = ref<MyOrder[]>([])
 const ordersLoading = ref(false)
 const orderError = ref('')
+/** 展开中的订单号（round44 票 189）：空串表示全部收起。 */
+const expandedOrderNo = ref('')
+const orderDetail = ref<OrderDetail | null>(null)
+const orderLogistics = ref<OrderLogistics | null>(null)
+const orderDetailLoading = ref(false)
+const orderDetailError = ref('')
 const sideTab = ref<'orders' | 'tickets'>('orders')
 const showAllOrders = ref(false)
 const showAllTickets = ref(false)
@@ -197,6 +205,10 @@ function signOut() {
   ticketError.value = ''
   orders.value = []
   orderError.value = ''
+  expandedOrderNo.value = ''
+  orderDetail.value = null
+  orderLogistics.value = null
+  orderDetailError.value = ''
   messages.value = []
   conversation = ''
   asking.value = false
@@ -229,11 +241,55 @@ async function refreshOrders() {
     return
   }
   orders.value = result.body
+  if (expandedOrderNo.value && !orders.value.some((order) => order.orderNo === expandedOrderNo.value)) {
+    expandedOrderNo.value = ''
+    orderDetail.value = null
+    orderLogistics.value = null
+    orderDetailError.value = ''
+  }
 }
 
 async function askOrder(order: MyOrder) {
   query.value = `帮我查一下订单 ${order.orderNo} 的物流`
   await ask()
+}
+
+/**
+ * 展开 / 收起一张订单的深度卡（round44 票 189）。
+ *
+ * <p>详情与物流并行拉；期间用户切到别的单，回来的响应直接丢弃——否则慢响应会把
+ * 当前展开的卡片覆盖成上一张的内容。
+ */
+async function toggleOrder(orderNo: string) {
+  if (expandedOrderNo.value === orderNo) {
+    expandedOrderNo.value = ''
+    orderDetail.value = null
+    orderLogistics.value = null
+    orderDetailError.value = ''
+    orderDetailLoading.value = false
+    return
+  }
+  expandedOrderNo.value = orderNo
+  orderDetail.value = null
+  orderLogistics.value = null
+  orderDetailError.value = ''
+  if (!session.value) return
+  const token = session.value.token
+  orderDetailLoading.value = true
+  const [detail, logistics] = await Promise.all([
+    loadOrderDetail(token, orderNo),
+    loadOrderLogistics(token, orderNo),
+  ])
+  if (expandedOrderNo.value !== orderNo) return
+  orderDetailLoading.value = false
+  if (detail.status === 200) {
+    orderDetail.value = detail.body as OrderDetail
+  } else {
+    orderDetailError.value = describe(detail, '')
+  }
+  if (logistics.status === 200) {
+    orderLogistics.value = logistics.body as OrderLogistics
+  }
 }
 
 async function refreshTickets() {
@@ -496,8 +552,14 @@ function clearStoredSession() {
             :ticket-error="ticketError"
             :is-guest="isGuest"
             :now="now"
+            :expanded-order-no="expandedOrderNo"
+            :order-detail="orderDetail"
+            :order-logistics="orderLogistics"
+            :order-detail-loading="orderDetailLoading"
+            :order-detail-error="orderDetailError"
             @refresh-orders="refreshOrders"
             @refresh-tickets="refreshTickets"
+            @toggle-order="toggleOrder"
             @ask-order="askOrder"
             @open-ticket="openTicket"
           />

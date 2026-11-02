@@ -108,6 +108,66 @@ export function myOrders(token: string): Promise<ApiResult<MyOrder[]>> {
   return request<MyOrder[]>('/api/v1/support/orders/mine', { token })
 }
 
+/**
+ * 订单详情与物流轨迹（round44 票 189）。
+ *
+ * <p>两条都是按订单号的子路径，归属仍在服务端判定：越权与不存在都回 404，页面拿到的
+ * 是同一个出口，没法据此判断"这单存在但不是你的"。
+ *
+ * <p>`receiverPhone` 是**服务端脱敏后**的值（`138****5678`），前端不做二次处理——
+ * 前端脱敏意味着明文已经过网。
+ */
+export interface OrderAddress {
+  receiverName: string
+  receiverPhone: string
+  province: string
+  city: string
+  district: string
+  detailAddress: string
+}
+
+export interface OrderDetail {
+  orderNo: string
+  amountFen: number
+  status: string
+  categoryName: string
+  serviceFlags: string[]
+  address: OrderAddress
+  addressVersion: number
+  createdAt: string
+  paidAt: string | null
+  shippedAt: string | null
+  deliveredAt: string | null
+  refundReview: string | null
+}
+
+export interface LogisticsNode {
+  seq: number
+  nodeCode: string
+  description: string
+  occurredAt: string
+}
+
+export interface OrderLogistics {
+  orderNo: string
+  cpCode: string | null
+  cpName: string | null
+  trackingNo: string | null
+  /** 服务端已按发生时间倒序：第一条就是最新节点。 */
+  nodes: LogisticsNode[]
+}
+
+export function orderDetail(token: string, orderNo: string): Promise<ApiResult<OrderDetail>> {
+  return request<OrderDetail>('/api/v1/support/orders/mine/' + encodeURIComponent(orderNo), { token })
+}
+
+export function orderLogistics(token: string, orderNo: string): Promise<ApiResult<OrderLogistics>> {
+  return request<OrderLogistics>(
+    '/api/v1/support/orders/mine/' + encodeURIComponent(orderNo) + '/logistics',
+    { token },
+  )
+}
+
 /** 买家自己的单张工单详情（UX-03）：隔离由下游按令牌里的买家号再判一次。 */
 export function myTicket(token: string, ticketId: string): Promise<ApiResult<Ticket>> {
   return request<Ticket>('/api/v1/support/ops/tickets/mine/' + encodeURIComponent(ticketId), { token })

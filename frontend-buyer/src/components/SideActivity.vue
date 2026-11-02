@@ -7,9 +7,10 @@
  */
 import { computed } from 'vue'
 import { countLabel } from 'frontend-shared'
-import type { MyOrder } from '../api'
+import type { MyOrder, OrderDetail, OrderLogistics } from '../api'
 import { PRIORITY_LABEL, STATUS_LABEL, type Ticket } from '../types'
-import { ORDER_STATUS_LABEL, formatTime, slaText } from '../lib/format'
+import { formatTime, slaText } from '../lib/format'
+import OrderCard from './OrderCard.vue'
 
 const sideTab = defineModel<'orders' | 'tickets'>('sideTab', { required: true })
 const showAllOrders = defineModel<boolean>('showAllOrders', { required: true })
@@ -24,11 +25,18 @@ const props = defineProps<{
   ticketError: string
   isGuest: boolean
   now: number
+  /** 展开中的订单号；空串表示全部收起。详情数据由 `App.vue` 拉取后下传。 */
+  expandedOrderNo: string
+  orderDetail: OrderDetail | null
+  orderLogistics: OrderLogistics | null
+  orderDetailLoading: boolean
+  orderDetailError: string
 }>()
 
 const emit = defineEmits<{
   refreshOrders: []
   refreshTickets: []
+  toggleOrder: [orderNo: string]
   askOrder: [order: MyOrder]
   openTicket: [ticket: Ticket]
 }>()
@@ -84,25 +92,18 @@ function toggleTickets() {
       <p v-else-if="orderError" class="err">{{ orderError }}</p>
       <p v-else-if="ordersLoading" class="empty">正在读取订单…</p>
       <div v-else-if="orders.length" class="order-list">
-        <article
+        <OrderCard
           v-for="order in visibleOrders"
           :key="order.orderNo"
-          class="order-card"
-          role="button"
-          tabindex="0"
-          @click="emit('askOrder', order)"
-          @keyup.enter="emit('askOrder', order)"
-        >
-          <div class="order-top">
-            <strong class="mono">{{ order.orderNo }}</strong>
-            <span class="pill">{{ ORDER_STATUS_LABEL[order.status] ?? order.status }}</span>
-          </div>
-          <div class="order-meta">
-            <span>{{ order.categoryName }}</span>
-            <strong>¥{{ (order.amountFen / 100).toFixed(2) }}</strong>
-          </div>
-          <p class="order-foot">{{ formatTime(order.createdAt) }} 下单 · 点击询问</p>
-        </article>
+          :order="order"
+          :expanded="expandedOrderNo === order.orderNo"
+          :detail="expandedOrderNo === order.orderNo ? orderDetail : null"
+          :logistics="expandedOrderNo === order.orderNo ? orderLogistics : null"
+          :loading="expandedOrderNo === order.orderNo && orderDetailLoading"
+          :error="expandedOrderNo === order.orderNo ? orderDetailError : ''"
+          @toggle="emit('toggleOrder', order.orderNo)"
+          @ask="emit('askOrder', order)"
+        />
       </div>
       <p v-else class="empty">你还没有订单</p>
       <button v-if="orders.length > 2" class="link side-more" type="button" @click="toggleOrders">
@@ -174,17 +175,6 @@ function toggleTickets() {
 .side-activity .section-head { margin-bottom: 8px; }
 .side-more { display: block; margin: 8px auto 0; font-size: 12px; }
 .order-list { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 2px; }
-.order-card {
-  border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;
-  cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease;
-}
-.order-card:hover { border-color: var(--teal-line); box-shadow: 0 3px 12px rgba(15, 118, 110, .07); }
-.order-card:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
-.order-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.order-top strong { font-size: 12px; overflow-wrap: anywhere; }
-.order-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 12px; color: var(--ink-2); }
-.order-meta strong { color: var(--ink); font-size: 13px; }
-.order-foot { margin: 5px 0 0; color: var(--ink-3); font-size: 11px; }
 .ticket-list { display: grid; gap: 10px; }
 .ticket-card {
   box-sizing: border-box;

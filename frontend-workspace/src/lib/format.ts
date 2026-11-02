@@ -37,3 +37,22 @@ export function secondsText(value: number | undefined | null): string {
 export function entriesOf(map: Record<string, number> | undefined | null): Array<[string, number]> {
   return Object.entries(map ?? {}).sort((a, b) => b[1] - a[1])
 }
+
+/**
+ * 从工单 `payload`（上游记录指回的 JSON）取一个字符串字段。
+ *
+ * <p>退款审批单的 payload 是 `{"refundId":"…","orderId":"…"}`（biz-mock 落库时写死），
+ * 退款队列据此与工单一一对上——按订单号猜会在同一单多次申请时对错。
+ * 解析失败返回 `null`：payload 是上游契约，页面不能因为一段坏 JSON 整页白掉。
+ */
+export function payloadField(ticket: Ticket, field: string): string | null {
+  if (!ticket.payload) return null
+  try {
+    const parsed: unknown = JSON.parse(ticket.payload)
+    if (!parsed || typeof parsed !== 'object') return null
+    const value = (parsed as Record<string, unknown>)[field]
+    return typeof value === 'string' ? value : null
+  } catch {
+    return null
+  }
+}

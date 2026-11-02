@@ -145,13 +145,20 @@ function onQueueChange(event: Event) {
         </div>
 
         <section class="block">
-          <h3>处理进度</h3>
+          <h3>生命周期</h3>
+          <p class="lifecycle-tags">
+            <span>{{ SOURCE_LABEL[selected.source ?? ''] ?? selected.source ?? '—' }}</span>
+            <span>{{ QUEUE_LABEL[selected.queue ?? ''] ?? selected.queue ?? '—' }}</span>
+            <span v-if="selected.escalatedAt" class="danger">已升级</span>
+          </p>
           <ol class="timeline">
-            <li class="done"><span>已提交</span><time>{{ formatTime(selected.createdAt) }}</time></li>
-            <li v-if="selected.assignee" class="done"><span>坐席 {{ selected.assignee }} 已接入</span></li>
+            <li class="done"><span>已创建</span><time>{{ formatTime(selected.createdAt) }}</time></li>
             <li v-if="selected.escalatedAt" class="warn"><span>已超时升级</span><time>{{ formatTime(selected.escalatedAt) }}</time></li>
+            <li :class="{ done: !!selected.assignee }">
+              <span>{{ selected.assignee ? `坐席 ${selected.assignee} 已领取` : '待领取' }}</span>
+            </li>
             <li :class="{ done: selected.status === 'RESOLVED' }">
-              <span>{{ STATUS_LABEL[selected.status] ?? selected.status }}</span>
+              <span>{{ selected.status === 'RESOLVED' ? '已结单' : (STATUS_LABEL[selected.status] ?? selected.status) }}</span>
               <time v-if="selected.status !== 'RESOLVED'">{{ slaText(selected, now) }}</time>
             </li>
           </ol>
@@ -159,8 +166,20 @@ function onQueueChange(event: Event) {
 
         <section class="block">
           <h3>转人工上下文</h3>
-          <pre v-if="selected.transcript" class="transcript">{{ selected.transcript }}</pre>
+          <div v-if="selected.transcript" class="transcript">
+            <div class="bubble buyer">
+              <span class="bubble-role">买家提问</span>
+              <p>{{ selected.userQuery }}</p>
+            </div>
+            <div class="bubble system">
+              <span class="bubble-role">系统记录 · 原文未解析</span>
+              <pre>{{ selected.transcript }}</pre>
+            </div>
+          </div>
           <p v-else class="empty">这张单没有记录失败/升级上下文</p>
+          <p v-if="selected.transcript" class="fine">
+            这一格是降级出口写下的诊断事实（失败原因、被拦的交接、工具回执），不是完整对话记录。
+          </p>
         </section>
 
         <section v-if="selected.status === 'RESOLVED'" class="resolution">
@@ -218,8 +237,24 @@ function onQueueChange(event: Event) {
 .timeline li.warn { color: var(--amber-ink); }
 .timeline li.warn::before { background: var(--amber); }
 .timeline time { margin-left: 6px; }
-.transcript { max-height: 260px; overflow: auto; margin: 0; padding: 10px; background: var(--bg);
-  border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 var(--mono); }
+.lifecycle-tags { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 9px; }
+.lifecycle-tags span {
+  font-size: 11px; color: var(--ink-3); background: var(--bg);
+  border-radius: var(--radius-full); padding: 1px 8px;
+}
+.lifecycle-tags .danger { color: var(--rose); background: var(--rose-soft); }
+.transcript { display: grid; gap: 8px; max-height: 320px; overflow: auto; padding-right: 2px; }
+.bubble {
+  max-width: 92%; border-radius: 12px; padding: 8px 10px;
+  font-size: 12px; line-height: 1.55;
+}
+.bubble-role { display: block; font-size: 11px; color: var(--ink-3); margin-bottom: 3px; }
+.bubble p { margin: 0; overflow-wrap: anywhere; }
+.bubble pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 var(--mono); }
+.bubble.buyer {
+  justify-self: end; background: var(--teal-soft-2); border: 1px solid var(--teal-line-2); color: var(--ink);
+}
+.bubble.system { justify-self: start; background: var(--bg); border: 1px solid var(--line); color: var(--ink-2); }
 .resolution { border-top: 1px solid var(--line-2); margin-top: 14px; padding-top: 14px; }
 .resolution h3 { font-size: 13px; margin: 0 0 6px; color: var(--teal); }
 .resolution p { margin: 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }

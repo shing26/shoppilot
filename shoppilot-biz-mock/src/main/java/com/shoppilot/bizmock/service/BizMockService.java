@@ -22,6 +22,8 @@ import com.shoppilot.tool.view.AddressView;
 import com.shoppilot.tool.view.LogisticsNodeView;
 import com.shoppilot.tool.view.LogisticsView;
 import com.shoppilot.tool.view.ModifyAddressView;
+import com.shoppilot.tool.view.OrderDetailView;
+import com.shoppilot.tool.view.OrderLogisticsView;
 import com.shoppilot.tool.view.OrderStatus;
 import com.shoppilot.tool.view.OrderView;
 import com.shoppilot.tool.view.RefundReviewState;
@@ -38,6 +40,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -161,6 +164,75 @@ public class BizMockService {
         LogisticsView view = new LogisticsView(order.getId(), first.getCpCode(), first.getCpName(), first.getTrackingNo(),
                 nodes.stream().map(n -> new LogisticsNodeView(n.getSeq(), n.getNodeCode(), n.getDescription(), n.getOccurredAt())).toList());
         return ToolResponse.ok(ToolName.QUERY_LOGISTICS.apiName(), view);
+    }
+
+    /**
+     * 买家端订单详情（round44 票 189）。**只认带买家上下文的调用**：没有买家号时返回空，
+     * 不像工具路径那样回退到"整店可查"——那个回退是给坐席用的，买家入口不能继承它。
+     *
+     * <p>{@code receiverPhone} 在这里脱敏后才出站。前端脱敏只是把原文换个地方放：
+     * 明文照样过网、照样进浏览器内存。
+     */
+    @Transactional(readOnly = true)
+    public Optional<OrderDetailView> buyerOrderDetail(String orderNo) {
+        return buyerOwned(orderNo).map(order -> new OrderDetailView(
+                order.getId(), order.getAmountFen(), order.getStatus(), order.getCategoryName(),
+                order.serviceFlagList(),
+                new AddressView(order.getReceiverName(), maskPhone(order.getReceiverPhone()),
+                        order.getProvince(), order.getCity(), order.getDistrict(), order.getDetailAddress()),
+                order.getAddressVersion(), order.getCreatedAt(), order.getPaidAt(),
+                order.getShippedAt(), order.getDeliveredAt(), latestRefundReviewState(order)));
+    }
+
+    /**
+     * 买家端物流轨迹（round44 票 189）：节点按发生时间**倒序**，最新一条在最前。
+     *
+     * <p>订单存在但还没有轨迹时返回空 {@code nodes} 而不是空 Optional——调用方据此画"暂无轨迹"
+     * 的空态，而不是对买家说"查不到这单"。
+     */
+    @Transactional(readOnly = true)
+    public Optional<OrderLogisticsView> buyerOrderLogistics(String orderNo) {
+        return buyerOwned(orderNo).map(order -> {
+            List<LogisticsNode> nodes = logisticsRepository.findByOrderIdOrderBySeqAsc(order.getId());
+            List<LogisticsNodeView> ordered = nodes.stream()
+                    .sorted(Comparator.comparing(LogisticsNode::getOccurredAt)
+                            .thenComparingInt(LogisticsNode::getSeq)
+                            .reversed())
+                    .map(n -> new LogisticsNodeView(n.getSeq(), n.getNodeCode(), n.getDescription(), n.getOccurredAt()))
+                    .toList();
+            LogisticsNode head = nodes.isEmpty() ? null : nodes.get(0);
+            return new OrderLogisticsView(order.getId(),
+                    head == null ? null : head.getCpCode(),
+                    head == null ? null : head.getCpName(),
+                    head == null ? null : head.getTrackingNo(),
+                    ordered);
+        });
+    }
+
+    /** 买家入口的归属：两个条件都必填，缺买家号就当作不存在（不确认存在）。 */
+    private Optional<Order> buyerOwned(String orderNo) {
+        String customerId = TenantContextHolder.customerId();
+        if (customerId == null || customerId.isBlank() || orderNo == null || orderNo.isBlank()) {
+            return Optional.empty();
+        }
+        return orderRepository.findByIdAndCustomerId(orderNo, customerId);
+    }
+
+    /**
+     * 手机号脱敏：留前 3 后 4，中间固定四个星号（{@code 138****5678}）。
+     *
+     * <p>不做成"按长度保留百分比"：座席与买家看到的形状必须稳定，否则截图与工单粘贴
+     * 里的号码对不上。短到无法保留前后段时整串打码，绝不回显原文。
+     */
+    static String maskPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return "";
+        }
+        String digits = phone.trim();
+        if (digits.length() >= 7) {
+            return digits.substring(0, 3) + "****" + digits.substring(digits.length() - 4);
+        }
+        return "****";
     }
 
     @Transactional
