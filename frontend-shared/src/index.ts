@@ -102,3 +102,28 @@ export function minutesLeft(deadline: string | null, now: number): number | null
   if (!deadline) return null
   return Math.round((new Date(deadline).getTime() - now) / 60000)
 }
+
+/**
+ * 短时间戳：`MM-DD HH:mm`。空值或不可解析返回 `null`。
+ *
+ * <p>**为什么返回 null 而不是空串或破折号**：两个入口对"没有时间"的写法不同——
+ * 买家端留空（`''`），坐席端写 `—`。那两句话是各自的文案，不是同一件事，
+ * 合并成一个字面量就是把产品语气压成一种。调用方各自决定兜底。
+ */
+export function formatStamp(value: string | null | undefined): string | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/** 长 id 的列表写法：太长的只留尾部，避免撑破表格列。 */
+export function shortId(id: string): string {
+  return id.length > 18 ? `…${id.slice(-12)}` : id
+}
+
+/** 计数字面量：超过 99 一律显示 `99+`。 */
+export function countLabel(value: number): string {
+  return value > 99 ? '99+' : String(value)
+}

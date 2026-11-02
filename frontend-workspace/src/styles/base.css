@@ -1,0 +1,196 @@
+/**
+ * 工作台的跨组件工具类（round44 票 188）。
+ *
+ * <p>这些类在拆分前写在 `App.vue` 的 scoped 样式里，被三到五个视图共用。
+ * 拆成多 SFC 后若各复制一份，`.ghost` 会变成六份并迟早分叉；所以提到页级样式统一引入。
+ *
+ * <p>为什么不是 `frontend-shared`：坐席端的密度、字号与买家端不同（操作台 vs 对话页），
+ * 合并会在不改任何判据的前提下改变两页观感。共享层只收令牌与 `ui-` 原子。
+ */
+
+.ghost {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.ghost:hover:not(:disabled) {
+  border-color: var(--ink-3);
+}
+
+.link {
+  border: none;
+  background: none;
+  color: var(--teal);
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.mono {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  color: var(--ink-3);
+  font-size: 13px;
+  margin: 6px 0;
+}
+
+.err {
+  color: var(--rose);
+  font-size: 13px;
+}
+
+.note {
+  color: var(--green);
+  font-size: 13px;
+}
+
+.fine {
+  color: var(--ink-3);
+  font-size: 12px;
+  margin: 12px 0 0;
+}
+
+.hint {
+  color: var(--ink-3);
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+
+.danger {
+  color: var(--rose);
+}
+
+.count {
+  color: var(--ink-3);
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.pane-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.status-pill {
+  font-size: 12px;
+  color: var(--teal);
+  background: var(--teal-soft);
+  border: 1px solid var(--teal-line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.status-pill.off {
+  color: var(--ink-3);
+  background: var(--bg);
+  border-color: var(--line);
+}
+
+.status-pill.agent {
+  color: var(--amber-ink);
+  background: var(--amber-soft);
+  border-color: var(--amber-line);
+}
+
+/* 视图切换的入场：足够短，不挡操作。 */
+.view-panel {
+  display: grid;
+  gap: 14px;
+  animation: rise 0.18s ease;
+}
+
+@keyframes rise {
+  from { opacity: 0.55; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 两个资金/结单确认框共用同一副外壳。 */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 22, 26, 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 30;
+}
+
+.dialog {
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 22px;
+  width: min(540px, 100%);
+  box-shadow: 0 18px 48px rgba(20, 22, 26, 0.22);
+}
+
+.dialog h2 {
+  font-size: 17px;
+  margin: 0 0 6px;
+}
+
+.dialog-sub {
+  color: var(--ink-2);
+  margin: 0 0 14px;
+  overflow-wrap: anywhere;
+}
+
+.dialog-warn {
+  color: var(--amber-ink);
+  background: var(--amber-soft);
+  border: 1px solid var(--amber-line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.field {
+  display: block;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.field textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}

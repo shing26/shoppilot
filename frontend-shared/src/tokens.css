@@ -1,26 +1,101 @@
 /**
- * 两个产品入口共用的设计令牌与基础控件样式（round36 票 151 / ADR 0070）。
+ * 两个产品入口共用的设计令牌与基础控件样式（round36 票 151 / ADR 0070，round44 票 188 扩充）。
  *
- * <p>只放「两边必须一致」的东西：颜色、字号、圆角、按钮/输入/表格的基线。
- * 页面级布局仍留在各自的 `App.vue` 里——共享层不该替某一页决定它长什么样。
+ * <p>只放「两边必须一致」的东西：颜色、字号、行高、间距、圆角、阴影、动效时长、
+ * 焦点环，以及按钮/输入/表格的基线。**页面级布局仍留在各自的组件里**——
+ * 共享层不该替某一页决定它长什么样，也不该决定某一页的某句话怎么写
+ * （买家的 403 与坐席的 403 不是同一句话，同一条纪律适用于时间文案与空态文案）。
  *
  * <p>令牌值取自调试台（它此前是三个前端里唯一有成套设计令牌的一页）；
- * 产品页不再各写一份 `#b42318` 之类的散色。
+ * 产品页不再各写一份 `#b42318` 之类的散色。散色先落成语义令牌（实色 / soft / line 三件套），
+ * 页面只引用令牌。
+ *
+ * <p>原子类一律 `ui-` 前缀：各页已有自己的 `.chip` / `.kpi` / `.timeline`，
+ * 同名共享会**静默改变既有页面**，而共享层没有资格替它们改观感。
  */
 :root {
+  /* 颜色：中性 */
   --bg: #f2f3f5;
   --panel: #fff;
+  --panel-2: #fbfcfd;
   --ink: #14161a;
   --ink-2: #5c636e;
   --ink-3: #6b7280;
   --line: #dfe2e7;
   --line-2: #eceef1;
+
+  /* 颜色：语义三件套（实色 / soft 底 / line 边） */
   --teal: #0f766e;
+  --teal-ink: #0b5d57;
+  --teal-soft: #eef8f6;
+  --teal-soft-2: #e7f4f2;
+  --teal-line: #b7ddd8;
+  --teal-line-2: #c9e6e1;
+  /* 浅青底的两档：`wash` 用于内嵌面板，`wash-deep` 用于导航选中态。 */
+  --teal-wash: #f4faf9;
+  --teal-wash-deep: #edf7f5;
+
   --amber: #b45309;
+  --amber-ink: #9a3412;
+  --amber-soft: #fff7ed;
+  --amber-line: #fed7aa;
+
   --rose: #be123c;
+  --rose-soft: #fff1f4;
+  --rose-line: #f7c6d2;
+
   --green: #15803d;
-  --radius: 8px;
+  --green-soft: #f0fdf4;
+  --green-line: #bbf7d0;
+
+  /* 被选中的卡片底：比 `--panel` 偏青一点点，用来在没有阴影时也能读出选中。 */
+  --panel-active: #fbfefd;
+
+  /* 字阶与行高 */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --leading-tight: 1.25;
+  --leading-base: 1.6;
+
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* 圆角 */
+  --radius-xs: 4px;
   --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+  /* 旧名保留：基础控件的现有引用不必改动，值仍是 8px。 */
+  --radius: 8px;
+
+  /* 阴影 */
+  --shadow-1: 0 1px 2px rgba(20, 22, 26, 0.06);
+  --shadow-2: 0 4px 16px rgba(20, 22, 26, 0.08);
+  --shadow-3: 0 12px 32px rgba(20, 22, 26, 0.14);
+
+  /* 动效 */
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --dur-1: 120ms;
+  --dur-2: 220ms;
+  --dur-3: 380ms;
+
+  /* 焦点环：只在键盘焦点出现，鼠标点击不受影响。 */
+  --ring: 0 0 0 3px rgba(15, 118, 110, 0.28);
+
+  /* 字体族与基准字号：保持字面量，避免 var 替换在 font 简写里产生差异。 */
   --font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
   --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
 }
@@ -46,6 +121,7 @@ button {
   border-radius: var(--radius-sm);
   padding: 6px 12px;
   cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
 
 button:hover:not(:disabled) {
@@ -72,6 +148,13 @@ textarea {
   background: var(--panel);
 }
 
+/* 键盘可达性：`outline: none` 只在 focus-visible 上换成语义环，
+   鼠标点击与触摸不受影响（那两类用户本来也没有位置感的需求）。 */
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 table {
   border-collapse: collapse;
   width: 100%;
@@ -89,4 +172,107 @@ th {
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-3);
+}
+
+/* ---- 跨端原子：ui- 前缀，供各页按需引用 ---- */
+
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.ui-chip[data-tone="teal"] {
+  color: var(--teal-ink);
+  background: var(--teal-soft);
+  border-color: var(--teal-line);
+}
+
+.ui-chip[data-tone="amber"] {
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-color: var(--amber-line);
+}
+
+.ui-chip[data-tone="rose"] {
+  color: var(--rose);
+  background: var(--rose-soft);
+  border-color: var(--rose-line);
+}
+
+.ui-chip[data-tone="green"] {
+  color: var(--green);
+  background: var(--green-soft);
+  border-color: var(--green-line);
+}
+
+.ui-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-kpi strong {
+  font-size: var(--text-xl);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+}
+
+.ui-kpi span {
+  font-size: var(--text-xs);
+  color: var(--ink-3);
+}
+
+.ui-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--space-5);
+  border-left: 1px solid var(--line);
+}
+
+.ui-timeline > li {
+  position: relative;
+  padding-bottom: var(--space-3);
+}
+
+.ui-timeline > li::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--space-5) - 3px);
+  top: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--line);
+  box-shadow: 0 0 0 2px var(--panel);
+}
+
+.ui-timeline > li[data-state="done"]::before {
+  background: var(--teal);
+}
+
+.ui-timeline > li[data-state="current"]::before {
+  background: var(--teal);
+  box-shadow: 0 0 0 3px var(--teal-soft);
+}
+
+/* 动效尊重系统偏好：动画与过渡收敛到近零，不是关掉所有过渡语义。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

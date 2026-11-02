@@ -180,6 +180,16 @@ jobs:
           git diff --exit-code -- shoppilot-gateway/src/main/resources/static/workspace \
             shoppilot-gateway/src/main/resources/static/buyer \
             || (echo '::error::前端构建产物与仓内不一致——改了源码请重新构建并提交产物' && exit 1)
+          # round44 票 188：上面那条只看**已跟踪**内容。构建新吐出的 chunk 是未跟踪文件，
+          # 它会让门禁全绿、干净克隆 404——动态 import / defineAsyncComponent 正好会造这种东西。
+          # 本轮起把未跟踪产物也断在同一个步骤里（仍是九步：这是同一步的第四条断言）。
+          untracked=$(git status --porcelain -- shoppilot-gateway/src/main/resources/static/workspace \
+            shoppilot-gateway/src/main/resources/static/buyer)
+          if [ -n "$untracked" ]; then
+            echo "$untracked"
+            echo '::error::前端构建产物里有未入库的文件——请 git add 并提交'
+            exit 1
+          fi
 
       - name: Upload Surefire reports on failure
         if: failure()

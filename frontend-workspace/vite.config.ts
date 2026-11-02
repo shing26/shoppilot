@@ -18,6 +18,14 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig({
   plugins: [vue()],
   base: '/workspace/',
+  // 本地视觉迭代（round44 票 188）：dev server 自己不带后端，`/api` 与 `/auth` 会 404。
+  // 代理到真网关后 `npm run dev` 就能连上真数据；**只影响 dev server，构建产物零变化**。
+  server: {
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:8082', changeOrigin: false },
+      '/auth': { target: 'http://127.0.0.1:8082', changeOrigin: false },
+    },
+  },
   build: {
     outDir: fileURLToPath(new URL('../shoppilot-gateway/src/main/resources/static/workspace', import.meta.url)),
     emptyOutDir: true,

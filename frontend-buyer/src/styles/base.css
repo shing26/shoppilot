@@ -1,0 +1,98 @@
+/**
+ * 买家页的跨组件工具类（round44 票 188）。
+ *
+ * <p>这些类在拆分前写在 `App.vue` 的 scoped 样式里。拆成多个 SFC 之后，
+ * 若各自复制一份，同一条 `.link` 会出现八份且迟早分叉；所以提到页级样式文件里，
+ * 由 `main.ts` 全局引入。
+ *
+ * <p>为什么不是 `frontend-shared`：坐席端的同名类有一套不同的密度与字号
+ * （信息密度更高的操作台），把它们合并会在不改变任何判据的情况下改变两页观感。
+ * 共享层只收令牌与 `ui-` 原子，页级工具类留在各自入口。
+ */
+
+h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+
+.mono {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.link {
+  border: none;
+  background: none;
+  color: var(--teal);
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover:not(:disabled) {
+  color: var(--teal);
+}
+
+.err {
+  color: var(--rose);
+  font-size: 13px;
+  margin: 10px 0 0;
+}
+
+.notice {
+  color: var(--ink-3);
+  font-size: 13px;
+  margin: 0;
+}
+
+.empty {
+  color: var(--ink-3);
+  font-size: 13px;
+  margin: 0;
+}
+
+.fine {
+  color: var(--ink-3);
+  font-size: 12px;
+  margin: 12px 0 0;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pill {
+  flex: none;
+  font-size: 12px;
+  color: var(--teal);
+  background: var(--teal-soft);
+  border: 1px solid var(--teal-line);
+  border-radius: var(--radius-full);
+  padding: 1px 8px;
+}
+
+.side-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+.side-card h2 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
