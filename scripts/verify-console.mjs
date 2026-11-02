@@ -69,7 +69,14 @@ process.on('unhandledRejection', async (err) => {
   process.exit(1);
 });
 
-await page.goto(BASE + '/console.html', { waitUntil: 'networkidle' });
+// round44 票 190：waitUntil 从 `networkidle` 换成 `load`。原因不是页面变慢了，而是
+// `/actuator/health/deps` 在 ES/Qdrant 不可达时会**挂 40 s**（本机实测 40.04 s 后才回 503），
+// `networkidle` 要求所有连接静默 500 ms，于是整页永远等不到网络空闲、30 s 超时先炸。
+// 等「网络空闲」本来就不是这里的判据——要看的是页面自己启动完没有，所以改成等 `#claims`
+// 从「未签发」变成真 claims（boot 时那次 mock-token 签发的结果），有界、可观测。
+await page.goto(BASE + '/console.html', { waitUntil: 'load' });
+await page.waitForFunction(() => (document.getElementById('claims')?.textContent || '').trim() !== '未签发',
+  null, { timeout: 20000 });
 
 // 运维令牌由输入框提供，页面每个请求都带上它，只有 ops 端点会读。必须在点「注入」之前填好。
 // fill 触发的是 input（change 要等失焦），页面那边是输入后去抖 400ms 补读数，
@@ -171,15 +178,20 @@ await page.waitForTimeout(400);
 await page.click('#btnSend');
 // round37：入口层情绪分类也是一次真实 LLM 调用，命中路径整体约 1.3s 起。
 // 固定 sleep 会把「刚好慢一点」判成功能坏——改成等那条「命中」meta 真出现。
-await page.waitForFunction(
+// round44 票 190：等不到**不许让整个脚本崩掉**。原来这里没有 catch，检索降级时
+// （ES/Qdrant 不可达 → 没有引用 → 写回资格不成立 → 永远不会命中）整轮在 60 s 后抛
+// TimeoutError，后面二十多条断言一条都没跑，读数只剩「崩了」。改成有界等待 + 照常判红：
+// 判据仍是「命中且只有 1 帧」，只是把崩溃换成一条可读的 FAIL，后面继续量。
+const hitSeen = await page.waitForFunction(
   () => [...document.querySelectorAll('#timeline .ev.meta')].some((e) => e.textContent.includes('命中：一次性下发')),
   null,
   { timeout: 60000 },
-);
+).then(() => true).catch(() => false);
 await page.waitForTimeout(300);
 const hitMeta = await page.$$eval('#timeline .ev.meta', (els) => els.map((e) => e.textContent).pop());
 const hitChips = await page.$$eval('#timeline .ev.token .chip', (els) => els.length).catch(() => 0);
-check('cache hit renders as one-shot (1 token frame)', hitChips === 1, `meta="${(hitMeta || '').trim()}" chips=${hitChips}`);
+check('cache hit renders as one-shot (1 token frame)', hitSeen && hitChips === 1,
+  `hit=${hitSeen} meta="${(hitMeta || '').trim()}" chips=${hitChips}`);
 
 // 演示三：故障注入经代理生效，并落一张可查工单
 await page.fill('#failRate', '1');

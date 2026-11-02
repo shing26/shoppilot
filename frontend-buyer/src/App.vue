@@ -93,6 +93,9 @@ let clockTimer = 0
 // 登录前拿不到店名时显示「本店」，不把内部租户号 T001 当产品文案。
 const storeLabel = computed(() => storeName.value || '本店')
 
+/** 顶栏署名：取自令牌里的账号，页面上没有可编辑入口。 */
+const who = computed(() => session.value?.username ?? '')
+
 const QUICK_QUESTIONS = computed(() => {
   if (tenant.value === 'T004') {
     return ['你们酒店是卖什么的？', '入住和退房时间是几点？', '帮我查一下订单 90001 的物流']
@@ -496,6 +499,7 @@ function clearStoredSession() {
       :demo-mode="demoMode"
       :guest-mode="guestMode"
       :has-session="!!session"
+      :who="who"
       @sign-out="signOut"
     />
 

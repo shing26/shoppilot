@@ -12,6 +12,7 @@ import {
   agentPlanSteps,
   agentStepText,
   agentStepTone,
+  groupCitations,
 } from '../lib/format'
 
 defineProps<{
@@ -69,13 +70,22 @@ const emit = defineEmits<{ retry: [index: number] }>()
         <span class="fine">问题已经留在上面，不用重新输入。</span>
       </div>
       <details v-if="m.citations?.length" class="cites">
-        <summary>依据 {{ m.citations.length }} 条 · 展开</summary>
-        <ul>
-          <li v-for="(c, j) in m.citations" :key="c.ruleId || j">
-            <span class="cite-h">{{ c.heading || c.doc || '政策条款' }}</span>
-            <span v-if="c.doc" class="cite-doc">{{ c.doc }}</span>
-          </li>
-        </ul>
+        <summary>
+          <span class="cites-title">依据 {{ m.citations.length }} 条知识</span>
+          <span class="cites-meta">{{ groupCitations(m.citations).length }} 份文档 · 展开</span>
+        </summary>
+        <div class="cite-body">
+          <section v-for="group in groupCitations(m.citations)" :key="group.doc || '未标注'" class="cite-group">
+            <h4>{{ group.doc || '未标注文档' }}</h4>
+            <ul>
+              <li v-for="(c, j) in group.items" :key="c.ruleId || j">
+                <span class="cite-h">{{ c.heading || '（未标注小节）' }}</span>
+                <span v-if="c.ruleId" class="cite-rule mono">{{ c.ruleId }}</span>
+              </li>
+            </ul>
+          </section>
+          <p class="cite-foot">只列本次回答引用到的条款，不代表整份文档都已生效。</p>
+        </div>
       </details>
     </div>
   </section>
@@ -150,11 +160,28 @@ const emit = defineEmits<{ retry: [index: number] }>()
   border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 8px 0 0;
   text-align: left;
 }
-.cites { margin: 8px 0 0; text-align: left; font-size: 13px; color: var(--ink-2); }
-.cites summary { cursor: pointer; color: var(--ink-3); }
-.cites ul { margin: 6px 0 0; padding-left: 18px; }
-.cite-h { color: var(--ink-2); }
-.cite-doc { color: var(--ink-3); margin-left: 6px; font-family: var(--mono); font-size: 12px; }
+.cites {
+  margin: 8px 0 0; text-align: left; font-size: 13px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--teal-wash);
+  overflow: hidden;
+}
+.cites summary {
+  cursor: pointer; list-style: none; padding: 9px 12px;
+  display: flex; align-items: baseline; gap: 8px; color: var(--ink-2);
+}
+.cites summary::-webkit-details-marker { display: none; }
+.cites-title { font-weight: 600; color: var(--ink); }
+.cites-meta { color: var(--ink-3); font-size: 12px; margin-left: auto; }
+.cites[open] summary { border-bottom: 1px solid var(--teal-line-2); }
+.cite-body { padding: 10px 12px 12px; display: grid; gap: 10px; }
+.cite-group h4 {
+  margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--ink-3);
+  font-family: var(--mono); overflow-wrap: anywhere;
+}
+.cite-group ul { margin: 0; padding-left: 16px; display: grid; gap: 3px; }
+.cite-group li { color: var(--ink-2); }
+.cite-rule { color: var(--ink-3); margin-left: 6px; font-size: 11px; }
+.cite-foot { margin: 0; color: var(--ink-3); font-size: 11px; }
 
 @media (max-width: 960px) {
   .thread { max-height: 62vh; }

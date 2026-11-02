@@ -12,6 +12,8 @@ defineProps<{
   ticketCount: number
   unread: number
   refundCount: number
+  /** 知识视图的待办数：待复核反馈 + 待发布草稿（票 190）。 */
+  knowledgeCount: number
   tenantId: string
 }>()
 
@@ -29,6 +31,10 @@ const emit = defineEmits<{ select: [view: WorkspaceView] }>()
     </button>
     <button class="nav-item" :class="{ active: view === 'refunds' }" type="button" @click="emit('select', 'refunds')">
       <span>退款审核</span><em>{{ refundCount }}</em>
+    </button>
+    <button class="nav-item" :class="{ active: view === 'knowledge' }" type="button" @click="emit('select', 'knowledge')">
+      <span>知识飞轮</span>
+      <em :class="{ 'unread-badge': knowledgeCount > 0 }">{{ knowledgeCount }}</em>
     </button>
     <button class="nav-item" :class="{ active: view === 'quality' }" type="button" @click="emit('select', 'quality')">
       <span>编排质量</span><em aria-hidden="true">●</em>
@@ -96,7 +102,8 @@ const emit = defineEmits<{ select: [view: WorkspaceView] }>()
 .nav-foot span { color: var(--ink-3); font-size: 12px; }
 
 @media (max-width: 960px) {
-  .side-nav { position: static; grid-template-columns: repeat(5, 1fr); align-items: center; }
+  /* 六个视图：三列两行比一行六列好按，也不会把「渠道会话」压成两个字一行。 */
+  .side-nav { position: static; grid-template-columns: repeat(3, 1fr); align-items: center; }
   .nav-title, .nav-foot { display: none; }
   .nav-item { justify-content: center; }
 }

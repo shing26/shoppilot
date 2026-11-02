@@ -17,13 +17,20 @@ import {
   claimTicket,
   demoLogin,
   describe,
+  describeKnowledge,
+  feedbackReviewQueue,
+  fileRevision,
   listChannelConversations,
   listChannels,
+  listKnowledgeRevisions,
   listPendingRefunds,
   listTickets,
   markConversationRead,
+  publishRevision,
+  rejectRevision,
   releaseConversation,
   replyConversation,
+  reviewFeedback,
   streamChannelConversations,
   subscribeChannelPush,
   takeoverConversation,
@@ -39,13 +46,16 @@ import {
   type ChannelConnection,
   type ChannelConversation,
   type ChannelProbe,
+  type FeedbackItem,
+  type KnowledgeRevision,
   type QualityReport,
   type RefundItem,
+  type RevisionDraft,
   type Session,
 } from './api'
 import { priorityRank, type Ticket } from './types'
 import { entriesOf, isOverdue } from './lib/format'
-import type { ChannelForm, StatusFilter, WorkspaceView } from './lib/ui'
+import { DOMAINS, POLICY_INTENTS, SCOPES, type ChannelForm, type StatusFilter, type WorkspaceView } from './lib/ui'
 import TopBar from './components/TopBar.vue'
 import LoginCard from './components/LoginCard.vue'
 import SideNav from './components/SideNav.vue'
@@ -54,6 +64,7 @@ import ConversationsView from './components/ConversationsView.vue'
 import RefundsView from './components/RefundsView.vue'
 import ChannelsView from './components/ChannelsView.vue'
 import QualityView from './components/QualityView.vue'
+import KnowledgeView from './components/KnowledgeView.vue'
 import ResolveDialog from './components/ResolveDialog.vue'
 import RefundDialog from './components/RefundDialog.vue'
 
@@ -143,6 +154,21 @@ const quality = ref<QualityReport | null>(null)
 const qualityLoading = ref(false)
 const qualityError = ref('')
 
+// ── 知识飞轮（round44 票 190）───────────────────────────────────────────────
+// `reviewedFeedback` 是**会话内副本**：复核一完成服务端队列里的那一行就出队了，
+// 不留一份，用户点完「复核」就再也找不到可以附稿的对象。
+const feedback = ref<FeedbackItem[]>([])
+const feedbackLoading = ref(false)
+const feedbackError = ref('')
+const reviewedFeedback = ref<FeedbackItem[]>([])
+const revisions = ref<KnowledgeRevision[]>([])
+const revisionsLoading = ref(false)
+const revisionsError = ref('')
+const draftFeedbackId = ref('')
+const draft = ref<RevisionDraft>(emptyDraft())
+const kbNote = ref('')
+const kbError = ref('')
+
 let timer = 0
 
 const who = computed(() =>
@@ -179,6 +205,11 @@ const handoffContextLossCount = computed(() =>
   (quality.value?.friction.handoffContextLosses ?? []).reduce((sum, row) => sum + (Number(row.count) || 0), 0),
 )
 
+/** 知识视图的待办：待复核 + 待发布。侧栏徽标据此显示，不用另跑一次请求。 */
+const knowledgeTodo = computed(
+  () => feedback.value.length + revisions.value.filter((revision) => revision.status === 'DRAFT').length,
+)
+
 async function doLogin() {
   loginError.value = ''
   const result = await login(tenant.value.trim(), username.value.trim(), password.value)
@@ -213,7 +244,7 @@ async function acceptSession(logged: Session) {
   showLogin.value = false
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(logged))
   startConversationStream()
-  await Promise.all([refresh(), refreshRefunds(), refreshConversations()])
+  await Promise.all([refresh(), refreshRefunds(), refreshConversations(), refreshKnowledge()])
 }
 
 function signOut() {
@@ -234,6 +265,15 @@ function signOut() {
   refundError.value = ''
   refundNote.value = ''
   refundTarget.value = null
+  feedback.value = []
+  feedbackError.value = ''
+  reviewedFeedback.value = []
+  revisions.value = []
+  revisionsError.value = ''
+  draftFeedbackId.value = ''
+  draft.value = emptyDraft()
+  kbNote.value = ''
+  kbError.value = ''
 }
 
 async function refresh() {
@@ -354,12 +394,166 @@ async function refreshQuality() {
   quality.value = result.body as QualityReport
 }
 
+/**
+ * 附稿表单的初始值。
+ *
+ * <p>作用范围默认 `SHOP`：把店里的条款写成平台通用，是比「少写一点」更贵的错。
+ */
+function emptyDraft(): RevisionDraft {
+  return { title: '', body: '', intent: POLICY_INTENTS[0], domain: DOMAINS[0], scope: SCOPES[0] }
+}
+
+async function refreshKnowledge() {
+  if (!session.value) {
+    feedback.value = []
+    revisions.value = []
+    return
+  }
+  await Promise.all([refreshFeedbackQueue(), refreshKnowledgeRevisions()])
+}
+
+async function refreshFeedbackQueue() {
+  feedbackError.value = ''
+  if (!session.value) {
+    feedback.value = []
+    feedbackLoading.value = false
+    return
+  }
+  feedbackLoading.value = true
+  const result = await feedbackReviewQueue(session.value)
+  feedbackLoading.value = false
+  if (result.status !== 200 || !Array.isArray(result.body)) {
+    feedbackError.value = describeKnowledge(result, '')
+    feedback.value = []
+    return
+  }
+  feedback.value = result.body
+}
+
+async function refreshKnowledgeRevisions() {
+  revisionsError.value = ''
+  if (!session.value) {
+    revisions.value = []
+    revisionsLoading.value = false
+    return
+  }
+  revisionsLoading.value = true
+  const result = await listKnowledgeRevisions(session.value)
+  revisionsLoading.value = false
+  if (result.status !== 200 || !Array.isArray(result.body)) {
+    revisionsError.value = describeKnowledge(result, '')
+    revisions.value = []
+    return
+  }
+  revisions.value = result.body
+}
+
+/**
+ * 复核一条反馈：PENDING → REVIEWED。
+ *
+ * <p>成功后立刻把表单展开到这条反馈上——复核的下一步就是附稿，不让人再到列表里找一遍。
+ * 服务端队列里这一行随即消失，所以副本另存 `reviewedFeedback`。
+ */
+async function reviewFeedbackItem(feedbackId: string) {
+  if (!session.value || inFlight.value) return
+  inFlight.value = `kb:review:${feedbackId}`
+  kbNote.value = ''
+  kbError.value = ''
+  const result = await reviewFeedback(feedbackId, session.value)
+  inFlight.value = ''
+  if (result.status >= 200 && result.status < 300) {
+    const reviewed = (result.body as FeedbackItem | undefined)
+    if (reviewed?.id && !reviewedFeedback.value.some((item) => item.id === reviewed.id)) {
+      reviewedFeedback.value = [reviewed, ...reviewedFeedback.value]
+    }
+    kbNote.value = `已复核 ${feedbackId}。下一步：给它附一版修订稿（正文由你写）。`
+    draftFeedbackId.value = feedbackId
+    draft.value = emptyDraft()
+    await refreshFeedbackQueue()
+    return
+  }
+  kbError.value = describeKnowledge(result, '')
+}
+
+function pickFeedbackToDraft(feedbackId: string) {
+  draftFeedbackId.value = feedbackId
+  draft.value = emptyDraft()
+  kbError.value = ''
+  kbNote.value = ''
+}
+
+function cancelDraft() {
+  if (inFlight.value) return
+  draftFeedbackId.value = ''
+  draft.value = emptyDraft()
+}
+
+async function submitDraft() {
+  const feedbackId = draftFeedbackId.value
+  if (!session.value || !feedbackId || inFlight.value) return
+  inFlight.value = 'kb:file'
+  kbNote.value = ''
+  kbError.value = ''
+  const result = await fileRevision(
+    feedbackId,
+    {
+      title: draft.value.title.trim(),
+      body: draft.value.body.trim(),
+      intent: draft.value.intent,
+      domain: draft.value.domain,
+      scope: draft.value.scope,
+    },
+    session.value,
+  )
+  inFlight.value = ''
+  if (result.status >= 200 && result.status < 300) {
+    kbNote.value = '已附稿。它是草稿：发布前不进语料，发布后也要重跑 ingest 才生效。'
+    reviewedFeedback.value = reviewedFeedback.value.filter((item) => item.id !== feedbackId)
+    draftFeedbackId.value = ''
+    draft.value = emptyDraft()
+    await refreshKnowledgeRevisions()
+    return
+  }
+  kbError.value = describeKnowledge(result, '')
+}
+
+async function publishKnowledgeRevision(revisionId: string) {
+  if (!session.value || inFlight.value) return
+  inFlight.value = `kb:publish:${revisionId}`
+  kbNote.value = ''
+  kbError.value = ''
+  const result = await publishRevision(revisionId, session.value)
+  inFlight.value = ''
+  if (result.status >= 200 && result.status < 300) {
+    kbNote.value = '已发布。发布不立即生效：需要重跑 ingest 才会进入检索语料。'
+    await refreshKnowledgeRevisions()
+    return
+  }
+  kbError.value = describeKnowledge(result, '')
+}
+
+async function rejectKnowledgeRevision(revisionId: string) {
+  if (!session.value || inFlight.value) return
+  inFlight.value = `kb:reject:${revisionId}`
+  kbNote.value = ''
+  kbError.value = ''
+  const result = await rejectRevision(revisionId, session.value)
+  inFlight.value = ''
+  if (result.status >= 200 && result.status < 300) {
+    kbNote.value = '已驳回。这一版不会进语料；反馈仍然停在「已复核」。'
+    await refreshKnowledgeRevisions()
+    return
+  }
+  kbError.value = describeKnowledge(result, '')
+}
+
 function selectView(next: WorkspaceView) {
   view.value = next
   if (next === 'refunds') void refreshRefunds()
   if (next === 'quality' && (!quality.value || qualityError.value)) void refreshQuality()
   if (next === 'channels') void refreshChannels()
   if (next === 'conversations') void refreshConversations()
+  if (next === 'knowledge') void refreshKnowledge()
 }
 
 async function refreshConversations() {
@@ -790,6 +984,7 @@ onMounted(() => {
     void refresh()
     void refreshRefunds()
     void refreshConversations()
+    void refreshKnowledge()
     startConversationStream()
   }
   timer = window.setInterval(() => {
@@ -844,6 +1039,7 @@ function clearStoredSession() {
           :ticket-count="tickets.length"
           :unread="conversationUnread"
           :refund-count="refunds.length"
+          :knowledge-count="knowledgeTodo"
           :tenant-id="session.tenantId"
           @select="selectView"
         />
@@ -905,6 +1101,29 @@ function clearStoredSession() {
             :refund-in-flight="refundInFlight"
             :refund-tickets="refundTickets"
             @open="openRefund"
+          />
+
+          <KnowledgeView
+            v-else-if="view === 'knowledge'"
+            v-model:draft="draft"
+            :feedback="feedback"
+            :feedback-loading="feedbackLoading"
+            :feedback-error="feedbackError"
+            :reviewed="reviewedFeedback"
+            :draft-feedback-id="draftFeedbackId"
+            :revisions="revisions"
+            :revisions-loading="revisionsLoading"
+            :revisions-error="revisionsError"
+            :action-note="kbNote"
+            :action-error="kbError"
+            :in-flight="inFlight"
+            @refresh="refreshKnowledge"
+            @review="reviewFeedbackItem"
+            @pick-feedback="pickFeedbackToDraft"
+            @cancel-draft="cancelDraft"
+            @file="submitDraft"
+            @publish="publishKnowledgeRevision"
+            @reject="rejectKnowledgeRevision"
           />
 
           <ChannelsView

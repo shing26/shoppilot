@@ -331,6 +331,119 @@ export function replyConversation(
   )
 }
 
+// ── 知识飞轮（round44 票 190 / ADR 0078）─────────────────────────────────────
+//
+// 五个口都是 round43 票 186 在网关 `/api/v1/support/ops` 下开好的代理口，
+// 本票只补前端调用——不新增后端面，也不在前端复制后端的准入判定。
+
+/** ingest 待复核队列的一项（biz-mock `FeedbackService.FeedbackView`）。 */
+export interface FeedbackItem {
+  id: string
+  verdict: string
+  reason: string
+  signals: string
+  ruleIds: string
+  ticketId: string | null
+  reviewStatus: string
+  createdAt: string
+}
+
+/**
+ * 知识修订的一行（biz-mock `KnowledgeRevisionService.RevisionView`）。
+ *
+ * <p>**没有 actor 字段**：视图契约不返回操作人。页面上只标得出「本次会话里由当前账号做的动作」，
+ * 其余行的操作人只在审计日志里——这一点写进 Handoff 的未达成说明，不拿当前账号去冒充。
+ */
+export interface KnowledgeRevision {
+  id: string
+  tenantId: string
+  feedbackId: string
+  title: string
+  body: string
+  intent: string
+  domain: string
+  scope: string
+  status: string
+  createdAt: string
+  publishedAt: string | null
+  rejectedAt: string | null
+}
+
+/** 附稿请求体；字段名与 biz-mock `KnowledgeRevisionService.validateDraft` 逐项对齐。 */
+export interface RevisionDraft {
+  title: string
+  body: string
+  intent: string
+  domain: string
+  scope: string
+}
+
+export function feedbackReviewQueue(session: Session): Promise<ApiResult<FeedbackItem[]>> {
+  return api<FeedbackItem[]>('GET', '/feedback/review-queue', { token: session.token })
+}
+
+/** 复核完成（PENDING → REVIEWED）。请求体是空对象：动作本身没有参数。 */
+export function reviewFeedback(id: string, session: Session): Promise<ApiResult<FeedbackItem>> {
+  return api<FeedbackItem>('PATCH', `/feedback/${encodeURIComponent(id)}/review`, {
+    token: session.token,
+    body: {},
+  })
+}
+
+export function fileRevision(
+  feedbackId: string,
+  draft: RevisionDraft,
+  session: Session,
+): Promise<ApiResult<KnowledgeRevision>> {
+  return api<KnowledgeRevision>('POST', `/feedback/${encodeURIComponent(feedbackId)}/revision`, {
+    token: session.token,
+    body: draft,
+  })
+}
+
+export function listKnowledgeRevisions(session: Session): Promise<ApiResult<KnowledgeRevision[]>> {
+  return api<KnowledgeRevision[]>('GET', '/knowledge/revisions', { token: session.token })
+}
+
+export function publishRevision(id: string, session: Session): Promise<ApiResult<KnowledgeRevision>> {
+  return api<KnowledgeRevision>('POST', `/knowledge/revisions/${encodeURIComponent(id)}/publish`, {
+    token: session.token,
+  })
+}
+
+export function rejectRevision(id: string, session: Session): Promise<ApiResult<KnowledgeRevision>> {
+  return api<KnowledgeRevision>('POST', `/knowledge/revisions/${encodeURIComponent(id)}/reject`, {
+    token: session.token,
+  })
+}
+
+/**
+ * 知识动作的失败口径。
+ *
+ * <p>不复用 `describe()`：那一份的 404 是「这张单不存在」，409 是「单不在你手上」。
+ * 同一串状态码在两条链路上是两件事，混用会把「修订已发布」读成「工单被别人领走」。
+ * 400 时优先透出下游自己的 `error` 字段——biz-mock 的形状校验文案比前端猜的准。
+ */
+export function describeKnowledge(result: ApiResult<unknown>, done: string): string {
+  if (result.status === 0) return messageOf(result.body) ?? '网关不可达'
+  if (result.status === 401) return '登录已失效，请重新登录'
+  if (result.status === 403) return '这个账号没有坐席权限'
+  if (result.status === 404) return '这条反馈或修订不存在，或不属于本店'
+  if (result.status === 409) return '现在走不了这一步：状态不允许（未复核就附稿、或已发布再发布）'
+  if (result.status === 400) return downstreamError(result.body) ?? '附稿字段不合法'
+  if (result.status >= 200 && result.status < 300) return done
+  return downstreamError(result.body) ?? `动作失败（HTTP ${result.status}）`
+}
+
+/** biz-mock 的形状错误体是 `{"error": "…"}`，网关逐字节透传；`messageOf` 只认 `message`。 */
+function downstreamError(body: unknown): string | null {
+  if (body && typeof body === 'object' && 'error' in body) {
+    const text = (body as { error?: unknown }).error
+    if (typeof text === 'string' && text) return text
+  }
+  return messageOf(body)
+}
+
 // ── 编排质量（ADR 0072 H4 / ADR 0073）───────────────────────────────────────
 
 /** 通用指标行：标签字段随指标名变化，count 恒为次数。 */

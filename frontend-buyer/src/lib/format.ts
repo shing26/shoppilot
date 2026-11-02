@@ -166,3 +166,26 @@ export function agentStepTone(step: AgentRunStep): string {
 export function formatTime(value: string | null | undefined): string {
   return formatStamp(value) ?? ''
 }
+
+/** 一组同文档的依据。`doc` 为空时归到空串组，渲染层给一句兜底文案。 */
+export interface CitationGroup {
+  doc: string
+  items: CitationDetail[]
+}
+
+/**
+ * 依据按文档分组（round44 票 190）。
+ *
+ * <p>检索结果本来就是「同一份政策里的若干小节」，平铺成一列会让人数不出「依据了几份」。
+ * 组内保持后端给的顺序（相关度序），组间按首次出现排——重排过一次就等于替检索器重排。
+ */
+export function groupCitations(citations: CitationDetail[] | undefined): CitationGroup[] {
+  const groups = new Map<string, CitationDetail[]>()
+  for (const citation of citations ?? []) {
+    const doc = citation.doc ?? ''
+    const bucket = groups.get(doc)
+    if (bucket) bucket.push(citation)
+    else groups.set(doc, [citation])
+  }
+  return [...groups].map(([doc, items]) => ({ doc, items }))
+}

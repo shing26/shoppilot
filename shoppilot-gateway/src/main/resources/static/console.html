@@ -13,8 +13,23 @@
     --teal: #0f766e; --amber: #b45309; --rose: #be123c; --violet: #6d28d9;
     --sky: #0369a1; --green: #15803d;
     --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+    /* round44 票 190：与 `index.html` / `tokens.css` 同一把尺子——圆角三档、阴影两档、
+       动效时长与缓动、焦点环。**只借这几格，不借字号阶梯**：调试台是密度优先的运维面，
+       把 13px 正文抬到 15px 会让一屏少两行事件，那不是统一，是把两种产品揉成一个。
+       颜色与字族本来就同源（同一批 --ink/--line/--teal 值），这次补的是尺度。 */
+    --r-1: 6px; --r-2: 8px; --r-3: 10px; --r-4: 16px;
+    --shadow-1: 0 1px 0 rgba(20, 22, 26, .03);
+    --shadow-2: 0 8px 28px rgba(20, 22, 26, .07);
+    --ease: cubic-bezier(.4, 0, .2, 1);
+    --dur-1: .15s; --dur-2: .18s;
+    --ring: 0 0 0 3px rgba(15, 118, 110, .18);
   }
   * { box-sizing: border-box; }
+  /* 键盘可达性（round44 票 190）：此前整页没有可见焦点，Tab 到哪一格全靠猜。
+     用 :focus-visible 只给键盘态上环，鼠标点按钮不会多出一圈。 */
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+  input:focus-visible, select:focus-visible { outline: none; border-color: var(--teal); box-shadow: var(--ring); }
+
   /* 竖向改成 flex 分配：原先 main 的高度是 calc(100vh - 49px - 62px)，把页脚按死 62px，
      窄屏一页脚一换行就盖住内容。现在 footer 自然高、main 吃剩余。 */
   body { margin: 0; background: var(--bg); color: var(--ink); height: 100dvh; display: flex; flex-direction: column;
@@ -40,19 +55,20 @@
   label:first-child { margin-top: 0; }
   input, select, button { font: inherit; color: inherit; }
   input[type=text], select { width: 100%; padding: 5px 7px; border: 1px solid var(--line);
-    border-radius: 6px; background: #fff; }
-  button { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+    border-radius: var(--r-1); background: var(--panel); transition: border-color var(--dur-1) var(--ease); }
+  button { border: 1px solid var(--line); background: var(--panel); border-radius: var(--r-1); padding: 5px 10px;
+    cursor: pointer; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
   button:hover { border-color: var(--ink-3); }
-  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
-  button.sm { padding: 2px 7px; font-size: 11px; border-radius: 5px; }
+  button.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  button.sm { padding: 2px 7px; font-size: 11px; border-radius: var(--r-1); }
   .row { display: flex; gap: 6px; align-items: center; }
-  .claims { font-family: var(--mono); font-size: 11px; background: var(--line-2); border-radius: 6px;
+  .claims { font-family: var(--mono); font-size: 11px; background: var(--line-2); border-radius: var(--r-1);
     padding: 7px 8px; overflow-wrap: anywhere; color: var(--ink-2); }
   #chat { flex: 1; overflow: auto; padding: 12px; min-height: 0; }
   .msg { margin-bottom: 12px; }
   .msg .who { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 3px; }
-  .msg .bubble { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap;
-    overflow-wrap: anywhere; background: #fff; }
+  .msg .bubble { border: 1px solid var(--line); border-radius: var(--r-2); padding: 8px 10px; white-space: pre-wrap;
+    overflow-wrap: anywhere; background: var(--panel); }
   .msg.user .bubble { background: var(--line-2); border-color: var(--line-2); }
   .msg .cite { margin-top: 5px; font-family: var(--mono); font-size: 10px; color: var(--ink-3); overflow-wrap: anywhere; }
   .msg details.cite { margin-top: 5px; font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
@@ -94,20 +110,20 @@
   .ctl { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
   .ctl .t { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); font-weight: 650; }
   input[type=range] { width: 104px; accent-color: var(--teal); }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; padding: 4px 9px; font-size: 11px; background: #fff; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-1); overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 4px 9px; font-size: 11px; background: var(--panel); }
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button[aria-pressed=true] { background: var(--ink); color: #fff; }
   .val { font-family: var(--mono); font-size: 11px; min-width: 44px; color: var(--ink-2); }
   /* 产品入口链接（round36 / 票 151）：外观跟页脚按钮同族，但它是导航不是动作。 */
   a.entry { font-size: 12px; color: var(--ink); text-decoration: none; border: 1px solid var(--line);
-    border-radius: 6px; padding: 3px 9px; background: #fff; }
+    border-radius: var(--r-1); padding: 3px 9px; background: #fff; transition: border-color var(--dur-1) var(--ease); }
   a.entry:hover { border-color: var(--ink-3); }
   /* 抽屉从 header 下沿开始（49px 与上面 header 的声明高度同源）：压在 header 之上时，
      「工单队列」那颗按钮会被抽屉自己盖住，点开之后就再也关不掉了（走查第 11 项）。 */
   aside.drawer { position: fixed; inset: 49px 0 0 auto; width: min(520px,92vw); background: var(--panel);
     border-left: 1px solid var(--line); box-shadow: -12px 0 28px rgba(20,22,26,.10);
-    transform: translateX(100%); transition: transform .18s ease; display: flex; flex-direction: column; z-index: 20; }
+    transform: translateX(100%); transition: transform var(--dur-2) var(--ease); display: flex; flex-direction: column; z-index: 20; }
   aside.drawer.open { transform: none; }
   #tickets { flex: 1; overflow: auto; }
   .tk { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; padding: 9px 12px;
@@ -143,6 +159,11 @@
   @media (max-width: 1100px) {
     main { grid-template-columns: 200px minmax(0,1fr); grid-template-rows: minmax(0,1fr) minmax(140px,34%); }
     #pane-events { grid-column: 1 / -1; }
+  }
+  /* 减少动效（round44 票 190）：与 `tokens.css` 同一个开关。抽屉直接到位，
+     不做位移动画——它不是装饰，省掉照样能用。 */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
   }
 </style>
 </head>
