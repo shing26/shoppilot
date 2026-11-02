@@ -1,7 +1,7 @@
 # round44 spec：产品面质感（B 档）
 
 **收口状态（2026-11-03）**：**done**。三票 188-190 全部 `implemented`；票 190 收口时三脚本实跑
-（买家 13/13、工作台 21/21 + 1 WARN、调试台受本机检索降级影响有 3 条红，见票 190 Handoff），
+（买家 13/13、工作台 23/23 + 1 WARN、调试台受本机检索降级影响有 3 条红，见票 190 Handoff），
 `docs/r44-*.png` 十张双宽度截图入库。
 
 开轮依据：[ADR 0079](../../docs/adr/0079-round44-product-surface-reopen-basis.md)

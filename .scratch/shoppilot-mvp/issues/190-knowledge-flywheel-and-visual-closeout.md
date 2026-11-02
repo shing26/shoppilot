@@ -104,7 +104,7 @@ git status --short
 | --- | --- |
 | `node --check scripts/verify-buyer.mjs` / `verify-workspace.mjs` / `verify-console.mjs` / `capture-r44-screens.mjs` | 四个都通过 |
 | `node scripts/verify-buyer.mjs`（活体，NODE_PATH=.tools） | **13/13 PASS**；依据面板那格因无 `citationDetails` 打 **INFO**（检索降级，不冒充 PASS） |
-| `node scripts/verify-workspace.mjs`（活体） | **21/21 PASS + 1 WARN**；知识飞轮五步、`DRAFT` 卡、ingest 提示三格全绿；WARN = 队列只有一种优先级（普通×10），排序断言未覆盖 |
+| `node scripts/verify-workspace.mjs`（活体） | **23/23 PASS + 1 WARN**；知识飞轮五步、`DRAFT` 卡、发布提示、**驳回终态（REJECTED）** 四格全绿；WARN = 队列只有一种优先级，排序断言未覆盖 |
 | `node scripts/verify-console.mjs`（活体） | **39/45**，6 红：`citations rendered` / done 帧 `ruleIds` / `cache hit`（三条依赖检索）、`no failed requests`（503+500+403 同源环境缺口）、两条读数格「另一格保持 live」（`/ops/**` 默认拒绝后前提不成立）。判据未改 |
 | `cd frontend-buyer && npm run typecheck && npm run build` | 绿；`index-BVVfRdyG.js` 105.80 kB / `index-B36rZRpY.css` 25.33 kB |
 | `cd frontend-workspace && npm run typecheck && npm run build` | 绿；`index-BvbFBYiI.js` 137.63 kB / `index-B0lDk8NQ.css` 28.73 kB |
