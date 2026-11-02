@@ -1,7 +1,7 @@
 # 票 189：深度卡片——订单详情 / 物流轨迹 / 工单生命周期
 
 Round: 44（spec：[round44-spec-product-surface.md](../round44-spec-product-surface.md)）
-ADR: 0079　Status: ready-for-agent　Blocked by: 188
+ADR: 0079　Status: implemented　Blocked by: 188
 
 ## What to build
 
@@ -58,4 +58,71 @@ git status --short
 
 ## Handoff notes
 
-（收口时补：关键决策 / 验证落点 / 三个现场追问）
+### 关键决策
+
+1. **`LogisticsNodeView` 早已存在，票面说"新建"是过时的。** 它只有
+   `seq/nodeCode/description/occurredAt`，承运商与运单号在 `LogisticsView` 顶层。
+   本票没有扩展它，而是新增 `OrderLogisticsView`——理由不是"多一个 record 好看"：
+   `LogisticsView` 喂给模型、节点升序、`latest()` 取**末元素**；买家端要倒序、`latest()` 取
+   **首元素**。同一形状承载两种排序语义，任何一侧改排序都会让另一侧悄悄变旧。
+
+2. **新增 `OrderDetailView` 而不是扩 `OrderView`。** `OrderView` 是工具回执契约，多出的
+   `deliveredAt` / `addressVersion` 只有买家页面要，不该顺带进模型上下文。更关键的是
+   `OrderView.address.receiverPhone` 是**原文**（`GET /orders/mine` 今天就带着它出站），
+   新入口单独出视图，才可能只在新入口脱敏而不动工具面。
+
+3. **买家入口不复用 `findOwned()`。** 那个方法在没有买家上下文时回退成"整店可查"，坐席工具
+   路径需要它；买家入口继承这个回退就等于"不带买家号能看全店"。新加 `buyerOwned()` 两个条件
+   都必填，缺买家号返回空 → 404。
+
+4. **脱敏在 biz-mock 出站前完成**（`BizMockService.maskPhone`：留前 3 后 4，中间固定四个星号）。
+   用例除了断言格式，还断言**响应体不含数据库里的原文号码**——只测格式会漏掉"旁边另有一个字段
+   把原文带出去"。
+
+5. **网关把下游 404 原样传成 404。** 原 `mine()` 把所有非 2xx 折成 502；折成 502 会让
+   "这单存在但不是你的"从状态码上露出来，与"不存在"区分开。
+
+6. **订单号先过白名单正则再拼 URL**（`[A-Za-z0-9_-]{1,32}`）。`URI.create(base + "/mine/" + orderNo)`
+   里一个含 `..` 的订单号会把请求带到没打算暴露的路径；校验失败直接 404，与越权同形。
+
+7. **工作台 `transcript` 不是对话记录，票面"角色左右分列的气泡"按字面做会伪造对话。**
+   它实际是降级出口写下的 `detail`：`emotion=URGENT via LEXICON`、`handoff blocked reason=…`、
+   工具回执 JSON（`shoppilot-gateway/.../AgentStateMachine.java:1335` 把 `detail` 当 transcript 传）。
+   `frontend-workspace/src/types.ts` 早就写明"不是完整对话记录——页面按这个口径展示"。
+   落地形态：买家提问一个右对齐气泡 + 系统记录一个左对齐块（**原文不解析**），并在块下写明口径。
+   这处偏差是票面与数据事实冲突，不是省事。
+
+8. **退款与审批工单按 `payload.refundId` 对上**，不按订单号猜——biz-mock 开单时写死的
+   `{"refundId":"…","orderId":"…"}` 是唯一可靠键；同一单多次申请时按订单号会对错。
+
+9. **SLA 接进详情这半条本票无事可做**：票 188 拆分时 `QueueView` 的详情列与生命周期末步
+   已经用 `slaText(selected, now)`，与列表同口径。这里只确认，没有二次实现。
+
+### 验证落点
+
+| 命令 | 结果 |
+| --- | --- |
+| `mvn -pl shoppilot-biz-mock,shoppilot-gateway -am test -Dtest=OrderDetailQueryTest,BuyerOrdersEndpointTest` | 绿：biz-mock 7 条、gateway 6 条 |
+| `cd frontend-buyer && npm run typecheck && npm run build` | 绿，单 bundle `index-Cq_ZANWR.js` 104.99 kB + `index-BUH4AQWa.css` 24.46 kB |
+| `cd frontend-workspace && npm run typecheck && npm run build` | 绿，单 bundle `index-cpbuag95.js` 121.53 kB + `index-CQ6pD8Tl.css` 23.18 kB |
+| `bash ./mvnw -B -ntp verify` | BUILD SUCCESS；四模块 12 / **89** / **617** / 50，合计 **768**（较票 188 的 757 增 11，正是本票新增用例） |
+| `git diff --check` | 干净 |
+| `git status --short` | 无日志、无崩溃转储、无过期快照；产物新增/删除两端全部入库 |
+
+biz-mock `OrderDetailQueryTest` 的七条：本人可见且脱敏、同店他人 404、跨店 404、缺买家上下文 404、
+轨迹倒序、无轨迹 200 + 空数组、轨迹越权 404。gateway `BuyerOrdersEndpointTest` 的六条：身份透传、
+200 原样回、详情路径、轨迹路径、下游 404 保形、白名单外**根本不发下游请求**。
+
+### 三个现场追问
+
+1. **`GET /orders/mine` 仍然带着未脱敏的手机号。** 本票只给新入口脱敏，没动列表接口——它是
+   ADR 0075 的既有面，改它会同时改变买家列表的响应体形状（`OrderView.address` 在工具路径上
+   也被模型读）。这是**已登记的遗留**：要收口应单开一票，决定是"列表也不带地址"还是"地址块
+   统一走脱敏视图"。
+2. **`OrderDetailView` 与 `OrderView` 字段重复度很高。** 目前拆开的收益是"模型上下文不变 + 手机号
+   可在新面单独脱敏"；若将来票 190 之后再加两个字段，就该考虑 `OrderView` 内部改用脱敏 `AddressView`，
+   而不是继续加平行 record。
+3. **`payloadField` 只认字符串字段。** 现有三条来源（退款、复核、渠道回执）的 payload 都是扁平
+   JSON；若将来出现嵌套结构，`payloadField` 会静默返回 `null`，页面表现为"找不到对应工单"而不是报错。
+   要嵌套就先扩这个函数，别在组件里各写一份 `JSON.parse`。
+
