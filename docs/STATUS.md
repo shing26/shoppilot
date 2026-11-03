@@ -5,8 +5,8 @@
 <!-- STATUS:BEGIN -->
 > 自动生成，勿手改。命令：`python scripts/gen_status.py`；CI 用 `--check` 防漂移。
 
-- JVM：**773** tests / 0 failures / 0 errors / 0 skipped（129 suites）
-- 覆盖率（LINE）：tool-api **44.70%** / biz-mock **82.14%** / gateway **68.92%** / ticket **78.62%**
+- JVM：**780** tests / 0 failures / 0 errors / 0 skipped（131 suites）
+- 覆盖率（LINE）：tool-api **44.70%** / biz-mock **82.14%** / gateway **69.13%** / ticket **78.62%**
 - CI：[ci-subset](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)（badge 为准）
 
 | 指标 | 当前值 | 判据 | 状态 | 条件 / 证据 |
@@ -17,5 +17,5 @@
 | 缓存总拦截率 | 73.2–74.0% / 77.8–78.2% | >=80% | 未达成 | L1 主导；L2/SF 增量为 0；2026-10-17 同口径复跑 52%，见 U10 |
 | 吞吐峰值 | 1013 QPS @800 | >=1200 QPS | 未达成 | 4 个 Locust 进程同机发压，单进程约 260 QPS；1200/1600 并发降到 974/862 |
 | 未命中 TTFT | 690–1499 ms | <500 ms | 未达成 | 1 并发 690 / 50–200 并发 1031–1049 / 500 并发 1499；Mock 首字 300 ms + 本机 embedding 311 ms |
-| 工具调用准确率 | 93.3% 选对 / 90.5% 填对；重算 95.6% | 分意图 >=95% | 未达成 | qwen-plus 180 条；最新全量 4 个意图低于 95%（R15） |
+| 工具调用准确率 | 179/180 = 99.4% 选对（dev qwen-plus，2026-10-27） | 分意图 >=95% | 未达成 | ACTION_REFUND 94.4%（17/18，ACT-RFD-13）；退款定向重跑 18/18 单列、不并入全量；local qwen2.5:3b 166/180 = 92.2% |
 <!-- STATUS:END -->

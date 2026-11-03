@@ -230,7 +230,7 @@ class ReflectionObservabilityJvmTest {
         GatewayProperties properties = mock(GatewayProperties.class);
         when(properties.agent()).thenReturn(new GatewayProperties.Agent(4, 2, Duration.ofMinutes(30), 4));
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("dev", "http://127.0.0.1:1", "k", "qwen-plus",
-                0.0d, Duration.ofSeconds(5), Duration.ofSeconds(5), 0L, null, null, null, null, 1024));
+                0.0d, Duration.ofSeconds(5), Duration.ofSeconds(5), 0L, null, null, null, null, 1024, "", "", ""));
         IdempotencyService idempotency = mock(IdempotencyService.class);
         when(idempotency.begin(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new IdempotencyService.Guard(false, false, null, "reflection-obs-token",

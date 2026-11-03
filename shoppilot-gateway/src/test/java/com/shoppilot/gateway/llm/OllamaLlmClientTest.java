@@ -98,7 +98,7 @@ class OllamaLlmClientTest {
     private OllamaLlmClient client(int maxOutputTokens) {
         GatewayProperties.Llm config = new GatewayProperties.Llm("local", "http://127.0.0.1:1", "unused",
                 "unused-cloud-model", 0.2d, Duration.ofSeconds(2), Duration.ofSeconds(10), 0L,
-                baseUrl, "qwen2.5:3b", Duration.ofMillis(1), Duration.ofMillis(1), maxOutputTokens);
+                baseUrl, "qwen2.5:3b", Duration.ofMillis(1), Duration.ofMillis(1), maxOutputTokens, "", "", "");
         return new OllamaLlmClient(java.net.http.HttpClient.newHttpClient(), new ObjectMapper(), config);
     }
 }

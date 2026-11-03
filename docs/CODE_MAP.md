@@ -21,7 +21,7 @@
 | `cache` | L1/L2 查询、语义阈值、极性守卫、写回资格与异步池 | `CacheService`、`L2SemanticCache`、`PolarityGuard`、`WriteBackPolicy`、`WriteBackPool` |
 | `knowledge` | embedding、Qdrant/ES 客户端、RRF 混合检索、知识纪元 | `HybridRetriever`、`EmbeddingClient`、`QdrantRestClient`、`EsRestClient`、`KbEpoch` |
 | `ingest` | Markdown 政策切块与离线入库；**round43 起第二个语料源**：`KnowledgeRevisionSource` 从 biz-mock 拉 PUBLISHED 知识修订（拉取失败 → 中止入库，不静默缺条款，ADR 0078） | `MarkdownChunker`、`IngestRunner`、`KnowledgeRevisionSource` |
-| `llm` | local/dev/perf 三种模型实现、超时/预算、显式输出上限与 LLM 故障注入 | `LlmGateway`、`OllamaLlmClient`、`OpenAiCompatibleLlmClient`、`MockLlmClient`、`TokenBudget` |
+| `llm` | local/dev/perf/demo 模型实现、超时/预算、显式输出上限与 LLM 故障注入；**round48 起加 replay 与装配层录制**（ADR 0083） | `LlmGateway`、`OllamaLlmClient`、`OpenAiCompatibleLlmClient`、`MockLlmClient`、`DemoLlmClient`、`ReplayLlmClient`、`RecordingLlmClient`、`CassetteKey`、`TokenBudget` |
 | `agent` | 10 状态编排、工具派发、会话、幂等、fallback 与工单；计划步骤与上下文组成的观测出口（ADR 0044 票 48/49）；**请求级幂等回放**（模型之前，ADR 0046 票 58）与**退款受理出口**（ADR 0047 票 59） | `AgentStateMachine`、`AgentResult`、`ToolDispatcher`、`BizMockClient`、`FallbackService`、`IdempotencyService`、`ReplayReply` |
 | `store` | 按已验签 `tenantId` 提供对话层店铺资料（店名/主营/本店承诺），拼进系统提示词（round37 / ADR 0071）；场景包覆盖优先 | `StoreProfileProperties`（配置 `shoppilot.store-profiles`）、`StoreProfileService`；读面 `web/StoreProfileController` |
 | `scenario` | 场景包 v1（票 172）：加载 `config/scenarios/*.json`，提供 domain、店铺人格与可选补充提示；重复 tenant/非法 domain 拒启 | `ScenarioPackService`、`ScenarioPackService.Pack`；接入 `TenantDomainRegistry`、`StoreProfileService` |
@@ -55,7 +55,7 @@
 | 请求级幂等回放（模型之前、情绪门之后） | `agent/IdempotencyService.lookupByClientToken`、`agent/ReplayReply` |
 | L1/L2 缓存 | `cache/CacheService`、`cache/L1Cache`、`cache/L2SemanticCache`、`cache/PolarityGuard` |
 | 混合检索 | `knowledge/EmbeddingClient`、`knowledge/QdrantRestClient`、`knowledge/EsRestClient`、`knowledge/HybridRetriever` |
-| 模型计划 | `llm/LlmGateway`、`llm/LlmClient`、`llm/LlmTypes` |
+| 模型计划 | `llm/LlmGateway`、`llm/LlmClient`、`llm/LlmTypes`；录放门禁 `llm/ReplayLlmClient`、`llm/RecordingLlmClient`、`llm/CassetteKey` + `scripts/verify_llm_replay.py` |
 | 状态机与工具循环 | `agent/AgentStateMachine`、`agent/AgentState`、`agent/ToolDispatcher` |
 | 业务调用 | `agent/BizMockClient` -> `bizmock/web/ToolController` -> `bizmock/service/BizMockService` |
 | 退款审核（人工闸门） | `bizmock/web/RefundReviewController` -> `bizmock/service/BizMockService.reviewRefund`；网关代理 `web/OpsController`（`/ops/refunds/*`，B3 起 `reviewRefund` 与 `refundReviewQueue()` 均为 `staff()`-only）；调试台面板 `static/console.html`（B3 起只读；round37 前是 `static/index.html`）；坐席工作台 `static/workspace/`（B3 起可审核） |
@@ -135,7 +135,7 @@ Tab/Shift+Tab 在可见可聚焦元素间循环、释放时还焦点。**它是 
 | 缓存资格、L2、极性、写回池 | `cache/*Test` |
 | 意图 T0 | `triage/T0RuleLayerTest` |
 | embedding 合并、预热、Qdrant wire | `knowledge/*Test` |
-| LLM 兼容与 token 预算 | `llm/OpenAiCompatibleLlmClientTest`、`llm/OllamaLlmClientTest`（输出上限按 `options.num_predict` 下发）、`llm/TokenBudgetTest` |
+| LLM 兼容与 token 预算 | `llm/OpenAiCompatibleLlmClientTest`、`llm/OllamaLlmClientTest`（输出上限按 `options.num_predict` 下发）、`llm/TokenBudgetTest`；录放机制 `llm/ReplayLlmClientTest`（录制→回放、缺卡 fail-closed、改卡即红） |
 | 向量化分段耗时与计划/上下文观测 | `knowledge/EmbeddingLatencyTimerTest`（三桶与三计数器同分法）、`web/GatewayMainPathJvmTest` 的 `planStepsAreReportedInExecutionOrder` / `contextCompositionMirrorsCitationsAndHistory`、`web/SseEventSinkTest` 的 `done` 帧字段 |
 | 会话归属 | `agent/ConversationOwnershipTest` |
 | fallback 与幂等 | `agent/FallbackReasonTest`、`agent/IdempotencyServiceTest` |

@@ -151,7 +151,7 @@ class OpenAiCompatibleLlmClientTest {
     private static OpenAiCompatibleLlmClient client(Duration readTimeout, int maxOutputTokens) {
         GatewayProperties.Llm llm = new GatewayProperties.Llm("dev", baseUrl, "test-key", "qwen-max",
                 0.2d, Duration.ofSeconds(2), readTimeout, 200_000L, "http://127.0.0.1:11434", "qwen2.5:3b",
-                Duration.ofMillis(1), Duration.ofMillis(1), maxOutputTokens);
+                Duration.ofMillis(1), Duration.ofMillis(1), maxOutputTokens, "", "", "");
         return new OpenAiCompatibleLlmClient(HttpClient.newHttpClient(), MAPPER, llm);
     }
 

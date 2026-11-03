@@ -33,8 +33,8 @@ public record GatewayProperties(
     public record Llm(
             // 未知/空模式会落进 LlmGateway 的 else（云端客户端），而 dev() 为假意味着
             // ADR 0012 的日预算被静默绕过——值域必须在绑定层拒绝。
-            @Pattern(regexp = "(?i)^(dev|local|perf|demo)$",
-                    message = "shoppilot.llm.mode must be one of dev|local|perf|demo") String mode,
+            @Pattern(regexp = "(?i)^(dev|local|perf|demo|replay)$",
+                    message = "shoppilot.llm.mode must be one of dev|local|perf|demo|replay") String mode,
             String baseUrl, String apiKey, String model,
                       @DecimalMin("0.0") @DecimalMax("2.0") double temperature,
                       @DurationMin(nanos = 1, message = "shoppilot.llm.connect-timeout must be greater than 0")
@@ -50,7 +50,11 @@ public record GatewayProperties(
                               message = "shoppilot.llm.perf-total-latency must be greater than 0")
                       Duration perfTotalLatency,
                       @Min(value = 0, message = "shoppilot.llm.max-output-tokens must not be negative（0 = 不限制）")
-                      int maxOutputTokens) {
+                      int maxOutputTokens,
+                      // replay 只服务回归门禁与离线复跑：读 cassette、缺卡 fail-closed，绝不回退真实模型。
+                      String replayCassetteDir, String replayModel,
+                      // 非空时在装配层包一层录制器；只对 dev/local 生效，Mock 录制不能冒充真实模型。
+                      String recordDir) {
 
         public boolean dev() {
             return "dev".equalsIgnoreCase(mode);
@@ -67,6 +71,11 @@ public record GatewayProperties(
         /** 演示档：意图感知的确定性答案，质量与延迟都不冒充 dev/local。 */
         public boolean demo() {
             return "demo".equalsIgnoreCase(mode);
+        }
+
+        /** 录放档：只读 cassette，缺卡即失败；不连模型、不产生 token（ADR 0083）。 */
+        public boolean replay() {
+            return "replay".equalsIgnoreCase(mode);
         }
     }
 

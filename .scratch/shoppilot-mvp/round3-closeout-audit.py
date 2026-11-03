@@ -127,6 +127,9 @@ _DEF_LANDED = 0
 # R7 + R14（2026-10-20）新增 14 条（T0RuleLayerTest +11、GatewayMainPathJvmTest +1、
 # ReflectionLoopJvmTest +2）→ 真实数 591；
 # 本常数与 logs 仍停在 2026-10-19 落点 577——**中途加票不动它，下次重跑带 build/unit 的矩阵时再换代**。
+# round48（2026-11-04，票 200）真值核对：`mvnw verify` 已到 `12 + 92 + 619 + 50 = 773`，
+# 但本机 `logs/acceptance/{build,unit}.log` 仍是 2026-10-19 的 577 快照；G6 比的是这两份日志，
+# 不是 Surefire。只改常数会让 G6 立刻假红，故本轮只登记真实数，常数等下次全量矩阵重跑后再换代。
 G6_EXPECT = [10, 73, 449, 45]
 G6_CLAIM = "G6 surefire {} = {}（build 与 unit 两份日志的 Results 段各自核过）".format(
     " + ".join(str(x) for x in G6_EXPECT), sum(G6_EXPECT))

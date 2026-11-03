@@ -1,6 +1,7 @@
 package com.shoppilot.gateway.llm;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.config.GatewayProperties;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Meter;
@@ -29,7 +30,7 @@ class LlmTokenSourceLabelTest {
     private static GatewayProperties.Llm llm(String mode) {
         return new GatewayProperties.Llm(mode, "http://127.0.0.1:1", "unused", "some-model", 0.0d,
                 Duration.ofSeconds(1), Duration.ofSeconds(1), 0L, "http://127.0.0.1:11434", "qwen2.5:3b",
-                Duration.ofMillis(300), Duration.ofMillis(500), 1024);
+                Duration.ofMillis(300), Duration.ofMillis(500), 1024, "", "", "");
     }
 
     private static MeterRegistry gatewayFor(String mode) {
@@ -37,7 +38,7 @@ class LlmTokenSourceLabelTest {
         when(properties.llm()).thenReturn(llm(mode));
         MeterRegistry registry = new SimpleMeterRegistry();
         new LlmGateway(HttpClient.newHttpClient(), new ObjectMapper(), properties,
-                mock(TokenBudget.class), registry, mock(LlmFaultInjector.class));
+                mock(TokenBudget.class), registry, mock(LlmFaultInjector.class), new PromptCatalog());
         return registry;
     }
 

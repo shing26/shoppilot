@@ -1,0 +1,55 @@
+{
+  "generatedAt" : "2026-11-03T19:56:31.158833400Z",
+  "model" : "qwen-plus",
+  "promptVersion" : "v1.2.0",
+  "source" : "dev",
+  "entries" : [ {
+    "key" : "30f67db1e6042318f20744d6294415d3641fa95f2c4a72baf4b4571b8b3e88e9",
+    "query" : "七天无理由退货从哪天开始算？",
+    "expect" : {
+      "tool" : [ ]
+    },
+    "cassette" : "qwen-plus/v1.2.0/30f67db1e6042318f20744d6294415d3641fa95f2c4a72baf4b4571b8b3e88e9.json",
+    "observedTool" : null
+  }, {
+    "key" : "10bcf5d3935e25f317df7c3f0e2da09ea2358af4552a3e081fdd5b4d862f9acb",
+    "query" : "订单 90001 现在是什么状态？",
+    "expect" : {
+      "tool" : "queryOrderDetail"
+    },
+    "cassette" : "qwen-plus/v1.2.0/10bcf5d3935e25f317df7c3f0e2da09ea2358af4552a3e081fdd5b4d862f9acb.json",
+    "observedTool" : "queryOrderDetail"
+  }, {
+    "key" : "7a23d28bb7b0ac336176bca6a365abd00e324da3050bfc50119e0b539e17af93",
+    "query" : "订单 90002 到哪了？",
+    "expect" : {
+      "tool" : "queryLogistics"
+    },
+    "cassette" : "qwen-plus/v1.2.0/7a23d28bb7b0ac336176bca6a365abd00e324da3050bfc50119e0b539e17af93.json",
+    "observedTool" : "queryLogistics"
+  }, {
+    "key" : "751df8bab9942c03ac549f86e3c913db9a4396b02b044fca855f19e6262d8d2d",
+    "query" : "订单 90001 帮我申请退款",
+    "expect" : {
+      "tool" : "applyRefund"
+    },
+    "cassette" : "qwen-plus/v1.2.0/751df8bab9942c03ac549f86e3c913db9a4396b02b044fca855f19e6262d8d2d.json",
+    "observedTool" : "applyRefund"
+  }, {
+    "key" : "2455dac08c9620be2971dfee94d58255207c023d356277c67adb1dfbbcb84298",
+    "query" : "订单 90003 我想改一下收货地址",
+    "expect" : {
+      "tool" : "modifyDeliveryAddress"
+    },
+    "cassette" : "qwen-plus/v1.2.0/2455dac08c9620be2971dfee94d58255207c023d356277c67adb1dfbbcb84298.json",
+    "observedTool" : null
+  }, {
+    "key" : "e567f3876499fa102afea03228b163ff2c5f2cb753bc6c42e1502b36aba578d7",
+    "query" : "你们店主要卖什么？",
+    "expect" : {
+      "tool" : [ ]
+    },
+    "cassette" : "qwen-plus/v1.2.0/e567f3876499fa102afea03228b163ff2c5f2cb753bc6c42e1502b36aba578d7.json",
+    "observedTool" : null
+  } ]
+}

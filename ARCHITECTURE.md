@@ -87,6 +87,6 @@ Redis        Qdrant + ES   biz-mock :8091（订单/退款/身份/审计）
 
 - 当前状态：[STATUS.md](STATUS.md)
 - 请求链路与首改文件：[CODE_MAP.md](CODE_MAP.md)
-- 决策历史：[docs/adr/](adr/)（70 篇；不是每篇都仍是现状）
+- 决策历史：[docs/adr/](adr/)（82 篇；不是每篇都仍是现状）
 - 证据与未达成：[EVIDENCE.md](EVIDENCE.md)（historical ledger；首屏只信 STATUS）
 - 事故复盘：[incident-2026-10-silent-failure-modes.md](incident-2026-10-silent-failure-modes.md)

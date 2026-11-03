@@ -1,6 +1,7 @@
 package com.shoppilot.gateway.llm;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.shoppilot.gateway.agent.PromptCatalog;
 import com.shoppilot.gateway.config.GatewayProperties;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -8,6 +9,7 @@ import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
 import java.net.http.HttpClient;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -31,19 +33,39 @@ public class LlmGateway {
     private final Counter tokenCounter;
 
     public LlmGateway(HttpClient httpClient, ObjectMapper mapper, GatewayProperties properties,
-                      TokenBudget tokenBudget, MeterRegistry registry, LlmFaultInjector faultInjector) {
+                      TokenBudget tokenBudget, MeterRegistry registry, LlmFaultInjector faultInjector,
+                      PromptCatalog promptCatalog) {
         this.properties = properties;
         this.tokenBudget = tokenBudget;
         this.faultInjector = faultInjector;
         GatewayProperties.Llm llm = properties.llm();
-        if (llm.demo()) {
-            this.delegate = new DemoLlmClient(llm, mapper);
-        } else if (llm.perf()) {
-            this.delegate = new MockLlmClient(llm);
-        } else if (llm.local()) {
-            this.delegate = new OllamaLlmClient(httpClient, mapper, llm);
+        if (llm.replay()) {
+            // 录放门禁：只读 cassette。缺卡 fail-closed，绝不回退真实模型或 Mock（ADR 0083）。
+            String dir = llm.replayCassetteDir() == null || llm.replayCassetteDir().isBlank()
+                    ? "eval/llm-cassettes" : llm.replayCassetteDir();
+            String replayModel = llm.replayModel() == null || llm.replayModel().isBlank()
+                    ? llm.model() : llm.replayModel();
+            this.delegate = new ReplayLlmClient(mapper, Path.of(dir), replayModel,
+                    promptCatalog.version(), llm.maxOutputTokens(), llm.temperature());
         } else {
-            this.delegate = new OpenAiCompatibleLlmClient(httpClient, mapper, llm);
+            LlmClient base;
+            if (llm.demo()) {
+                base = new DemoLlmClient(llm, mapper);
+            } else if (llm.perf()) {
+                base = new MockLlmClient(llm);
+            } else if (llm.local()) {
+                base = new OllamaLlmClient(httpClient, mapper, llm);
+            } else {
+                base = new OpenAiCompatibleLlmClient(httpClient, mapper, llm);
+            }
+            // 录制只对真实模型生效：perf/demo 的确定性输出不能冒充模型证据。
+            if ((llm.dev() || llm.local()) && llm.recordDir() != null && !llm.recordDir().isBlank()) {
+                this.delegate = new RecordingLlmClient(base, mapper, Path.of(llm.recordDir()),
+                        effectiveModel(llm), promptCatalog.version(), llm.mode(),
+                        llm.maxOutputTokens(), llm.temperature(), false);
+            } else {
+                this.delegate = base;
+            }
         }
         this.failureCounter = Counter.builder("shoppilot_llm_failure_total")
                 .tag("mode", delegate.mode())
@@ -62,6 +84,12 @@ public class LlmGateway {
         // —— 加标签不加指标名，所以指标名计数不变。
         this.tokenCounter = Counter.builder("shoppilot_llm_tokens_total")
                 .tag("mode", delegate.mode()).tag("source", delegate.tokenSource()).register(registry);
+    }
+
+    /** 录制目录与 key 里的模型名必须同源：dev 用 {@code model}，local 用 Ollama 的模型名。 */
+    private static String effectiveModel(GatewayProperties.Llm llm) {
+        return llm.local() && llm.localModel() != null && !llm.localModel().isBlank()
+                ? llm.localModel() : llm.model();
     }
 
     public String mode() {

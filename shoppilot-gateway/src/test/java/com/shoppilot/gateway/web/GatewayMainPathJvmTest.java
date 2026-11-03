@@ -1315,7 +1315,7 @@ class GatewayMainPathJvmTest {
                 Duration.ofMinutes(30), 4));
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("perf", "http://127.0.0.1:1",
                 "unused", "perf-mock", 0.0d, Duration.ofSeconds(1), Duration.ofSeconds(1),
-                0L, null, null, null, null, 1024));
+                0L, null, null, null, null, 1024, "", "", ""));
         when(properties.cache()).thenReturn(new GatewayProperties.Cache(true, Duration.ofHours(1),
                 0.95d, Duration.ofSeconds(60), Duration.ofSeconds(2), true));
         return properties;

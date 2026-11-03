@@ -60,7 +60,8 @@ shoppilot:
   # 守护判的必须是真正在用的那个值，两处各写一份迟早分家（ADR 0029）。
   jwt-secret: ${SHOPPILOT_JWT_SECRET:}
   llm:
-    # dev | local | perf | demo —— 四态模式；demo 是意图感知的演示档，指标分口径见 ADR 0001。
+    # dev | local | perf | demo | replay —— 五态模式；demo 是意图感知的演示档，指标分口径见 ADR 0001。
+    # replay 只用于回归门禁：读 eval/llm-cassettes 下的录制响应，缺卡 fail-closed（ADR 0083）。
     # 2026-10-20：模式必须能从 .env 选择。此前这里写死 local，而 base-url/api-key/model
     # 在 .env 里指向 DashScope——配了云端却永远走 Ollama，本机没 pull qwen2.5:3b 时
     # 每次对话都以「本地模型返回 500」收场。profile 仍可覆盖本值（dev/local/perf 三段）。
@@ -87,6 +88,13 @@ shoppilot:
     # 默认给足余量：PromptCatalog 规则 11 要求回答「不超过 200 字」，而输出里还要含工具调用 JSON，
     # 按 200 字设小会截断评测答案、反过来污染 dev 读数。0 = 不限制（本字段引入前的行为）。
     max-output-tokens: ${SHOPPILOT_LLM_MAX_OUTPUT_TOKENS:1024}
+    # 录放门禁（round48 / ADR 0083）：路径 <dir>/<model>/<promptVersion>/<sha256>.json。
+    # replay 模式不读上面的 base-url / api-key，也不产生 token；缺 cassette 直接失败。
+    replay-cassette-dir: ${SHOPPILOT_LLM_REPLAY_DIR:eval/llm-cassettes}
+    # replay 读取哪个模型的卡（目录第一段）；录制 local 卡后复跑时必须显式指定。
+    replay-model: ${SHOPPILOT_LLM_REPLAY_MODEL:qwen-plus}
+    # 非空时把真实模型往返写成 cassette；仅 dev/local 生效（Mock 录制不能冒充真实模型）。
+    record-dir: ${SHOPPILOT_LLM_RECORD_DIR:}
   embedding:
     # ADR 0001：embedding 恒为本地 bge-m3，1024 维
     base-url: ${SHOPPILOT_OLLAMA_URL:http://127.0.0.1:11434}

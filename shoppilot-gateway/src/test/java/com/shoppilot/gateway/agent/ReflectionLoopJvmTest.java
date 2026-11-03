@@ -398,7 +398,7 @@ class ReflectionLoopJvmTest {
         // 生产默认工具轮 = 4（round35 票 143）；反思占的就是这条预算
         when(properties.agent()).thenReturn(new GatewayProperties.Agent(4, 2, Duration.ofMinutes(30), 4));
         when(properties.llm()).thenReturn(new GatewayProperties.Llm("dev", "http://127.0.0.1:1", "k", "qwen-plus",
-                0.0d, Duration.ofSeconds(5), Duration.ofSeconds(5), 0L, null, null, null, null, 1024));
+                0.0d, Duration.ofSeconds(5), Duration.ofSeconds(5), 0L, null, null, null, null, 1024, "", "", ""));
         return new AgentStateMachine(triageEngine, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
                 ecommerceDomains(), retriever, llm, new ToolDispatcher(bizMock, idempotency, registry), store,
                 fallback, properties, mock(WriteBackPool.class), new PromptCatalog(), gate, new StyleService(),

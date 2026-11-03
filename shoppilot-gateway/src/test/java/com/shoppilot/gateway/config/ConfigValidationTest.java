@@ -57,6 +57,10 @@ class ConfigValidationTest {
             "SHOPPILOT_LLM_MODEL",
             "SHOPPILOT_LLM_MODE",
             "SHOPPILOT_LLM_READ_TIMEOUT",
+            // round48 票 201 / ADR 0083：录放门禁的三个可配置面（只服务回归门禁，不改生产默认）。
+            "SHOPPILOT_LLM_REPLAY_DIR",
+            "SHOPPILOT_LLM_REPLAY_MODEL",
+            "SHOPPILOT_LLM_RECORD_DIR",
             "SHOPPILOT_LLM_TEMPERATURE",
             "SHOPPILOT_LOCAL_LLM_MODEL",
             "SHOPPILOT_OLLAMA_URL",

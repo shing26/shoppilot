@@ -22,7 +22,7 @@ class DemoLlmClientTest {
         // 直接构造配置而不是 mock：这是纯延迟/模式参数，没有外部协作对象值得用 mock 换启动成本。
         GatewayProperties.Llm config = new GatewayProperties.Llm("demo", "", "", "", 0.2d,
                 Duration.ofSeconds(1), Duration.ofSeconds(1), 0L, "", "",
-                Duration.ZERO, Duration.ZERO, 0);
+                Duration.ZERO, Duration.ZERO, 0, "", "", "");
         client = new DemoLlmClient(config, new ObjectMapper());
     }
 
