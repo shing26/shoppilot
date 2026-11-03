@@ -46,7 +46,7 @@ repackage 必跳）；`git diff --check`、`git status --short`。
 - `bash ./mvnw -B -ntp verify -Dspring-boot.repackage.skip=true`：BUILD SUCCESS，四模块 **12 / 92 / 619 / 50 = 773 tests / 129 suites**、0 失败；gateway 617→619。
 - 新增用例：`QualitySidecarServiceTest.prefersCumulativeMaxGauge`（Gauge 0.75s 覆盖 `Timer.max` 0.25s）、`fallsBackToTimerMaxWhenGaugeMissing`（无 Gauge 时 0.25s）；`reportsZeroesWhenNoTraffic` 补 `maxSeconds == 0.0`。
 - 指标名复点：`grep -rhoE "shoppilot_[a-z0-9_]+" .../src/main | sort -u` → 三模块 **73**、四模块 **75**；README 与 CODE_MAP 已换代，既有指标一个未动。
-- **未实跑**：没有起 8082 网关，未在真实 `/api/v1/support/ops/quality/report` 上观察「空闲一段时间后 maxSeconds 仍非 0」；时序衰减的现场复现停留在 `javap` + 单元测试这一档。
+- **活体补跑（2026-11-03 晚）**：起栈后在真实 `/api/v1/support/ops/quality/report` 实测 `handoff.decisionSeconds.maxSeconds = 0.0016074`（count=2、mean 0.0008s）——Gauge 生效、非 0；页面也出现「最大」读数。「空闲归零不再发生」的完整时序观察仍属限定：本次读数是采样而非等待一个衰减窗，但衰减只作用于 `Timer.max()`，Gauge 路径已由 JVM 用例钉死。
 
 **三个现场追问**
 

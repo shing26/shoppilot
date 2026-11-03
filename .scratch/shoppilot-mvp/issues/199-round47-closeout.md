@@ -52,12 +52,12 @@ ADR: 0082　Status: implemented　Blocked by: 195-198
 
 - `README.md` 指标名 **72 / 74 → 73 / 75**（新增 `shoppilot_handoff_decision_seconds_max`）。
 - `docs/CODE_MAP.md`：新增 round47 行、共享层导出、四张映射与 401 钩子。
-- `docs/EVIDENCE.md`：round47 条目，含 773 tests / 129 suites、两端产物哈希、活体未实跑边界。
+- `docs/EVIDENCE.md`：round47 条目，含 773 tests / 129 suites、两端产物哈希、活体未实跑边界（**2026-11-03 晚已补活体跑，见下**）。
 - `docs/STATUS.md` 由 `python scripts/gen_status.py` 重新生成（771 → **773**，覆盖率 gateway 68.87% → 68.92%）。
 - tracker README：round 表 round47 行、索引 195-199。
 
 **三个现场追问**
 
-1. 本轮**没有跑活体验证**（8082 网关未启动，5174/5175 只有 dev server）。十二项的产品面结论只到「构建 + JVM + 静态阅读」；下一轮起栈后应直接跑 `.scratch/ux-probe/verify-p2.mjs`，把 `labels` / `contrast` / `unauthorized` / `buyerMobile` / `ariaLog` / `guestTransfer` / `queueFilter` / `resolveNeedsClaim` / `workspaceMobile` / `reviewedCount` / `qualityMax` 逐段补齐。
+1. ~~本轮没有跑活体验证~~ → **已补（2026-11-03 晚）**：起栈（重打 fat jar + Docker 中间件恢复）后实跑 `verify-p2.mjs` 全部 11 段并逐段复核；对比度 / 移动端点击目标 / 滚回 / ARIA 四属性 / 游客转人工 / 筛选详情一致 / 结单前置 / 三列导航 / 人工复核计数 / 质量 maxSeconds 全部实测过线，401 登出经真实请求路径验证。probe 的 `unauthorized`/`ariaLog`/`queueFilter` 段自身有选择器/模拟路径缺陷（裸 `fetch` 不走钩子、`.filter-chip` 不存在、无消息时 `.thread` 不渲染），已用等效实测补齐，probe 脚本未改；`labels` 段报的 `DOWN`/`AGENT` 是说明文案不是数据枚举。细目见各票 Handoff 与 EVIDENCE。**仍限定**：买家 SSE 入口的 401、读屏器实际播报、空档筛选（「已超时」档有 2 张）未单独触发。
 2. CI 的产物逐字节门禁需要一次干净的 `npm ci && npm run build` 复现——本轮本机构建绿、产物已入库，但没有像 round31 那样在推送前按 CI 原样复现第九步。
 3. round47 spec §4 的四条登记不执行（后端 `resolve` 领取前置、完整无障碍审计、refresh token、导航折叠化）仍无触发；下一次产品演示或外部验收前应重新判一次。

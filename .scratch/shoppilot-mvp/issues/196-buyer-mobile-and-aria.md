@@ -46,7 +46,7 @@ ADR: 0082　Status: implemented　Blocked by: 195（标签映射）
 - 两端 `npm run typecheck` + `npm run build` 绿；买家产物 `index-BvWEJ2tR.js` / `index-Bd1Rwo5g.css`。
 - 静态核对：`TopBar.vue` / `SideActivity.vue` / `OrderCard.vue` 的 ≤640px 规则、`App.vue` 的 `buyerMain` ref 与 `askOrder` 滚回、`ChatThread.vue` 的四个 ARIA 属性。
 - 游客项证据：`App.vue:487-497` 的转人工文案与 `refreshTickets()`、`grep` 无 `isGuest` 短路。
-- **未实跑**：`verify-p2.mjs` 的 `buyerMobile` / `ariaLog` / `guestTransfer` 段未执行（8082 网关未启动）。390×844 的实际高度、滚动位置与读屏播报都未实测。
+- **活体补跑（2026-11-03 晚）**：起栈后实跑 probe。390×844 四处点击目标实测 **40px**（退出/刷新/问问这单/tab）；点「问问这单」后 `.buyer-main` 顶部 `chatTopAfterAsk = 0`（滚回生效，欢迎语未被 sticky 顶栏遮挡的问题也未出现）；`.thread` 四属性实测 `role=log / aria-live=polite / aria-relevant="additions text" / aria-atomic=false`；游客转人工兜底文案「已转人工兜底，工单会出现在侧栏」、无「游客模式不展示工单」残留、工单页签回填 2 张卡。**仍未实测**：读屏器对 `role="log"` 的实际播报行为（需要真实读屏器，不在 probe 能力内）。
 
 **三个现场追问**
 

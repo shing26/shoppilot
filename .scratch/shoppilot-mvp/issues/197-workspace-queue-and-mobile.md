@@ -50,7 +50,7 @@ ADR: 0082　Status: implemented　Blocked by: 195（标签映射）
 - 两端 `npm run typecheck` + `npm run build` 绿；工作台产物 `index-DOhAw4q6.js` / `index-wGEHTq37.css`。
 - 静态核对：`App.vue` 的 `selected` / `setFilter` / `refresh` / `openResolve` / `reviewedTotal`，`QueueView.vue` 的禁用与 `.action-hint`，`SideNav.vue` 的 ≤640px 规则，`TopBar.vue` 的 40px 规则，`KnowledgeView.vue` 的 `reviewedTotal`。
 - 既有工作台 JVM 门禁随全量 verify 一起绿（四模块 773 tests / 129 suites）。
-- **未实跑**：`verify-p2.mjs` 的 `queueFilter` / `resolveNeedsClaim` / `workspaceMobile` / `reviewedCount` 段未执行（8082 网关未启动）；空档筛选、领取后详情消失、390px 导航排列都未实测。
+- **活体补跑（2026-11-03 晚）**：起栈后实跑 probe。队列筛选与详情一致实测：筛「已超时」（2 张）后详情属于当前档（选中卡与详情标题 T1793682839198-4 匹配），切「待处理」（5 张）后仍一致；「处理完成」未领取时实测 `disabled=true` + 提示「先领取这张工单，再处理完成」；工作台 390×844 导航实测 **3 列**、导航项 42px、顶栏按钮 40px、队列首屏可见（queueTop=620）；五步条「人工复核」实测 **1**（服务端 REVIEWED 总数）。**本轮未触发**：筛到空档（已超时档有 2 张，没有 0 张的档）与「领取后详情消失」的手感——`selected` 从 `filtered` 取的代码路径一致，空档清空分支由静态阅读覆盖。
 
 **三个现场追问**
 

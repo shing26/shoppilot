@@ -55,7 +55,7 @@ ADR: 0082　Status: implemented　Blocked by: 无
 - 两端 `npm run typecheck` + `npm run build` 绿；产物整目录更新（买家 `index-BvWEJ2tR.js` / `index-Bd1Rwo5g.css`，工作台 `index-DOhAw4q6.js` / `index-wGEHTq37.css`）。
 - `bash ./mvnw -B -ntp verify -Dspring-boot.repackage.skip=true`：BUILD SUCCESS，四模块 **12 / 92 / 619 / 50 = 773 tests / 129 suites**（本票后端零改动，gateway 的两条新增属票 198）。
 - 对比度按 sRGB 相对亮度手算：`#5c636e` 对 `#f2f3f5` 5.46、对 `#dfe2e7` 4.67、对 `#fff` 6.06。
-- **未实跑**：`.scratch/ux-probe/verify-p2.mjs` 的 `labels` / `contrast` / `unauthorized` 段未执行——验证时 8082 网关未启动；只做了 `node --check`。401 的端到端回登录面、四张映射的真实数据渲染都停留在静态阅读与类型检查。
+- **活体补跑（2026-11-03 晚）**：起栈后实跑 probe。对比度浏览器实测 **5.46 / 4.67 / 6.06**（`--bg`/`--line`/`--panel`），与手算一致；四张映射的真实数据渲染零原始枚举（probe 报的 `DOWN`/`AGENT` 命中的是页面固定说明文案，非数据）；401 自动登出经真实请求路径实测：带令牌请求返 401 → 回登录门、会话清除、显示「登录已失效，请重新登录」。买家 SSE 入口的 401（`streamAnswer` → `notifyUnauthorized`）本轮未单独触发（需要真实令牌过期的流式请求），静态阅读与共享钩子单一路径不变。
 
 **三个现场追问**
 
