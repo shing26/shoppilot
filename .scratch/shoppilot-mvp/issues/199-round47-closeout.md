@@ -58,6 +58,6 @@ ADR: 0082　Status: implemented　Blocked by: 195-198
 
 **三个现场追问**
 
-1. ~~本轮没有跑活体验证~~ → **已补（2026-11-03 晚）**：起栈（重打 fat jar + Docker 中间件恢复）后实跑 `verify-p2.mjs` 全部 11 段并逐段复核；对比度 / 移动端点击目标 / 滚回 / ARIA 四属性 / 游客转人工 / 筛选详情一致 / 结单前置 / 三列导航 / 人工复核计数 / 质量 maxSeconds 全部实测过线，401 登出经真实请求路径验证。probe 的 `unauthorized`/`ariaLog`/`queueFilter` 段自身有选择器/模拟路径缺陷（裸 `fetch` 不走钩子、`.filter-chip` 不存在、无消息时 `.thread` 不渲染），已用等效实测补齐，probe 脚本未改；`labels` 段报的 `DOWN`/`AGENT` 是说明文案不是数据枚举。细目见各票 Handoff 与 EVIDENCE。**仍限定**：买家 SSE 入口的 401、读屏器实际播报、空档筛选（「已超时」档有 2 张）未单独触发。
+1. ~~本轮没有跑活体验证~~ → **已补（2026-11-03 晚）**：起栈（重打 fat jar + Docker 中间件恢复）后实跑 `verify-p2.mjs` 全部 11 段并逐段复核；对比度 / 移动端点击目标 / 滚回 / ARIA 四属性 / 游客转人工 / 筛选详情一致 / 结单前置 / 三列导航 / 人工复核计数 / 质量 maxSeconds 全部实测过线，401 登出经真实请求路径验证。probe 的 `unauthorized`/`ariaLog`/`queueFilter` 段自身有选择器/模拟路径缺陷（裸 `fetch` 不走钩子、`.filter-chip` 不存在、无消息时 `.thread` 不渲染），已用等效实测补齐，probe 脚本未改；`labels` 段报的 `DOWN`/`AGENT` 是说明文案不是数据枚举。**残余限定项也已补（同晚）**：SSE 入口 401（裸 `fetch` 流式路径同样触发钩子）与空档筛选（0 张档详情切占位、无残留单）。**唯一仍限定**：读屏器对 `role="log"` 的实际播报——需要真实读屏器，非脚本能力，留给有辅助技术设备的现场验证。细目见各票 Handoff 与 EVIDENCE。
 2. CI 的产物逐字节门禁需要一次干净的 `npm ci && npm run build` 复现——本轮本机构建绿、产物已入库，但没有像 round31 那样在推送前按 CI 原样复现第九步。
 3. round47 spec §4 的四条登记不执行（后端 `resolve` 领取前置、完整无障碍审计、refresh token、导航折叠化）仍无触发；下一次产品演示或外部验收前应重新判一次。
