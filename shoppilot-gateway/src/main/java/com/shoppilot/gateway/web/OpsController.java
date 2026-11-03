@@ -130,10 +130,16 @@ public class OpsController {
         return guardedTicket("POST", "/api/tickets/" + ticketId + "/resolve", body, opsToken, agent);
     }
 
-    /** ingest 待复核队列（ADR 0039）：DOWN 且未复核的反馈，人工从这里认领。 */
+    /**
+     * ingest 待复核队列（ADR 0039）：DOWN 且未复核的反馈，人工从这里认领。
+     *
+     * <p>{@code status} 透传给 biz-mock（round46 票 194）：工作台刷新后要按 {@code REVIEWED}
+     * 把「已复核 · 可附稿」取回来。不传时下游默认 PENDING，老行为不变。
+     */
     @GetMapping("/feedback/review-queue")
-    public ResponseEntity<String> feedbackReviewQueue() {
-        return forward("GET", "/api/feedback/review-queue", null, true);
+    public ResponseEntity<String> feedbackReviewQueue(@RequestParam(required = false) String status) {
+        String query = (status == null || status.isBlank()) ? "" : "?status=" + status;
+        return forward("GET", "/api/feedback/review-queue" + query, null, true);
     }
 
     /**

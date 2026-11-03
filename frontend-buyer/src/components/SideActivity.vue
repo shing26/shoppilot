@@ -23,7 +23,6 @@ const props = defineProps<{
   ticketsLoading: boolean
   orderError: string
   ticketError: string
-  isGuest: boolean
   now: number
   /** 展开中的订单号；空串表示全部收起。详情数据由 `App.vue` 拉取后下传。 */
   expandedOrderNo: string
@@ -86,10 +85,9 @@ function toggleTickets() {
     <template v-if="sideTab === 'orders'">
       <div class="section-head">
         <h2>最近订单</h2>
-        <button v-if="!isGuest" class="link" type="button" @click="emit('refreshOrders')">刷新</button>
+        <button class="link" type="button" @click="emit('refreshOrders')">刷新</button>
       </div>
-      <p v-if="isGuest" class="notice">游客模式不展示订单：登录买家账号后可以查看自己的订单。</p>
-      <p v-else-if="orderError" class="err">{{ orderError }}</p>
+      <p v-if="orderError" class="err">{{ orderError }}</p>
       <p v-else-if="ordersLoading" class="empty">正在读取订单…</p>
       <div v-else-if="orders.length" class="order-list">
         <OrderCard
@@ -114,10 +112,9 @@ function toggleTickets() {
     <template v-else>
       <div class="section-head">
         <h2>最近工单</h2>
-        <button v-if="!isGuest" class="link" type="button" @click="emit('refreshTickets')">刷新</button>
+        <button class="link" type="button" @click="emit('refreshTickets')">刷新</button>
       </div>
-      <p v-if="isGuest" class="notice">游客模式不展示工单：先登录买家账号，才能看到自己的售后进度。</p>
-      <p v-else-if="ticketError" class="err">{{ ticketError }}</p>
+      <p v-if="ticketError" class="err">{{ ticketError }}</p>
       <p v-else-if="ticketsLoading" class="empty">正在读取…</p>
       <div v-else-if="tickets.length" class="ticket-list">
         <article
@@ -174,7 +171,8 @@ function toggleTickets() {
 .side-tab:not(.active) .tab-count { background: var(--line); color: var(--ink-3); }
 .side-activity .section-head { margin-bottom: 8px; }
 .side-more { display: block; margin: 8px auto 0; font-size: 12px; }
-.order-list { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 2px; }
+/* 只留侧栏这一层滚动（round46 票 192）：卡片内部的第二个滚动区会把展开的深度卡裁掉。 */
+.order-list { display: grid; gap: 8px; }
 .ticket-list { display: grid; gap: 10px; }
 .ticket-card {
   box-sizing: border-box;

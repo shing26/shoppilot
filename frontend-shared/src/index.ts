@@ -127,3 +127,6 @@ export function shortId(id: string): string {
 export function countLabel(value: number): string {
   return value > 99 ? '99+' : String(value)
 }
+
+/** 弹层键盘礼让（round46 票 193）：与框架无关，见 `dialog.ts` 里为什么不做成组合式函数。 */
+export { trapDialogFocus } from './dialog'

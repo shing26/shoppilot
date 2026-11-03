@@ -5,6 +5,8 @@
  * <p>处理结论是必填且会随结果回流给买家，所以校验留在根组件（`confirmResolve`），
  * 这里只负责画与发 `confirm`。
  */
+import { onMounted, onUnmounted, ref } from 'vue'
+import { trapDialogFocus } from 'frontend-shared'
 import type { Ticket } from '../types'
 
 const note = defineModel<string>('note', { required: true })
@@ -16,11 +18,22 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{ close: []; confirm: [] }>()
+
+// Esc / 焦点陷阱 / 焦点回还（round46 票 193）；初始焦点落在结单意见输入框。
+const panel = ref<HTMLElement | null>(null)
+let release: (() => void) | null = null
+onMounted(() => {
+  if (panel.value) release = trapDialogFocus(panel.value, () => emit('close'))
+})
+onUnmounted(() => {
+  release?.()
+  release = null
+})
 </script>
 
 <template>
   <div class="scrim" @click.self="emit('close')">
-    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="resolve-title">
+    <section ref="panel" class="dialog" role="dialog" aria-modal="true" aria-labelledby="resolve-title" tabindex="-1">
       <h2 id="resolve-title">处理完成</h2>
       <p class="dialog-sub">工单 <span class="mono">{{ target.id }}</span> · {{ target.userQuery }}</p>
       <label class="field">

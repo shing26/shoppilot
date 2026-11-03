@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -34,10 +35,20 @@ public class FeedbackController {
                 request.reason(), request.signals(), request.ruleIds(), request.ticketId());
     }
 
-    /** ingest 待复核队列：DOWN 且未复核的行，人工从这里认领。 */
+    /**
+     * 复核队列：DOWN 的反馈，人工从这里认领。
+     *
+     * <p>{@code status} 缺省仍是 {@code PENDING}（老客户端行为不变）；{@code REVIEWED} 用于
+     * 工作台刷新后恢复「已复核 · 可附稿」——round46 票 194 之前只有 PENDING 一个读口。
+     */
     @GetMapping("/review-queue")
-    public List<FeedbackService.FeedbackView> reviewQueue() {
-        return service.reviewQueue();
+    public ResponseEntity<List<FeedbackService.FeedbackView>> reviewQueue(
+            @RequestParam(required = false) String status) {
+        try {
+            return ResponseEntity.ok(service.reviewQueue(status));
+        } catch (IllegalArgumentException badStatus) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     /**

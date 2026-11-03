@@ -39,6 +39,10 @@ import ServiceCard from './components/ServiceCard.vue'
 import TicketDrawer from './components/TicketDrawer.vue'
 
 const STORAGE_KEY = 'shoppilot.buyer.session'
+/** 对话按标签页存档（round46 票 192）：刷新不丢消息与会话 ID，关标签页即散。 */
+const CHAT_STORAGE_KEY = 'shoppilot.buyer.chat'
+/** 存档上限：只留最近 100 条，避免长会话把 sessionStorage 配额吃满。 */
+const CHAT_LIMIT = 100
 
 /** 店铺码来自 URL；缺省时不猜、也不退回内部 id 输入框（ADR 0070 B2）。 */
 const STORE_PARAMS = new URLSearchParams(window.location.search)
@@ -62,7 +66,9 @@ const loginError = ref('')
 const query = ref('')
 const asking = ref(false)
 const inFlight = ref<AbortController | null>(null)
-const messages = ref<ChatMessage[]>([])
+/** 本标签页的对话；刷新后从 `sessionStorage` 恢复（round46 票 192）。 */
+const restoredChat = readStoredChat()
+const messages = ref<ChatMessage[]>(restoredChat.messages)
 const tickets = ref<Ticket[]>([])
 const ticketsLoading = ref(false)
 const ticketError = ref('')
@@ -79,7 +85,7 @@ const sideTab = ref<'orders' | 'tickets'>('orders')
 const showAllOrders = ref(false)
 const showAllTickets = ref(false)
 const now = ref(Date.now())
-let conversation = ''
+let conversation = restoredChat.conversation
 
 // ── 显式反馈（round45 票 191）───────────────────────────────────────────────
 // 一条回答下面的「有用 / 没用」。点踩落 biz-mock 的 feedback 表 → 进复核队列 →
@@ -114,8 +120,6 @@ const QUICK_QUESTIONS = computed(() => {
   }
   return ['你们店是卖什么的？', '七天无理由怎么退', '帮我查一下订单 90001 的物流']
 })
-
-const isGuest = computed(() => guestMode.value || session.value?.username === 'guest')
 
 async function loadStoreInfo() {
   if (!session.value) return
@@ -170,7 +174,8 @@ async function enterAsGuest(): Promise<boolean> {
     guestMode.value = true
     demoMode.value = false
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result.body))
-    await loadStoreInfo()
+    // 游客令牌能读到的就是这位买家自己的数据，进入后立刻拉，不等用户点刷新（round46 票 192）。
+    await Promise.all([refreshTickets(), refreshOrders(), loadStoreInfo()])
     return true
   }
   if (result.status === 404) {
@@ -208,11 +213,14 @@ async function doLogin() {
 }
 
 function signOut() {
+  // 先中止还在跑的 SSE（round46 票 192）：否则退出后回答仍会继续写进已清空的页面。
+  stopAnswer()
   session.value = null
   demoMode.value = false
   guestMode.value = false
   showLogin.value = true
   clearStoredSession()
+  clearStoredChat()
   tickets.value = []
   ticketError.value = ''
   orders.value = []
@@ -242,7 +250,7 @@ async function askQuick(question: string) {
 
 async function refreshOrders() {
   orderError.value = ''
-  if (!session.value || isGuest.value) {
+  if (!session.value) {
     orders.value = []
     ordersLoading.value = false
     return
@@ -404,6 +412,8 @@ async function runAnswer(text: string, index: number) {
     feedbackDraft.value = null
     feedbackReason.value = ''
   }
+  // 先把「正在回答」这一版落盘：刷新时至少知道问过什么、答案还没来（round46 票 192）。
+  persistChat()
 
   const controller = new AbortController()
   inFlight.value = controller
@@ -427,12 +437,14 @@ async function runAnswer(text: string, index: number) {
     target.stopped = true
     if (!target.text.trim()) target.text = '已停止生成。'
     target.note = '已停止生成，可以重试；不用重新描述问题。'
+    persistChat()
     return
   }
   if (result.status !== 200) {
     target.failed = true
     target.text = describe(result, '')
     target.note = '这次没有连上，可以重试；问题已经留在上面。'
+    persistChat()
     return
   }
   const body = result.body as {
@@ -447,16 +459,15 @@ async function runAnswer(text: string, index: number) {
   if (body.fallbackReason) {
     const ticketInText = !!body.ticketId && target.text.includes(body.ticketId)
     target.note = body.ticketId
-      ? (isGuest.value
-        ? `已转人工，工单号 ${body.ticketId}（游客模式不展示工单）`
-        : ticketInText
-          ? '已转人工，进度在下方「我的工单」里，不用再重复描述。'
-          : `已转人工：${body.ticketId}。进度在下方「我的工单」里，不用再重复描述。`)
+      ? (ticketInText
+        ? '已转人工，进度在下方「我的工单」里，不用再重复描述。'
+        : `已转人工：${body.ticketId}。进度在下方「我的工单」里，不用再重复描述。`)
       : '这次没能直接答出来，已转人工处理，不用再重复描述。'
   }
-  if (body.ticketId && !isGuest.value) {
+  if (body.ticketId) {
     await refreshTickets()
   }
+  persistChat()
 }
 
 async function ask() {
@@ -528,6 +539,8 @@ async function submitFeedback() {
   target.feedbackError = ''
   feedbackDraft.value = null
   feedbackReason.value = ''
+  // 票已投：刷新后回执和回指会话都还在（round46 票 192）。
+  persistChat()
 }
 
 async function retry(index: number) {
@@ -538,10 +551,8 @@ async function retry(index: number) {
 
 onMounted(() => {
   if (session.value) {
-    if (!isGuest.value) {
-      void refreshTickets()
-      void refreshOrders()
-    }
+    void refreshTickets()
+    void refreshOrders()
     void loadStoreInfo()
   } else if (STORE_CODE && AUTO_GUEST) {
     void enterAsGuest()
@@ -581,6 +592,66 @@ function readStoredSession(): Session | null {
 
 function clearStoredSession() {
   sessionStorage.removeItem(STORAGE_KEY)
+}
+
+/**
+ * 读回本标签页的对话（round46 票 192）。
+ *
+ * <p>存档跟着**店铺**走：`tenantId` 与当前会话不一致就整份丢弃，换店不会看到上一家的对话。
+ * 刷新时还在流式中的那条回答按「中断」收尾——页面已经重载，那条流再也回不来了，
+ * 假装它还在等只会让界面永远转圈。
+ */
+function readStoredChat(): { conversation: string; messages: ChatMessage[] } {
+  const raw = sessionStorage.getItem(CHAT_STORAGE_KEY)
+  if (!raw) return { conversation: '', messages: [] }
+  try {
+    const stored = JSON.parse(raw) as {
+      tenantId?: string
+      conversation?: string
+      messages?: ChatMessage[]
+    }
+    const tenantId = session.value?.tenantId ?? STORE_CODE
+    if (!tenantId || stored.tenantId !== tenantId || !Array.isArray(stored.messages)) {
+      sessionStorage.removeItem(CHAT_STORAGE_KEY)
+      return { conversation: '', messages: [] }
+    }
+    const messages = stored.messages.filter((message) => message?.role === 'user' || message?.role === 'assistant')
+    for (const message of messages) {
+      if (typeof message.text !== 'string') message.text = ''
+      if (message.feedbackState === 'sending') message.feedbackState = undefined
+      if (message.pending) {
+        message.pending = false
+        message.stopped = true
+        if (!message.text.trim()) message.text = '刷新时中断了这次回答。'
+        message.note = '刷新时中断，可以重试；问题已经留在上面。'
+      }
+    }
+    return { conversation: stored.conversation ?? '', messages }
+  } catch (unreadable) {
+    sessionStorage.removeItem(CHAT_STORAGE_KEY)
+    return { conversation: '', messages: [] }
+  }
+}
+
+/** 写回本标签页的对话；配额不足或隐私模式写不进去时静默放弃，不打断对话。 */
+function persistChat() {
+  if (!session.value) {
+    clearStoredChat()
+    return
+  }
+  try {
+    sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({
+      tenantId: session.value.tenantId,
+      conversation,
+      messages: messages.value.slice(-CHAT_LIMIT),
+    }))
+  } catch {
+    // 存不下就算了：内存里的对话仍然可用（round46 票 192）。
+  }
+}
+
+function clearStoredChat() {
+  sessionStorage.removeItem(CHAT_STORAGE_KEY)
 }
 </script>
 
@@ -656,7 +727,6 @@ function clearStoredSession() {
             :tickets-loading="ticketsLoading"
             :order-error="orderError"
             :ticket-error="ticketError"
-            :is-guest="isGuest"
             :now="now"
             :expanded-order-no="expandedOrderNo"
             :order-detail="orderDetail"

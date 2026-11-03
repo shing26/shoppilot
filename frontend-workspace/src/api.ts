@@ -344,6 +344,8 @@ export interface FeedbackItem {
   signals: string
   ruleIds: string
   ticketId: string | null
+  /** 点踩开出的复核工单号（round46 票 194）；开单失败时为 null。 */
+  reviewTicketId: string | null
   reviewStatus: string
   createdAt: string
 }
@@ -378,8 +380,18 @@ export interface RevisionDraft {
   scope: string
 }
 
-export function feedbackReviewQueue(session: Session): Promise<ApiResult<FeedbackItem[]>> {
-  return api<FeedbackItem[]>('GET', '/feedback/review-queue', { token: session.token })
+/**
+ * 复核队列。
+ *
+ * <p>不传 `status` 仍是 PENDING（老行为）。{@code REVIEWED} 用于刷新后恢复「已复核 · 可附稿」
+ * ——round46 票 194 之前只有 PENDING 一个读口，刷新一次就再也附不了稿。
+ */
+export function feedbackReviewQueue(
+  session: Session,
+  status?: 'PENDING' | 'REVIEWED',
+): Promise<ApiResult<FeedbackItem[]>> {
+  const query = status ? `?status=${status}` : ''
+  return api<FeedbackItem[]>('GET', `/feedback/review-queue${query}`, { token: session.token })
 }
 
 /** 复核完成（PENDING → REVIEWED）。请求体是空对象：动作本身没有参数。 */

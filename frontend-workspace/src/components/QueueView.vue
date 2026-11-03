@@ -5,12 +5,13 @@
  * <p>`queue` / `statusFilter` / `selectedId` 都用**显式 prop + 事件**而不是 `v-model`：
  * 换队列要先更新值再拉数据，依赖同一事件上两个处理器的先后顺序太脆。
  */
+import { computed } from 'vue'
 import { shortId } from 'frontend-shared'
 import { PRIORITY_LABEL, QUEUE_LABEL, QUEUES, SOURCE_LABEL, STATUS_LABEL, type Ticket } from '../types'
-import { formatTime, isOverdue, slaText } from '../lib/format'
+import { formatTime, isOverdue, payloadField, slaText } from '../lib/format'
 import type { StatusFilter } from '../lib/ui'
 
-defineProps<{
+const props = defineProps<{
   queue: string
   statusFilter: StatusFilter
   selectedId: string
@@ -36,7 +37,17 @@ const emit = defineEmits<{
   release: [ticket: Ticket]
   resolve: [ticket: Ticket]
   openRefunds: []
+  reviewFeedback: [feedbackId: string]
 }>()
+
+/**
+ * 复核单指回的那条反馈（round46 票 194）：`payload.feedbackId` 由 biz-mock 开单时写入。
+ * 解析不出来就不显示入口——宁可少一个按钮，也不要跳到一个猜出来的单号上。
+ */
+const reviewFeedbackId = computed(() => {
+  if (props.selected?.source !== 'FEEDBACK_REVIEW') return null
+  return payloadField(props.selected, 'feedbackId')
+})
 
 function onQueueChange(event: Event) {
   emit('changeQueue', (event.target as HTMLSelectElement).value)
@@ -141,6 +152,14 @@ function onQueueChange(event: Event) {
           </button>
           <button class="primary" type="button" :disabled="!!inFlight || selected.status === 'RESOLVED'" @click="emit('resolve', selected)">
             处理完成
+          </button>
+          <button
+            v-if="reviewFeedbackId"
+            class="ghost"
+            type="button"
+            @click="emit('reviewFeedback', reviewFeedbackId)"
+          >
+            去复核这条反馈
           </button>
         </div>
 

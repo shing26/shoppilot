@@ -154,9 +154,10 @@ const quality = ref<QualityReport | null>(null)
 const qualityLoading = ref(false)
 const qualityError = ref('')
 
-// ── 知识飞轮（round44 票 190）───────────────────────────────────────────────
-// `reviewedFeedback` 是**会话内副本**：复核一完成服务端队列里的那一行就出队了，
-// 不留一份，用户点完「复核」就再也找不到可以附稿的对象。
+// ── 知识飞轮（round44 票 190；round46 票 194 改为服务端真源）────────────────
+// `feedback` 是待复核（PENDING）；`reviewedFeedback` 是已复核、还能附稿的（REVIEWED）。
+// round46 之前后者只是会话内副本，刷新即失联；现在刷新时按 `status=REVIEWED` 从服务端取回，
+// 并用已有修订稿把「已经附过稿的」滤掉，避免同一反馈重复出现在可附稿列表里。
 const feedback = ref<FeedbackItem[]>([])
 const feedbackLoading = ref(false)
 const feedbackError = ref('')
@@ -406,28 +407,44 @@ function emptyDraft(): RevisionDraft {
 async function refreshKnowledge() {
   if (!session.value) {
     feedback.value = []
+    reviewedFeedback.value = []
     revisions.value = []
     return
   }
-  await Promise.all([refreshFeedbackQueue(), refreshKnowledgeRevisions()])
+  // 先拿修订稿：下面要用 `revisions.feedbackId` 把已附稿的反馈从可附稿列表里滤掉。
+  await refreshKnowledgeRevisions()
+  await refreshFeedbackQueue()
 }
 
 async function refreshFeedbackQueue() {
   feedbackError.value = ''
   if (!session.value) {
     feedback.value = []
+    reviewedFeedback.value = []
     feedbackLoading.value = false
     return
   }
   feedbackLoading.value = true
-  const result = await feedbackReviewQueue(session.value)
+  const [pending, reviewed] = await Promise.all([
+    feedbackReviewQueue(session.value),
+    feedbackReviewQueue(session.value, 'REVIEWED'),
+  ])
   feedbackLoading.value = false
-  if (result.status !== 200 || !Array.isArray(result.body)) {
-    feedbackError.value = describeKnowledge(result, '')
+  if (pending.status !== 200 || !Array.isArray(pending.body)) {
+    feedbackError.value = describeKnowledge(pending, '')
     feedback.value = []
     return
   }
-  feedback.value = result.body
+  feedback.value = pending.body
+  if (reviewed.status === 200 && Array.isArray(reviewed.body)) {
+    // 有 DRAFT/PUBLISHED 修订稿的 = 已经附过稿，不再列；REJECTED 的留给用户重新起草。
+    const drafted = new Set(
+      revisions.value.filter((revision) => revision.status !== 'REJECTED').map((revision) => revision.feedbackId),
+    )
+    reviewedFeedback.value = reviewed.body.filter((item) => !drafted.has(item.id))
+  }
+  // REVIEWED 读失败时保留会话内已有的副本：刷新的主职责（待复核队列）已经成功，
+  // 不该因为第二个读口不可用就把可附稿列表清空。
 }
 
 async function refreshKnowledgeRevisions() {
@@ -545,6 +562,18 @@ async function rejectKnowledgeRevision(revisionId: string) {
     return
   }
   kbError.value = describeKnowledge(result, '')
+}
+
+/**
+ * 从工单队列跳到知识视图去复核某条反馈（round46 票 194）。
+ *
+ * <p>只切视图 + 留一句指路，不预设「正在复核」：复核仍是知识视图里的显式动作，
+ * 工单详情只是把入口从「翻队列找反馈号」变成一次点击。
+ */
+function openFeedbackReview(feedbackId: string) {
+  kbError.value = ''
+  kbNote.value = `来自工单队列：在待复核列表里找到反馈 ${feedbackId}，复核后再附稿。`
+  selectView('knowledge')
 }
 
 function selectView(next: WorkspaceView) {
@@ -1069,6 +1098,7 @@ function clearStoredSession() {
             @release="run($event, 'release')"
             @resolve="openResolve"
             @open-refunds="selectView('refunds')"
+            @review-feedback="openFeedbackReview"
           />
 
           <ConversationsView

@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.UnaryOperator;
 
@@ -23,6 +25,9 @@ import java.util.function.UnaryOperator;
 public class FeedbackService {
 
     private static final AtomicLong FEEDBACK_SEQ = new AtomicLong();
+
+    /** 复核队列允许读的状态；默认 PENDING 保持老客户端的行为不变。 */
+    private static final Set<String> REVIEW_STATUSES = Set.of("PENDING", "REVIEWED", "NONE");
 
     private static final Logger log = LoggerFactory.getLogger(FeedbackService.class);
 
@@ -48,7 +53,12 @@ public class FeedbackService {
                 ticketId, "DOWN".equals(verdict) ? "PENDING" : "NONE", now);
         Feedback saved = feedbackRepository.save(feedback);
         if ("PENDING".equals(saved.getReviewStatus())) {
-            openReviewWorkItem(saved, reason);
+            String reviewTicketId = openReviewWorkItem(saved, reason);
+            if (reviewTicketId != null) {
+                // 回指写在 feedback 上（round46 票 194）：复核完成时靠它结掉那张工作项。
+                saved.setReviewTicketId(reviewTicketId);
+                saved = feedbackRepository.save(saved);
+            }
         }
         return toView(saved);
     }
@@ -65,7 +75,7 @@ public class FeedbackService {
      * <p>工单数据在工单服务（票 72），所以这里是跨进程调用：开单失败**不阻断**复核状态流转——
      * 复核队列的真源是 {@code review_status}，工单是它的工作项，缺了就少一个入口，不是数据丢了。
      */
-    private void openReviewWorkItem(Feedback feedback, String reason) {
+    private String openReviewWorkItem(Feedback feedback, String reason) {
         String ticketId = workItemClient.create(TicketSource.FEEDBACK_REVIEW, feedback.getCustomerId(),
                 "FEEDBACK_REVIEW", "会话 " + feedback.getConversationId() + " 的答复待复核",
                 reason == null ? "" : reason, null,
@@ -74,12 +84,23 @@ public class FeedbackService {
         if (ticketId == null) {
             log.warn("复核工单 {} 没开成；复核队列仍可处理（真源是 feedback.review_status）", feedback.getId());
         }
+        return ticketId;
     }
 
-    /** ingest 待复核队列：本店范围内 PENDING 状态的反馈，按时间倒序。 */
+    /**
+     * 读复核队列；默认 PENDING，允许按状态取（round46 票 194）。
+     *
+     * <p>工作台刷新后要能把「已复核 · 可附稿」重新取回来——此前只有 PENDING 一个读口，
+     * REVIEWED 的反馈一刷新就从界面消失，附稿入口再也回不去。非法状态直接 400，
+     * 不悄悄退回 PENDING：那会让拼错参数的人以为队列是空的。
+     */
     @Transactional(readOnly = true)
-    public List<FeedbackView> reviewQueue() {
-        return feedbackRepository.findByReviewStatusOrderByCreatedAtDesc("PENDING").stream()
+    public List<FeedbackView> reviewQueue(String status) {
+        String wanted = (status == null || status.isBlank()) ? "PENDING" : status.trim().toUpperCase(Locale.ROOT);
+        if (!REVIEW_STATUSES.contains(wanted)) {
+            throw new IllegalArgumentException("未知复核状态 " + status + "，可选 PENDING / REVIEWED / NONE");
+        }
+        return feedbackRepository.findByReviewStatusOrderByCreatedAtDesc(wanted).stream()
                 .map(this::toView).toList();
     }
 
@@ -101,7 +122,27 @@ public class FeedbackService {
         });
         auditService.publish(AuditActions.FEEDBACK_REVIEWED, "FEEDBACK", view.id(), reviewer,
                 "复核完成；复核本身不触发任何自动改写（ADR 0039）");
+        closeReviewWorkItem(view, reviewer);
         return view;
+    }
+
+    /**
+     * 复核完成顺手结掉点踩开出的复核单（round46 票 194 / ADR 0081）。
+     *
+     * <p>失败**不阻断**复核：复核的真源是 {@code feedback.review_status}，工单只是它的工作项。
+     * 结单被拒的常见原因是这张单已经被别的坐席领取（工单服务的归属校验），
+     * 那种情况下留 warn 让运营在工单队列里人工收尾，而不是把一次成功的复核回滚掉。
+     */
+    private void closeReviewWorkItem(FeedbackView view, Actor reviewer) {
+        String ticketId = view.reviewTicketId();
+        if (ticketId == null || ticketId.isBlank()) {
+            return;
+        }
+        boolean resolved = workItemClient.resolve(ticketId, reviewer,
+                "反馈 " + view.id() + " 已复核；复核本身不触发自动改写（ADR 0039）");
+        if (!resolved) {
+            log.warn("复核单 {} 没结掉（反馈 {} 已复核，真源不受影响）", ticketId, view.id());
+        }
     }
 
     private FeedbackView transition(String id, UnaryOperator<Feedback> change) {
@@ -121,10 +162,11 @@ public class FeedbackService {
 
     private FeedbackView toView(Feedback feedback) {
         return new FeedbackView(feedback.getId(), feedback.getVerdict(), feedback.getReason(), feedback.getSignals(),
-                feedback.getRuleIds(), feedback.getTicketId(), feedback.getReviewStatus(), feedback.getCreatedAt());
+                feedback.getRuleIds(), feedback.getTicketId(), feedback.getReviewTicketId(),
+                feedback.getReviewStatus(), feedback.getCreatedAt());
     }
 
     public record FeedbackView(String id, String verdict, String reason, String signals, String ruleIds,
-                               String ticketId, String reviewStatus, Instant createdAt) {
+                               String ticketId, String reviewTicketId, String reviewStatus, Instant createdAt) {
     }
 }

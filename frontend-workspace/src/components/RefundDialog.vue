@@ -5,6 +5,8 @@
  * <p>资金动作不可逆，金额与订单号必须一眼可见——这个框存在的理由就是把它们摆出来，
  * 而不是用浏览器原生 `confirm` 问一句「确定吗」。
  */
+import { onMounted, onUnmounted, ref } from 'vue'
+import { trapDialogFocus } from 'frontend-shared'
 import type { RefundItem } from '../api'
 
 const note = defineModel<string>('note', { required: true })
@@ -17,11 +19,23 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{ close: []; confirm: [] }>()
+
+// Esc / 焦点陷阱 / 焦点回还（round46 票 193）。初始焦点在备注框，不落在「确认放行」上——
+// 资金动作不该因为一次误敲回车就提交。
+const panel = ref<HTMLElement | null>(null)
+let release: (() => void) | null = null
+onMounted(() => {
+  if (panel.value) release = trapDialogFocus(panel.value, () => emit('close'))
+})
+onUnmounted(() => {
+  release?.()
+  release = null
+})
 </script>
 
 <template>
   <div class="scrim" @click.self="emit('close')">
-    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="refund-title">
+    <section ref="panel" class="dialog" role="dialog" aria-modal="true" aria-labelledby="refund-title" tabindex="-1">
       <h2 id="refund-title">{{ decision === 'APPROVE' ? '放行退款' : '驳回退款' }}</h2>
       <p class="dialog-sub">
         退款 #{{ target.refundId }} · 订单 {{ target.orderNo }} ·

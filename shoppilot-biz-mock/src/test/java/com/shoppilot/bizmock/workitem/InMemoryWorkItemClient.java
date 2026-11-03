@@ -1,5 +1,6 @@
 package com.shoppilot.bizmock.workitem;
 
+import com.shoppilot.tool.audit.Actor;
 import com.shoppilot.tool.workitem.TicketSource;
 
 import java.util.ArrayList;
@@ -21,7 +22,12 @@ public class InMemoryWorkItemClient implements WorkItemClient {
                           String priority, String payload, String ticketId) {
     }
 
+    /** 一次结单（round46 票 194）：复核完成时业务侧发出的那张单。 */
+    public record Resolved(String ticketId, Actor actor, String note) {
+    }
+
     private final List<Created> created = new ArrayList<>();
+    private final List<Resolved> resolved = new ArrayList<>();
     private final AtomicLong sequence = new AtomicLong();
     private boolean unavailable;
 
@@ -43,6 +49,14 @@ public class InMemoryWorkItemClient implements WorkItemClient {
         return created.isEmpty() ? null : created.get(created.size() - 1);
     }
 
+    public List<Resolved> resolved() {
+        return List.copyOf(resolved);
+    }
+
+    public Resolved lastResolved() {
+        return resolved.isEmpty() ? null : resolved.get(resolved.size() - 1);
+    }
+
     @Override
     public String create(TicketSource source, String customerId, String reason, String userQuery, String transcript,
                          String priority, String payload) {
@@ -52,6 +66,15 @@ public class InMemoryWorkItemClient implements WorkItemClient {
         String ticketId = "T-stub-" + sequence.incrementAndGet();
         created.add(new Created(source, customerId, reason, userQuery, transcript, priority, payload, ticketId));
         return ticketId;
+    }
+
+    @Override
+    public boolean resolve(String ticketId, Actor actor, String note) {
+        if (unavailable || ticketId == null || ticketId.isBlank()) {
+            return false;
+        }
+        resolved.add(new Resolved(ticketId, actor, note));
+        return true;
     }
 
     @Override

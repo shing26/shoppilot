@@ -5,6 +5,8 @@
  * <p>轮询（8 秒）由 `App.vue` 持有：它取的是"当前选中工单"，而选中状态属于页面，
  * 不属于这张卡片。这里只负责画，刷新动作发事件回去。
  */
+import { onMounted, onUnmounted, ref } from 'vue'
+import { trapDialogFocus } from 'frontend-shared'
 import { PRIORITY_LABEL, STATUS_LABEL, type Ticket } from '../types'
 import { channelLabel, formatTime, reasonLabel, slaText } from '../lib/format'
 
@@ -17,11 +19,22 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{ close: []; refresh: [] }>()
+
+// Esc / 焦点陷阱 / 焦点回还（round46 票 193）：与工作台两个确认框共用同一份实现。
+const panel = ref<HTMLElement | null>(null)
+let release: (() => void) | null = null
+onMounted(() => {
+  if (panel.value) release = trapDialogFocus(panel.value, () => emit('close'))
+})
+onUnmounted(() => {
+  release?.()
+  release = null
+})
 </script>
 
 <template>
   <div class="drawer-mask" @click.self="emit('close')">
-    <aside class="drawer" role="dialog" aria-modal="true" aria-label="工单详情">
+    <aside ref="panel" class="drawer" role="dialog" aria-modal="true" aria-label="工单详情" tabindex="-1">
       <header class="drawer-head">
         <div>
           <p class="eyebrow">工单详情</p>

@@ -31,7 +31,7 @@ const props = defineProps<{
   feedback: FeedbackItem[]
   feedbackLoading: boolean
   feedbackError: string
-  /** 本次会话里复核完成的反馈——队列刷新后它们就出队了，不留一份就断在「没法附稿」。 */
+  /** 已复核且还没附过稿的反馈（round46 票 194）：刷新后由服务端 REVIEWED 列表恢复。 */
   reviewed: FeedbackItem[]
   /** 正在附稿的那条反馈 id；空串表示表单收起。 */
   draftFeedbackId: string
@@ -60,7 +60,7 @@ const published = computed(() => props.revisions.filter((r) => r.status === 'PUB
 /** 五步各自的一条计数；「进入语料」那步没有数字可报，它等的是重跑 ingest。 */
 const steps = computed(() => [
   { key: 'feedback', label: '点踩反馈', value: countLabel(props.feedback.length), hint: '待复核' },
-  { key: 'review', label: '人工复核', value: countLabel(props.reviewed.length), hint: '本次会话' },
+  { key: 'review', label: '人工复核', value: countLabel(props.reviewed.length), hint: '可附稿' },
   { key: 'draft', label: '附修订稿', value: countLabel(drafts.value.length), hint: '待发布' },
   { key: 'publish', label: '发布', value: countLabel(published.value.length), hint: '已发布' },
   { key: 'ingest', label: '进入语料', value: 'ingest', hint: '需重跑' },
@@ -172,7 +172,7 @@ function scopeOf(value: string): string {
         <span class="fine">稿件由人写：系统不生成、不润色正文（ADR 0039）</span>
       </header>
       <p v-if="!reviewed.length" class="empty">
-        本次会话还没有复核记录。上面复核一条，它就会落到这里——刷新队列不会把它弄丢。
+        还没有已复核待附稿的反馈。上面复核一条，它就会落到这里——刷新页面也仍然在（round46 起以服务端为准）。
       </p>
       <ul v-else class="rows">
         <li v-for="item in reviewed" :key="item.id" class="row">

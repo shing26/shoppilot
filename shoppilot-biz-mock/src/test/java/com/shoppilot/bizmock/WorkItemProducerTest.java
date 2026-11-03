@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
@@ -21,6 +22,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.util.List;
 
@@ -52,6 +57,8 @@ class WorkItemProducerTest {
     JdbcTemplate jdbc;
     @Autowired
     InMemoryWorkItemClient workItems;
+    @LocalServerPort
+    int port;
 
     @TestConfiguration
     static class StubWorkItems {
@@ -97,6 +104,40 @@ class WorkItemProducerTest {
     }
 
     @Test
+    @DisplayName("复核完成顺手结掉复核单，单号回指在 feedback.review_ticket_id")
+    void reviewClosesTheReviewWorkItem() throws Exception {
+        JsonNode created = createFeedback("DOWN");
+        String feedbackId = created.path("id").asText();
+        String reviewTicketId = created.path("reviewTicketId").asText();
+        assertThat(reviewTicketId).as("点踩开的复核单号写回反馈行").isNotBlank();
+        assertThat(jdbc.queryForObject("select review_ticket_id from feedback where id = ?", String.class, feedbackId))
+                .isEqualTo(reviewTicketId);
+
+        ResponseEntity<String> reviewed = review(feedbackId, "alice");
+        assertThat(reviewed.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(JSON.readTree(reviewed.getBody()).path("reviewStatus").asText()).isEqualTo("REVIEWED");
+        assertThat(workItems.lastResolved()).isNotNull();
+        assertThat(workItems.lastResolved().ticketId()).isEqualTo(reviewTicketId);
+        assertThat(workItems.lastResolved().actor().name()).isEqualTo("alice");
+    }
+
+    @Test
+    @DisplayName("复核单结不掉时复核仍然成功：真源是 review_status，工单只是工作项")
+    void reviewSucceedsEvenWhenTheReviewTicketCannotBeClosed() throws Exception {
+        JsonNode created = createFeedback("DOWN");
+        String feedbackId = created.path("id").asText();
+        workItems.unreachable();
+        try {
+            ResponseEntity<String> reviewed = review(feedbackId, "alice");
+            assertThat(reviewed.getStatusCode().is2xxSuccessful()).isTrue();
+            assertThat(JSON.readTree(reviewed.getBody()).path("reviewStatus").asText()).isEqualTo("REVIEWED");
+            assertThat(workItems.resolved()).isEmpty();
+        } finally {
+            workItems.reachable();
+        }
+    }
+
+    @Test
     @DisplayName("工单服务不可达时钱动作照走：退款受理成功，只是没人接单——并留 warn 的缺口")
     void refundStillGoesThroughWhenTheTicketServiceIsDown() throws Exception {
         workItems.unreachable();
@@ -138,12 +179,31 @@ class WorkItemProducerTest {
         return JSON.readTree(applied.getBody()).path("payload").path("refundId").asLong();
     }
 
-    private void createFeedback(String verdict) throws Exception {
+    private JsonNode createFeedback(String verdict) throws Exception {
         ResponseEntity<String> created = rest.exchange("/api/feedback", HttpMethod.POST,
                 new HttpEntity<>("{\"customerId\":\"C001\",\"conversationId\":\"conv-" + System.nanoTime()
                         + "\",\"verdict\":\"" + verdict + "\",\"reason\":\"答非所问\"}", headers("T001", "C001")),
                 String.class);
         assertThat(created.getStatusCode().is2xxSuccessful()).isTrue();
+        return JSON.readTree(created.getBody());
+    }
+
+    /**
+     * PATCH 走 JDK HttpClient：{@code TestRestTemplate} 的 SimpleClientHttpRequestFactory
+     * 不支持 PATCH（会抛 Invalid HTTP method）。
+     */
+    private ResponseEntity<String> review(String feedbackId, String actor) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(
+                        URI.create("http://127.0.0.1:" + port + "/api/feedback/" + feedbackId + "/review"))
+                .header("X-Internal-Token", TOKEN)
+                .header("X-Tenant-Id", "T001")
+                .header("X-Actor", actor)
+                .header("X-Actor-Authenticated", "true")
+                .header("Content-Type", "application/json")
+                .method("PATCH", HttpRequest.BodyPublishers.ofString("{}"))
+                .build();
+        HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        return ResponseEntity.status(response.statusCode()).body(response.body());
     }
 
     private HttpHeaders headers(String tenantId, String customerId) {

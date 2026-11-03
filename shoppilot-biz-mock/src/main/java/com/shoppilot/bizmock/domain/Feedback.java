@@ -60,6 +60,15 @@ public class Feedback {
     @Column(name = "ticket_id", length = 40)
     private String ticketId;
 
+    /**
+     * 点踩时开的**复核**工单号（round46 票 194）。
+     *
+     * <p>与 {@link #ticketId} 是两件事：那一列指回会话里的降级单（「这次对话办不了」），
+     * 这一列指回复核单（「这句答案的内容对不对」）。复核完成时用它把工作项结掉。
+     */
+    @Column(name = "review_ticket_id", length = 40)
+    private String reviewTicketId;
+
     /** NONE（UP）/ PENDING（DOWN 进复核队列）/ REVIEWED（人工复核完成）。 */
     @Column(name = "review_status", nullable = false, length = 12)
     private String reviewStatus;
@@ -120,6 +129,14 @@ public class Feedback {
 
     public String getTicketId() {
         return ticketId;
+    }
+
+    public String getReviewTicketId() {
+        return reviewTicketId;
+    }
+
+    public void setReviewTicketId(String reviewTicketId) {
+        this.reviewTicketId = reviewTicketId;
     }
 
     public String getReviewStatus() {

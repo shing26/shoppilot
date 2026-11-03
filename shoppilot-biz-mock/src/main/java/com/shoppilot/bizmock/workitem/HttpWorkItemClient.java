@@ -3,6 +3,8 @@ package com.shoppilot.bizmock.workitem;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.bizmock.tenant.TenantContextHolder;
+import com.shoppilot.tool.audit.Actor;
+import com.shoppilot.tool.audit.ActorHeaders;
 import com.shoppilot.tool.workitem.TicketSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,6 +87,39 @@ public class HttpWorkItemClient implements WorkItemClient {
         } catch (Exception unreachable) {
             log.warn("工单服务不可达，单子没开成 source={} reason={}: {}", source, reason, unreachable.getMessage());
             return null;
+        }
+    }
+
+    @Override
+    public boolean resolve(String ticketId, Actor actor, String note) {
+        if (ticketId == null || ticketId.isBlank()) {
+            return false;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("note", note == null ? "" : note);
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(
+                            URI.create(baseUrl + "/api/tickets/" + ticketId + "/resolve"))
+                    .timeout(timeout)
+                    .header("Content-Type", "application/json")
+                    .header("X-Internal-Token", internalToken)
+                    .header("X-Tenant-Id", TenantContextHolder.tenantId());
+            if (actor != null) {
+                builder.header(ActorHeaders.ACTOR, actor.name());
+                builder.header(ActorHeaders.ACTOR_AUTHENTICATED, String.valueOf(actor.authenticated()));
+            }
+            HttpResponse<String> response = http.send(
+                    builder.POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() / 100 != 2) {
+                // 工单已被别人领取 / 已结单时这里是 409：记下来，但不把复核动作回滚。
+                log.warn("复核工单 {} 没结掉 status={} body={}", ticketId, response.statusCode(), response.body());
+                return false;
+            }
+            return true;
+        } catch (Exception unreachable) {
+            log.warn("工单服务不可达，复核工单 {} 没结掉: {}", ticketId, unreachable.getMessage());
+            return false;
         }
     }
 

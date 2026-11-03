@@ -71,6 +71,22 @@ class FeedbackReviewQueueTest {
         assertThat(ids).doesNotContain(a);
     }
 
+    @Test
+    @DisplayName("复核队列可按状态读：默认 PENDING，REVIEWED 复核后能取回，非法状态 400")
+    void queueCanBeReadByStatus() throws Exception {
+        String pending = idOf(create("C001", "conv-status-pending", "DOWN", null, null, List.of(), null));
+        String reviewed = idOf(create("C001", "conv-status-reviewed", "DOWN", null, null, List.of(), null));
+        assertThat(markReviewed(reviewed)).contains("\"reviewStatus\":\"REVIEWED\"");
+
+        List<String> defaults = idsOf(reviewQueue());
+        assertThat(defaults).as("不传 status 仍是 PENDING，老客户端行为不变").contains(pending).doesNotContain(reviewed);
+
+        List<String> reviewedIds = idsOf(reviewQueue("T001", "C001", "REVIEWED"));
+        assertThat(reviewedIds).as("已复核的能按状态取回，刷新后仍可附稿").contains(reviewed).doesNotContain(pending);
+
+        assertThat(reviewQueueRaw("bogus").statusCode()).as("非法状态回 400，不悄悄退回 PENDING").isEqualTo(400);
+    }
+
     private String create(String customer, String conversation, String verdict, String reason, String signals,
                           List<String> ruleIds, String ticketId) throws Exception {
         String body = JSON.writeValueAsString(new java.util.LinkedHashMap<String, Object>() {{
@@ -93,17 +109,37 @@ class FeedbackReviewQueueTest {
     }
 
     private JsonNode reviewQueue() throws Exception {
-        return reviewQueue("T001", "C001");
+        return reviewQueue("T001", "C001", null);
     }
 
     private JsonNode reviewQueue(String tenant, String customer) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/feedback/review-queue"))
+        return reviewQueue(tenant, customer, null);
+    }
+
+    private JsonNode reviewQueue(String tenant, String customer, String status) throws Exception {
+        return JSON.readTree(reviewQueueRaw(status, tenant, customer).body());
+    }
+
+    private HttpResponse<String> reviewQueueRaw(String status) throws Exception {
+        return reviewQueueRaw(status, "T001", "C001");
+    }
+
+    private HttpResponse<String> reviewQueueRaw(String status, String tenant, String customer) throws Exception {
+        String query = status == null ? "" : "?status=" + status;
+        HttpRequest request = HttpRequest.newBuilder(
+                        URI.create("http://127.0.0.1:" + port + "/api/feedback/review-queue" + query))
                 .header("X-Internal-Token", TOKEN)
                 .header("X-Tenant-Id", tenant)
                 .header("X-Customer-Id", customer)
                 .GET()
                 .build();
-        return JSON.readTree(HTTP.send(request, HttpResponse.BodyHandlers.ofString()).body());
+        return HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private List<String> idsOf(JsonNode rows) {
+        List<String> ids = new java.util.ArrayList<>();
+        rows.forEach(row -> ids.add(row.path("id").asText()));
+        return ids;
     }
 
     private HttpResponse<String> patchStatusRaw(String id) throws Exception {

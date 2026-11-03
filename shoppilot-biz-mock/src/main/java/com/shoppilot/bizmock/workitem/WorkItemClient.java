@@ -1,5 +1,6 @@
 package com.shoppilot.bizmock.workitem;
 
+import com.shoppilot.tool.audit.Actor;
 import com.shoppilot.tool.workitem.TicketSource;
 
 /**
@@ -21,6 +22,20 @@ public interface WorkItemClient {
      */
     String create(TicketSource source, String customerId, String reason, String userQuery, String transcript,
                   String priority, String payload);
+
+    /**
+     * 结掉一张工作项（round46 票 194 / ADR 0081）。
+     *
+     * <p>复核完成时用它把点踩开出的复核单结掉——否则 {@code review_status} 已是 REVIEWED，
+     * 工单队列里那张「会话 … 的答复待复核」却还挂着，两套账谁也关不上谁。
+     *
+     * <p>{@code actor} 走与坐席动作同一套 {@code X-Actor*} 头：结单是有责任人的动作，
+     * 不是系统清理。工单服务侧若已被别人领取，结单会被拒——调用方按「工作项没结掉」记 warn，
+     * 不把复核动作回滚（真源是 {@code review_status}）。
+     *
+     * @return 是否结单成功；不可达、单号不存在、状态不允许、领取人不是当前操作人都是 {@code false}
+     */
+    boolean resolve(String ticketId, Actor actor, String note);
 
     /** 通道是否可用。不可用时调用方要决定是照常发起资金动作还是中止——**别静默假装落了单**。 */
     boolean available();
