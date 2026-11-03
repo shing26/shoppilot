@@ -35,6 +35,7 @@ import com.shoppilot.tool.Intent;
 import com.shoppilot.tool.ToolName;
 import com.shoppilot.tool.view.ToolStatus;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
@@ -50,6 +51,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 有界 Agent 状态机（ADR 0008）。
@@ -181,9 +183,18 @@ public class AgentStateMachine {
                         java.time.Duration.ofMillis(50), java.time.Duration.ofMillis(100),
                         java.time.Duration.ofMillis(250))
                 .register(registry);
+        // Timer.max() 走的是 TimeWindowMax：空闲一个时间窗就归零，而均值是进程累计值，
+        // 于是报表会出现「均值 0.06ms、最大 0.00ms」。累计最大单独记一份（round47 票 198）。
+        Gauge.builder("shoppilot_handoff_decision_seconds_max", handoffDecisionMaxNanos,
+                        nanos -> nanos.get() / 1_000_000_000d)
+                .description("Handoff 触发器判定耗时的进程内累计最大值（秒）")
+                .register(registry);
     }
 
     private final Timer handoffDecisionTimer;
+
+    /** 进程内最大判定耗时（纳秒）：只增不减，重启归零；sidecar 用它替代会衰减的 Timer.max()。 */
+    private final AtomicLong handoffDecisionMaxNanos = new AtomicLong();
 
     /**
      * 本请求已经发生的 LLM 用量（round35 票 145 / R12 登记债的触发条件）。
@@ -317,7 +328,9 @@ public class AgentStateMachine {
         long handoffDecisionStarted = System.nanoTime();
         HandoffTrigger.Decision routing = handoffTrigger.evaluate(previousRole, requested, actionEvidence,
                 session.handoffTrail(), System.currentTimeMillis());
-        handoffDecisionTimer.record(System.nanoTime() - handoffDecisionStarted, TimeUnit.NANOSECONDS);
+        long handoffDecisionNanos = System.nanoTime() - handoffDecisionStarted;
+        handoffDecisionTimer.record(handoffDecisionNanos, TimeUnit.NANOSECONDS);
+        handoffDecisionMaxNanos.accumulateAndGet(handoffDecisionNanos, Math::max);
         AgentRole route = routing.effectiveRole();
         List<HandoffStep> trail = new ArrayList<>(session.handoffTrail());
         if (routing.kind() == HandoffTrigger.Kind.ALLOWED) {

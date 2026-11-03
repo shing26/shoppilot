@@ -1,6 +1,7 @@
 package com.shoppilot.gateway.quality;
 
 import com.shoppilot.tool.audit.AuditTopics;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.data.domain.Range;
@@ -170,10 +171,18 @@ public class QualitySidecarService {
 
     private Map<String, Object> timer(String name) {
         Timer timer = registry.find(name).timer();
+        double count = timer == null ? 0d : timer.count();
+        double maxSeconds = timer == null ? 0d : timer.max(java.util.concurrent.TimeUnit.SECONDS);
+        // Timer.max() 是时间窗最大值，空闲后衰减回 0；AgentStateMachine 另记一份累计最大值。
+        // 读得到就以后者为准，读不到（老注册表 / 测试替身）保留 Timer.max() 的原口径。
+        Gauge cumulativeMax = registry.find(name + "_max").gauge();
+        if (cumulativeMax != null) {
+            maxSeconds = cumulativeMax.value();
+        }
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("count", timer == null ? 0d : timer.count());
-        view.put("meanSeconds", timer == null || timer.count() == 0 ? 0d : timer.mean(java.util.concurrent.TimeUnit.SECONDS));
-        view.put("maxSeconds", timer == null ? 0d : timer.max(java.util.concurrent.TimeUnit.SECONDS));
+        view.put("count", count);
+        view.put("meanSeconds", timer == null || count == 0 ? 0d : timer.mean(java.util.concurrent.TimeUnit.SECONDS));
+        view.put("maxSeconds", maxSeconds);
         return view;
     }
 

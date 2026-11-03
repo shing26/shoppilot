@@ -184,6 +184,7 @@
 | **round44** | **产品面质感（B 档）**：拆组件 + 设计令牌 + 订单/物流/工单深度卡 + 知识飞轮可视化（票 188-190） | [`round44-spec-product-surface.md`](round44-spec-product-surface.md)；**ADR 0079**（触发线真实成立：ARCHITECTURE.md §5 第 6 项「前端…触发 = 产品面继续投入」；由所有者点名开轮） | **done**（2026-11-03，票 188-190 全部收口；JVM **768 / 129 suites**；活体买家 **13/13**、工作台 **23/23 + 1 WARN**、调试台 **39/45**（6 红：3 条检索依赖 + 1 条同源环境 + 2 条旧断言前提被 `/ops/**` 默认拒绝改变，均照登，见票 190；所有者裁定保持红、待检索可用整轮复跑）；十张双宽度截图 `docs/r44-*.png`） |
 | **round45** | **真实用户走查的三处 P0 缺陷修复**：换店串号 + 买家点踩入口 + 对话滚动（票 191） | [`round45-spec-ux-p0-fixes.md`](round45-spec-ux-p0-fixes.md)；**ADR 0080**（所有者报障触发的缺陷修复，非新功能） | **done**（2026-11-03，票 191 收口；前端 typecheck/build 绿；三项活体实测通过；P1 清单保留在 `ux-probe/REPORT.md`，未修项见票面三个现场追问） |
 | **round46** | **同一份走查报告的七条 P1 缺陷修复**（上一份汇报误写成「六项」）：游客可见 + 对话持久化 + IME + 弹层键盘 + 单层滚动 + 退出中止流 + 复核闭环（票 192-194） | [`round46-spec-ux-p1-fixes.md`](round46-spec-ux-p1-fixes.md)；**ADR 0081**（所有者指令「继续修 P1」，缺陷修复沿用 ADR 0080 依据） | **done**（2026-11-03，票 192-194 收口；JVM **771**（12 / 92 / 617 / 50）；两端 typecheck/build 绿、产物入库；活体 `ux-probe/verify-p1.mjs` 七条 P1 全绿——含事后补跑的两个弹层键盘段；`repackage.skip` 与 Redis 16380 的口径见 `docs/EVIDENCE.md`） |
+| **round47** | **同一份走查报告的十二项 P2 缺陷修复**：可读枚举 + 401 自动登出 + 对比度 + 移动端点击目标/回对话 + 队列筛选一致 + 结单需领取 + 移动端导航 + 质量报表累计最大（票 195-199） | [`round47-spec-ux-p2-fixes.md`](round47-spec-ux-p2-fixes.md)；**ADR 0082**（所有者指令「把 P2 按同一套流程收口」，缺陷修复沿用 ADR 0080/0081 依据） | **done**（2026-11-03，票 195-199 收口；12 项 P2 中 11 项已修、P2-12 复核不成立；JVM **773**（12 / 92 / 619 / 50）、129 suites；两端 typecheck/build 绿、产物入库；指标名 72/74 → **73/75**；**活体未实跑**——验证时 8082 网关未启动，`verify-p2.mjs` 只做语法检查） |
 | **round31** | **B4：飞书长连接真连**（票 96、97、113-116） | [`round31-spec-b4-feishu-live.md`](round31-spec-b4-feishu-live.md)；**ADR 0064**（考察）、**0065**（开线决策） | **done**（票 96/97/113-116 全部收口；wss 握手 + 事件收发全链路 + 重启自动重连三项活体通过；JVM **505**） |
 | **round29** | **B2：凭据生产态 + 按库用户隔离 + 备份恢复演练**（票 104-107） | [`round29-spec-b2-credentials-and-backup.md`](round29-spec-b2-credentials-and-backup.md)；**ADR 0062** | **done**（票 104-107 全部收口；演练 14/14；Redis 不备份/R5/TLS 带触发条件登记） |
 | **round30** | **B3：资金动作不可抵赖**（票 108-112） | [`round30-spec-b3-non-repudiation.md`](round30-spec-b3-non-repudiation.md)；**ADR 0063** | **done**（票 108-112 全部收口；JVM 466） |
@@ -360,6 +361,11 @@
 | 192 | [`192-buyer-p1-product-gaps.md`](issues/192-buyer-p1-product-gaps.md) | implemented | round46：买家侧 P1——游客展示自己的订单/工单（删 `isGuest` 短路）、对话按标签页存 `sessionStorage`（中断回答标「刷新时中断」）、IME 组合回车不发送、订单卡单层滚动、退出先中止 SSE |
 | 193 | [`193-dialog-accessibility.md`](issues/193-dialog-accessibility.md) | implemented | round46：三处弹层键盘礼让——`frontend-shared` 的 `trapDialogFocus`（DOM 函数，共享包无 vue 依赖）接入工单抽屉、结单框、退款框；Esc / Tab 圈内 / 焦点进入与回还；遮罩点击保留 |
 | 194 | [`194-review-loop-consistency.md`](issues/194-review-loop-consistency.md) | implemented | round46：复核闭环——`feedback.review_ticket_id`（V11 双侧）、复核顺手结复核单（失败只 warn）、`review-queue?status=` 白名单、工作台刷新后按服务端 REVIEWED 恢复「可附稿」、复核单详情「去复核这条反馈」 |
+| 195 | [`195-shared-labels-401-and-contrast.md`](issues/195-shared-labels-401-and-contrast.md) | implemented | round47：共享层——反馈票/退款态/会话态/服务标四张映射、`setUnauthorizedHandler`（request + SSE 入口）、`--ink-3` 对比度过线 |
+| 196 | [`196-buyer-mobile-and-aria.md`](issues/196-buyer-mobile-and-aria.md) | implemented | round47：买家端——移动端点击目标 ≥40px、窄屏「问问这单」回对话、对话容器 `role="log"`、游客转人工复核（不成立） |
+| 197 | [`197-workspace-queue-and-mobile.md`](issues/197-workspace-queue-and-mobile.md) | implemented | round47：工作台——详情跟随筛选、未领取不能结单、≤640px 导航三列两行、顶栏点击目标 |
+| 198 | [`198-quality-decision-max.md`](issues/198-quality-decision-max.md) | implemented | round47：质量报表「最大」改读累计 Gauge，sidecar 缺失时回退 `Timer.max()` |
+| 199 | [`199-round47-closeout.md`](issues/199-round47-closeout.md) | implemented | round47 收口：指标名 72/74 → 73/75、EVIDENCE/CODE_MAP/tracker 换代 |
 
 ## 如何新增或领取工作
 

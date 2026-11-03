@@ -109,6 +109,8 @@ const emit = defineEmits<{ select: [view: WorkspaceView] }>()
 }
 
 @media (max-width: 640px) {
-  .side-nav { grid-template-columns: 1fr; }
+  /* 单列会把队列推到首屏之外（round47 票 197）：沿用三列两行，只把触屏高度补足。 */
+  .side-nav { grid-template-columns: repeat(3, 1fr); }
+  .nav-item { min-height: 40px; }
 }
 </style>

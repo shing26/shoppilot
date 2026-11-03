@@ -20,9 +20,31 @@ export interface RequestOptions {
   raw?: string
 }
 
+/**
+ * 401 的统一出口（round47 票 195）：两端各自注册「中止流 / 清会话 / 回登录面」。
+ *
+ * <p>**只在带令牌的请求上触发**：登录请求本身不带令牌，密码错误也是 401，
+ * 那不是「会话失效」，不该把用户留在登录页却提示登录已失效。
+ */
+let unauthorizedHandler: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler
+}
+
+/**
+ * 给不走 `request()` 的入口复用同一钩子（买家 SSE 是裸 `fetch`）。
+ *
+ * <p>导出是为了同一个包内的 `api.ts` 能用；它不是产品面 API，入口不要直接调用。
+ */
+export function notifyUnauthorized(): void {
+  unauthorizedHandler?.()
+}
+
 export async function request<T>(url: string, opts: RequestOptions = {}): Promise<ApiResult<T>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (opts.token?.trim()) headers.Authorization = `Bearer ${opts.token.trim()}`
+  const authenticated = Boolean(opts.token?.trim())
+  if (authenticated) headers.Authorization = `Bearer ${opts.token!.trim()}`
   let res: Response
   try {
     res = await fetch(url, {
@@ -35,6 +57,7 @@ export async function request<T>(url: string, opts: RequestOptions = {}): Promis
     return { status: 0, body: { message: `网关不可达（${reason}）` } }
   }
   const text = await res.text()
+  if (res.status === 401 && authenticated) notifyUnauthorized()
   try {
     return { status: res.status, body: (text ? JSON.parse(text) : {}) as T }
   } catch (badJson) {
@@ -88,6 +111,43 @@ export const PRIORITY_LABEL: Record<string, string> = {
   high: '紧急',
   money: '资金',
   normal: '普通',
+}
+
+/**
+ * 反馈票的可读名（round47 票 195）：知识视图的复核列表直接显示 `UP` / `DOWN`，
+ * 读起来像数据库字段而不是「有用 / 没用」。未知值由调用方原样透出。
+ */
+export const FEEDBACK_VERDICT_LABEL: Record<string, string> = {
+  UP: '有用',
+  DOWN: '没用',
+}
+
+/**
+ * 退款态的可读名：biz-mock 的存储字面量 `PENDING_REVIEW` / `PROCESSING` / `REJECTED`
+ * 与坐席看到的「待审核 / 已放行（待通道）/ 已驳回」对齐（ADR 0047 的迁移语义不变）。
+ */
+export const REFUND_STATUS_LABEL: Record<string, string> = {
+  PENDING_REVIEW: '待审核',
+  PROCESSING: '已放行（待通道）',
+  REJECTED: '已驳回',
+}
+
+/** 渠道会话态的可读名：`BOT` / `AGENT` 说的是「谁在答」，不是产品文案。 */
+export const CONVERSATION_STATUS_LABEL: Record<string, string> = {
+  BOT: '智能助手',
+  AGENT: '坐席接管',
+}
+
+/** 买家订单服务标：存储字面量是下划线常量，页面上应读成保障条款。 */
+export const SERVICE_FLAG_LABEL: Record<string, string> = {
+  SEVEN_DAY_RETURN: '七天无理由',
+  FRESH_GUARANTEE: '生鲜保障',
+}
+
+/** 标签映射的统一读法：未知值原样透出，不吞、不猜（本仓既有约定）。 */
+export function labelOf(map: Record<string, string>, value: string | null | undefined): string {
+  if (value === null || value === undefined) return ''
+  return map[value] ?? value
 }
 
 /** 优先级排序用的名次：越小越靠前。与后端 `TicketPriority.rank` 同一份口径。 */

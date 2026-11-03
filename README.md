@@ -421,7 +421,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 
 **这张表逐条写"怎么量的"**。所有数字来自 `loadtest/results/` 下的产物，表格由 `python scripts/build_loadtest_report.py` 生成，本文不誊写第二个数字。吞吐与延迟类指标衡量的是**网关编排层**，生成侧是固定延迟的 Mock，不含模型推理（ADR 0001）。
 
-当前 **72 个唯一 `shoppilot_*` 指标名**（三模块 `src/main` 源码口径；`shoppilot-ticket` 从 round23 起不在其中，四模块口径是 74，两个数一起摆着）。round43 票 186 新增 `shoppilot_knowledge_revisions_total{result=filed|published|rejected}`（知识修订三态：附稿 / 发布 / 驳回）。口径说明：上一版写 56/58 是 round35 的复点；round36-42 各轮新增指标未逐轮更新本行，round43 收口时以 `grep -rhoE "shoppilot_[a-z0-9_]+" <模块>/src/main | sort -u` 重新复点出 72/74，中间的漂移如实照登，不回溯补账。
+当前 **73 个唯一 `shoppilot_*` 指标名**（三模块 `src/main` 源码口径；`shoppilot-ticket` 从 round23 起不在其中，四模块口径是 75，两个数一起摆着）。round47 票 198 新增 `shoppilot_handoff_decision_seconds_max`（Gauge：Handoff 触发器判定耗时的进程内累计最大值，替代会随时间窗衰减的 `Timer.max()`）。round43 票 186 新增 `shoppilot_knowledge_revisions_total{result=filed|published|rejected}`（知识修订三态：附稿 / 发布 / 驳回）。口径说明：上一版写 56/58 是 round35 的复点；round36-42 各轮新增指标未逐轮更新本行，round43 收口时以 `grep -rhoE "shoppilot_[a-z0-9_]+" <模块>/src/main | sort -u` 重新复点出 72/74，中间的漂移如实照登，不回溯补账。
 
 | 指标 | 判据 | 实测 | 口径 | 证据 |
 | --- | --- | --- | --- | --- |

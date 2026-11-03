@@ -7,6 +7,7 @@
  * `payload.refundId`——按订单号猜会在同一单多次申请时对错。
  */
 import { computed } from 'vue'
+import { labelOf, REFUND_STATUS_LABEL } from 'frontend-shared'
 import type { RefundItem } from '../api'
 import { STATUS_LABEL, type Ticket } from '../types'
 import { payloadField } from '../lib/format'
@@ -66,7 +67,7 @@ const rows = computed<RefundRow[]>(() =>
 
         <ol class="decision-path" aria-label="退款决策路径">
           <li data-state="done"><span>买家申请</span><small>已受理</small></li>
-          <li data-state="current"><span>人工审核</span><small>{{ row.refund.status }}</small></li>
+          <li data-state="current"><span>人工审核</span><small>{{ labelOf(REFUND_STATUS_LABEL, row.refund.status) }}</small></li>
           <li data-state="pending"><span>放行 / 驳回</span><small>待决策</small></li>
           <li data-state="pending"><span>到账</span><small>由支付渠道处理</small></li>
         </ol>

@@ -70,7 +70,15 @@ onMounted(() => {
 </script>
 
 <template>
-  <section ref="threadEl" class="thread" aria-live="polite" @scroll="onThreadScroll">
+  <section
+    ref="threadEl"
+    class="thread"
+    role="log"
+    aria-live="polite"
+    aria-relevant="additions text"
+    aria-atomic="false"
+    @scroll="onThreadScroll"
+  >
     <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
       <div class="msg-who">{{ m.role === 'user' ? '我' : '客服' }}</div>
       <div class="bubble" :class="{ streaming: m.pending }">

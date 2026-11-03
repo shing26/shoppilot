@@ -53,6 +53,7 @@ import {
   type RevisionDraft,
   type Session,
 } from './api'
+import { setUnauthorizedHandler } from 'frontend-shared'
 import { priorityRank, type Ticket } from './types'
 import { entriesOf, isOverdue } from './lib/format'
 import { DOMAINS, POLICY_INTENTS, SCOPES, type ChannelForm, type StatusFilter, type WorkspaceView } from './lib/ui'
@@ -162,6 +163,11 @@ const feedback = ref<FeedbackItem[]>([])
 const feedbackLoading = ref(false)
 const feedbackError = ref('')
 const reviewedFeedback = ref<FeedbackItem[]>([])
+/**
+ * 服务端 REVIEWED 反馈的总数（round47 票 197）：五步条的「人工复核」用它，
+ * 不用 `reviewedFeedback.length`——附稿会把后者从列表里移走，但复核事实没有消失。
+ */
+const reviewedTotal = ref(0)
 const revisions = ref<KnowledgeRevision[]>([])
 const revisionsLoading = ref(false)
 const revisionsError = ref('')
@@ -195,7 +201,8 @@ const filtered = computed(() => {
   })
 })
 
-const selected = computed(() => tickets.value.find((ticket) => ticket.id === selectedId.value) ?? null)
+/** 详情只从**当前筛选结果**里取（round47 票 197）：筛到空档时不能继续展示上一张单。 */
+const selected = computed(() => filtered.value.find((ticket) => ticket.id === selectedId.value) ?? null)
 
 /** 退款审批工单：退款队列靠 `payload.refundId` 与它们对上（票 189）。 */
 const refundTickets = computed(() => tickets.value.filter((ticket) => ticket.source === 'REFUND_APPROVAL'))
@@ -248,9 +255,21 @@ async function acceptSession(logged: Session) {
   await Promise.all([refresh(), refreshRefunds(), refreshConversations(), refreshKnowledge()])
 }
 
+/**
+ * 会话失效（round47 票 195）：带令牌的请求收到 401 时停渠道流、清工作台、回登录卡。
+ *
+ * <p>工作台没有「本标签页对话」可保留，清空与主动退出同口径；原因写成登录卡上的
+ * `loginError`，不让用户面对一张没有解释的登录表单。
+ */
+function onUnauthorized() {
+  signOut()
+  loginError.value = '登录已失效，请重新登录'
+}
+
 function signOut() {
   stopConversationStream()
   session.value = null
+  loginError.value = ''
   clearStoredSession()
   conversations.value = []
   selectedConversationId.value = ''
@@ -269,6 +288,7 @@ function signOut() {
   feedback.value = []
   feedbackError.value = ''
   reviewedFeedback.value = []
+  reviewedTotal.value = 0
   revisions.value = []
   revisionsError.value = ''
   draftFeedbackId.value = ''
@@ -304,7 +324,7 @@ async function refresh() {
   }
   tickets.value = result.body
   const keep = selectedId.value
-  if (!keep || !tickets.value.some((ticket) => ticket.id === keep)) {
+  if (!keep || !filtered.value.some((ticket) => ticket.id === keep)) {
     selectedId.value = filtered.value[0]?.id ?? ''
   }
 }
@@ -317,7 +337,13 @@ function changeQueue(next: string) {
 }
 
 function setFilter(next: StatusFilter) {
+  if (statusFilter.value === next) return
   statusFilter.value = next
+  // 筛选切换后详情跟着走：当前单不在结果里就选第一条，结果为空则清空详情。
+  const rows = filtered.value
+  if (!rows.some((ticket) => ticket.id === selectedId.value)) {
+    selectedId.value = rows[0]?.id ?? ''
+  }
 }
 
 function selectTicket(id: string) {
@@ -344,6 +370,11 @@ async function run(ticket: Ticket, kind: 'claim' | 'release') {
 
 function openResolve(ticket: Ticket) {
   if (!session.value || inFlight.value) return
+  // 产品规则（round47 票 197）：先领取再结单。后端状态机不变，这里挡住入口。
+  if (!ticket.assignee) {
+    actionError.value = '先领取这张工单，再处理完成'
+    return
+  }
   resolveTarget.value = ticket
   resolveNote.value = ''
   resolveError.value = ''
@@ -408,6 +439,7 @@ async function refreshKnowledge() {
   if (!session.value) {
     feedback.value = []
     reviewedFeedback.value = []
+    reviewedTotal.value = 0
     revisions.value = []
     return
   }
@@ -421,6 +453,7 @@ async function refreshFeedbackQueue() {
   if (!session.value) {
     feedback.value = []
     reviewedFeedback.value = []
+    reviewedTotal.value = 0
     feedbackLoading.value = false
     return
   }
@@ -437,6 +470,8 @@ async function refreshFeedbackQueue() {
   }
   feedback.value = pending.body
   if (reviewed.status === 200 && Array.isArray(reviewed.body)) {
+    // 五步条读的是「复核过多少条」，不是「还剩多少条可附稿」。
+    reviewedTotal.value = reviewed.body.length
     // 有 DRAFT/PUBLISHED 修订稿的 = 已经附过稿，不再列；REJECTED 的留给用户重新起草。
     const drafted = new Set(
       revisions.value.filter((revision) => revision.status !== 'REJECTED').map((revision) => revision.feedbackId),
@@ -1003,6 +1038,7 @@ async function confirmRefund() {
 }
 
 onMounted(() => {
+  setUnauthorizedHandler(onUnauthorized)
   void registerServiceWorker().then(() => {
     if (notificationsEnabled.value) void restorePush()
   })
@@ -1022,6 +1058,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  setUnauthorizedHandler(null)
   window.clearInterval(timer)
   stopConversationStream()
   if ('serviceWorker' in navigator) {
@@ -1140,6 +1177,7 @@ function clearStoredSession() {
             :feedback-loading="feedbackLoading"
             :feedback-error="feedbackError"
             :reviewed="reviewedFeedback"
+            :reviewed-total="reviewedTotal"
             :draft-feedback-id="draftFeedbackId"
             :revisions="revisions"
             :revisions-loading="revisionsLoading"

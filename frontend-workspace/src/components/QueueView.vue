@@ -150,7 +150,13 @@ function onQueueChange(event: Event) {
           <button class="ghost" type="button" :disabled="!!inFlight || !selected.assignee || selected.status === 'RESOLVED'" @click="emit('release', selected)">
             {{ inFlight === `${selected.id}:release` ? '释放中…' : '释放' }}
           </button>
-          <button class="primary" type="button" :disabled="!!inFlight || selected.status === 'RESOLVED'" @click="emit('resolve', selected)">
+          <button
+            class="primary"
+            type="button"
+            :disabled="!!inFlight || !selected.assignee || selected.status === 'RESOLVED'"
+            :title="!selected.assignee ? '先领取这张工单，再处理完成' : undefined"
+            @click="emit('resolve', selected)"
+          >
             处理完成
           </button>
           <button
@@ -162,6 +168,9 @@ function onQueueChange(event: Event) {
             去复核这条反馈
           </button>
         </div>
+        <p v-if="!selected.assignee && selected.status !== 'RESOLVED'" class="action-hint">
+          先领取这张工单，再处理完成
+        </p>
 
         <section class="block">
           <h3>生命周期</h3>
@@ -247,6 +256,7 @@ function onQueueChange(event: Event) {
 .detail-meta span { color: var(--ink-3); font-size: 12px; }
 .detail-meta strong { font-size: 13px; }
 .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
+.action-hint { margin: -8px 0 16px; color: var(--ink-2); font-size: 12px; }
 .block { border-top: 1px solid var(--line-2); padding-top: 14px; margin-top: 14px; }
 .block h3 { font-size: 13px; margin: 0 0 8px; }
 .timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }

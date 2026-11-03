@@ -1,4 +1,4 @@
-import { messageOf, request, type ApiResult } from 'frontend-shared'
+import { messageOf, notifyUnauthorized, request, type ApiResult } from 'frontend-shared'
 import type { Citation, CitationDetail, Session, Ticket } from './types'
 
 /**
@@ -250,6 +250,8 @@ export async function streamAnswer(
     return { status: 0, body: { message: `网关不可达（${reason}）` } }
   }
   if (res.status / 100 !== 2) {
+    // 裸 fetch 也要接 401 钩子（round47 票 195）：否则轮询请求会登出、流式问答不会。
+    if (res.status === 401) notifyUnauthorized()
     return { status: res.status, body: { message: await res.text() } }
   }
 

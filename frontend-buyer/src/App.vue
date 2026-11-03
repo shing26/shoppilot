@@ -7,7 +7,7 @@
  * 非演示档自动回落到口令登录，不把「端点没开」写成一句死路。
  *
  * <p>拆分后的状态归属：**所有状态都在这个文件里**。子组件只收 `props`、只发 `emits`，
- * 不持有副本——`session` 一份喂 `isGuest`、每个 API 调用和 gate/layout 切换，
+ * 不持有副本——`session` 一份喂登录门、每个 API 调用和 gate/layout 切换，
  * 复制出去就会出现「登录了但没登录」。
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -26,6 +26,7 @@ import {
   storeProfile,
   streamAnswer,
 } from './api'
+import { setUnauthorizedHandler } from 'frontend-shared'
 import { STATUS_LABEL, type CitationDetail, type Session, type Ticket } from './types'
 import type { MyOrder, OrderDetail, OrderLogistics } from './api'
 import { appendAgentStep, type ChatMessage } from './lib/format'
@@ -62,6 +63,9 @@ const showLogin = ref(false)
 const demoLoading = ref(false)
 const session = ref<Session | null>(readStoredSession())
 const loginError = ref('')
+
+/** 聊天主区（round47 票 196）：窄屏点「问问这单」后滚回这里。 */
+const buyerMain = ref<HTMLElement | null>(null)
 
 const query = ref('')
 const asking = ref(false)
@@ -156,6 +160,7 @@ async function enterAsDemoBuyer(): Promise<boolean> {
   session.value = result.body as Session
   demoMode.value = true
   guestMode.value = false
+  loginError.value = ''
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result.body))
   await Promise.all([refreshTickets(), refreshOrders(), loadStoreInfo()])
   return true
@@ -173,6 +178,7 @@ async function enterAsGuest(): Promise<boolean> {
     session.value = result.body as Session
     guestMode.value = true
     demoMode.value = false
+    loginError.value = ''
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(result.body))
     // 游客令牌能读到的就是这位买家自己的数据，进入后立刻拉，不等用户点刷新（round46 票 192）。
     await Promise.all([refreshTickets(), refreshOrders(), loadStoreInfo()])
@@ -212,12 +218,32 @@ async function doLogin() {
   await Promise.all([refreshTickets(), refreshOrders(), loadStoreInfo()])
 }
 
+/**
+ * 会话失效（round47 票 195）：带令牌的请求收到 401 时回到登录门。
+ *
+ * <p>**不清对话与工单**：令牌过期不等于这些数据作废，重新登录后仍在；
+ * 只清登录态与进行中的流，避免回答写进已经不属于任何人的页面。
+ */
+function onUnauthorized() {
+  stopAnswer()
+  session.value = null
+  demoMode.value = false
+  guestMode.value = false
+  clearStoredSession()
+  guestError.value = ''
+  loginError.value = '登录已失效，请重新登录'
+  showLogin.value = true
+  ticketsLoading.value = false
+  ordersLoading.value = false
+}
+
 function signOut() {
   // 先中止还在跑的 SSE（round46 票 192）：否则退出后回答仍会继续写进已清空的页面。
   stopAnswer()
   session.value = null
   demoMode.value = false
   guestMode.value = false
+  loginError.value = ''
   showLogin.value = true
   clearStoredSession()
   clearStoredChat()
@@ -274,6 +300,10 @@ async function refreshOrders() {
 
 async function askOrder(order: MyOrder) {
   query.value = `帮我查一下订单 ${order.orderNo} 的物流`
+  // 窄屏是单列（先聊天后侧栏）：不滚回去，用户只会看到按钮下方那句「已提交」。
+  if (window.innerWidth <= 960) {
+    buyerMain.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
   await ask()
 }
 
@@ -387,6 +417,7 @@ function closeTicket() {
 }
 
 onUnmounted(() => {
+  setUnauthorizedHandler(null)
   if (detailTimer) window.clearInterval(detailTimer)
   if (clockTimer) window.clearInterval(clockTimer)
 })
@@ -550,6 +581,7 @@ async function retry(index: number) {
 }
 
 onMounted(() => {
+  setUnauthorizedHandler(onUnauthorized)
   if (session.value) {
     void refreshTickets()
     void refreshOrders()
@@ -685,7 +717,7 @@ function clearStoredChat() {
 
     <template v-else>
       <div class="buyer-layout">
-        <div class="buyer-main">
+        <div ref="buyerMain" class="buyer-main">
           <section v-if="!messages.length" class="welcome">
             <p class="eyebrow">在线客服 · {{ storeLabel }}</p>
             <h1>有什么可以帮你？</h1>

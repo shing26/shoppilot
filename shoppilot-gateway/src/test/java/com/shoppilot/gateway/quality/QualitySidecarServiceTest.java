@@ -2,6 +2,7 @@ package com.shoppilot.gateway.quality;
 
 import com.shoppilot.tool.audit.AuditTopics;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.junit.jupiter.api.DisplayName;
@@ -10,9 +11,11 @@ import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.StreamOperations;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -41,6 +44,9 @@ class QualitySidecarServiceTest {
         Map<String, Object> friction = cast(report.get("friction"));
         assertThat(friction.get("toolSuccessFallbacks")).isEqualTo(0.0d);
         assertThat(friction.get("repeatedSlotAsks")).isEqualTo(0.0d);
+        Map<String, Object> decision = cast(handoff.get("decisionSeconds"));
+        assertThat(decision.get("count")).isEqualTo(0.0d);
+        assertThat(decision.get("maxSeconds")).isEqualTo(0.0d);
     }
 
     @Test
@@ -83,6 +89,34 @@ class QualitySidecarServiceTest {
         Map<String, Object> decision = cast(handoff.get("decisionSeconds"));
         assertThat((Double) decision.get("count")).isEqualTo(1.0d);
         assertThat((Double) decision.get("meanSeconds")).isGreaterThan(0d);
+    }
+
+    @Test
+    @DisplayName("累计最大 Gauge 覆盖会衰减的 Timer.max（round47 票 198）")
+    void prefersCumulativeMaxGauge() {
+        Timer.builder("shoppilot_handoff_decision_seconds").register(registry)
+                .record(Duration.ofMillis(250));
+        AtomicLong cumulativeMax = new AtomicLong(750_000_000L);
+        Gauge.builder("shoppilot_handoff_decision_seconds_max", cumulativeMax,
+                        nanos -> nanos.get() / 1_000_000_000d)
+                .register(registry);
+
+        Map<String, Object> decision = cast(cast(service.report().get("handoff")).get("decisionSeconds"));
+
+        assertThat((Double) decision.get("count")).isEqualTo(1.0d);
+        assertThat((Double) decision.get("meanSeconds")).isGreaterThan(0d);
+        assertThat((Double) decision.get("maxSeconds")).isEqualTo(0.75d);
+    }
+
+    @Test
+    @DisplayName("没有累计最大 Gauge 时回退 Timer.max，不抛错")
+    void fallsBackToTimerMaxWhenGaugeMissing() {
+        Timer.builder("shoppilot_handoff_decision_seconds").register(registry)
+                .record(Duration.ofMillis(250));
+
+        Map<String, Object> decision = cast(cast(service.report().get("handoff")).get("decisionSeconds"));
+
+        assertThat((Double) decision.get("maxSeconds")).isEqualTo(0.25d);
     }
 
     @Test

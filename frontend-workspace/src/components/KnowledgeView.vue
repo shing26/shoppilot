@@ -14,7 +14,7 @@
  * <p>状态仍在 `App.vue`：表单草稿与队列都是根上的 ref，这一层只画与发事件。
  */
 import { computed } from 'vue'
-import { countLabel } from 'frontend-shared'
+import { countLabel, FEEDBACK_VERDICT_LABEL, labelOf } from 'frontend-shared'
 import type { FeedbackItem, KnowledgeRevision, RevisionDraft } from '../api'
 import { formatTime } from '../lib/format'
 import {
@@ -33,6 +33,8 @@ const props = defineProps<{
   feedbackError: string
   /** 已复核且还没附过稿的反馈（round46 票 194）：刷新后由服务端 REVIEWED 列表恢复。 */
   reviewed: FeedbackItem[]
+  /** 服务端 REVIEWED 总数（round47 票 197）：附稿会缩短 `reviewed`，但不该让这一步归零。 */
+  reviewedTotal: number
   /** 正在附稿的那条反馈 id；空串表示表单收起。 */
   draftFeedbackId: string
   revisions: KnowledgeRevision[]
@@ -60,7 +62,7 @@ const published = computed(() => props.revisions.filter((r) => r.status === 'PUB
 /** 五步各自的一条计数；「进入语料」那步没有数字可报，它等的是重跑 ingest。 */
 const steps = computed(() => [
   { key: 'feedback', label: '点踩反馈', value: countLabel(props.feedback.length), hint: '待复核' },
-  { key: 'review', label: '人工复核', value: countLabel(props.reviewed.length), hint: '可附稿' },
+  { key: 'review', label: '人工复核', value: countLabel(props.reviewedTotal), hint: '已复核' },
   { key: 'draft', label: '附修订稿', value: countLabel(drafts.value.length), hint: '待发布' },
   { key: 'publish', label: '发布', value: countLabel(published.value.length), hint: '已发布' },
   { key: 'ingest', label: '进入语料', value: 'ingest', hint: '需重跑' },
@@ -143,7 +145,7 @@ function scopeOf(value: string): string {
         <li v-for="item in feedback" :key="item.id" class="row review-row">
           <div class="row-top">
             <strong class="mono">{{ item.id }}</strong>
-            <span class="pill warn">{{ item.verdict }}</span>
+            <span class="pill warn">{{ labelOf(FEEDBACK_VERDICT_LABEL, item.verdict) }}</span>
             <time>{{ formatTime(item.createdAt) }}</time>
           </div>
           <p class="row-reason">{{ item.reason || '（买家没有写明原因）' }}</p>

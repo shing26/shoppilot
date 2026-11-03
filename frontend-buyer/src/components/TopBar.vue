@@ -61,5 +61,10 @@ const emit = defineEmits<{ signOut: [] }>()
 
 @media (max-width: 640px) {
   .topbar { padding: 10px 0; }
+  /* 触屏目标 ≥40px（round47 票 196）；桌面密度不变。 */
+  .topbar .link {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 40px; min-width: 44px; padding: 0 10px;
+  }
 }
 </style>

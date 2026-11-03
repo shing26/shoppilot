@@ -8,6 +8,7 @@
  * <p>手机号显示的是**服务端脱敏值**，这里不做任何还原或二次打码。
  */
 import { computed, ref } from 'vue'
+import { labelOf, SERVICE_FLAG_LABEL } from 'frontend-shared'
 import type { LogisticsNode, MyOrder, OrderDetail, OrderLogistics } from '../api'
 import { ORDER_STATUS_LABEL, formatTime } from '../lib/format'
 
@@ -107,7 +108,7 @@ async function copyTracking() {
         </dl>
 
         <ul v-if="detail.serviceFlags.length" class="flags">
-          <li v-for="flag in detail.serviceFlags" :key="flag">{{ flag }}</li>
+          <li v-for="flag in detail.serviceFlags" :key="flag">{{ labelOf(SERVICE_FLAG_LABEL, flag) }}</li>
         </ul>
 
         <section class="block">
@@ -219,4 +220,12 @@ async function copyTracking() {
 }
 .timeline time { font-size: 11px; color: var(--ink-3); }
 .node-desc { overflow-wrap: anywhere; }
+
+/* 触屏目标 ≥40px（round47 票 196）；桌面仍是行内链接的密度。 */
+@media (max-width: 640px) {
+  .order-ask {
+    display: inline-flex; align-items: center;
+    min-height: 40px; padding: 0 4px;
+  }
+}
 </style>

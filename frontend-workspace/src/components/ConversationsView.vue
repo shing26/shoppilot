@@ -5,6 +5,7 @@
  * <p>SSE 流、通知权限、提示音与 push 订阅都还在根组件里：它们是**页面级副作用**
  * （一个 SSE 连接、一个 AudioContext），不是这个视图的局部状态。这里只画与发事件。
  */
+import { CONVERSATION_STATUS_LABEL, labelOf } from 'frontend-shared'
 import type { ChannelConversation } from '../api'
 import { formatTime } from '../lib/format'
 
@@ -71,7 +72,7 @@ const emit = defineEmits<{
             <span class="conversation-channel">{{ c.channel }}</span>
             <span class="conversation-tags">
               <span v-if="c.unread" class="unread-pill">{{ c.unread }}</span>
-              <span class="status-pill" :class="{ agent: c.status === 'AGENT' }">{{ c.status }}</span>
+              <span class="status-pill" :class="{ agent: c.status === 'AGENT' }">{{ labelOf(CONVERSATION_STATUS_LABEL, c.status) }}</span>
             </span>
           </div>
           <p class="conversation-last">{{ c.lastMessage || '（暂无消息）' }}</p>

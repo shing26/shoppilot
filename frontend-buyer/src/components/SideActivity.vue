@@ -193,4 +193,13 @@ function toggleTickets() {
 .step.warn::before { background: var(--amber); }
 .step time { margin-left: 4px; }
 .ticket-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
+
+/* 触屏目标 ≥40px（round47 票 196）；桌面密度不变。 */
+@media (max-width: 640px) {
+  .side-tab { min-height: 40px; }
+  .section-head .link {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 40px; min-width: 44px; padding: 0 8px;
+  }
+}
 </style>
