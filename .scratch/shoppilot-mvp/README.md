@@ -182,6 +182,7 @@
 | **round37** | **把真实模型接回主链路：LLM 接线 + 店铺人格 + 产品入口**（票 152） | [`152-llm-store-persona-and-product-entries.md`](issues/152-llm-store-persona-and-product-entries.md)（票面即 spec）；**ADR 0071**（第 1 项配置缺陷，其余所有者政策覆盖） | **done**（JVM **596**；四店活体各答各的主营；政策路径零回归；买家 13/13 / 工作台 14/14 / 调试台 45/45；根路径改导航、调试台移 `/console.html`） |
 | **round43** | **知识反向沉淀从登记到执行**：点踩 → 复核 → 附稿 → 发布 → ingest 第二语料源（票 185-187） | [`round43-spec-knowledge-backflow.md`](round43-spec-knowledge-backflow.md)；**ADR 0078**（所有者政策覆盖，round19 登记第 8 项转执行） | **done**（2026-11-01，票 185-187 全部收口；JVM **757 / 128 suites**；两条变异对照实跑变红后还原；**活体脚本 2026-11-02 补实跑 10/10**，过程中实测出残稿缺字段 NPE 500 并修复——见票 187 活体补记） |
 | **round44** | **产品面质感（B 档）**：拆组件 + 设计令牌 + 订单/物流/工单深度卡 + 知识飞轮可视化（票 188-190） | [`round44-spec-product-surface.md`](round44-spec-product-surface.md)；**ADR 0079**（触发线真实成立：ARCHITECTURE.md §5 第 6 项「前端…触发 = 产品面继续投入」；由所有者点名开轮） | **done**（2026-11-03，票 188-190 全部收口；JVM **768 / 129 suites**；活体买家 **13/13**、工作台 **23/23 + 1 WARN**、调试台 **39/45**（6 红：3 条检索依赖 + 1 条同源环境 + 2 条旧断言前提被 `/ops/**` 默认拒绝改变，均照登，见票 190；所有者裁定保持红、待检索可用整轮复跑）；十张双宽度截图 `docs/r44-*.png`） |
+| **round45** | **真实用户走查的三处 P0 缺陷修复**：换店串号 + 买家点踩入口 + 对话滚动（票 191） | [`round45-spec-ux-p0-fixes.md`](round45-spec-ux-p0-fixes.md)；**ADR 0080**（所有者报障触发的缺陷修复，非新功能） | **done**（2026-11-03，票 191 收口；前端 typecheck/build 绿；三项活体实测通过；P1 清单保留在 `ux-probe/REPORT.md`，未修项见票面三个现场追问） |
 | **round31** | **B4：飞书长连接真连**（票 96、97、113-116） | [`round31-spec-b4-feishu-live.md`](round31-spec-b4-feishu-live.md)；**ADR 0064**（考察）、**0065**（开线决策） | **done**（票 96/97/113-116 全部收口；wss 握手 + 事件收发全链路 + 重启自动重连三项活体通过；JVM **505**） |
 | **round29** | **B2：凭据生产态 + 按库用户隔离 + 备份恢复演练**（票 104-107） | [`round29-spec-b2-credentials-and-backup.md`](round29-spec-b2-credentials-and-backup.md)；**ADR 0062** | **done**（票 104-107 全部收口；演练 14/14；Redis 不备份/R5/TLS 带触发条件登记） |
 | **round30** | **B3：资金动作不可抵赖**（票 108-112） | [`round30-spec-b3-non-repudiation.md`](round30-spec-b3-non-repudiation.md)；**ADR 0063** | **done**（票 108-112 全部收口；JVM 466） |
@@ -354,6 +355,7 @@
 | 188 | [`188-design-system-and-component-skeleton.md`](issues/188-design-system-and-component-skeleton.md) | implemented | round44：设计令牌与组件骨架（两端拆成 8+10 个 SFC、共享纯函数、dev 代理、CI 未跟踪产物门禁）；零行为变更，顺带修掉买家 SLA 时钟泄漏；`slaText` 因产品语气不同按票面出口保留两版 |
 | 189 | [`189-order-logistics-ticket-lifecycle-depth.md`](issues/189-order-logistics-ticket-lifecycle-depth.md) | implemented | round44：深度卡片（`OrderDetailView`/`OrderLogisticsView` 两个新视图 + biz-mock 两条查询口 + 网关转发；越权一律 404 空体、手机号服务端脱敏、轨迹倒序；买家端深度卡与物流时间轴、工作台生命周期与退款决策路径）；轨迹视图不复用 `LogisticsView`——排序语义相反 |
 | 190 | [`190-knowledge-flywheel-and-visual-closeout.md`](issues/190-knowledge-flywheel-and-visual-closeout.md) | implemented | round44 收口：工作台知识飞轮（复核 → 附稿 → 发布/驳回 + 常驻「需重跑 ingest」提示）+ 买家依据面板按文档分组 + `console.html` 样式收口 + 三脚本实跑与十张双宽度截图 + 文档换代；未达成两条：已复核未附稿的反馈刷新后不可见（无 REVIEWED 读口）、修订无 actor 字段 |
+| 191 | [`191-buyer-session-feedback-and-scroll.md`](issues/191-buyer-session-feedback-and-scroll.md) | implemented | round45：买家跨店会话校验（店铺码即身份边界）、回答下「有用 / 没用」（点踩进复核队列、会话 ID 随消息）、对话贴底跟随滚动；后端零改动 |
 
 ## 如何新增或领取工作
 

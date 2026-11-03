@@ -12,6 +12,7 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
+  answerFeedback,
   demoBuyerLogin,
   describe,
   guestSession,
@@ -79,6 +80,14 @@ const showAllOrders = ref(false)
 const showAllTickets = ref(false)
 const now = ref(Date.now())
 let conversation = ''
+
+// ── 显式反馈（round45 票 191）───────────────────────────────────────────────
+// 一条回答下面的「有用 / 没用」。点踩落 biz-mock 的 feedback 表 → 进复核队列 →
+// 工作台的知识飞轮，这是 round43 那条链在产品里的**唯一真实起点**（门禁脚本此前是直接 fetch）。
+// 表单草稿（评哪一条、投什么票、写了什么原因）是页面级状态，所以留在根组件。
+const feedbackDraft = ref<{ index: number; verdict: 'UP' | 'DOWN' } | null>(null)
+const feedbackReason = ref('')
+const feedbackInFlight = ref(false)
 
 // UX-03：工单详情抽屉。选中后轮询进度，结单后停止。
 const selectedTicket = ref<Ticket | null>(null)
@@ -215,6 +224,9 @@ function signOut() {
   messages.value = []
   conversation = ''
   asking.value = false
+  feedbackDraft.value = null
+  feedbackReason.value = ''
+  feedbackInFlight.value = false
   closeTicket()
 }
 
@@ -384,6 +396,14 @@ async function runAnswer(text: string, index: number) {
   target.citations = undefined
   target.text = ''
   target.trace = []
+  // 重试是一次新的回答：上一票作废，否则旧票会挂在新答案上。
+  target.feedback = undefined
+  target.feedbackState = undefined
+  target.feedbackError = undefined
+  if (feedbackDraft.value?.index === index) {
+    feedbackDraft.value = null
+    feedbackReason.value = ''
+  }
 
   const controller = new AbortController()
   inFlight.value = controller
@@ -445,12 +465,69 @@ async function ask() {
   query.value = ''
   if (!conversation) conversation = `buyer-${Date.now()}`
   messages.value.push({ role: 'user', text })
-  const index = messages.value.push({ role: 'assistant', text: '', pending: true, retryQuery: text }) - 1
+  const index = messages.value.push({
+    role: 'assistant',
+    text: '',
+    pending: true,
+    retryQuery: text,
+    // 会话 ID 跟着这条回答走（round45 票 191）：点踩要回指**这一次**回答，
+    // 而不是页面级「最后一次问」——一次打开里可能已经问了好几轮。
+    conversationId: conversation,
+  }) - 1
   await runAnswer(text, index)
 }
 
 function stopAnswer() {
   inFlight.value?.abort()
+}
+
+/** 「有用 / 没用」的入口。赞直接投；踩先展开原因框——原因正是复核人要读的那句话。 */
+function rateMessage(index: number, verdict: 'UP' | 'DOWN') {
+  const target = messages.value[index]
+  if (!target || target.role !== 'assistant' || target.pending || target.failed || target.stopped) return
+  if (target.feedback || feedbackInFlight.value) return
+  feedbackDraft.value = { index, verdict }
+  feedbackReason.value = ''
+  if (verdict === 'UP') void submitFeedback()
+}
+
+function cancelFeedback() {
+  if (feedbackInFlight.value) return
+  feedbackDraft.value = null
+  feedbackReason.value = ''
+}
+
+/**
+ * 投出这一票。
+ *
+ * <p>失败不吞：把下游那句话写在消息下面、把状态退回「未评」，用户可以再点一次。
+ * 成功后才把 `feedback` 写进消息对象——先写再发会让失败看起来像成功。
+ */
+async function submitFeedback() {
+  const pending = feedbackDraft.value
+  if (!pending || !session.value || feedbackInFlight.value) return
+  const target = messages.value[pending.index]
+  if (!target?.conversationId) return
+  feedbackInFlight.value = true
+  target.feedbackError = ''
+  target.feedbackState = 'sending'
+  const result = await answerFeedback(
+    session.value.token,
+    target.conversationId,
+    pending.verdict,
+    feedbackReason.value.trim(),
+  )
+  feedbackInFlight.value = false
+  if (result.status < 200 || result.status >= 300) {
+    target.feedbackState = undefined
+    target.feedbackError = describe(result, '反馈没发出去，可以再试一次')
+    return
+  }
+  target.feedback = pending.verdict
+  target.feedbackState = 'done'
+  target.feedbackError = ''
+  feedbackDraft.value = null
+  feedbackReason.value = ''
 }
 
 async function retry(index: number) {
@@ -477,11 +554,25 @@ onMounted(() => {
   }, 30_000)
 })
 
+/**
+ * 读回本标签页的登录态。
+ *
+ * <p>round45 票 191：**店铺码来自 URL，会话也记着自己属于哪家店**。两者不一致时必须丢弃，
+ * 否则同一标签页从 A 店跳到 B 店会沿用 A 店的令牌——令牌是真的，只是店不对：店卡、快捷问题
+ * 与助手回答会分裂成三家店（首页四个店铺链接就是按这个路径点的）。
+ *
+ * <p>没有店铺码时不做判断：那说明用户是直接打开 `/buyer/`，沿用上一次的身份比默默登出更合理。
+ */
 function readStoredSession(): Session | null {
   const raw = sessionStorage.getItem(STORAGE_KEY)
   if (!raw) return null
   try {
-    return JSON.parse(raw) as Session
+    const stored = JSON.parse(raw) as Session
+    if (STORE_CODE && stored.tenantId !== STORE_CODE) {
+      sessionStorage.removeItem(STORAGE_KEY)
+      return null
+    }
+    return stored
   } catch (unreadable) {
     sessionStorage.removeItem(STORAGE_KEY)
     return null
@@ -538,7 +629,18 @@ function clearStoredSession() {
             </div>
           </section>
 
-          <ChatThread v-if="messages.length" :messages="messages" :asking="asking" @retry="retry" />
+          <ChatThread
+            v-if="messages.length"
+            v-model:feedback-reason="feedbackReason"
+            :messages="messages"
+            :asking="asking"
+            :feedback-draft="feedbackDraft"
+            :feedback-in-flight="feedbackInFlight"
+            @retry="retry"
+            @rate="rateMessage"
+            @submit-feedback="submitFeedback"
+            @cancel-feedback="cancelFeedback"
+          />
 
           <Composer v-model:query="query" :asking="asking" @submit="ask" @stop="stopAnswer" />
         </div>

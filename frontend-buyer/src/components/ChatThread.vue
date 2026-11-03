@@ -5,6 +5,7 @@
  * <p>`messages` 是**按引用**传进来的：流式回答在根组件里原地改对象
  * （`text += chunk`、`trace = [...]`），任何拷贝都会让文字停在某一帧。
  */
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { ChatMessage } from '../lib/format'
 import {
   agentDuration,
@@ -15,16 +16,61 @@ import {
   groupCitations,
 } from '../lib/format'
 
-defineProps<{
+const props = defineProps<{
   messages: ChatMessage[]
   asking: boolean
+  /** 正在写原因的那一条（只有点踩会展开表单）；null 表示没有。 */
+  feedbackDraft: { index: number; verdict: 'UP' | 'DOWN' } | null
+  feedbackInFlight: boolean
 }>()
 
-const emit = defineEmits<{ retry: [index: number] }>()
+const feedbackReason = defineModel<string>('feedbackReason', { required: true })
+
+const emit = defineEmits<{
+  retry: [index: number]
+  rate: [index: number, verdict: 'UP' | 'DOWN']
+  submitFeedback: []
+  cancelFeedback: []
+}>()
+
+// ── 滚动跟随（round45 票 191）──────────────────────────────────────────────
+// 原来整页没有任何滚动跟随：新回答接在下面，视口停在顶部，用户看不到自己刚问的答案。
+// 跟随只在「本来就贴着底部」时发生；用户往回翻的时候不把人拽回来。
+const threadEl = ref<HTMLElement | null>(null)
+const stick = ref(true)
+const lastTextLength = computed(() => {
+  const last = props.messages[props.messages.length - 1]
+  return last ? last.text.length : 0
+})
+
+function nearBottom(el: HTMLElement) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= 96
+}
+
+function onThreadScroll() {
+  if (threadEl.value) stick.value = nearBottom(threadEl.value)
+}
+
+watch([() => props.messages.length, lastTextLength], async ([count], [previous]) => {
+  const el = threadEl.value
+  if (!el) return
+  const last = props.messages[props.messages.length - 1]
+  // 自己刚发的消息（以及它的占位回答）一定跟随；其余只在贴着底部时跟随。
+  const justAsked = typeof previous === 'number' && count > previous
+    && (last?.role === 'user' || last?.pending === true)
+  if (!justAsked && !stick.value) return
+  await nextTick()
+  el.scrollTop = el.scrollHeight
+  stick.value = true
+})
+
+onMounted(() => {
+  if (threadEl.value) threadEl.value.scrollTop = threadEl.value.scrollHeight
+})
 </script>
 
 <template>
-  <section class="thread" aria-live="polite">
+  <section ref="threadEl" class="thread" aria-live="polite" @scroll="onThreadScroll">
     <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
       <div class="msg-who">{{ m.role === 'user' ? '我' : '客服' }}</div>
       <div class="bubble" :class="{ streaming: m.pending }">
@@ -87,6 +133,42 @@ const emit = defineEmits<{ retry: [index: number] }>()
           <p class="cite-foot">只列本次回答引用到的条款，不代表整份文档都已生效。</p>
         </div>
       </details>
+      <!--
+        显式反馈（round45 票 191）：入口一直在后端（ADR 0039），页面却只有「重试」。
+        点踩会进人工复核队列，是知识飞轮的真实起点；点赞只计数、不审。
+      -->
+      <div
+        v-if="m.role === 'assistant' && !m.pending && !m.failed && !m.stopped"
+        class="rate"
+      >
+        <span v-if="m.feedbackState === 'sending'" class="rate-done">正在提交…</span>
+        <span v-else-if="m.feedback" class="rate-done">
+          {{ m.feedback === 'UP' ? '已记下：这条回答有用' : '已记下：会进入人工复核' }}
+        </span>
+        <template v-else>
+          <span class="rate-ask">这条回答有用吗？</span>
+          <button class="rate-btn" type="button" :disabled="feedbackInFlight" @click="emit('rate', i, 'UP')">有用</button>
+          <button class="rate-btn" type="button" :disabled="feedbackInFlight" @click="emit('rate', i, 'DOWN')">没用</button>
+        </template>
+      </div>
+      <form
+        v-if="feedbackDraft?.index === i && feedbackDraft.verdict === 'DOWN'"
+        class="rate-reason"
+        @submit.prevent="emit('submitFeedback')"
+      >
+        <input
+          v-model="feedbackReason"
+          type="text"
+          maxlength="200"
+          placeholder="哪里不对？（可选，会一起进复核队列）"
+          aria-label="反馈原因"
+        />
+        <button class="rate-submit" type="submit" :disabled="feedbackInFlight">
+          {{ feedbackInFlight ? '提交中…' : '提交' }}
+        </button>
+        <button class="link" type="button" :disabled="feedbackInFlight" @click="emit('cancelFeedback')">取消</button>
+      </form>
+      <p v-if="m.feedbackError" class="rate-error">{{ m.feedbackError }}</p>
     </div>
   </section>
 </template>
@@ -182,6 +264,35 @@ const emit = defineEmits<{ retry: [index: number] }>()
 .cite-group li { color: var(--ink-2); }
 .cite-rule { color: var(--ink-3); margin-left: 6px; font-size: 11px; }
 .cite-foot { margin: 0; color: var(--ink-3); font-size: 11px; }
+.rate {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 6px; text-align: left; font-size: 12px;
+}
+.rate-ask { color: var(--ink-3); }
+.rate-btn {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
+  border-radius: var(--radius-full, 999px); padding: 2px 10px; font: inherit; font-size: 12px;
+  cursor: pointer;
+}
+.rate-btn:hover:not(:disabled) {
+  border-color: var(--teal-line-2); color: var(--teal); background: var(--teal-wash);
+}
+.rate-btn:disabled { cursor: default; opacity: .6; }
+.rate-done { color: var(--ink-3); }
+.rate-reason { display: flex; align-items: center; gap: 8px; margin-top: 8px; text-align: left; }
+.rate-reason input {
+  flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 9px;
+  padding: 6px 10px; font: inherit; font-size: 13px; background: var(--panel); color: var(--ink);
+}
+.rate-reason input:focus-visible {
+  outline: none; box-shadow: var(--ring); border-color: var(--teal-line-2);
+}
+.rate-submit {
+  border: 1px solid var(--teal); background: var(--teal); color: #fff;
+  border-radius: 9px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.rate-submit:disabled { opacity: .6; cursor: default; }
+.rate-error { margin: 6px 0 0; color: var(--rose); font-size: 12px; text-align: left; }
 
 @media (max-width: 960px) {
   .thread { max-height: 62vh; }

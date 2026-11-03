@@ -182,6 +182,36 @@ export function ask(token: string, query: string, conversationId: string): Promi
   })
 }
 
+/**
+ * 显式满意度回传（round45 票 191）。
+ *
+ * <p>这条口一直在（ADR 0039），但买家页从没有入口——README 写着「回复后可点踩/点赞」，
+ * 产品里只有「重试」。补上它，round43 的知识飞轮才有真实起点。
+ *
+ * <p>`conversationId` 必须是**那次回答所在的会话**：网关按它取当次引用与工单，
+ * 回填进 feedback 行。所以页面上会话 ID 记在消息对象上，而不是页面级的「当前会话」。
+ * DOWN 会进人工复核队列（`reviewQueued`），UP 只计不审。
+ */
+export interface FeedbackAck {
+  feedbackId: string | null
+  reviewQueued: boolean
+  ticketId: string | null
+  ruleIds: string[]
+}
+
+export function answerFeedback(
+  token: string,
+  conversationId: string,
+  verdict: 'UP' | 'DOWN',
+  reason?: string,
+): Promise<ApiResult<FeedbackAck>> {
+  return request<FeedbackAck>('/api/v1/support/chat/feedback', {
+    method: 'POST',
+    token,
+    body: { conversationId, verdict, reason: reason || undefined },
+  })
+}
+
 /** Agent Run 的一条可见轨迹。只收面客可读的步骤，不透传内部 state detail。 */
 export interface AgentRunStep {
   kind: 'plan' | 'state' | 'tool' | 'tool_result' | 'fallback'

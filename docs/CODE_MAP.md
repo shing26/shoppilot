@@ -61,7 +61,7 @@
 | 退款审核（人工闸门） | `bizmock/web/RefundReviewController` -> `bizmock/service/BizMockService.reviewRefund`；网关代理 `web/OpsController`（`/ops/refunds/*`，B3 起 `reviewRefund` 与 `refundReviewQueue()` 均为 `staff()`-only）；调试台面板 `static/console.html`（B3 起只读；round37 前是 `static/index.html`）；坐席工作台 `static/workspace/`（B3 起可审核） |
 | 知识反向沉淀（人工闸门，round43 / ADR 0078） | `bizmock/service/KnowledgeRevisionService`（附稿前置 = 反馈 `REVIEWED`；DRAFT → PUBLISHED 显式发布，驳回终态；修订表 Flyway `V10__knowledge_revisions.sql`，两侧迁移同步）；网关代理 `web/OpsController`（`/ops/feedback/{id}/review`、`/ops/feedback/{id}/revision`、`/ops/knowledge/revisions/*`，走 `guardedBizMock`：坐席角色或运维凭证取或，非资金动作）；入库侧 `ingest/KnowledgeRevisionSource`（fetch 失败即中止）+ `ingest/IngestRunner`（修订与文件语料并列切块，`sourceDoc = rev-<id>`，纪元蓝绿照旧）；活体验收 `scripts/verify-knowledge-backflow.mjs` |
 | 买家订单读面（round44 / 票 189） | 网关 `web/BuyerOrdersController`（`/api/v1/support/orders/mine`、`/{orderNo}`、`/{orderNo}/logistics`；订单号先过 `[A-Za-z0-9_-]{1,32}` 白名单再拼下游 URL，下游 404 原样传 404）→ biz-mock `web/OrderQueryController` → `BizMockService.buyerOrderDetail` / `buyerOrderLogistics`（`buyerOwned` 两个条件都必填，不复用坐席路径的整店回退；`maskPhone` 出站前脱敏）；买家页面 `frontend-buyer/src/components/OrderCard.vue` |
-| 知识飞轮产品面（round44 / 票 190） | 工作台 `frontend-workspace/src/App.vue`（反馈队列/修订列表/动作状态）+ `src/components/KnowledgeView.vue`（五步条 → 复核 → 附稿 → 发布/驳回 → ingest 提示）→ `src/api.ts`（`feedbackReviewQueue` / `reviewFeedback` / `fileRevision` / `listKnowledgeRevisions` / `publishRevision` / `rejectRevision`，基址 `/api/v1/support/ops`）→ 网关 `web/OpsController`（`/ops/feedback/review-queue`、`/ops/feedback/{id}/review`、`/ops/feedback/{id}/revision`、`/ops/knowledge/revisions[/{id}/publish|reject]`，走 `guardedBizMock`）→ `bizmock/service/KnowledgeRevisionService`。**发布不立即生效**：修订要等 `scripts/ingest.ps1` 重跑才进检索语料，页面把这句写在已发布卡上 |
+| 知识飞轮产品面（round44 / 票 190） | 工作台 `frontend-workspace/src/App.vue`（反馈队列/修订列表/动作状态）+ `src/components/KnowledgeView.vue`（五步条 → 复核 → 附稿 → 发布/驳回 → ingest 提示）→ `src/api.ts`（`feedbackReviewQueue` / `reviewFeedback` / `fileRevision` / `listKnowledgeRevisions` / `publishRevision` / `rejectRevision`，基址 `/api/v1/support/ops`）→ 网关 `web/OpsController`（`/ops/feedback/review-queue`、`/ops/feedback/{id}/review`、`/ops/feedback/{id}/revision`、`/ops/knowledge/revisions[/{id}/publish|reject]`，走 `guardedBizMock`）→ `bizmock/service/KnowledgeRevisionService`。**发布不立即生效**：修订要等 `scripts/ingest.ps1` 重跑才进检索语料，页面把这句写在已发布卡上。**round45 票 191 起**买家回答下的「有用 / 没用」是这条链的真实入口：`ChatThread` → `App.rateMessage/submitFeedback` → `api.answerFeedback()` → `POST /api/v1/support/chat/feedback`（会话 ID 随消息，不随页面） |
 | SSE 事件 | `agent/EventSink`、`web/SseEventSink` |
 | 降级与工单 | `agent/FallbackService`、`agent/FallbackReason` |
 | 缓存写回 | `cache/WriteBackPolicy`、`cache/WriteBackPool` |
@@ -79,11 +79,11 @@
 
 | 文件 | 职责 | 状态归属 |
 | --- | --- | --- |
-| `src/App.vue`（646 行） | 根壳：会话与登录、`ask()` 流式提问、订单/工单/详情加载、`now` 定时器（30 s，`onUnmounted` 清理） | 全部 ref 与请求 |
+| `src/App.vue`（748 行） | 根壳：会话与登录（round45：`readStoredSession` 校验 URL 店铺码）、`ask()` 流式提问、点踩投递（`rateMessage/submitFeedback`）、订单/工单/详情加载、`now` 定时器（30 s，`onUnmounted` 清理） | 全部 ref 与请求 |
 | `components/TopBar.vue` | 品牌、当前账号署名、体验/访客徽标、退出 | props `demoMode/guestMode/hasSession/who`；emit `signOut` |
 | `components/StoreCard.vue` | 店铺名片（店名 / 业态 / 保障） | props only |
 | `components/LoginGate.vue` | 未登录整页门：一键体验、账号登录、口令表单 | `defineModel` 三个表单字段；emit `demoEnter/submit` |
-| `components/ChatThread.vue` | 对话气泡、助手 trace（阶段）/计划步骤、**依据面板**（按文档分组的 `citationDetails`） | props `messages/asking`；emit `retry` |
+| `components/ChatThread.vue` | 对话气泡、助手 trace（阶段）/计划步骤、**依据面板**（按文档分组的 `citationDetails`）、**「有用 / 没用」与点踩原因框**（round45）、贴底跟随滚动 | props `messages/asking/feedbackDraft/feedbackInFlight`；`defineModel feedbackReason`；emit `retry/rate/submitFeedback/cancelFeedback` |
 | `components/Composer.vue` | 输入框 + 发送/停止 | `defineModel query`；emit `submit/stop` |
 | `components/SideActivity.vue` | 侧栏「订单 / 工单」两页签、加载三态、订单深度卡与工单抽屉的入口 | `defineModel` 页签与「看全部」；其余 props；emit 刷新/展开/提问等 |
 | `components/OrderCard.vue` | 票 189 订单深度卡：状态推进条、金额/品类/服务标、脱敏地址、物流时间轴 | props `order/expanded/detail/logistics/loading/error`；emit `toggle/ask` |

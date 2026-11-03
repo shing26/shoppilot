@@ -24,6 +24,18 @@ export interface ChatMessage {
   failed?: boolean
   /** Agent 运行轨迹：只显示面客可读的步骤，不展示内部 state detail。 */
   trace?: AgentRunStep[]
+  /**
+   * 这条回答属于哪次会话（round45 票 191）。
+   *
+   * <p>点踩要按**当次回答**回指，而不是页面级「最后一次问」。一次打开里可能问了好几轮，
+   * 会话 ID 记在生成它的那条回答上，才不会把第三轮的赞记到第一轮头上。
+   */
+  conversationId?: string
+  /** 已投的显式反馈；空表示还没评过。 */
+  feedback?: 'UP' | 'DOWN'
+  /** `sending` 期间按钮锁住；`done` 之后换成一句回执。 */
+  feedbackState?: 'sending' | 'done'
+  feedbackError?: string
 }
 
 export const ORDER_STATUS_LABEL: Record<string, string> = {
