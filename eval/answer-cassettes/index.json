@@ -1,0 +1,248 @@
+{
+  "cases": [
+    {
+      "cassette": "qwen-plus/v1.2.0/944c321157c7cb4545d53ba2b6faa67a4e350fe66e5d7d093f303f7cfa7716bd.json",
+      "id": "ANS-POL-RET-01"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/8e9da6abf6d9299e404d97f0193cec0c0e2f1cb459af485c2b3d4724436a96e5.json",
+      "id": "ANS-POL-RET-02"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/b9c046eb5bf25c081d9f463516d1cd29d463dca67c7ff278c65a945af6bf4627.json",
+      "id": "ANS-POL-RET-03"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/abbb1de5d2ea35a2e627e08e4e0e41e160fa3116b715bbd48bfc91db3e310806.json",
+      "id": "ANS-POL-RET-04"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/59dfd137bcf8111d1a6114dacda74a9e70325b9d717dc5bdec4bf7e1e47f24df.json",
+      "id": "ANS-POL-RET-05"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/54a25070b95efc6f977a6a10c90bc0844e18c7ec7974c9fcb2605bb26c6e15ed.json",
+      "id": "ANS-POL-RET-06"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/26c05daa57fd03013f9cff605e184460f80e33f5b611605b8d4b494c387ad79a.json",
+      "id": "ANS-POL-RET-07"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/3cc40131c4dfb816a916ce11a1dcfd739bdfb35c71e49be794e7b62ec6535e82.json",
+      "id": "ANS-POL-RET-08"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/a390286cb06358a2271922cfcb6dd3585df66bb83d3cc5ee919762d9f51399b1.json",
+      "id": "ANS-POL-RET-09"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/098729b8f71bd6b3530a2c7a267301784f573b224cd4cefceb7dc5f8667eb477.json",
+      "id": "ANS-POL-RET-10"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/3abbd051f8bda0a71a6bf43626ed24d8b3e7f5a39b4e6b423cdb82ccd31767fe.json",
+      "id": "ANS-POL-SHP-01"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/61aac7f2fe41584113535889288a27af9a3b0ec3f97eef93a0197d492fa717c4.json",
+      "id": "ANS-POL-SHP-02"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/a36a41179388c792f8febacc43ceb3eb04eae87310208612deb9f0e3f86caf28.json",
+      "id": "ANS-POL-SHP-03"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/ba903571ffe303b5806de5ee47107e3318ea2292fe8ea2b49bafdc250a1a57fb.json",
+      "id": "ANS-POL-SHP-04"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/0ff76ba1f26e02600348da1798a541f27318477a0efa082138ac17fe4c37ecea.json",
+      "id": "ANS-POL-SHP-05"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/53828863e76684c4ee71646033db1ad24ebd0edef1c32eb88eec95f69d19d434.json",
+      "id": "ANS-POL-SHP-06"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/dae0d777e2a9859e42dce7dd16c2e27013772cb218317b730c105b5be9383930.json",
+      "id": "ANS-POL-SHP-07"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/1b4be48ec4c71f035c2905765ca8130de45da460504c6ce79ff59a5225635a1f.json",
+      "id": "ANS-POL-SHP-08"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/809d2f0e21f438755a4ddf8f4884a24bd3c551f71945f8263167285a462fd666.json",
+      "id": "ANS-POL-SHP-09"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/7aa0f2fdc0f34adfc40d899ae68faec390378b6f3f6cb955a6599967451981a7.json",
+      "id": "ANS-POL-SHP-10"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/9fa994969e4097112891c7a0bc4cd16161bb6e771e8d0440f8e87501b781eac0.json",
+      "id": "ANS-POL-PRM-01"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/8e5bfb35133946caae72b26321927fa7a1b4a3e2914402f86c96d0d674cbaaa7.json",
+      "id": "ANS-POL-PRM-02"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/eea49dce99f51e060c494d743cb6677e0a1c9f02aa9a824557a6d7ac12ad62cb.json",
+      "id": "ANS-POL-PRM-03"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/b48c57c89cd5e2f6a0aa302313bb33b57d0c79681825ae846ad0d4525db67b79.json",
+      "id": "ANS-POL-PRM-04"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/4fc3ae242724f8e1b391ceca06a86be5ee63cab58fce00faa4bde1cbae63f9a6.json",
+      "id": "ANS-POL-PRM-05"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/80ce76a9052583c7aeb119357210453c58054081af22a703ec542aa031c73054.json",
+      "id": "ANS-POL-PRM-06"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/1203f895c18139e05f88a06db689d92186ad5948fc39209958b4d664c14d6326.json",
+      "id": "ANS-POL-PRM-07"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/c300abe4e9760a017d9f53dcddc518791ac6ba83ac2ad869d5cb6b1bd55e11bb.json",
+      "id": "ANS-POL-PRM-08"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/0c430e88cb1fef01f5132f0a053ab570e9d77772078559e4a58cfd0c0805c02a.json",
+      "id": "ANS-POL-PRM-09"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/81b0b05aabcad60bbcc2ff97955cb096a6a0f6cef1f20ef3922a30f6b8b719cc.json",
+      "id": "ANS-POL-PRM-10"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/e45f85cfa8100fa89b265b100e29e0555834211a68defddf48318ce3f4ed5ebb.json",
+      "id": "ANS-POL-FRS-01"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/700b836938143e45b1dbc685ff36a2897bf71d750672928b9ae751189330cfa9.json",
+      "id": "ANS-POL-FRS-02"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/f4b2b97df5a0e70625fa27d5146c07b4046a2255890ed5b040d72d7b9bdbc050.json",
+      "id": "ANS-POL-FRS-03"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/551c45008652dfae2dbd462acdb54c5cfee395741a29b3e057ba0d236e00d38c.json",
+      "id": "ANS-POL-FRS-04"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/07469eddfe044cf9141cde3d398dd98494e7492e64e9b0741ef3450983a67feb.json",
+      "id": "ANS-POL-FRS-05"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/34525f39b0f000e014160c835d4aadf03da23b5c2fd350613521af63cdb445e3.json",
+      "id": "ANS-POL-FRS-06"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/94742f386eef2a18cf4dc3bf85e9ccb3933bfcd1e8fc4a2b1b2e4c221a790e26.json",
+      "id": "ANS-POL-FRS-07"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/02f242fdc88ec1e0fc5729fef1c44eb238de79e743f71fd4d54c9c35122571ed.json",
+      "id": "ANS-POL-FRS-08"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/5e6f075d460c27d16bfd2ffb69764f8061fad412ad5c1acde25673b6e46d162e.json",
+      "id": "ANS-POL-FRS-09"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/1d30b7b8eebe23a3b58a9afeaf77c8471e488e5c2d0b1b76d42cfce5c85cd60d.json",
+      "id": "ANS-POL-FRS-10"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/067983fb58f74fce0476d11555cc93d8d068bd4d48262a6416071ae4f6ad9483.json",
+      "id": "ANS-ACT-ORD-01"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/533dd40886b3c30a8a7c21ad40960cbc1db0e9b7ac038ce378697febe0070b1f.json",
+      "id": "ANS-ACT-ORD-02"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/aeb64bdc5c548d3eb103aa743d35759ec8388bddd9156f274348a692b2636857.json",
+      "id": "ANS-ACT-ORD-03"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/15e8395850804a60b9af685c3f0cea59b9c0de5ef71b634ee2aeffdb1bc43f0e.json",
+      "id": "ANS-ACT-ORD-04"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/4f2aed83079302d72f6fa6f10ba7ff38ac90e0a1120380554b3e3d63a7326002.json",
+      "id": "ANS-ACT-ORD-05"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/b1b90e18604904043824a69a037f443fcee8699dfd7cc5b763acfce3eb4d217c.json",
+      "id": "ANS-ACT-LOG-01"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/b0ffecd5ecf6ed1aa5629fb9c92f9f6fcf3762b634584607fec78e4f5658d321.json",
+      "id": "ANS-ACT-LOG-02"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/3e90036765326c117dfb40f4f8e8e48b9bd2da4a57210395492e4a504912b52b.json",
+      "id": "ANS-ACT-LOG-03"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/682d7de16a9e07074a4312a3088380ed07ad1c9378626be5184126f7ce6620bd.json",
+      "id": "ANS-ACT-LOG-04"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/b66ebfb398c728fb88cd07df52d7f3fa36cdfd70249233208bb4e5ac6513208d.json",
+      "id": "ANS-ACT-LOG-05"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/e7ddb193c048bd32965c6897b4cfec265945da63289bd52fc5761cbc8349f77a.json",
+      "id": "ANS-ACT-RFD-01"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/3e5f68aee69e3554d9e902227f24acdba2efc87683cc8e9bde45555782561c1a.json",
+      "id": "ANS-ACT-RFD-02"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/8f5255ea637bafa165a0c69058716595d1daac802307ac1a0188a3abc74083da.json",
+      "id": "ANS-ACT-RFD-03"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/91c6ca77c0b48dc538461a68dd65e41eb9bc93f4d7727931c9ecfb11867771e3.json",
+      "id": "ANS-ACT-RFD-04"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/f9300f8ab8c7dadc8b569efce7ed862c1abb31b94b8ab9aacfffc5d81877707a.json",
+      "id": "ANS-ACT-RFD-05"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/aac099555486e9cb23d6599218f46b3d0117d60b8af9e301eb8c323d95ca9e50.json",
+      "id": "ANS-ACT-ADR-01"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/216c2455612a27bf1bcb87241bc4cc17bd0cf3c3c9814371e5f90b36c80bb946.json",
+      "id": "ANS-ACT-ADR-02"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/856f1d2a3acbb2edbe5db6833b598e2196d20f527596d15ee3788d05154fb6a1.json",
+      "id": "ANS-ACT-ADR-03"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/3452f9190ab53f441c343940872f1034e5a2b2e7768706784c0a4b723b79179d.json",
+      "id": "ANS-ACT-ADR-04"
+    },
+    {
+      "cassette": "qwen-plus/v1.2.0/37145a104bf86d39a92496c568c67cc98a126db567913aa771338acd99daa9c1.json",
+      "id": "ANS-ACT-ADR-05"
+    }
+  ],
+  "generatedAt": "2026-11-04T09:22:26.158904+00:00",
+  "model": "qwen-plus",
+  "promptVersion": "v1.2.0",
+  "source": "dev"
+}

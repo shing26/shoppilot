@@ -147,6 +147,7 @@ Tab/Shift+Tab 在可见可聚焦元素间循环、释放时还焦点。**它是 
 | 跨模块工具契约（审批策略与新状态值） | `shoppilot-tool-api/src/test/java/.../ToolContractApprovalTest` |
 | 检索融合录放门（round22 票 64） | `knowledge/RetrievalFusionReplayTest`（JVM，重算的唯一 owner）、`ingest/MarkdownChunkerTest`、`scripts/retrieval_gate.py`（只校验不复算）+ `eval/retrieval-fixture-*.json`（append-only，录制器 `scripts/record_retrieval_fixture.py`） |
 | task 级判据（round22 票 65） | `scripts/eval_task.py`（判据 + 14 条夹具）+ `eval/cases-part8-task.jsonl`；活体入口 `run_tool_eval.py --task` |
+| 答案级评测（round48 票 202 / ADR 0083） | `scripts/build_answer_cases.py`（60 条案例的唯一来源，`--check` 进 CI）+ `eval/answer-cases.jsonl`；共享层 `scripts/answer_cases.py`（生产消息形状 + 与 Java `CassetteKey` 同算法的 key）；确定性判分 `scripts/answer_facts.py`；录制 `scripts/record_answer_cassettes.py`（真实模型、会计费，不在 CI）；0-token 门禁 `scripts/verify_answer_eval.py` + `eval/answer-cassettes/`（cassette + `baseline.json`） |
 | 告警规则（round22 票 67） | `ops/alerts/shoppilot.rules.yml` + `ops/alerts/shoppilot.rules.test.yml`（`promtool test rules`，CI 的 `Alert rules unit test` 步） |
 | 业务租户隔离、幂等 | `shoppilot-biz-mock/src/test/java/...` |
 | 工单工作流、规则分流、坐席领取、SLA、慢查询证据 | `shoppilot-ticket/src/test/java/...`（round23 票 72 随数据搬走） |

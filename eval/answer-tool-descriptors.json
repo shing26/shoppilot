@@ -1,0 +1,116 @@
+[
+  {
+    "function": {
+      "description": "查询指定订单的状态、金额、品类与服务标",
+      "name": "queryOrderDetail",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "orderNo": {
+            "description": "平台订单号，例如 10023；用户未提供时必须追问而非猜测",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderNo"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "查询指定订单的物流公司与实时轨迹节点",
+      "name": "queryLogistics",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "orderNo": {
+            "description": "平台订单号，例如 10023",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderNo"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "修改指定订单的收货地址，仅未发货订单允许",
+      "name": "modifyDeliveryAddress",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "description": "地级市，例如 杭州市；直辖市与省同名时同样填写。用户提到了就必须照抄，只有用户完全没提到这一项时才留空（留空 = 这一项不改）",
+            "type": "string"
+          },
+          "detailAddress": {
+            "description": "街道门牌详址，例如 文三路100号；把用户原话里省市区之外剩下的部分整体填入。用户提到了就必须照抄，只有用户完全没提到这一项时才留空（留空 = 这一项不改）",
+            "type": "string"
+          },
+          "district": {
+            "description": "区县，例如 西湖区。用户提到了就必须照抄，只有用户完全没提到这一项时才留空（留空 = 这一项不改）",
+            "type": "string"
+          },
+          "orderNo": {
+            "description": "平台订单号，例如 10023",
+            "type": "string"
+          },
+          "province": {
+            "description": "省级行政区，例如 浙江省；直辖市填 北京市 这类全称。用户提到了就必须照抄，只有用户完全没提到这一项时才留空（留空 = 这一项不改）",
+            "type": "string"
+          },
+          "receiverName": {
+            "description": "收件人姓名",
+            "type": "string"
+          },
+          "receiverPhone": {
+            "description": "收件人手机号，11 位数字",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderNo",
+          "receiverName",
+          "receiverPhone"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "为指定订单发起退款申请",
+      "name": "applyRefund",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountFen": {
+            "description": "退款金额（分）；留空表示按订单实付全额退款",
+            "type": "integer"
+          },
+          "orderNo": {
+            "description": "平台订单号，例如 10023",
+            "type": "string"
+          },
+          "reason": {
+            "description": "退款原因，例如 生鲜破损、不想要了；用户没明说就填 买家主观原因，不要为它追问用户",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderNo"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  }
+]

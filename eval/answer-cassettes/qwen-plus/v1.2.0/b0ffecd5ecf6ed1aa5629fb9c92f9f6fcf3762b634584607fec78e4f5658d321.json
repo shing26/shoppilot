@@ -1,0 +1,167 @@
+{
+  "key": "b0ffecd5ecf6ed1aa5629fb9c92f9f6fcf3762b634584607fec78e4f5658d321",
+  "model": "qwen-plus",
+  "promptVersion": "v1.2.0",
+  "recordedAt": "2026-11-04T09:21:58.953887+00:00",
+  "request": {
+    "maxTokens": 1024,
+    "messages": [
+      {
+        "content": "你是商家的在线客服助手。请遵守：\n1. 静态政策问题只依据【政策条款】回答；条款未覆盖时明确说明并建议转人工，不要编造。\n2. 禁止断言式个性化结论。涉及\"我这种情况适不适用\"时，说明需要查询具体订单才能确定，并主动提出帮用户查询。\n3. 需要查询或办理业务时调用工具；缺少必填参数一律向用户询问，绝不猜测订单号。\n   标为可选的参数（例如退款金额、退款原因）用户没有提，就按参数描述里的默认值直接调用工具，不要为可选参数反问用户。\n   反过来，用户提到过的项绝不允许留空：改地址时用户说了 杭州市 就必须把 杭州市 填进 city，留空会被系统理解成“这一项不改”而沿用旧值（local 模式 3B 模型实测三连漏 city）。\n   如果这次对话里**没有任何可用工具**（纯咨询场景），办理类诉求照实说明办不了，并建议转人工，绝不要承诺\"已经提交\"\"已经修改\"。\n4. 工具返回失败时，用自然中文向用户解释现状与下一步，不要复述错误码，也不要对用户说 applyRefund、receiverName 这类工具名或字段名（dev 评测实测漏过两次）。如果系统随后给了失败上下文，换一种做法（换工具或换参数）再试一次，仍然失败就照实说明并建议转人工。\n5. 用户原话里已经给过的信息一律算已给：已经报出订单号就绝不再索要订单号。\n   办理动作的必填项齐了就直接调用工具，不要以\"核验\"为由再要姓名、手机号这类该动作并不需要的字段。\n6. 与本店业务无关的请求（讲笑话、写诗、砍价、闲聊）不要调用任何业务工具，礼貌说明只处理本店业务；\n   用户要真人、要上级答复时按转人工处理，不要反过来索要订单号。\n7. 没有真的调用成功工具，就不要说\"已提交\"\"已修改\"\"已成功\"。\n8. 一句话里有多个诉求（先查物流再退款）时，在工具轮次内逐个办完再回复，不要只办第一个就用文字打发。\n9. 用户已经明说要做某个业务动作（退款、改地址）就直接调用该工具，不要征求二次确认，也不要先查订单来预判——能不能办由工具返回再说。轮次有限，把每一轮都用在还没办完的诉求上。\n10. 办理动作成功后，回复里必须按工具返回的**合并后完整结果**复述一遍（改地址复述省市区详址与收件人，退款复述金额）；系统对可选参数是“留空即不改”，只有复述才能让用户看出哪一段没被改掉。\n11. 用简体中文，口语、简洁，不超过 200 字。\n",
+        "role": "system",
+        "toolCallId": null,
+        "toolCalls": []
+      },
+      {
+        "content": "90002 的快递单号是多少？",
+        "role": "user",
+        "toolCallId": null,
+        "toolCalls": []
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "toolCallId": null,
+        "toolCalls": [
+          {
+            "arguments": {
+              "orderNo": "90002"
+            },
+            "id": "call_ans_act_log_02",
+            "name": "queryLogistics"
+          }
+        ]
+      },
+      {
+        "content": "{\"tool\":\"queryLogistics\",\"status\":\"OK\",\"payload\":{\"orderNo\":\"90002\",\"cpCode\":\"ZTO\",\"cpName\":\"中通快递\",\"trackingNo\":\"ZT1234567890\",\"nodes\":[{\"seq\":1,\"nodeCode\":\"PICKED_UP\",\"description\":\"快件已揽收\",\"occurredAt\":\"2026-10-30T01:00:00Z\"},{\"seq\":2,\"nodeCode\":\"IN_TRANSIT\",\"description\":\"运输中，已到达杭州转运中心\",\"occurredAt\":\"2026-10-31T05:00:00Z\"}]},\"message\":null,\"allowedActions\":[]}",
+        "role": "tool",
+        "toolCallId": "call_ans_act_log_02",
+        "toolCalls": []
+      }
+    ],
+    "temperature": 0.2,
+    "tools": [
+      {
+        "function": {
+          "description": "查询指定订单的状态、金额、品类与服务标",
+          "name": "queryOrderDetail",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "orderNo": {
+                "description": "平台订单号，例如 10023；用户未提供时必须追问而非猜测",
+                "type": "string"
+              }
+            },
+            "required": [
+              "orderNo"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "查询指定订单的物流公司与实时轨迹节点",
+          "name": "queryLogistics",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "orderNo": {
+                "description": "平台订单号，例如 10023",
+                "type": "string"
+              }
+            },
+            "required": [
+              "orderNo"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "修改指定订单的收货地址，仅未发货订单允许",
+          "name": "modifyDeliveryAddress",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "description": "地级市，例如 杭州市；直辖市与省同名时同样填写。用户提到了就必须照抄，只有用户完全没提到这一项时才留空（留空 = 这一项不改）",
+                "type": "string"
+              },
+              "detailAddress": {
+                "description": "街道门牌详址，例如 文三路100号；把用户原话里省市区之外剩下的部分整体填入。用户提到了就必须照抄，只有用户完全没提到这一项时才留空（留空 = 这一项不改）",
+                "type": "string"
+              },
+              "district": {
+                "description": "区县，例如 西湖区。用户提到了就必须照抄，只有用户完全没提到这一项时才留空（留空 = 这一项不改）",
+                "type": "string"
+              },
+              "orderNo": {
+                "description": "平台订单号，例如 10023",
+                "type": "string"
+              },
+              "province": {
+                "description": "省级行政区，例如 浙江省；直辖市填 北京市 这类全称。用户提到了就必须照抄，只有用户完全没提到这一项时才留空（留空 = 这一项不改）",
+                "type": "string"
+              },
+              "receiverName": {
+                "description": "收件人姓名",
+                "type": "string"
+              },
+              "receiverPhone": {
+                "description": "收件人手机号，11 位数字",
+                "type": "string"
+              }
+            },
+            "required": [
+              "orderNo",
+              "receiverName",
+              "receiverPhone"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "为指定订单发起退款申请",
+          "name": "applyRefund",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "amountFen": {
+                "description": "退款金额（分）；留空表示按订单实付全额退款",
+                "type": "integer"
+              },
+              "orderNo": {
+                "description": "平台订单号，例如 10023",
+                "type": "string"
+              },
+              "reason": {
+                "description": "退款原因，例如 生鲜破损、不想要了；用户没明说就填 买家主观原因，不要为它追问用户",
+                "type": "string"
+              }
+            },
+            "required": [
+              "orderNo"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "completionTokens": 47,
+    "content": "订单 90002 的快递单号是：ZT1234567890，由中通快递承运。  \n当前物流状态：运输中，已到达杭州转运中心。",
+    "promptTokens": 1698,
+    "toolCalls": []
+  },
+  "source": "dev"
+}
