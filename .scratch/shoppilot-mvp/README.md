@@ -185,7 +185,7 @@
 | **round45** | **真实用户走查的三处 P0 缺陷修复**：换店串号 + 买家点踩入口 + 对话滚动（票 191） | [`round45-spec-ux-p0-fixes.md`](round45-spec-ux-p0-fixes.md)；**ADR 0080**（所有者报障触发的缺陷修复，非新功能） | **done**（2026-11-03，票 191 收口；前端 typecheck/build 绿；三项活体实测通过；P1 清单保留在 `ux-probe/REPORT.md`，未修项见票面三个现场追问） |
 | **round46** | **同一份走查报告的七条 P1 缺陷修复**（上一份汇报误写成「六项」）：游客可见 + 对话持久化 + IME + 弹层键盘 + 单层滚动 + 退出中止流 + 复核闭环（票 192-194） | [`round46-spec-ux-p1-fixes.md`](round46-spec-ux-p1-fixes.md)；**ADR 0081**（所有者指令「继续修 P1」，缺陷修复沿用 ADR 0080 依据） | **done**（2026-11-03，票 192-194 收口；JVM **771**（12 / 92 / 617 / 50）；两端 typecheck/build 绿、产物入库；活体 `ux-probe/verify-p1.mjs` 七条 P1 全绿——含事后补跑的两个弹层键盘段；`repackage.skip` 与 Redis 16380 的口径见 `docs/EVIDENCE.md`） |
 | **round47** | **同一份走查报告的十二项 P2 缺陷修复**：可读枚举 + 401 自动登出 + 对比度 + 移动端点击目标/回对话 + 队列筛选一致 + 结单需领取 + 移动端导航 + 质量报表累计最大（票 195-199） | [`round47-spec-ux-p2-fixes.md`](round47-spec-ux-p2-fixes.md)；**ADR 0082**（所有者指令「把 P2 按同一套流程收口」，缺陷修复沿用 ADR 0080/0081 依据） | **done**（2026-11-03，票 195-199 收口；12 项 P2 中 11 项已修、P2-12 复核不成立；JVM **773**（12 / 92 / 619 / 50）、129 suites；两端 typecheck/build 绿、产物入库；指标名 72/74 → **73/75**；**活体未实跑**——验证时 8082 网关未启动，`verify-p2.mjs` 只做语法检查） |
-| **round48** | **质量收口：读数可信 → 行为可回归 → 结构可维护**（票 200-206；本轮不新增产品功能） | [`round48-spec-quality-closure.md`](round48-spec-quality-closure.md)；**ADR 0083**（所有者 2026-11-04 指令，质量收口政策覆盖，不自动续期） | **进行中**（票 200 / 201 / 202 已收口：文档真值同步 + LLM 录放回归门 + 答案级评测；203-206 待立票） |
+| **round48** | **质量收口：读数可信 → 行为可回归 → 结构可维护**（票 200-206；本轮不新增产品功能） | [`round48-spec-quality-closure.md`](round48-spec-quality-closure.md)；**ADR 0083**（所有者 2026-11-04 指令，质量收口政策覆盖，不自动续期） | **进行中**（票 200 / 201 / 202 / 203 已收口：文档真值同步 + LLM 录放回归门 + 答案级评测 + 编排器拆分；204-206 待立票） |
 | **round31** | **B4：飞书长连接真连**（票 96、97、113-116） | [`round31-spec-b4-feishu-live.md`](round31-spec-b4-feishu-live.md)；**ADR 0064**（考察）、**0065**（开线决策） | **done**（票 96/97/113-116 全部收口；wss 握手 + 事件收发全链路 + 重启自动重连三项活体通过；JVM **505**） |
 | **round29** | **B2：凭据生产态 + 按库用户隔离 + 备份恢复演练**（票 104-107） | [`round29-spec-b2-credentials-and-backup.md`](round29-spec-b2-credentials-and-backup.md)；**ADR 0062** | **done**（票 104-107 全部收口；演练 14/14；Redis 不备份/R5/TLS 带触发条件登记） |
 | **round30** | **B3：资金动作不可抵赖**（票 108-112） | [`round30-spec-b3-non-repudiation.md`](round30-spec-b3-non-repudiation.md)；**ADR 0063** | **done**（票 108-112 全部收口；JVM 466） |
@@ -370,6 +370,7 @@
 | 200 | [`200-doc-truth-sync.md`](issues/200-doc-truth-sync.md) | implemented | round48：文档真值同步（STATUS / README / ARCHITECTURE / TUNING_PLAN / current-metrics；G6 常数按日志口径保留并登记 773） |
 | 201 | [`201-llm-replay-gate.md`](issues/201-llm-replay-gate.md) | implemented | round48：LLM 录放回归门（`llm.mode=replay` + 6 张 qwen-plus 真卡 + 0-token CI 步） |
 | 202 | [`202-answer-level-eval.md`](issues/202-answer-level-eval.md) | implemented | round48：答案级评测（40 政策 + 20 动作真卡、确定性事实判分、0-token 门禁；56/60，4 条缺口留实测） |
+| 203 | [`203-orchestrator-split.md`](issues/203-orchestrator-split.md) | implemented | round48：编排器拆分（`TurnOrchestrator` + 四 handler；`AgentStateMachine` 1768→73 行，各类 <500；780 tests / 131 suites 不变） |
 
 ## 如何新增或领取工作
 

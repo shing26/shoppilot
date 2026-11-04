@@ -88,10 +88,12 @@ class TraceCorrelationAcrossAsyncTest {
     @Test
     @DisplayName("缓存写回在响应之后异步发生，那条失败日志仍带触发者的四个坐标")
     void writeBackFailureCarriesTheTriggersCoordinates() throws Exception {
-        Logger machineLogger = (Logger) LoggerFactory.getLogger(AgentStateMachine.class);
+        // round48 票 203：写回提交点搬到 PersistHandler，日志归属随之迁移；坐标（MDC）语义不变。
+        // handler 是包级可见，这里按 logger 名取（与 PersistHandler 自己的 LoggerFactory 同名）。
+        Logger writeBackLogger = (Logger) LoggerFactory.getLogger("com.shoppilot.gateway.agent.PersistHandler");
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
-        machineLogger.addAppender(appender);
+        writeBackLogger.addAppender(appender);
 
         // 与 AsyncConfig 的写回池同形：小池、有界队列、饱和与关闭后走提交线程代跑
         WriteBackPool writeBack = new WriteBackPool(1, 1, 0L, 1, new SimpleMeterRegistry());
@@ -120,7 +122,7 @@ class TraceCorrelationAcrossAsyncTest {
                     .containsEntry(RequestTrace.CUSTOMER_ID, CUSTOMER)
                     .containsEntry(RequestTrace.CONVERSATION_ID, CONV);
         } finally {
-            machineLogger.detachAppender(appender);
+            writeBackLogger.detachAppender(appender);
             writeBack.close(Duration.ofSeconds(5));
         }
     }
