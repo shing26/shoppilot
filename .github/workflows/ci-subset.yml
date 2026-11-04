@@ -104,10 +104,16 @@ jobs:
       # 这一步只做 Python 独有的四件事：夹具 schema、fused ⊆ dense ∪ lexical、语料 sha、
       # 常数与 yml 一致 —— **刻意不在 Python 里复算 RRF**（两份实现就是第二份判据）。
       # 哈希钉防的是"夹具被悄悄换掉"：重录夹具必须同步改这个 env（与 check_coverage.py 同模式）。
+      # round48 票 206 / ADR 0083：同一步里再加一条**用例集结构**校验（仍是九步：一步两件事）。
+      # 它只读 `eval/retrieval-cases.json` 与 `knowledge/*.md`：规模、id/query 唯一、expect_doc 存在、
+      # 意图与文档主题一致、店铺级文档租户自洽、每份文档 ≥2 条且 dev 至少 1 条、holdout 占比。
+      # **不测检索效果**——效果要等活体栈录出 120 条的夹具，见 docs/RETRIEVAL_ROUTING_DECISION.md。
       - name: Retrieval fusion gate (0-token)
         env:
           RETRIEVAL_FIXTURE_SHA256: f3867b09d42be419df4a989aaca6b78f76bc02f6dc8cbbcd1f9867c5e50905e9
-        run: python3 scripts/retrieval_gate.py
+        run: |
+          python3 scripts/retrieval_gate.py
+          python3 scripts/verify_retrieval_cases.py
 
       # round48 票 201 / ADR 0083：LLM 录放门禁。cassette、key/路径归因、响应形状、与入仓基线
       # 的逐字节一致、以及用既有 judge() 重算的结论——任何一项漂移都红，必须显式更新基线。
@@ -176,7 +182,8 @@ jobs:
             frontend-buyer/package-lock.json
 
       # round27 票 94：从「只构建工作台」扩到「两个前端都构建」。
-      # **仍是九步**——一步里做两件事，不是加一步：步数是 CI 成本口径，不该顺手变。
+      # 一步里做两件事，不是加一步：步数是 CI 成本口径，不该顺手变。
+      # round48 票 205 起本工作流是**十步**：下面是独立新增的第 10 步（round44 spec §4 登记项）。
       # 两个前端各自 npm ci 而不是复用一份 node_modules：它们的依赖树不同，
       # 合并会让「装了 A 却没装 B」这件事在别处才暴露。
       - name: Frontend builds (workspace + buyer, 0-token)
@@ -205,6 +212,16 @@ jobs:
             echo '::error::前端构建产物里有未入库的文件——请 git add 并提交'
             exit 1
           fi
+
+      # round48 票 205 / ADR 0083：round44 spec §4 登记的第 10 步（触发 = 组件内出现非平凡纯逻辑，
+      # 已由 SSE 分帧 / 对话存档 / 队列筛选三块满足）。只跑下沉后的纯函数，不引 @vue/test-utils
+      # 或 jsdom，因此不依赖浏览器与活体栈；三条 Playwright 冒烟仍只在活体环境手动跑。
+      - name: Frontend unit tests (vitest, 0-token)
+        run: |
+          set -euo pipefail
+          for app in frontend-buyer frontend-workspace; do
+            (cd "$app" && npm test)
+          done
 
       - name: Upload Surefire reports on failure
         if: failure()

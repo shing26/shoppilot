@@ -1,0 +1,974 @@
+{
+  "_note": [
+    "round48 票 206 / ADR 0083：检索质量用例集（120 条，37 份知识文档全覆盖）。",
+    "标注口径：每条查询指定**应当被召回的语料文件**；由作者按 knowledge/*.md 的标题与小节标题拟定，",
+    "未看任何一路检索结果，因此不是从融合输出反推的循环标注。",
+    "tenant 按文档归属：店铺级文档（scope: SHOP）用该店租户；平台级文档统一用 T001 发起查询。",
+    "split：dev 用于调参/定阈值，holdout 只用于最终判定；同一条查询不得跨 split 复用。",
+    "判据口径沿用 docs/retrieval-quality-metrics.md：相关 = 期望语料文件的任一规则块，不按块标注。",
+    "规模 120 条；holdout 42 条（35.0%）。",
+    "录制入口：scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json（需活体 ES/Qdrant）。"
+  ],
+  "cases": [
+    {
+      "id": "RET48-fresh-01-claim-window-1",
+      "query": "生鲜坏了签收后多久还能申请理赔",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-01-claim-window",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-01-claim-window-2",
+      "query": "申请生鲜理赔要拍哪些照片",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-01-claim-window",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-01-claim-window-3",
+      "query": "超过理赔时限还有例外情况吗",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-01-claim-window",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-fresh-02-claim-scope-1",
+      "query": "生鲜坏了一半能赔多少钱",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-02-claim-scope",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-02-claim-scope-2",
+      "query": "用了优惠券的生鲜理赔按实付还是原价",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-02-claim-scope",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-02-claim-scope-3",
+      "query": "生鲜赔付有没有上限，运费赔不赔",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-02-claim-scope",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-fresh-03-packaging-loss-1",
+      "query": "快递箱破了里面的东西漏了算谁的责任",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-03-packaging-loss",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-03-packaging-loss-2",
+      "query": "生鲜漏液把别的商品弄脏了怎么处理",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-03-packaging-loss",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-03-packaging-loss-3",
+      "query": "签收时没验货，事后发现破损还能赔吗",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-03-packaging-loss",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-fresh-04-cold-chain-1",
+      "query": "冷链商品送到时冰袋化了算断链吗",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-04-cold-chain",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-04-cold-chain-2",
+      "query": "冷链温度要求是多少度",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-04-cold-chain",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-04-cold-chain-3",
+      "query": "断链的生鲜应该拒收还是签收后再申请",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-04-cold-chain",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-fresh-05-weight-shortage-1",
+      "query": "收到的水果比标称重量少怎么赔",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-05-weight-shortage",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-05-weight-shortage-2",
+      "query": "生鲜重量差多少算合理误差",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-05-weight-shortage",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-05-weight-shortage-3",
+      "query": "运输途中水分蒸发导致失重赔不赔",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-05-weight-shortage",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-fresh-06-seafood-dead-1",
+      "query": "螃蟹送到是死的多久内可以赔",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-06-seafood-dead",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-06-seafood-dead-2",
+      "query": "死蟹是按只赔还是整单退",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-06-seafood-dead",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-06-seafood-dead-3",
+      "query": "活鲜规格和公母不符怎么处理",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-06-seafood-dead",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-fresh-07-exclusions-1",
+      "query": "哪些情况生鲜不能理赔",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-07-exclusions",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-07-exclusions-2",
+      "query": "已经赔过一次还能再申请吗",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-07-exclusions",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-07-exclusions-3",
+      "query": "吃出食品安全问题该找谁",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-07-exclusions",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-fresh-08-shop-t002-dead-crab-1",
+      "query": "鲜果驿站的死蟹理赔窗口是多久",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-08-shop-t002-dead-crab",
+      "tenant": "T002",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-08-shop-t002-dead-crab-2",
+      "query": "死蟹按只赔需要提供订单号吗",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-08-shop-t002-dead-crab",
+      "tenant": "T002",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-fresh-08-shop-t002-dead-crab-3",
+      "query": "只发照片能直接定责赔付吗",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-08-shop-t002-dead-crab",
+      "tenant": "T002",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-hotel-01-checkin-checkout-1",
+      "query": "云栖酒店几点可以入住",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-01-checkin-checkout",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-01-checkin-checkout-2",
+      "query": "退房超过十二点怎么收费",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-01-checkin-checkout",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-01-checkin-checkout-3",
+      "query": "退房要等查房完才能走吗",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-01-checkin-checkout",
+      "tenant": "T004",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-hotel-02-cancellation-policy-1",
+      "query": "酒店预订提前几天取消不收钱",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-02-cancellation-policy",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-02-cancellation-policy-2",
+      "query": "退订的钱多久到账",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-02-cancellation-policy",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-02-cancellation-policy-3",
+      "query": "节假日取消订单和平时一样吗",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-02-cancellation-policy",
+      "tenant": "T004",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-hotel-03-extra-bed-and-occupancy-1",
+      "query": "云栖酒店加床怎么收费",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-03-extra-bed-and-occupancy",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-03-extra-bed-and-occupancy-2",
+      "query": "一个房间最多住几个人，带小孩算吗",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-03-extra-bed-and-occupancy",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-03-extra-bed-and-occupancy-3",
+      "query": "订的房型和实际入住的不一样怎么办",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-03-extra-bed-and-occupancy",
+      "tenant": "T004",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-hotel-04-deposit-and-fees-1",
+      "query": "酒店押金什么时候退",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-04-deposit-and-fees",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-04-deposit-and-fees-2",
+      "query": "房费里加收的费用怎么算",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-04-deposit-and-fees",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-04-deposit-and-fees-3",
+      "query": "住宿发票怎么开",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-04-deposit-and-fees",
+      "tenant": "T004",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-hotel-05-breakfast-and-room-types-1",
+      "query": "怎么知道订的房间含不含早餐",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-05-breakfast-and-room-types",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-05-breakfast-and-room-types-2",
+      "query": "酒店早餐几点开始，是自助吗",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-05-breakfast-and-room-types",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-05-breakfast-and-room-types-3",
+      "query": "房型名称和页面写的不一致以哪个为准",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-05-breakfast-and-room-types",
+      "tenant": "T004",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-hotel-06-early-checkout-and-extension-1",
+      "query": "提前退房没住的晚数退钱吗",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-06-early-checkout-and-extension",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-06-early-checkout-and-extension-2",
+      "query": "酒店可以续住吗，怎么结算",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-06-early-checkout-and-extension",
+      "tenant": "T004",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-hotel-06-early-checkout-and-extension-3",
+      "query": "提前退房产生投诉找谁处理",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-06-early-checkout-and-extension",
+      "tenant": "T004",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-promo-01-cross-shop-1",
+      "query": "跨店满减按什么金额算门槛",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-01-cross-shop",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-01-cross-shop-2",
+      "query": "跨店满减有封顶吗，优惠怎么分摊",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-01-cross-shop",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-01-cross-shop-3",
+      "query": "凑单后把其中一件退了满减会变吗",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-01-cross-shop",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-promo-02-deposit-inflation-1",
+      "query": "定金膨胀是什么意思，能抵多少",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-02-deposit-inflation",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-02-deposit-inflation-2",
+      "query": "定金交了不想要了能退吗",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-02-deposit-inflation",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-02-deposit-inflation-3",
+      "query": "尾款可以用优惠券吗",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-02-deposit-inflation",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-promo-03-coupon-stack-1",
+      "query": "店铺券和平台满减能一起用吗",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-03-coupon-stack",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-03-coupon-stack-2",
+      "query": "优惠券的使用门槛和有效期怎么看",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-03-coupon-stack",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-03-coupon-stack-3",
+      "query": "券显示不能用是什么原因",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-03-coupon-stack",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-promo-04-flash-limit-1",
+      "query": "秒杀的商品价格什么时候生效",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-04-flash-limit",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-04-flash-limit-2",
+      "query": "限购是按账号还是按收货地址算",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-04-flash-limit",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-04-flash-limit-3",
+      "query": "秒杀被砍单了有补偿吗",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-04-flash-limit",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-promo-05-price-protection-1",
+      "query": "价格保护能保多久，哪些商品不保",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-05-price-protection",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-05-price-protection-2",
+      "query": "哪些情况不参与价保比价",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-05-price-protection",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-05-price-protection-3",
+      "query": "价保差价多久到账，有争议怎么办",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-05-price-protection",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-promo-06-refund-discount-1",
+      "query": "用了优惠的订单退款按什么金额退",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-06-refund-discount",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-06-refund-discount-2",
+      "query": "部分退款时优惠券怎么处理",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-06-refund-discount",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-06-refund-discount-3",
+      "query": "退款后优惠没了能要求补差吗",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-06-refund-discount",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-promo-07-split-cart-1",
+      "query": "一个订单拆成多个包裹优惠会变吗",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-07-split-cart",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-07-split-cart-2",
+      "query": "合单或分单会影响满减门槛吗",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-07-split-cart",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-07-split-cart-3",
+      "query": "预售和现货一起下单怎么算优惠",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-07-split-cart",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-promo-08-shop-t001-member-1",
+      "query": "星选生活会员日有什么优惠",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-08-shop-t001-member",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-08-shop-t001-member-2",
+      "query": "本店店铺券的有效期和适用范围",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-08-shop-t001-member",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-promo-08-shop-t001-member-3",
+      "query": "本店为什么不能申请平台价保",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-08-shop-t001-member",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-return-01-7day-basic-1",
+      "query": "七天无理由从签收当天算还是第二天算",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-01-7day-basic",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-01-7day-basic-2",
+      "query": "吊牌剪了还能七天无理由退货吗",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-01-7day-basic",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-01-7day-basic-3",
+      "query": "退货时赠品要一起退回吗",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-01-7day-basic",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-return-02-7day-exclusions-1",
+      "query": "哪些商品不支持七天无理由退货",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-02-7day-exclusions",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-02-7day-exclusions-2",
+      "query": "定制商品和拆封的能退吗",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-02-7day-exclusions",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-02-7day-exclusions-3",
+      "query": "不支持无理由是不是就完全不能退",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-02-7day-exclusions",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-return-03-shipping-cost-1",
+      "query": "七天无理由退货的运费谁承担",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-03-shipping-cost",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-03-shipping-cost-2",
+      "query": "质量问题退货邮费谁出",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-03-shipping-cost",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-03-shipping-cost-3",
+      "query": "运费险怎么赔，赔多少",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-03-shipping-cost",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-return-04-refund-timeline-1",
+      "query": "退款审核一般要多久",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-04-refund-timeline",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-04-refund-timeline-2",
+      "query": "退款到账要几个工作日",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-04-refund-timeline",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-04-refund-timeline-3",
+      "query": "一直没收到退款该按什么顺序查",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-04-refund-timeline",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-return-05-defect-exchange-1",
+      "query": "质量问题可以换货吗",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-05-defect-exchange",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-05-defect-exchange-2",
+      "query": "换货的时效和运费怎么算",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-05-defect-exchange",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-05-defect-exchange-3",
+      "query": "换货能不能改成补发或部分退款",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-05-defect-exchange",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-return-06-packaging-requirement-1",
+      "query": "退货时商品什么样才算完好",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-06-packaging-requirement",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-06-packaging-requirement-2",
+      "query": "包装和配件要一起寄回吗",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-06-packaging-requirement",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-06-packaging-requirement-3",
+      "query": "哪些情况商家不能拒绝退货",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-06-packaging-requirement",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-return-07-shop-t001-window-1",
+      "query": "星选生活的无理由退货窗口是几天",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-07-shop-t001-window",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-07-shop-t001-window-2",
+      "query": "本店免费退需要满足什么条件",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-07-shop-t001-window",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-07-shop-t001-window-3",
+      "query": "本店换货有什么优先和补偿",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-07-shop-t001-window",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-return-08-shop-t002-fresh-1",
+      "query": "鲜果驿站生鲜可以七天无理由吗",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-08-shop-t002-fresh",
+      "tenant": "T002",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-08-shop-t002-fresh-2",
+      "query": "口感或成熟度不满意怎么处理",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-08-shop-t002-fresh",
+      "tenant": "T002",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-return-08-shop-t002-fresh-3",
+      "query": "本店补偿以什么形式到账",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-08-shop-t002-fresh",
+      "tenant": "T002",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-shipping-01-carrier-scope-1",
+      "query": "默认发什么快递，可以指定吗",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-01-carrier-scope",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-01-carrier-scope-2",
+      "query": "哪些地区不配送，支持到付吗",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-01-carrier-scope",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-01-carrier-scope-3",
+      "query": "时效承诺从什么时候开始算",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-01-carrier-scope",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-shipping-02-deadline-1",
+      "query": "下单后多久必须发货",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-02-deadline",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-02-deadline-2",
+      "query": "延迟发货怎么赔付",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-02-deadline",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-02-deadline-3",
+      "query": "什么情况延迟发货可以免责",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-02-deadline",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-shipping-03-remote-1",
+      "query": "偏远地区运费怎么加收",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-03-remote",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-03-remote-2",
+      "query": "偏远地区为什么要中转，时效延长多久",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-03-remote",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-03-remote-3",
+      "query": "村组能送到家门口吗",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-03-remote",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-shipping-04-split-package-1",
+      "query": "为什么一个订单拆成几个包裹发",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-04-split-package",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-04-split-package-2",
+      "query": "可以申请合单或分单吗",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-04-split-package",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-04-split-package-3",
+      "query": "多运单的售后时限从哪天算",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-04-split-package",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-shipping-05-address-change-1",
+      "query": "下单后多久之内可以改地址",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-05-address-change",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-05-address-change-2",
+      "query": "已经发货在途还能改地址吗，要收费吗",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-05-address-change",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-05-address-change-3",
+      "query": "商家改地址需要怎么操作",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-05-address-change",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-shipping-06-inspection-1",
+      "query": "签收后发现少件还能维权吗",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-06-inspection",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-06-inspection-2",
+      "query": "大件商品验货有什么要求",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-06-inspection",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-06-inspection-3",
+      "query": "放在代收点最多保管几天",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-06-inspection",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-shipping-07-festival-surge-1",
+      "query": "大促期间发货时限会延长吗",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-07-festival-surge",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-07-festival-surge-2",
+      "query": "大促物流变慢怎么和买家解释",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-07-festival-surge",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-shipping-07-festival-surge-3",
+      "query": "大促期间的售后时限怎么算",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-07-festival-surge",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-ext-01",
+      "query": "别家都是七天，你们家是不是十五天",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-07-shop-t001-window",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-ext-02",
+      "query": "鲜果驿站的生鲜不想要了还能退吗",
+      "intent": "POLICY_RETURN",
+      "expect_doc": "return-08-shop-t002-fresh",
+      "tenant": "T002",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-ext-03",
+      "query": "我凌晨到酒店能直接入住吗",
+      "intent": "POLICY_HOTEL",
+      "expect_doc": "hotel-01-checkin-checkout",
+      "tenant": "T004",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-ext-04",
+      "query": "会员日买的还能用店铺券再减吗",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-08-shop-t001-member",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-ext-05",
+      "query": "满减凑单退掉一件，剩下的优惠怎么算",
+      "intent": "POLICY_PROMO",
+      "expect_doc": "promo-01-cross-shop",
+      "tenant": "T001",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-ext-06",
+      "query": "冰袋化成水了，里面的东西还能吃吗",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-04-cold-chain",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-ext-07",
+      "query": "螃蟹死了拍照给客服就行吗",
+      "intent": "POLICY_FRESH",
+      "expect_doc": "fresh-08-shop-t002-dead-crab",
+      "tenant": "T002",
+      "split": "holdout"
+    },
+    {
+      "id": "RET48-ext-08",
+      "query": "订单拆开发了，退款要等所有包裹到齐吗",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-04-split-package",
+      "tenant": "T001",
+      "split": "dev"
+    },
+    {
+      "id": "RET48-ext-09",
+      "query": "在途包裹改地址要加钱吗",
+      "intent": "POLICY_SHIPPING",
+      "expect_doc": "shipping-05-address-change",
+      "tenant": "T001",
+      "split": "holdout"
+    }
+  ]
+}

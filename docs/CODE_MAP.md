@@ -73,14 +73,16 @@
 
 两个产品入口都是**根壳管状态、子组件管呈现**：所有 `ref`、API 调用、定时器与 SSE 留在
 `src/App.vue`，子组件只收 props / 发 emits；表单字段用 `defineModel`（值是双向的，**所有权仍归根**）。
-没有路由、状态库与前端测试 runner——这是 ADR 0079 的显式决定，不是尚未做。
-改文案或布局先找组件；改状态、请求与错误分支先找 `App.vue`。
+没有路由与状态库——这是 ADR 0079 的显式决定，不是尚未做。前端单测自 round48 票 205 起
+由各工程自己的 `vitest` 承担（dev-only、只测下沉后的纯函数，不引 @vue/test-utils / jsdom）；
+Playwright 三条冒烟仍只在活体环境手动跑（`scripts/run-frontend-smokes.mjs`）。
+改文案或布局先找组件；改状态、请求与错误分支先找 `App.vue`；改 SSE 分帧 / 对话存档 / 队列筛选先找 `lib/`。
 
 ### 买家端 `frontend-buyer`（源码 `src/` → 产物 `static/buyer/`）
 
 | 文件 | 职责 | 状态归属 |
 | --- | --- | --- |
-| `src/App.vue`（约 780 行） | 根壳：会话与登录（round45：`readStoredSession` 校验 URL 店铺码）、`ask()` 流式提问、点踩投递（`rateMessage/submitFeedback`）、订单/工单/详情加载、`now` 定时器（30 s，`onUnmounted` 清理）；**round46 票 192**：游客不再短路订单/工单加载；对话按标签页存 `sessionStorage['shoppilot.buyer.chat']`（`{tenantId, conversation, messages}`，恢复时校验租户、把 pending 标成「刷新时中断」），`signOut()` 先 `stopAnswer()` 再清状态 | 全部 ref 与请求 |
+| `src/App.vue`（约 790 行） | 根壳：会话与登录（round45：`readStoredSession` 校验 URL 店铺码）、`ask()` 流式提问、点踩投递（`rateMessage/submitFeedback`）、订单/工单/详情加载、`now` 定时器（30 s，`onUnmounted` 清理）；**round46 票 192**：游客不再短路订单/工单加载；对话按标签页存 `sessionStorage['shoppilot.buyer.chat']`（`{tenantId, conversation, messages}`，恢复时校验租户、把 pending 标成「刷新时中断」），`signOut()` 先 `stopAnswer()` 再清状态 | 全部 ref 与请求 |
 | `components/TopBar.vue` | 品牌、当前账号署名、体验/访客徽标、退出 | props `demoMode/guestMode/hasSession/who`；emit `signOut` |
 | `components/StoreCard.vue` | 店铺名片（店名 / 业态 / 保障） | props only |
 | `components/LoginGate.vue` | 未登录整页门：一键体验、账号登录、口令表单 | `defineModel` 三个表单字段；emit `demoEnter/submit` |
@@ -91,12 +93,14 @@
 | `components/ServiceCard.vue` | 服务能力小卡 | props only |
 | `components/TicketDrawer.vue` | 单张工单详情抽屉（SLA、转人工上下文）；**round46 票 193**：`trapDialogFocus`（Esc / Tab 圈内 / 焦点进入与回还） | props；emit `close/refresh` |
 | `src/lib/format.ts` | 纯函数：状态/渠道/工具名映射、SLA 文案、agent trace 归并、`groupCitations` | 无状态 |
+| `src/lib/sse.ts`（round48 票 205） | SSE 分帧：按空行切帧、`event:`/`data:` 解析、跨 chunk 缓冲；`api.streamAnswer` 只留事件分支 | 无状态（`SseFrameReader` 只持有未完成帧的文本） |
+| `src/lib/chat.ts`（round48 票 205） | 对话存档归一化（按店铺归属、pending → 中断、未完成反馈退回）与一次回答的收尾（499 / 失败 / 成功）；`lib/chat.test.ts` 覆盖 | 纯函数，不碰 storage（读写仍由 `App.vue` 做） |
 
 ### 坐席工作台 `frontend-workspace`（源码 `src/` → 产物 `static/workspace/`）
 
 | 文件 | 职责 | 状态归属 |
 | --- | --- | --- |
-| `src/App.vue`（1203 行） | 根壳：登录、六个视图的加载与动作、SSE 渠道流、通知/提示音、未读计数 | 全部 ref、请求与副作用 |
+| `src/App.vue`（1257 行） | 根壳：登录、六个视图的加载与动作、SSE 渠道流、通知/提示音、未读计数 | 全部 ref、请求与副作用 |
 | `components/TopBar.vue` | 品牌、当前坐席、刷新、退出 | props `who/hasSession`；emit `refresh/signOut` |
 | `components/LoginCard.vue` | 未登录整页门：一键体验（坐席/管理员）、账号口令表单 | `defineModel` 表单字段；emit `demoLogin/submit` |
 | `components/SideNav.vue` | 六个视图导航 + 三个角标（队列 / 退款 / 知识待办） | props `view/ticketCount/unread/refundCount/knowledgeCount/tenantId`；emit `select` |
@@ -109,6 +113,7 @@
 | `components/ResolveDialog.vue` | 结单确认对话框（意见必填）；**round46 票 193**：`trapDialogFocus`，初始焦点在意见框 | `defineModel note`；emit `close/confirm` |
 | `components/RefundDialog.vue` | 退款放行/驳回对话框（备注必填）；**round46 票 193**：`trapDialogFocus`，初始焦点在备注框（不落在「确认放行」） | `defineModel note`；emit `close/confirm` |
 | `src/lib/format.ts` | 纯函数：SLA、超时、比例/秒数、payload 取值 | 无状态 |
+| `src/lib/queue.ts`（round48 票 205） | 队列筛选（ALL/OPEN/ASSIGNED/OVERDUE）、优先级升序 + 时间倒序、三个 KPI 计数；`lib/queue.test.ts` 覆盖 | 纯函数 |
 | `src/lib/ui.ts` | 视图枚举、筛选枚举、渠道表单形状、**知识视图下拉选项**（政策意图/范围/行业域）与状态标签 | 无状态；选项只是下拉候选，校验仍在 biz-mock |
 | `public/sw.js` | Web Push 接收与点击跳转；原样拷进 `static/workspace/sw.js`，改动要重建并入库 | 无状态 |
 
@@ -146,6 +151,7 @@ Tab/Shift+Tab 在可见可聚焦元素间循环、释放时还焦点。**它是 
 | 知识修订链（round43 / ADR 0078） | `bizmock/KnowledgeRevisionTest`（附稿前置 / 残稿 400 / 跨租户 404 / 终态 / admin 拉取口）、`gateway ingest/KnowledgeRevisionSourceTest`（JDK HttpServer 假下游：解析 / 非 2xx / 不可达 / 坏形状，全部必须抛）、`ingest/MarkdownChunkerTest`（字符串重载：frontmatter 显式、rev- 前缀不吃猜测、ruleId 同式）、`web/RoleGuardAndActorTest`（修订代理三件套：身份头补全 / 买家 403 / 计数器）；变异对照两处（去 REVIEWED 前置、吞拉取失败）随票 187 登记并实跑变红 |
 | 跨模块工具契约（审批策略与新状态值） | `shoppilot-tool-api/src/test/java/.../ToolContractApprovalTest` |
 | 检索融合录放门（round22 票 64） | `knowledge/RetrievalFusionReplayTest`（JVM，重算的唯一 owner）、`ingest/MarkdownChunkerTest`、`scripts/retrieval_gate.py`（只校验不复算）+ `eval/retrieval-fixture-*.json`（append-only，录制器 `scripts/record_retrieval_fixture.py`） |
+| 检索质量用例集（round48 票 206） | `eval/retrieval-cases.json`（120 条，37 文档全覆盖，`expect_doc` 自带标签）+ `scripts/verify_retrieval_cases.py`（结构校验，进 CI 的检索融合步）；录制走 `record_retrieval_fixture.py --cases`（自标注夹具），指标由 `knowledge/RetrievalQualityMetricsTest` 分流计算；决策与预登记判据在 `docs/RETRIEVAL_ROUTING_DECISION.md` |
 | task 级判据（round22 票 65） | `scripts/eval_task.py`（判据 + 14 条夹具）+ `eval/cases-part8-task.jsonl`；活体入口 `run_tool_eval.py --task` |
 | 答案级评测（round48 票 202 / ADR 0083） | `scripts/build_answer_cases.py`（60 条案例的唯一来源，`--check` 进 CI）+ `eval/answer-cases.jsonl`；共享层 `scripts/answer_cases.py`（生产消息形状 + 与 Java `CassetteKey` 同算法的 key）；确定性判分 `scripts/answer_facts.py`；录制 `scripts/record_answer_cassettes.py`（真实模型、会计费，不在 CI）；0-token 门禁 `scripts/verify_answer_eval.py` + `eval/answer-cassettes/`（cassette + `baseline.json`） |
 | 告警规则（round22 票 67） | `ops/alerts/shoppilot.rules.yml` + `ops/alerts/shoppilot.rules.test.yml`（`promtool test rules`，CI 的 `Alert rules unit test` 步） |

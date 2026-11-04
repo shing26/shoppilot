@@ -1,0 +1,53 @@
+name: nightly
+
+# round48 票 204 / ADR 0083：真实依赖集成层。
+#
+# 它刻意不进 ci-subset：那一层必须 0 依赖、秒级；这里的 PG/Redis 容器是分钟级外部依赖，
+# 只在 nightly 与手动触发时跑。Docker 是 GitHub 托管 runner 自带的，所以本地没有 Docker
+# 时用例会 skip（Testcontainers 的 disabledWithoutDocker），**而这里的绿才是「实际执行过」**。
+on:
+  schedule:
+    # 02:23 Asia/Shanghai；刻意避开整点，减少与其它仓库的排队撞车。
+    - cron: "23 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Testcontainers integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # `verify` 先跑默认档的 surefire（与 ci-subset 同一批用例），再由 failsafe 跑
+      # shoppilot-ticket 的 *IT：Postgres 迁移/映射/租户隔离与两条 Redis Stream 的真实 XADD。
+      # 命令与本地 RUNBOOK / 票 204 的 Verify 逐字一致。
+      - name: Verify with integration profile
+        run: bash ./mvnw -B -ntp verify -Pintegration
+
+      - name: Upload integration reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-reports
+          path: |
+            **/target/failsafe-reports/**
+            **/target/surefire-reports/**
+          if-no-files-found: ignore
+          retention-days: 7

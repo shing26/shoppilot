@@ -54,8 +54,9 @@ import {
   type Session,
 } from './api'
 import { setUnauthorizedHandler } from 'frontend-shared'
-import { priorityRank, type Ticket } from './types'
-import { entriesOf, isOverdue } from './lib/format'
+import { type Ticket } from './types'
+import { entriesOf } from './lib/format'
+import { countTickets, filterTickets } from './lib/queue'
 import { DOMAINS, POLICY_INTENTS, SCOPES, type ChannelForm, type StatusFilter, type WorkspaceView } from './lib/ui'
 import TopBar from './components/TopBar.vue'
 import LoginCard from './components/LoginCard.vue'
@@ -182,24 +183,9 @@ const who = computed(() =>
   session.value ? `${session.value.username}（${session.value.role}）@ ${session.value.tenantId}` : '',
 )
 
-const counts = computed(() => ({
-  open: tickets.value.filter((t) => t.status === 'OPEN').length,
-  assigned: tickets.value.filter((t) => t.status === 'ASSIGNED').length,
-  overdue: tickets.value.filter((t) => isOverdue(t, now.value)).length,
-}))
+const counts = computed(() => countTickets(tickets.value, now.value))
 
-const filtered = computed(() => {
-  const rows = tickets.value.filter((ticket) => {
-    if (statusFilter.value === 'ALL') return true
-    if (statusFilter.value === 'OPEN') return ticket.status === 'OPEN'
-    if (statusFilter.value === 'ASSIGNED') return ticket.status === 'ASSIGNED'
-    return isOverdue(ticket, now.value)
-  })
-  return rows.sort((a, b) => {
-    const byPriority = priorityRank(a.priority) - priorityRank(b.priority)
-    return byPriority !== 0 ? byPriority : b.createdAt.localeCompare(a.createdAt)
-  })
-})
+const filtered = computed(() => filterTickets(tickets.value, statusFilter.value, now.value))
 
 /** 详情只从**当前筛选结果**里取（round47 票 197）：筛到空档时不能继续展示上一张单。 */
 const selected = computed(() => filtered.value.find((ticket) => ticket.id === selectedId.value) ?? null)

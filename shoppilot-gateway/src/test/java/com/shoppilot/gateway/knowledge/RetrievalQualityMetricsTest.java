@@ -45,11 +45,35 @@ class RetrievalQualityMetricsTest {
     private static JsonNode labels;
     private static Map<String, String> ruleIdToDoc;
 
+    /**
+     * 自标注夹具（round48 票 206）：`scripts/record_retrieval_fixture.py --cases` 录出来的
+     * 每条用例自带 `expect_doc`，所以**不需要另立标注文件**就能算同一套指标。
+     *
+     * <p>它们不生成 markdown——一次录制换一批数字，报告就该由人写进决策文档，
+     * 而不是让测试在无人复核时改一份入库表格。这里只把读数打到构建日志里。
+     */
+    private static final List<Dataset> SELF_LABELED = new ArrayList<>();
+
     @BeforeAll
     static void loadFixtureLabelsAndProductionChunking() throws IOException {
-        fixture = MAPPER.readTree(Files.readString(newestFixture(), StandardCharsets.UTF_8));
+        fixture = MAPPER.readTree(Files.readString(newestUnlabeledFixture(), StandardCharsets.UTF_8));
         labels = MAPPER.readTree(Files.readString(repoRoot().resolve("eval/retrieval-labels.json"),
                 StandardCharsets.UTF_8));
+        for (Path path : allFixtures()) {
+            JsonNode candidate = MAPPER.readTree(Files.readString(path, StandardCharsets.UTF_8));
+            List<String[]> rows = new ArrayList<>();
+            boolean selfLabeled = false;
+            for (JsonNode oneCase : candidate.path("cases")) {
+                if (!oneCase.path("expect_doc").asText("").isEmpty()) {
+                    selfLabeled = true;
+                }
+                rows.add(new String[]{oneCase.path("id").asText(), oneCase.path("query").asText(),
+                        oneCase.path("expect_doc").asText(""), oneCase.path("split").asText("")});
+            }
+            if (selfLabeled) {
+                SELF_LABELED.add(new Dataset(path.getFileName().toString(), candidate, rows));
+            }
+        }
         // ruleId -> 源文件名：用**生产那一份**切分器现算，不在测试里另写一遍哈希规则。
         ruleIdToDoc = new LinkedHashMap<>();
         try (Stream<Path> files = Files.list(repoRoot().resolve("knowledge"))) {
@@ -65,11 +89,16 @@ class RetrievalQualityMetricsTest {
     @DisplayName("夹具里的每个 ruleId 都能被生产切分器还原成源文件（否则下面的指标是在算哈希）")
     void everyRecordedRuleIdResolvesToASourceDoc() {
         List<String> unknown = new ArrayList<>();
-        for (JsonNode oneCase : fixture.path("cases")) {
-            for (String path : List.of("dense", "lexical", "fused")) {
-                for (JsonNode id : oneCase.path(path)) {
-                    if (!ruleIdToDoc.containsKey(id.asText())) {
-                        unknown.add(oneCase.path("id").asText() + "/" + path + "/" + id.asText());
+        List<JsonNode> fixtures = new ArrayList<>();
+        fixtures.add(fixture);
+        SELF_LABELED.forEach(dataset -> fixtures.add(dataset.fixture()));
+        for (JsonNode recorded : fixtures) {
+            for (JsonNode oneCase : recorded.path("cases")) {
+                for (String path : List.of("dense", "lexical", "fused")) {
+                    for (JsonNode id : oneCase.path(path)) {
+                        if (!ruleIdToDoc.containsKey(id.asText())) {
+                            unknown.add(oneCase.path("id").asText() + "/" + path + "/" + id.asText());
+                        }
                     }
                 }
             }
@@ -150,6 +179,55 @@ class RetrievalQualityMetricsTest {
         }
 
         writeReport(md.toString(), mrr, hit, cases);
+
+        for (Dataset dataset : SELF_LABELED) {
+            reportSelfLabeled(dataset);
+        }
+    }
+
+    /**
+     * 给自标注夹具算同一把尺子（top-5）上的 hit@5 / MRR@5，并核对每条 `expect_doc` 真实存在。
+     *
+     * <p>**不钉期望值**：这份数据要在活体栈上录，录出来的数字是本票要读的结论，
+     * 不是先有结论再有数字。结构错误（指向不存在的语料）仍然直接失败。
+     */
+    private void reportSelfLabeled(Dataset dataset) {
+        List<String> corpusDocs = List.copyOf(new java.util.LinkedHashSet<>(ruleIdToDoc.values()));
+        List<String> unknown = new ArrayList<>();
+        int[] hit = new int[3];
+        double[] mrr = new double[3];
+        int scored = 0;
+        for (String[] row : dataset.labels()) {
+            String expect = row[2];
+            if (expect.isEmpty()) {
+                throw new IllegalStateException(dataset.name() + " 的 " + row[0]
+                        + " 没有 expect_doc——自标注夹具的每条都必须带标签");
+            }
+            if (!corpusDocs.contains(expect)) {
+                unknown.add(row[0] + "->" + expect);
+                continue;
+            }
+            JsonNode oneCase = caseById(dataset.fixture(), row[0]);
+            for (int arm = 0; arm < 3; arm++) {
+                int rank = firstRank(texts(oneCase, name(arm), 5), expect);
+                if (rank > 0) {
+                    hit[arm]++;
+                    mrr[arm] += 1.0d / rank;
+                }
+            }
+            scored++;
+        }
+        assertThat(unknown).as("%s 里有 expect_doc 指向不存在的语料", dataset.name()).isEmpty();
+        if (scored == 0) {
+            return;
+        }
+        StringBuilder line = new StringBuilder("自标注夹具读数 " + dataset.name() + "（" + scored + " 条）：");
+        String[] armNames = {"BM25", "稠密", "混合"};
+        for (int arm = 0; arm < 3; arm++) {
+            line.append(String.format(" %s hit@5=%d/%d MRR@5=%.3f;", armNames[arm], hit[arm], scored,
+                    mrr[arm] / scored));
+        }
+        System.out.println(line);
     }
 
     // 下面这组期望值是**首次实跑后钉住的**，不是先写数字再凑实现。
@@ -283,7 +361,11 @@ class RetrievalQualityMetricsTest {
     }
 
     private static JsonNode caseById(String id) {
-        for (JsonNode oneCase : fixture.path("cases")) {
+        return caseById(fixture, id);
+    }
+
+    private static JsonNode caseById(JsonNode recorded, String id) {
+        for (JsonNode oneCase : recorded.path("cases")) {
             if (id.equals(oneCase.path("id").asText())) {
                 return oneCase;
             }
@@ -304,7 +386,31 @@ class RetrievalQualityMetricsTest {
         }
     }
 
-    private static Path newestFixture() throws IOException {
+    /**
+     * 老口径（无标签）夹具里最新的一份：那份的标签在 `eval/retrieval-labels.json`。
+     *
+     * <p>round48 票 206 起 `eval/` 下会有**自标注**夹具（每条自带 expect_doc）。
+     * 若仍取「最新一份」，录完 120 条就会让老的标签集对不上而误红——所以这里按
+     * 「用例是否自带 expect_doc」分流，而不是按文件名新旧。
+     */
+    private static Path newestUnlabeledFixture() throws IOException {
+        for (Path path : allFixtures()) {
+            JsonNode candidate = MAPPER.readTree(Files.readString(path, StandardCharsets.UTF_8));
+            boolean selfLabeled = false;
+            for (JsonNode oneCase : candidate.path("cases")) {
+                if (!oneCase.path("expect_doc").asText("").isEmpty()) {
+                    selfLabeled = true;
+                    break;
+                }
+            }
+            if (!selfLabeled) {
+                return path;
+            }
+        }
+        throw new IllegalStateException("eval/ 下没有无标签的 retrieval-fixture-*.json");
+    }
+
+    private static List<Path> allFixtures() throws IOException {
         try (Stream<Path> files = Files.list(repoRoot().resolve("eval"))) {
             List<Path> fixtures = files.filter(p -> {
                         String n = p.getFileName().toString();
@@ -312,8 +418,11 @@ class RetrievalQualityMetricsTest {
                     })
                     .sorted(Comparator.comparing((Path p) -> p.getFileName().toString()).reversed()).toList();
             assertThat(fixtures).as("eval/ 下没有 retrieval-fixture-*.json").isNotEmpty();
-            return fixtures.get(0);
+            return fixtures;
         }
+    }
+
+    private record Dataset(String name, JsonNode fixture, List<String[]> labels) {
     }
 
     private static Path repoRoot() {

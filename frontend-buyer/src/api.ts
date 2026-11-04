@@ -1,4 +1,5 @@
 import { messageOf, notifyUnauthorized, request, type ApiResult } from 'frontend-shared'
+import { SseFrameReader } from './lib/sse'
 import type { Citation, CitationDetail, Session, Ticket } from './types'
 
 /**
@@ -260,73 +261,58 @@ export async function streamAnswer(
     return { status: 0, body: { message: '这条浏览器不支持流式读取' } }
   }
   const decoder = new TextDecoder('utf-8')
-  let buffer = ''
-  let event = ''
+  // 分帧下沉到 `lib/sse.ts`（round48 票 205）：边界规则与下沉前逐字一致，见该文件头。
+  const frames = new SseFrameReader()
   let answer = ''
   let ticketId: string | null = null
   let citations: Citation[] = []
   let citationDetails: CitationDetail[] = []
   let fallbackReason: string | null = null
 
-  // 分帧不能按子串猜：round21 记过一次「流式分帧不能子串匹配 → 读回用同步端点」。
-  // 这里按 \n\n 切块、逐块解析 `event:` 与 `data:` 行。
   try {
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      let split = buffer.indexOf('\n\n')
-      while (split >= 0) {
-        const frame = buffer.slice(0, split)
-        buffer = buffer.slice(split + 2)
-        for (const line of frame.split('\n')) {
-          if (line.startsWith('event:')) {
-            event = line.slice(6).trim()
-          } else if (line.startsWith('data:') && event) {
-            const data = line.slice(5).trim()
-            if (event === 'token') {
-              // token 帧的 data 是一段 JSON **字符串**（"片段"），不是对象——按 .text 取值会得到 undefined，
-              // 拼出来是空串，于是「流式逐字」这条永远失败（round21 记过同一处）。
-              const parsed = safeParse(data)
-              const chunk = typeof parsed === 'string' ? parsed : ((parsed as Record<string, unknown>)?.text as string ?? '')
-              if (chunk) {
-                answer += chunk
-                onToken(chunk)
-              }
-            } else if (event === 'plan') {
-              const parsed = asObject(safeParse(data))
-              const steps = Array.isArray(parsed.steps) ? parsed.steps.map(String) : []
-              if (steps.length) onTrace?.({ kind: 'plan', label: `计划：${steps.join(' → ')}` })
-            } else if (event === 'status') {
-              const parsed = asObject(safeParse(data))
-              const label = String(parsed.label ?? '')
-              if (label) onTrace?.({ kind: 'state', label })
-            } else if (event === 'tool_executing') {
-              const parsed = asObject(safeParse(data))
-              const label = String(parsed.label ?? '')
-              const tool = String(parsed.tool ?? '')
-              onTrace?.({ kind: 'tool', label: label || `调用 ${tool || '业务系统'}` })
-            } else if (event === 'tool_result') {
-              const parsed = asObject(safeParse(data))
-              const tool = String(parsed.tool ?? '')
-              const status = String(parsed.status ?? '')
-              onTrace?.({ kind: 'tool_result', label: `${tool || '业务系统'} 返回 ${status || '结果'}`, status })
-            } else if (event === 'fallback') {
-              const parsed = asObject(safeParse(data))
-              fallbackReason = (parsed.reason as string) ?? fallbackReason
-              ticketId = (parsed.ticketId as string) ?? ticketId
-              onTrace?.({ kind: 'fallback', label: '转人工兜底', status: fallbackReason ?? undefined })
-            } else if (event === 'done') {
-              const parsed = asObject(safeParse(data))
-              // round33 / ADR 0067：详情优先，citations 那份字符串契约照旧留着（旧客户端读它）
-              citationDetails = (parsed.citationDetails as CitationDetail[]) ?? citationDetails
-              citations = (parsed.citations as Citation[]) ?? citations
-              ticketId = (parsed.ticketId as string) ?? ticketId
-            }
+      for (const { event, data } of frames.push(decoder.decode(value, { stream: true }))) {
+        if (event === 'token') {
+          // token 帧的 data 是一段 JSON **字符串**（"片段"），不是对象——按 .text 取值会得到 undefined，
+          // 拼出来是空串，于是「流式逐字」这条永远失败（round21 记过同一处）。
+          const parsed = safeParse(data)
+          const chunk = typeof parsed === 'string' ? parsed : ((parsed as Record<string, unknown>)?.text as string ?? '')
+          if (chunk) {
+            answer += chunk
+            onToken(chunk)
           }
+        } else if (event === 'plan') {
+          const parsed = asObject(safeParse(data))
+          const steps = Array.isArray(parsed.steps) ? parsed.steps.map(String) : []
+          if (steps.length) onTrace?.({ kind: 'plan', label: `计划：${steps.join(' → ')}` })
+        } else if (event === 'status') {
+          const parsed = asObject(safeParse(data))
+          const label = String(parsed.label ?? '')
+          if (label) onTrace?.({ kind: 'state', label })
+        } else if (event === 'tool_executing') {
+          const parsed = asObject(safeParse(data))
+          const label = String(parsed.label ?? '')
+          const tool = String(parsed.tool ?? '')
+          onTrace?.({ kind: 'tool', label: label || `调用 ${tool || '业务系统'}` })
+        } else if (event === 'tool_result') {
+          const parsed = asObject(safeParse(data))
+          const tool = String(parsed.tool ?? '')
+          const status = String(parsed.status ?? '')
+          onTrace?.({ kind: 'tool_result', label: `${tool || '业务系统'} 返回 ${status || '结果'}`, status })
+        } else if (event === 'fallback') {
+          const parsed = asObject(safeParse(data))
+          fallbackReason = (parsed.reason as string) ?? fallbackReason
+          ticketId = (parsed.ticketId as string) ?? ticketId
+          onTrace?.({ kind: 'fallback', label: '转人工兜底', status: fallbackReason ?? undefined })
+        } else if (event === 'done') {
+          const parsed = asObject(safeParse(data))
+          // round33 / ADR 0067：详情优先，citations 那份字符串契约照旧留着（旧客户端读它）
+          citationDetails = (parsed.citationDetails as CitationDetail[]) ?? citationDetails
+          citations = (parsed.citations as Citation[]) ?? citations
+          ticketId = (parsed.ticketId as string) ?? ticketId
         }
-        event = ''
-        split = buffer.indexOf('\n\n')
       }
     }
   } catch (readFailure) {

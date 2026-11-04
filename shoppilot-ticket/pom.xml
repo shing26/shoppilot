@@ -79,6 +79,18 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- round48 票 204 / ADR 0083：真实依赖集成层。只在 -Pintegration 下由 failsafe 执行，
+         默认 verify 不跑（用例一律 *IT.java，surefire 默认不匹配）。版本随 spring-boot-dependencies。 -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -99,4 +111,40 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!--
+      round48 票 204 / ADR 0083：真实依赖集成层。
+      默认 `verify` 不激活本 profile，`*IT.java` 不会被任何插件拾取（surefire 的默认 include
+      只认 Test* / *Test / *Tests / *TestCase）。只有在 `-Pintegration` 下 failsafe 才执行它们，
+      而 nightly 工作流是唯一保证 Docker 可用的执行点。
+    -->
+    <profile>
+      <id>integration</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <!-- 与根 pom 的 surefire 同版本显式声明：不依赖 Maven 自带的默认插件版本，
+                 否则不同 Maven 发行版会让同一份 pom 跑出不同的执行行为。 -->
+            <version>3.2.5</version>
+            <configuration>
+              <includes>
+                <include>**/*IT.java</include>
+              </includes>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

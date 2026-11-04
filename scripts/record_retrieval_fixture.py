@@ -11,7 +11,13 @@
 用法：
   python scripts/record_retrieval_fixture.py                       # 写到 eval/retrieval-fixture-<今日>.json
   python scripts/record_retrieval_fixture.py --out <路径>
+  python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json --split dev
 录完会打印夹具的 sha256 —— 那份值要填进 `ci-subset.yml` 的 `RETRIEVAL_FIXTURE_SHA256`（哈希钉）。
+
+`--cases`（round48 票 206）读 `eval/retrieval-cases.json` 的 120 条用例，按用例自带的
+`intent` / `tenant` 发探针，并把 `expect_doc` / `split` 一并写进夹具，供
+`scripts/retrieval_quality.py` 直接算 hit@K / MRR。**默认仍走上面那 10 条硬编码查询**，
+所以 `--cases` 不改变既有夹具的录制口径，也不会动它的哈希钉。
 """
 
 import argparse
@@ -90,6 +96,33 @@ def probe(base, token, query, limit, ops_token, intent=None):
     return _get_json(url, {"Authorization": "Bearer " + token, "X-Ops-Token": ops_token})
 
 
+def load_cases(path, split, default_tenant):
+    """读用例集；结构问题交给 scripts/verify_retrieval_cases.py 守，这里只做最小防御。
+
+    `tenant` 决定发哪张 mock token：店铺级文档只在归属店可见，用错租户录出来的
+    "召回为空" 是租户错位，不是检索质量问题。
+    """
+    if not path.is_absolute():
+        path = REPO / path
+    data = json.loads(path.read_text(encoding="utf-8"))
+    cases = data.get("cases", [])
+    if split != "all":
+        cases = [case for case in cases if case.get("split") == split]
+    seen = set()
+    plan = []
+    for case in cases:
+        missing = [k for k in ("id", "query", "intent") if not case.get(k)]
+        if missing:
+            raise SystemExit(f"{path} 里有用例缺字段 {missing}: {case}")
+        if case["id"] in seen:
+            raise SystemExit(f"{path} 里 id 重复: {case['id']}")
+        seen.add(case["id"])
+        plan.append({"id": case["id"], "query": case["query"], "intent": case["intent"],
+                     "tenant": case.get("tenant") or default_tenant,
+                     "expect_doc": case.get("expect_doc"), "split": case.get("split")})
+    return plan
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8082")
@@ -98,18 +131,38 @@ def main() -> int:
     parser.add_argument("--customer", default="C001")
     parser.add_argument("--limit", type=int, default=20, help="探针返回的两路条数（≥ fusedTopK 才有意义）")
     parser.add_argument("--out", default="")
+    parser.add_argument("--cases", default="", help="从 eval/retrieval-cases.json 读用例（round48 票 206）")
+    parser.add_argument("--split", choices=["all", "dev", "holdout"], default="all",
+                        help="--cases 时只录某一 split；默认全录")
     args = parser.parse_args()
     if args.limit < 20:
         print("limit 必须 ≥ 20：两路序太短会让重算出来的融合序与录下来的不可比")
         return 2
 
     constants = constants_from_yml()
-    token = mock_token(args.base, args.tenant, args.customer)
+    if args.cases:
+        plan = load_cases(Path(args.cases), args.split, args.tenant)
+        if not plan:
+            print(f"{args.cases} 里没有 split={args.split} 的用例")
+            return 2
+    else:
+        plan = [{"id": case_id, "query": query, "intent": intent, "tenant": args.tenant,
+                 "expect_doc": None, "split": None} for case_id, query, intent in QUERIES]
+    tokens = {}
+
+    def token_for(tenant):
+        if tenant not in tokens:
+            tokens[tenant] = mock_token(args.base, tenant, args.customer)
+        return tokens[tenant]
+
+    token = token_for(args.tenant)
     circuit = _get_json(args.base + "/api/v1/support/ops/circuit",
                         {"Authorization": "Bearer " + token, "X-Ops-Token": args.ops_token})
 
     cases, epoch = [], None
-    for case_id, query, intent in QUERIES:
+    for case in plan:
+        case_id, query, intent = case["id"], case["query"], case["intent"]
+        token = token_for(case["tenant"])
         # 本机 bge-m3 会被别的项目容器挤掉显存，偶发一次 `degraded`（向量化超时）。
         # 那属于环境抖动：**重试**，但绝不录一份降级的夹具 —— 前置仍然是不成立就拒绝。
         accepted = None
@@ -135,9 +188,12 @@ def main() -> int:
             print(f"拒绝录制 {case_id}：三次尝试都拿不到一份干净且确定的召回")
             return 1
         epoch = accepted["kbEpoch"]
-        cases.append({"id": case_id, "query": query, "intent": intent,
-                      "dense": accepted["denseTop"], "lexical": accepted["lexicalTop"],
-                      "fused": accepted["fusedTop"]})
+        case["dense"] = accepted["denseTop"]
+        case["lexical"] = accepted["lexicalTop"]
+        case["fused"] = accepted["fusedTop"]
+        cases.append({k: case[k] for k in
+                      ("id", "query", "intent", "tenant", "expect_doc", "split",
+                       "dense", "lexical", "fused") if case.get(k) is not None})
         print(f"录 {case_id}: dense={len(accepted['denseTop'])} lexical={len(accepted['lexicalTop'])} "
               f"fused={len(accepted['fusedTop'])}")
 

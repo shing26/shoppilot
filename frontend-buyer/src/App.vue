@@ -30,6 +30,7 @@ import { setUnauthorizedHandler } from 'frontend-shared'
 import { STATUS_LABEL, type CitationDetail, type Session, type Ticket } from './types'
 import type { MyOrder, OrderDetail, OrderLogistics } from './api'
 import { appendAgentStep, type ChatMessage } from './lib/format'
+import { beginAnswer, restoreChat, serializeChat, settleAnswer } from './lib/chat'
 import TopBar from './components/TopBar.vue'
 import StoreCard from './components/StoreCard.vue'
 import LoginGate from './components/LoginGate.vue'
@@ -42,8 +43,6 @@ import TicketDrawer from './components/TicketDrawer.vue'
 const STORAGE_KEY = 'shoppilot.buyer.session'
 /** 对话按标签页存档（round46 票 192）：刷新不丢消息与会话 ID，关标签页即散。 */
 const CHAT_STORAGE_KEY = 'shoppilot.buyer.chat'
-/** 存档上限：只留最近 100 条，避免长会话把 sessionStorage 配额吃满。 */
-const CHAT_LIMIT = 100
 
 /** 店铺码来自 URL；缺省时不猜、也不退回内部 id 输入框（ADR 0070 B2）。 */
 const STORE_PARAMS = new URLSearchParams(window.location.search)
@@ -428,17 +427,7 @@ async function runAnswer(text: string, index: number) {
   asking.value = true
   // 注意：这是 messages 里的**同一个对象**，流式分片原地写进去，不 clone。
   const target = messages.value[index]
-  target.pending = true
-  target.stopped = false
-  target.failed = false
-  target.note = undefined
-  target.citations = undefined
-  target.text = ''
-  target.trace = []
-  // 重试是一次新的回答：上一票作废，否则旧票会挂在新答案上。
-  target.feedback = undefined
-  target.feedbackState = undefined
-  target.feedbackError = undefined
+  beginAnswer(target)
   if (feedbackDraft.value?.index === index) {
     feedbackDraft.value = null
     feedbackReason.value = ''
@@ -464,38 +453,16 @@ async function runAnswer(text: string, index: number) {
   inFlight.value = null
   target.pending = false
 
-  if (result.status === 499) {
-    target.stopped = true
-    if (!target.text.trim()) target.text = '已停止生成。'
-    target.note = '已停止生成，可以重试；不用重新描述问题。'
-    persistChat()
-    return
-  }
-  if (result.status !== 200) {
-    target.failed = true
-    target.text = describe(result, '')
-    target.note = '这次没有连上，可以重试；问题已经留在上面。'
-    persistChat()
-    return
-  }
-  const body = result.body as {
-    ticketId: string | null
-    citationDetails: CitationDetail[]
-    fallbackReason: string | null
-  }
-  target.citations = body.citationDetails ?? []
-  if (!target.text.trim()) {
-    target.text = '这次没有收到完整回答，可以重试，或直接转人工。'
-  }
-  if (body.fallbackReason) {
-    const ticketInText = !!body.ticketId && target.text.includes(body.ticketId)
-    target.note = body.ticketId
-      ? (ticketInText
-        ? '已转人工，进度在下方「我的工单」里，不用再重复描述。'
-        : `已转人工：${body.ticketId}。进度在下方「我的工单」里，不用再重复描述。`)
-      : '这次没能直接答出来，已转人工处理，不用再重复描述。'
-  }
-  if (body.ticketId) {
+  const ticketId = settleAnswer(target, {
+    status: result.status,
+    failureText: result.status === 200 ? undefined : describe(result, ''),
+    body: result.body as {
+      ticketId: string | null
+      citationDetails: CitationDetail[]
+      fallbackReason: string | null
+    },
+  })
+  if (ticketId) {
     await refreshTickets()
   }
   persistChat()
@@ -634,35 +601,10 @@ function clearStoredSession() {
  * 假装它还在等只会让界面永远转圈。
  */
 function readStoredChat(): { conversation: string; messages: ChatMessage[] } {
-  const raw = sessionStorage.getItem(CHAT_STORAGE_KEY)
-  if (!raw) return { conversation: '', messages: [] }
-  try {
-    const stored = JSON.parse(raw) as {
-      tenantId?: string
-      conversation?: string
-      messages?: ChatMessage[]
-    }
-    const tenantId = session.value?.tenantId ?? STORE_CODE
-    if (!tenantId || stored.tenantId !== tenantId || !Array.isArray(stored.messages)) {
-      sessionStorage.removeItem(CHAT_STORAGE_KEY)
-      return { conversation: '', messages: [] }
-    }
-    const messages = stored.messages.filter((message) => message?.role === 'user' || message?.role === 'assistant')
-    for (const message of messages) {
-      if (typeof message.text !== 'string') message.text = ''
-      if (message.feedbackState === 'sending') message.feedbackState = undefined
-      if (message.pending) {
-        message.pending = false
-        message.stopped = true
-        if (!message.text.trim()) message.text = '刷新时中断了这次回答。'
-        message.note = '刷新时中断，可以重试；问题已经留在上面。'
-      }
-    }
-    return { conversation: stored.conversation ?? '', messages }
-  } catch (unreadable) {
-    sessionStorage.removeItem(CHAT_STORAGE_KEY)
-    return { conversation: '', messages: [] }
-  }
+  const tenantId = session.value?.tenantId ?? STORE_CODE
+  const { chat, discard } = restoreChat(sessionStorage.getItem(CHAT_STORAGE_KEY), tenantId)
+  if (discard) sessionStorage.removeItem(CHAT_STORAGE_KEY)
+  return chat
 }
 
 /** 写回本标签页的对话；配额不足或隐私模式写不进去时静默放弃，不打断对话。 */
@@ -672,11 +614,10 @@ function persistChat() {
     return
   }
   try {
-    sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({
-      tenantId: session.value.tenantId,
-      conversation,
-      messages: messages.value.slice(-CHAT_LIMIT),
-    }))
+    sessionStorage.setItem(
+      CHAT_STORAGE_KEY,
+      serializeChat(session.value.tenantId, conversation, messages.value),
+    )
   } catch {
     // 存不下就算了：内存里的对话仍然可用（round46 票 192）。
   }
