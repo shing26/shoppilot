@@ -23,11 +23,11 @@
       "condition": "perf/Mock 模板估算，非计费口径"
     },
     {
-      "name": "缓存总拦截率",
-      "value": "73.2–74.0% / 77.8–78.2%",
-      "target": ">=80%",
-      "status": "未达成",
-      "condition": "结构性上限：mix80 可缓存占比约 78.1%，准入内命中率 100%（2026-11-05 复测 l1=admitted，逐档相等）；L2/SF 增量为 0；80% 需改判据或放开 ADR 0003 准入"
+      "name": "缓存准入内命中率",
+      "value": "100%（总拦截率参考读数 73.2–78.2%）",
+      "target": ">=80%（准入内口径，ADR 0084）",
+      "status": "达成",
+      "condition": "2026-11-06 所有者裁决改判据（ADR 0084）：分母=admitted_delta；复测 l1=admitted 逐档相等；串号 0 与 fail-closed 随判据生效。旧「总拦截率 ≥80%」判据因 mix80 可缓存占比仅 78.1% 结构性不可达，历史挂红记录保留"
     },
     {
       "name": "吞吐峰值",
@@ -45,10 +45,10 @@
     },
     {
       "name": "工具调用准确率",
-      "value": "179/180 = 99.4% 选对（dev qwen-plus，2026-10-27）",
+      "value": "179/180 = 99.4% 选对（dev qwen-plus，2026-11-06 复跑）",
       "target": "分意图 >=95%",
       "status": "未达成",
-      "condition": "dev 全量仅 ACT-RFD-13 失败，ACTION_REFUND 94.4%（17/18）；退款定向重跑 18/18 单列、不并入全量；local qwen2.5:3b 166/180 = 92.2%、ACTION_REFUND 9/18（模型不发工具）"
+      "condition": "票 168 后全量复跑：POLICY/ESCALATE/UNKNOWN 全 100%，退款定向红点 ACT-RFD-13 转绿、ACTION_REFUND 18/18；唯一红点 ACT-ORD-14（签收吗？没签收的话我要退款）模型不发读工具直接拒答，qwen-plus 服务端行为漂移，12/12 口语探针与 0/5 gold 原句探针并存；local qwen2.5:3b 166/180"
     }
   ]
 }

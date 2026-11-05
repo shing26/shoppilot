@@ -1,0 +1,33 @@
+{
+  "mode": "dev",
+  "model": "qwen-plus",
+  "llmBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "promptVersion": "v1.2.0",
+  "cases": 18,
+  "limit": 0,
+  "promptTokens": 74051,
+  "completionTokens": 3017,
+  "estimatedPerCaseTokens": 3692,
+  "dailyTokenBudget": 800000,
+  "tokensUsedBeforeRun": 182800,
+  "concurrency": 2,
+  "startedAt": "20261106-002127",
+  "requestErrors": 0,
+  "summary": {
+    "ACTION_ORDER": {
+      "intent": "ACTION_ORDER",
+      "cases": 18,
+      "tool_accuracy": "94.4%",
+      "args_accuracy": "100.0%",
+      "args_scored_cases": 16,
+      "args_comparable": 15,
+      "args_uncomparable": 1,
+      "status_not_observed": 0,
+      "leaked_cases": 0,
+      "unverifiable_cases": 1,
+      "slotask_accuracy": "100.0%",
+      "fabricated_cases": 0,
+      "overall_accuracy": "94.4%"
+    }
+  }
+}
