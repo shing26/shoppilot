@@ -16,7 +16,7 @@
 
 | 评测 | 当前读数 | 说明 |
 | --- | --- | --- |
-| JVM | **780 tests / 131 suites** | 2026-11-04 `mvnw verify` 全绿（本机 jar 被运行中服务锁住时用 `-Dspring-boot.repackage.skip=true`） |
+| JVM | **783 tests / 132 suites** | 2026-11-04 `mvnw verify` 全绿（本机 jar 被运行中服务锁住时用 `-Dspring-boot.repackage.skip=true`） |
 | UX Golden 30 · demo | **30/30** | 模板档，不证明模型能力 |
 | UX Golden 30 · dev（qwen-plus） | **30/30** | 2026-10-24 epoch24；2026-10-27 复验 30/30（139.6s） |
 | UX Golden 30 · local（qwen2.5:3b） | **30/30** | 2026-10-27 票 167，224.0s |
@@ -187,7 +187,7 @@ ACTION_ADDRESS 用定向 18/18 补齐到 **100%**；gold / 阈值零改动。证
 | local UX 30 | ≥29/30 | 当前 27/30 |
 | dev UX 30 | 30/30 | 不回落 |
 | POLICY 180 | 100% | 不回落 |
-| JVM | 780 / 131 全绿 | 新增测试只增不减 |
+| JVM | 783 / 132 全绿 | 新增测试只增不减 |
 | CI | success | 每次提交 |
 
 ## 六、明确不做

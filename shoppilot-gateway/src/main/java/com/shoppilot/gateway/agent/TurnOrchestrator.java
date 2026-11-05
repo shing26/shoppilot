@@ -430,6 +430,8 @@ final class TurnOrchestrator {
     private ModelRun runModelPath(TurnContext ctx) {
         TriageResult triage = ctx.triage();
         Intent intent = triage.intent();
+        // Stage3 影子（round48 补口）：只记录「路由表建议 vs 实际模式」，不改变下面任何调用。
+        services.routingShadow.observe(intent);
         List<AgentResult.TraceStep> trace = ctx.trace();
         EventSink sink = ctx.sink();
         TokenUsage usage = ctx.usage();

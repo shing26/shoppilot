@@ -28,7 +28,8 @@ public record GatewayProperties(
         @Valid Triage triage,
         @Valid TenantDomains tenantDomains,
         @Valid Ops ops,
-        @Valid Feishu feishu) {
+        @Valid Feishu feishu,
+        @Valid Routing routing) {
 
     public record Llm(
             // 未知/空模式会落进 LlmGateway 的 else（云端客户端），而 dev() 为假意味着
@@ -176,6 +177,15 @@ public record GatewayProperties(
      * 故障注入与复位是平台级动作，额外要求一个运维凭证；生产把 {@code enabled=false} 整条关掉。
      */
     public record Ops(boolean enabled, String token) {
+    }
+
+    /**
+     * Stage3 按意图路由的影子开关（round48 补口 / ADR 0083）。
+     *
+     * <p>只观测、不执行：开启后每轮模型路径按 {@code docs/STAGE3_MODEL_ROUTING.md} 的路由表
+     * 记一条「建议路由 vs 实际模式」计数，调用的模型一个字节都不变。默认关闭。
+     */
+    public record Routing(boolean shadow) {
     }
 
     /**

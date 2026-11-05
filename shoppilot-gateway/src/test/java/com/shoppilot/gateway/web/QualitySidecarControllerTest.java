@@ -33,7 +33,7 @@ class QualitySidecarControllerTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         ObjectMapper mapper = new ObjectMapper();
         GatewayProperties properties = new GatewayProperties(null, null, null, null, null, null, null, null,
-                null, null, null, new GatewayProperties.Ops(true, OPS_TOKEN), null);
+                null, null, null, new GatewayProperties.Ops(true, OPS_TOKEN), null, null);
         mvc = MockMvcBuilders.standaloneSetup(new QualitySidecarController(
                 new QualitySidecarService(registry, null), properties, mapper, new ApiErrorWriter(mapper))).build();
     }

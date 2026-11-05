@@ -1,6 +1,9 @@
 # 阶段 3：模型分级与成本 —— 离线路由表
 
-**状态：** 离线评估完成（2026-10-27）。**未改线上**。
+**状态：** 离线评估完成（2026-10-27）。**线上默认路由未改**。
+round48 补口（2026-11-05）起有**影子观测**：`shoppilot.routing.shadow` 默认 false，
+开启只记 `shoppilot_routing_shadow_total`，不改变实际调用的模型；转正门槛见
+[`RETRIEVAL_ROUTING_DECISION.md`](RETRIEVAL_ROUTING_DECISION.md)。
 
 > 依据：[TUNING_PLAN](TUNING_PLAN.md) 阶段 3。
 > 原始产物：dev `eval/results/tool-eval-20261027-104110-dev-dev-167.csv`；local `eval/results/tool-eval-20261027-114424-local-stage3-local180b.csv`。

@@ -59,7 +59,7 @@ class FallbackServiceSourceContractTest {
                 new GatewayProperties.Ticket(server.getAddress().getPort() == 0 ? "" :
                         "http://127.0.0.1:" + server.getAddress().getPort(), "internal", Duration.ofSeconds(1),
                         Duration.ofSeconds(1)),
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
         FallbackService service = new FallbackService(java.net.http.HttpClient.newHttpClient(),
                 new com.fasterxml.jackson.databind.ObjectMapper(), properties,
                 new SimpleMeterRegistry(), null);

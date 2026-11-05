@@ -67,6 +67,8 @@ class ConfigValidationTest {
             "SHOPPILOT_OPS_ENABLED",
             "SHOPPILOT_OPS_TOKEN",
             "SHOPPILOT_QDRANT_URL",
+            // round48 补口：Stage3 影子路由开关（默认 false，只观测不执行）。
+            "SHOPPILOT_ROUTING_SHADOW",
             "SHOPPILOT_REDIS_HOST",
             "SHOPPILOT_REDIS_PORT",
             // round23 票 72：工单服务地址。加 env 覆盖是扩大可配置面，

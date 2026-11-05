@@ -68,6 +68,7 @@ final class TurnServices {
     final Counter multiToolCallCounter;
     final Counter reflectionTriggeredCounter;
     final Counter reflectionExhaustedCounter;
+    final RoutingShadow routingShadow;
     final HandoffTrigger handoffTrigger = new HandoffTrigger();
     final Timer handoffDecisionTimer;
     final AtomicLong handoffDecisionMaxNanos = new AtomicLong();
@@ -96,6 +97,8 @@ final class TurnServices {
         this.styleService = styleService;
         this.storeProfileService = storeProfileService;
         this.registry = registry;
+        // 影子路由：默认关闭；开着也只记账，不改本对象里任何一个客户端。
+        this.routingShadow = RoutingShadow.from(properties, registry);
         this.toolRoundExhaustedCounter = Counter.builder("shoppilot_tool_round_exhausted_total").register(registry);
         // 被拦下来的"不该写的负缓存"要看得见：它是这条防线在中间件抖动时确实生效的唯一证据
         this.negativeSuppressedCounter = Counter.builder("shoppilot_cache_negative_suppressed_total")

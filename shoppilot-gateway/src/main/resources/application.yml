@@ -115,6 +115,11 @@ shoppilot:
     lexical-top-k: 20
     fused-top-k: 5
     rrf-k: 60
+  routing:
+    # round48 补口 / ADR 0083：Stage3 按意图路由的**影子**开关。
+    # 只记录「STAGE3 路由表建议的路由 vs 当前实际模式」，不改任何模型选择；
+    # 默认关闭，关闭时零开销（不建计数器、不做映射）。转正门槛见 docs/RETRIEVAL_ROUTING_DECISION.md。
+    shadow: ${SHOPPILOT_ROUTING_SHADOW:false}
   cache:
     enabled: true
     l1-ttl: 6h

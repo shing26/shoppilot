@@ -105,7 +105,7 @@ python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json --o
 - 不因为 10 条数据就删 ES 依赖或删 BM25 代码；
 - 不把上面任何一行写进 `docs/retrieval-quality-metrics.md`（那份仍是 10 条的历史读数）。
 
-## 三、Stage3 按意图路由：默认不变，影子模式只登记不实现
+## 三、Stage3 按意图路由：默认不变，影子观测已落地（只记账）
 
 `docs/STAGE3_MODEL_ROUTING.md` 的离线路由表（180 gold，2026-10-27）：
 
@@ -124,17 +124,23 @@ python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json --o
    - 延迟 3.3s → 10.1s，最慢 15.4s，产品 SLA 未确认；
    - 质量证据只有 180 gold 单集（UX30 30/30 只是旁证），没有线上分布；
    - 本地 3B 在 CPU 上单并发，并发容量没压测。
-2. **影子模式本轮不实现。** 它要改装配层与审计字段，属于新功能；round48 的授权是质量收口
-   （ADR 0083），没有 ADR 0030 / 0031 的触发条件支持新增行为。这里只登记设计，不写代码。
+2. **影子观测已实现，默认关闭（round48 补口）。** 开关 `shoppilot.routing.shadow`（环境变量
+   `SHOPPILOT_ROUTING_SHADOW`）默认 false；开启后只在**模型路径**记一条
+   `shoppilot_routing_shadow_total{intent_class,suggested,actual,agree}`，不改变调用的模型、
+   提示词、工具面与 SSE 事件。**原设计里的审计字段没有实现**：那会改审计契约，
+   而计数器已经能回答「建议路由与实际模式是否一致」，代价更小；这条取舍如实记在这里。
 
-### 影子模式的设计（实现时照此做，默认关闭）
+### 影子观测的实现（round48 补口，默认关闭）
 
-- 开关：`shoppilot.routing.shadow=true|false`，**默认 false**，且与真正的路由开关分开；
-- 每轮在既有意图判定之后，按路由表算出「若开启会走哪个模型」，**不改变实际调用的模型**；
-- 落点：审计记录追加 `routingShadow={intent, policyModel, shadowModel, agree}`，
-  同时一个计数器指标（按意图 × agree 分桶），不新增日志正文、不改 SSE 事件；
-- 一致性自检：同一轮实际模型 == 路由表给出的模型时 `agree=true`；
-- 关闭时零开销：不读模型配置、不算路由、不写字段。
+- 开关：`shoppilot.routing.shadow`，**默认 false**，与真正的路由开关分开（目前也没有真正的路由开关）；
+- 每轮在既有意图判定之后、进入模型路径时，按路由表算出「若开启会走哪个模型」，
+  **不改变实际调用的模型**；缓存命中与转人工不记（它们不选模型）；
+- 落点：`shoppilot_routing_shadow_total` 一个计数器，标签 `intent_class`（policy/action/unknown）、
+  `suggested`（local/dev/none）、`actual`（当前 `shoppilot.llm.mode`）、`agree`；
+  不新增日志正文、不改审计契约、不改 SSE 事件；
+- 一致性：ESCALATE 不需要模型，记 `suggested=none` 且一律 `agree=true`；其余按
+  实际模式与建议是否相同判；demo/perf/replay 不算真实模型路由，一律记不一致；
+- 关闭时零开销：不建计数器、不做意图映射。
 
 ### 影子转正的门槛（先写）
 
@@ -150,4 +156,4 @@ python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json --o
   新检索集尚未录制，这是本轮最大的未达成项，已在票 206 的 Handoff 与本文件第一节写实。
 - **不修改任何既有文档的读数**：`retrieval-quality-metrics.md`、`retrieval-comparison.md`、
   `STAGE3_MODEL_ROUTING.md` 均保持原样，本文只引用。
-- **不承诺下一轮一定做**：录夹具与影子实现都要单独开票，按 frontier 规则领取。
+- **不承诺下一轮一定做**：录夹具仍要单独开票（需要活体 ES/Qdrant），按 frontier 规则领取。

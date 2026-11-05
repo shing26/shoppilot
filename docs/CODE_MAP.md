@@ -151,6 +151,7 @@ Tab/Shift+Tab 在可见可聚焦元素间循环、释放时还焦点。**它是 
 | 知识修订链（round43 / ADR 0078） | `bizmock/KnowledgeRevisionTest`（附稿前置 / 残稿 400 / 跨租户 404 / 终态 / admin 拉取口）、`gateway ingest/KnowledgeRevisionSourceTest`（JDK HttpServer 假下游：解析 / 非 2xx / 不可达 / 坏形状，全部必须抛）、`ingest/MarkdownChunkerTest`（字符串重载：frontmatter 显式、rev- 前缀不吃猜测、ruleId 同式）、`web/RoleGuardAndActorTest`（修订代理三件套：身份头补全 / 买家 403 / 计数器）；变异对照两处（去 REVIEWED 前置、吞拉取失败）随票 187 登记并实跑变红 |
 | 跨模块工具契约（审批策略与新状态值） | `shoppilot-tool-api/src/test/java/.../ToolContractApprovalTest` |
 | 检索融合录放门（round22 票 64） | `knowledge/RetrievalFusionReplayTest`（JVM，重算的唯一 owner）、`ingest/MarkdownChunkerTest`、`scripts/retrieval_gate.py`（只校验不复算）+ `eval/retrieval-fixture-*.json`（append-only，录制器 `scripts/record_retrieval_fixture.py`） |
+| Stage3 影子路由（round48 补口 / 票 207） | `agent/RoutingShadow`（默认关；只在模型路径记 `shoppilot_routing_shadow_total`，不改模型）+ `config/GatewayProperties.Routing` + `application.yml` 的 `shoppilot.routing.shadow`；转正门槛与判定见 `docs/RETRIEVAL_ROUTING_DECISION.md` |
 | 检索质量用例集（round48 票 206） | `eval/retrieval-cases.json`（120 条，37 文档全覆盖，`expect_doc` 自带标签）+ `scripts/verify_retrieval_cases.py`（结构校验，进 CI 的检索融合步）；录制走 `record_retrieval_fixture.py --cases`（自标注夹具），指标由 `knowledge/RetrievalQualityMetricsTest` 分流计算；决策与预登记判据在 `docs/RETRIEVAL_ROUTING_DECISION.md` |
 | task 级判据（round22 票 65） | `scripts/eval_task.py`（判据 + 14 条夹具）+ `eval/cases-part8-task.jsonl`；活体入口 `run_tool_eval.py --task` |
 | 答案级评测（round48 票 202 / ADR 0083） | `scripts/build_answer_cases.py`（60 条案例的唯一来源，`--check` 进 CI）+ `eval/answer-cases.jsonl`；共享层 `scripts/answer_cases.py`（生产消息形状 + 与 Java `CassetteKey` 同算法的 key）；确定性判分 `scripts/answer_facts.py`；录制 `scripts/record_answer_cassettes.py`（真实模型、会计费，不在 CI）；0-token 门禁 `scripts/verify_answer_eval.py` + `eval/answer-cassettes/`（cassette + `baseline.json`） |
@@ -174,6 +175,7 @@ Tab/Shift+Tab 在可见可聚焦元素间循环、释放时还焦点。**它是 
 | 慢查询计划与索引守卫 | `bizmock/SlowQueryPlanTest`（含被否决的那笔优化，见 `docs/slow-query-optimization-2026-09-21.md`） |
 | 跨模块 schema | `shoppilot-tool-api/src/test/java/.../ToolSchemaGeneratorTest` |
 | 活体防线 | `scripts/verify-*.ps1`、`scripts/verify_l2_filters.py`、`scripts/verify_eval_judge.py` |
+| 文档真值门禁（round48 补口 / 票 207） | `scripts/verify_doc_truth.py`：surefire 现算四模块测试/套件数，比对 README badge / 复现段 / CI 段 / TUNING_PLAN / STATUS；ADR 篇数与磁盘比；指标名与 `src/main` 现扫比 |
 | 覆盖率棘轮 | `scripts/check_coverage.py`（读各模块 `jacoco.xml`，按模块比 LINE 门槛） |
 | 网关主链路 JVM 集成 | `web/GatewayMainPathJvmTest`（缓存命中、工具循环、fallback） |
 | 干净 runner JVM 门禁 | `.github/workflows/ci-subset.yml` |

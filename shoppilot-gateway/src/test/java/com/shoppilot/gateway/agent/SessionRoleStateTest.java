@@ -63,7 +63,7 @@ class SessionRoleStateTest {
 
         GatewayProperties.Agent agent = new GatewayProperties.Agent(4, 2, Duration.ofHours(1), 10);
         GatewayProperties properties = new GatewayProperties(null, null, null, null, null, null,
-                agent, null, null, null, null, null, null);
+                agent, null, null, null, null, null, null, null);
         SessionStore.Session appended = new SessionStore(null, new ObjectMapper(), properties).appendTurn(
                 session, "你好", "你好，需要帮忙吗？");
         assertThat(appended.currentRole()).isEqualTo(AgentRole.AFTER_SALES);
