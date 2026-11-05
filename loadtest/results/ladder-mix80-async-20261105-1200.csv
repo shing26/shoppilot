@@ -1,0 +1,2 @@
+concurrency,wall_s,qps,p50_ms,p95_ms,p99_ms,ok,failed,samples,requests_delta,admitted_delta,ratelimited_delta,valid_requests_delta,l1_delta,l2_delta,flight_delta,interception_total,interception_cache_only,llm_delta,embed_remote_delta,embed_cached_delta,tokens_delta,cpu_mean_pct,cpu_max_pct,freemem_min_gb,gateway_alive
+1200,54.5,783.49,1494,2181,2401,35257,0,35257,38761,30189,,38761,27899,0,282,0.727,0.7198,0,0,13118,0,96.8,100.0,0.0,True

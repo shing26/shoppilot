@@ -1,0 +1,4 @@
+concurrency,wall_s,qps,p50_ms,p95_ms,p99_ms,ok,failed,samples,requests_delta,admitted_delta,ratelimited_delta,valid_requests_delta,l1_delta,l2_delta,flight_delta,interception_total,interception_cache_only,llm_delta,embed_remote_delta,embed_cached_delta,tokens_delta,cpu_mean_pct,cpu_max_pct,freemem_min_gb,gateway_alive
+400,54.3,1478.0,192,1036,1710,66510,0,66510,72596,56692,,72596,56692,0,0,0.7809,0.7809,13404,0,18808,15023516,92.1,96.0,0.0,True
+800,54.1,1468.44,464,1289,1975,66080,0,66080,72197,56432,,72197,56432,0,0,0.7816,0.7816,12762,0,18612,15031717,84.3,96.0,0.0,True
+1200,54.2,1351.29,815,1596,2302,60808,0,60808,67248,52443,,67248,52443,0,0,0.7798,0.7798,11778,0,17430,13893879,84.3,96.0,0.0,True

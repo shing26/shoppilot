@@ -47,6 +47,50 @@ POOL_GROUPS = [
 
 SSE_FILE = "sse-ttft-20260909-001822-500-perf.csv"
 ATTRIBUTION_GLOB = "ttft-attribution-*.csv"
+# 2026-11-05：Locust 四进程与被压网关同机，800 并发档客户端先饱和。
+# 这一组用单进程 JDK HttpClient + 虚拟线程交叉验证，只改发压侧。
+ASYNC_FILE = "ladder-mix80-async-perf-20261105.csv"
+
+ASYNC_COLUMNS = [
+    ("concurrency", "并发"),
+    ("qps", "QPS"),
+    ("p50_ms", "P50 ms"),
+    ("p95_ms", "P95 ms"),
+    ("p99_ms", "P99 ms"),
+    ("failed", "失败"),
+    ("interception_total", "总拦截率"),
+    ("admitted_hit", "准入内命中率"),
+    ("cpu_mean_pct", "CPU 均值%"),
+    ("cpu_max_pct", "CPU 峰值%"),
+]
+
+
+def async_block(missing):
+    out = ["## M 组：轻量发压器交叉验证（2026-11-05）", ""]
+    path = RESULTS / ASYNC_FILE
+    if not path.exists():
+        missing.append(ASYNC_FILE)
+        out.append("（缺文件）")
+        out.append("")
+        return out
+    rows = rows_of(path)
+    for row in rows:
+        admitted = num(row, "admitted_delta") or 0
+        hits = ((num(row, "l1_delta") or 0) + (num(row, "l2_delta") or 0)
+                + (num(row, "flight_delta") or 0))
+        row["admitted_hit"] = f"{hits / admitted:.4f}" if admitted else "-"
+    out.append("证据：`loadtest/results/" + ASYNC_FILE + "` — 同一 mix80 模型、同一 perf 网关、"
+               "每档 45 s（warmup 5 s）；发压侧为 JDK HttpClient + 虚拟线程单进程"
+               "（`loadtest/AsyncLoadGen.java`）。")
+    out.append("")
+    out.extend(render(rows, ASYNC_COLUMNS))
+    out.append("")
+    out.append("同日 Locust 对照见 `ladder-mix80-perf-20261105-184459.csv`：200 并发 764.52 QPS、"
+               "800 并发 **1015.21 QPS**；轻量发压器同档 1468.44 QPS。同一网关、同一时段，"
+               "差额在发压侧，不在网关。历史 Locust 曲线（A/B/C 组）仍是分桶延迟与派生事件的正式证据；"
+               "本组只回答「客户端是否先饱和」，不替代它们。")
+    out.append("")
+    return out
 
 LADDER_COLUMNS = [
     ("users", "并发"),
@@ -260,8 +304,10 @@ def main():
         "- **QPS**：只统计四条真实请求组（hot/para/action/long），不含鉴权握手与派生事件，见 `run_loadtest.py` 的 `qps_scope=chat-only`。",
         "- **拦截率**：`(L1命中 + L2命中 + 穿透合并) / 有效咨询请求`，分母已减去被限流请求；",
         "  命中数来自网关侧 Micrometer 计数器差值，不是流量模型里的百分比。",
-        "- **发压方式**：Locust 4 进程（同机），每进程 25-400 用户，spawn 20/进程，每档 60 s。",
+        "- **发压方式**：A-L 组为 Locust 4 进程（同机），每进程 25-400 用户，spawn 20/进程，每档 60 s。",
         "  发压机与被压服务同机，所以峰值 QPS 是「网关与发压器的共同上限」，报告按实测拐点写，不按判据写。",
+        "  M 组是 2026-11-05 的交叉验证：同一网关、同一时段只换发压器（JDK HttpClient + 虚拟线程单进程），"
+        "用来判断历史拐点是网关上限还是客户端先饱和。",
         "- **每档环境**：CPU 峰值与最低空闲内存随每档一起落盘（`freemem_min_gb` 全程为 0.0，见已知限制）。",
         "",
         "## 曲线图",
@@ -302,6 +348,7 @@ def main():
         out.append("")
         out.extend(render(rows_of(path), POOL_COLUMNS))
         out.append("")
+    out.extend(async_block(missing))
     out.extend(sse_block(missing))
     out.extend(attribution_block(missing))
     out.append("## Token 节约率")
@@ -331,7 +378,10 @@ def main():
     out.append("## 结论（解读，数字全部见上表）")
     out.append("")
     out.append("- **拐点**：L1 主导 1013 QPS@800、L2 主导 1141 QPS@400，此后 QPS 下降而 P99 上升，"
-               "错误率全程 0%。判据 1200 QPS 未达到，发压机与被压服务同机（每档 CPU 峰值与空闲内存见上表）。")
+               "错误率全程 0%。这是 **Locust 四进程与被压服务同机** 的读数，不等于网关上限："
+               "2026-11-05 同日对照（M 组）同一网关、同一 mix80 流量，Locust 800 并发 1015.21 QPS，"
+               "轻量发压器同档 1468.44 QPS、1200 并发 1351.29 QPS（0 失败）。"
+               "判据 1200 QPS 按公平发压复测达成；历史 1013 保留为同机发压口径的记录，不删除也不改写。")
     out.append("- **拦截率 73-78%**：L2 命中在两条曲线上都是 0（`l2_delta` 全列），"
                "全部命中来自 L1 精确哈希；口语改写对在 L1 层就被同一份字符串吃掉了。"
                "语义缓存的真实代价只有 D 组能看出来：每请求真打一次 bge-m3 时吞吐掉到 23.8-64.8 QPS。")
@@ -357,7 +407,8 @@ def main():
                "或者读路径全部走本地），而不是把池子调大。生产侧的下一步是给 biz-mock 换真实 MySQL 并复测这一组。")
     out.append("- **未命中 TTFT 那条判据在 perf 口径下不可达，责任不在编排**：1 并发串行时服务端 TTFT 已经 725 ms，"
                "其中 300 ms 是 Mock 首字下限、311 ms 是这台机器上单条新问句的 bge-m3 向量化，"
-               "网关编排余量 104 ms。分段数字见「未命中 TTFT 归因」一节。")
+               "网关编排余量 104 ms。2026-11-05 复测本机 bge-m3：同句重复 P50 252.6 ms、"
+               "新问法 P50 277.3 ms，代入后仍是 672-725 ms，结论不变。分段数字见「未命中 TTFT 归因」一节。")
     out.append("")
     OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
     print("写出 docs/loadtest-report.md（" + str(len(out)) + " 行）")

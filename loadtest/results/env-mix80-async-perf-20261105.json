@@ -1,0 +1,156 @@
+{
+  "run": "mix80-async-perf-20261105",
+  "trafficModel": "mix80",
+  "generator": "loadtest/AsyncLoadGen.java（JDK HttpClient + 虚拟线程，单进程）",
+  "durationPerStepS": 45,
+  "warmupS": 5,
+  "steps": [
+    {
+      "concurrency": 400,
+      "wall_s": 54.3,
+      "qps": 1478.0,
+      "p50_ms": 192,
+      "p95_ms": 1036,
+      "p99_ms": 1710,
+      "ok": 66510,
+      "failed": 0,
+      "samples": 66510,
+      "requests_delta": 72596,
+      "admitted_delta": 56692,
+      "rate_limited_delta": 0,
+      "l1_delta": 56692,
+      "l2_delta": 0,
+      "flight_delta": 0,
+      "llm_delta": 13404,
+      "embed_remote_delta": 0,
+      "embed_cached_delta": 18808,
+      "tokens_delta": 15023516,
+      "valid_requests_delta": 72596,
+      "interception_total": 0.7809,
+      "interception_cache_only": 0.7809,
+      "cpu_mean_pct": 92.1,
+      "cpu_max_pct": 96.0,
+      "freemem_min_gb": 0.0,
+      "gateway_alive": true
+    },
+    {
+      "concurrency": 800,
+      "wall_s": 54.1,
+      "qps": 1468.44,
+      "p50_ms": 464,
+      "p95_ms": 1289,
+      "p99_ms": 1975,
+      "ok": 66080,
+      "failed": 0,
+      "samples": 66080,
+      "requests_delta": 72197,
+      "admitted_delta": 56432,
+      "rate_limited_delta": 0,
+      "l1_delta": 56432,
+      "l2_delta": 0,
+      "flight_delta": 0,
+      "llm_delta": 12762,
+      "embed_remote_delta": 0,
+      "embed_cached_delta": 18612,
+      "tokens_delta": 15031717,
+      "valid_requests_delta": 72197,
+      "interception_total": 0.7816,
+      "interception_cache_only": 0.7816,
+      "cpu_mean_pct": 84.3,
+      "cpu_max_pct": 96.0,
+      "freemem_min_gb": 0.0,
+      "gateway_alive": true
+    },
+    {
+      "concurrency": 1200,
+      "wall_s": 54.2,
+      "qps": 1351.29,
+      "p50_ms": 815,
+      "p95_ms": 1596,
+      "p99_ms": 2302,
+      "ok": 60808,
+      "failed": 0,
+      "samples": 60808,
+      "requests_delta": 67248,
+      "admitted_delta": 52443,
+      "rate_limited_delta": 0,
+      "l1_delta": 52443,
+      "l2_delta": 0,
+      "flight_delta": 0,
+      "llm_delta": 11778,
+      "embed_remote_delta": 0,
+      "embed_cached_delta": 17430,
+      "tokens_delta": 13893879,
+      "valid_requests_delta": 67248,
+      "interception_total": 0.7798,
+      "interception_cache_only": 0.7798,
+      "cpu_mean_pct": 84.3,
+      "cpu_max_pct": 96.0,
+      "freemem_min_gb": 0.0,
+      "gateway_alive": true
+    }
+  ],
+  "env": {
+    "timestamp": "2026-11-05T18:50:12",
+    "os": "Windows 10",
+    "python": "3.11.9",
+    "machine": "LAPTOP-TODOM8HG",
+    "cpu_count": 16,
+    "gitCommit": "7236926",
+    "containers": [
+      "shoppilot-ticket-1=236.5MiB / 512MiB",
+      "shoppilot-biz-mock-1=293.1MiB / 512MiB",
+      "shoppilot-redis=20.73MiB / 192MiB",
+      "shoppilot-qdrant=165.8MiB / 512MiB",
+      "shoppilot-es=841.5MiB / 1GiB",
+      "shoppilot-postgres=70.68MiB / 256MiB"
+    ],
+    "freeMemGB": "2.3"
+  },
+  "counters": {
+    "requests": [
+      "shoppilot_requests_total"
+    ],
+    "admitted": [
+      "shoppilot_cache_admitted_total"
+    ],
+    "rate_limited": [
+      "shoppilot_rate_limited_total"
+    ],
+    "l1": [
+      "shoppilot_cache_hit_total?tag=layer:L1"
+    ],
+    "l2": [
+      "shoppilot_cache_hit_total?tag=layer:L2"
+    ],
+    "flight": [
+      "shoppilot_singleflight_merged_total"
+    ],
+    "llm": [
+      "shoppilot_llm_calls_total?tag=kind:complete",
+      "shoppilot_llm_calls_total?tag=kind:stream"
+    ],
+    "embed_remote": [
+      "shoppilot_embedding_calls_total?tag=result:remote"
+    ],
+    "embed_cached": [
+      "shoppilot_embedding_calls_total?tag=result:in-process-cache"
+    ],
+    "embed_merged": [
+      "shoppilot_embedding_calls_total?tag=result:singleflight-merge"
+    ],
+    "negative_suppressed": [
+      "shoppilot_cache_negative_suppressed_total"
+    ],
+    "embed_unavailable": [
+      "shoppilot_cache_embed_unavailable_total"
+    ],
+    "writeback_l1_only": [
+      "shoppilot_cache_writeback_l1_only_total"
+    ],
+    "tokens": [
+      "shoppilot_llm_tokens_total"
+    ]
+  },
+  "note": "对照 run_loadtest.py 的同档 Locust 阶梯；发压器不同，其余口径相同"
+}

@@ -24,6 +24,17 @@ $pidFile = Join-Path $logDir "gateway-$fileSuffix.pid"
 $envVars = @{}
 foreach ($pair in (Get-ShoppilotDotEnv $root).GetEnumerator()) { $envVars[$pair.Key] = $pair.Value }
 if ($Profile) { $envVars['SPRING_PROFILES_ACTIVE'] = $Profile }
+# profile 里的 LLM 模式必须压过 .env 的 SHOPPILOT_LLM_MODE。
+# Spring 的属性优先级是「环境变量 > profile 专属 application.yml」，而 .env 里一行
+# SHOPPILOT_LLM_MODE=dev 就会让 `-Profile perf` 静默跑真模型：2026-11-05 的压测因此
+# 实际走了 qwen-plus，花掉 381,709 token 后跌进预算熔断，整轮吞吐读数作废。
+# 这里把 profile 名映射成对应模式，和 application.yml 三段 profile 的注释同义。
+if ($Profile) {
+    $profileMode = ($Profile -split ',') |
+        Where-Object { $_ -in @('dev', 'local', 'perf', 'demo', 'replay') } |
+        Select-Object -First 1
+    if ($profileMode) { $envVars['SHOPPILOT_LLM_MODE'] = $profileMode }
+}
 $jar = Get-ChildItem (Join-Path $root "shoppilot-gateway\target") -Filter "shoppilot-gateway-*.jar" `
     -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
 

@@ -1,0 +1,128 @@
+{
+  "run": "mix80-async-20261105",
+  "trafficModel": "mix80",
+  "generator": "loadtest/AsyncLoadGen.java（JDK HttpClient + 虚拟线程，单进程）",
+  "durationPerStepS": 45,
+  "warmupS": 5,
+  "steps": [
+    {
+      "concurrency": 400,
+      "wall_s": 53.8,
+      "qps": 669.24,
+      "p50_ms": 497,
+      "p95_ms": 1332,
+      "p99_ms": 1541,
+      "ok": 30116,
+      "failed": 0,
+      "samples": 30116,
+      "requests_delta": 32574,
+      "admitted_delta": 25289,
+      "rate_limited_delta": 0,
+      "l1_delta": 23329,
+      "l2_delta": 0,
+      "flight_delta": 206,
+      "llm_delta": 0,
+      "embed_remote_delta": 0,
+      "embed_cached_delta": 11111,
+      "tokens_delta": 0,
+      "valid_requests_delta": 32574,
+      "interception_total": 0.7225,
+      "interception_cache_only": 0.7162,
+      "cpu_mean_pct": 94.6,
+      "cpu_max_pct": 100.0,
+      "freemem_min_gb": 0.0,
+      "gateway_alive": true
+    },
+    {
+      "concurrency": 800,
+      "wall_s": 54.2,
+      "qps": 905.33,
+      "p50_ms": 841,
+      "p95_ms": 1263,
+      "p99_ms": 1440,
+      "ok": 40740,
+      "failed": 0,
+      "samples": 40740,
+      "requests_delta": 44684,
+      "admitted_delta": 34806,
+      "rate_limited_delta": 0,
+      "l1_delta": 32114,
+      "l2_delta": 0,
+      "flight_delta": 367,
+      "llm_delta": 0,
+      "embed_remote_delta": 0,
+      "embed_cached_delta": 15215,
+      "tokens_delta": 0,
+      "valid_requests_delta": 44684,
+      "interception_total": 0.7269,
+      "interception_cache_only": 0.7187,
+      "cpu_mean_pct": 94.2,
+      "cpu_max_pct": 98.0,
+      "freemem_min_gb": 0.0,
+      "gateway_alive": true
+    }
+  ],
+  "env": {
+    "timestamp": "2026-11-05T18:36:17",
+    "os": "Windows 10",
+    "python": "3.11.9",
+    "machine": "LAPTOP-TODOM8HG",
+    "cpu_count": 16,
+    "gitCommit": "7236926",
+    "containers": [
+      "shoppilot-ticket-1=239.6MiB / 512MiB",
+      "shoppilot-biz-mock-1=295.4MiB / 512MiB",
+      "shoppilot-redis=19.47MiB / 192MiB",
+      "shoppilot-qdrant=174.6MiB / 512MiB",
+      "shoppilot-es=844.2MiB / 1GiB",
+      "shoppilot-postgres=70MiB / 256MiB"
+    ],
+    "freeMemGB": "0.1"
+  },
+  "counters": {
+    "requests": [
+      "shoppilot_requests_total"
+    ],
+    "admitted": [
+      "shoppilot_cache_admitted_total"
+    ],
+    "rate_limited": [
+      "shoppilot_rate_limited_total"
+    ],
+    "l1": [
+      "shoppilot_cache_hit_total?tag=layer:L1"
+    ],
+    "l2": [
+      "shoppilot_cache_hit_total?tag=layer:L2"
+    ],
+    "flight": [
+      "shoppilot_singleflight_merged_total"
+    ],
+    "llm": [
+      "shoppilot_llm_calls_total?tag=kind:complete",
+      "shoppilot_llm_calls_total?tag=kind:stream"
+    ],
+    "embed_remote": [
+      "shoppilot_embedding_calls_total?tag=result:remote"
+    ],
+    "embed_cached": [
+      "shoppilot_embedding_calls_total?tag=result:in-process-cache"
+    ],
+    "embed_merged": [
+      "shoppilot_embedding_calls_total?tag=result:singleflight-merge"
+    ],
+    "negative_suppressed": [
+      "shoppilot_cache_negative_suppressed_total"
+    ],
+    "embed_unavailable": [
+      "shoppilot_cache_embed_unavailable_total"
+    ],
+    "writeback_l1_only": [
+      "shoppilot_cache_writeback_l1_only_total"
+    ],
+    "tokens": [
+      "shoppilot_llm_tokens_total"
+    ]
+  },
+  "note": "对照 run_loadtest.py 的同档 Locust 阶梯；发压器不同，其余口径相同"
+}

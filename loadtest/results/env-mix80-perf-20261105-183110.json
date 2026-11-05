@@ -1,0 +1,157 @@
+{
+  "run": "mix80-perf-20261105-183110",
+  "trafficModel": "mix80",
+  "gatewayProfile": "perf",
+  "tenantMode": "mixed",
+  "tenants": "T001,T002,T003(默认)",
+  "locustWorkers": 4,
+  "stepsCsv": "ladder-mix80-perf-20261105-183110.csv",
+  "durationPerStepS": 45,
+  "steps": [
+    {
+      "request_count": "15129",
+      "failure_count": "0",
+      "qps": "346.36",
+      "p50": "1100",
+      "p95": "1700",
+      "p99": "5600",
+      "max": "13036",
+      "aggregated_request_count": "33611",
+      "qps_scope": "chat-only",
+      "error_rate": 0.0,
+      "hot_request_count": "12113",
+      "hot_failure_count": "0",
+      "hot_qps": "277.31",
+      "hot_p50": "1100",
+      "hot_p95": "1600",
+      "hot_p99": "2600",
+      "action_request_count": "1513",
+      "action_failure_count": "0",
+      "action_qps": "34.64",
+      "action_p50": "1100",
+      "action_p95": "4100",
+      "action_p99": "6000",
+      "long_request_count": "1503",
+      "long_failure_count": "0",
+      "long_qps": "34.41",
+      "long_p50": "1200",
+      "long_p95": "4500",
+      "long_p99": "6900",
+      "hit_request_count": "10798",
+      "hit_failure_count": "0",
+      "hit_qps": "247.21",
+      "hit_p50": "1100",
+      "hit_p95": "1600",
+      "hit_p99": "1800",
+      "miss_request_count": "4331",
+      "miss_failure_count": "0",
+      "miss_qps": "99.15",
+      "miss_p50": "1100",
+      "miss_p95": "4400",
+      "miss_p99": "8200",
+      "users": 800,
+      "workers": 4,
+      "tenant_mode": "mixed",
+      "tenants": "",
+      "per_worker_users": 200,
+      "wall_s": 61.4,
+      "model": "mix80",
+      "requests_delta": 15415,
+      "admitted_delta": 12060,
+      "ratelimited_delta": 0,
+      "l1_delta": 11000,
+      "l2_delta": 0,
+      "flight_delta": 182,
+      "llm_delta": 424,
+      "embed_remote_delta": 18,
+      "embed_cached_delta": 5285,
+      "embed_merged_delta": 29,
+      "negative_suppressed_delta": 0,
+      "embed_unavailable_delta": 0,
+      "writeback_l1_only_delta": 0,
+      "tokens_delta": 381709,
+      "pool_active_max": 1.0,
+      "pool_pending_max": 0.0,
+      "pool_samples": 59,
+      "pool_max": 30.0,
+      "pool_timeout": 0.0,
+      "pool_usage_count": 51.0,
+      "pool_usage_mean_ms": 319.88,
+      "pool_usage_max_ms": 326.0,
+      "pool_acquire_count": 51.0,
+      "pool_acquire_mean_ms": 0.89,
+      "pool_acquire_max_ms": 22.61,
+      "valid_requests_delta": 15415,
+      "interception_total": 0.7254,
+      "interception_cache_only": 0.7136,
+      "interception_admitted": 0.9272,
+      "cpu_mean_pct": 82.9,
+      "cpu_max_pct": 100.0,
+      "freemem_min_gb": 0.0,
+      "profile": "perf"
+    }
+  ],
+  "env": {
+    "timestamp": "2026-11-05T18:32:12",
+    "os": "Windows 10",
+    "python": "3.11.9",
+    "machine": "LAPTOP-TODOM8HG",
+    "cpu_count": 16,
+    "gitCommit": "7236926",
+    "containers": [
+      "shoppilot-ticket-1=240.6MiB / 512MiB",
+      "shoppilot-biz-mock-1=294.6MiB / 512MiB",
+      "shoppilot-redis=16.9MiB / 192MiB",
+      "shoppilot-qdrant=171.9MiB / 512MiB",
+      "shoppilot-es=791.8MiB / 1GiB",
+      "shoppilot-postgres=71.14MiB / 256MiB"
+    ],
+    "freeMemGB": "0.3"
+  },
+  "counters": {
+    "requests": [
+      "shoppilot_requests_total"
+    ],
+    "admitted": [
+      "shoppilot_cache_admitted_total"
+    ],
+    "rate_limited": [
+      "shoppilot_rate_limited_total"
+    ],
+    "l1": [
+      "shoppilot_cache_hit_total?tag=layer:L1"
+    ],
+    "l2": [
+      "shoppilot_cache_hit_total?tag=layer:L2"
+    ],
+    "flight": [
+      "shoppilot_singleflight_merged_total"
+    ],
+    "llm": [
+      "shoppilot_llm_calls_total?tag=kind:complete",
+      "shoppilot_llm_calls_total?tag=kind:stream"
+    ],
+    "embed_remote": [
+      "shoppilot_embedding_calls_total?tag=result:remote"
+    ],
+    "embed_cached": [
+      "shoppilot_embedding_calls_total?tag=result:in-process-cache"
+    ],
+    "embed_merged": [
+      "shoppilot_embedding_calls_total?tag=result:singleflight-merge"
+    ],
+    "negative_suppressed": [
+      "shoppilot_cache_negative_suppressed_total"
+    ],
+    "embed_unavailable": [
+      "shoppilot_cache_embed_unavailable_total"
+    ],
+    "writeback_l1_only": [
+      "shoppilot_cache_writeback_l1_only_total"
+    ],
+    "tokens": [
+      "shoppilot_llm_tokens_total"
+    ]
+  },
+  "note": "perf profile 下调限流配额（见 application.yml 的 perf 段）；生成侧为 MockLLM 固定延迟；embedding 为真实 bge-m3（本机 Ollama）"
+}
