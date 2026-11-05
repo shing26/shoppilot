@@ -84,7 +84,7 @@ git diff --check
 | 1 | AI 行为没有回归门 | **已修（有残余）**：201 录放门 + 202 答案级 60 条 + 204 Testcontainers nightly；残余是 cassette 只有 6 张（审计要求 180 gold）、答案级 56/60 |
 | 2 | 指标真值漂移 | **已修**：200 换代 + 本票补 README/CI/TUNING/ADR 一致性门禁，修前 7 处漂移全报红 |
 | 3 | 默认真实模型路径弱于演示 | **部分修**：默认不变（证据不足），影子观测已落地可取证；转正需过四门槛 |
-| 4 | RAG 证据不足 | **未修**：120 条用例集与判据已备，但**夹具未录**（无 Docker/ES/Qdrant），也没有标注难负例/不可回答问句；单/双引擎仍无 holdout 读数 |
+| 4 | RAG 证据不足 | **已测（有残余）**：2026-11-05 活体栈录满 120 条夹具，holdout 42 条出三臂读数（见文末补录）；残余是没有难负例/不可回答问句，且只有一次本地录制、无显著性检验 |
 | 5 | 复杂度与流程成本 | **已修**：203 拆分（1768→73 行，handler <500）+ 205 前端测试与状态下沉 |
 
 **现场追问**
@@ -96,3 +96,38 @@ git diff --check
 3. 若下一轮开始录 120 条夹具：先起网关 + ES + Qdrant，用
    `python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json`；录完先看
    `RetrievalQualityMetricsTest` 打印的自标注读数，别直接改 `rrf-k`。
+
+## 2026-11-05 补录：第 4 条已有首次读数
+
+第 4 条不再停在「未修」。环境是本机 `scripts/up.ps1 -Profile local`（网关 8082 + ES 19200 +
+Qdrant 16333 + 本机 `bge-m3`），`kb_epoch=6`、37 篇 / 111 块。
+
+- 夹具 `eval/retrieval-fixture-20261105.json`：120/120 条，sha256
+  `8c160439225fae5390dcbb386586dd3a73baa5d93477d496213bf9be3d4e5de1`；录制器三道前提全过。
+- holdout 42 条：BM25 42/42 · MRR 0.946；稠密 42/42 · 0.988；混合 42/42 · **1.000**。
+  dev 78 条：77/78 · 0.893；78/78 · 0.994；78/78 · 0.963。全部 120 条：119/120 · 0.911；
+  120/120 · 0.992；120/120 · 0.976。
+- 按预登记规则：判定集 holdout 差 +0.012 MRR、hit@5 持平 → 维持双引擎、不宣称增益；
+  dev 上混合低 0.031 MRR，方向相反，已在决策文档里并列保留。**阈值与判定集未事后调整。**
+- 残余（未修）：仍没有标注难负例与不可回答问句；120 条只有一次本地录制、单人非盲标注，
+  做不了显著性；单稠密评估需要一份全新 holdout，不能用已看过的 42 条。
+- 起栈阻塞修了两处：`ingest.ps1` 注入 `.env`（否则拉知识修订 401）；`up.ps1` 的
+  `bootstrap_env.py` 路径退格字节。未修项：入库不清理已从语料消失的旧修订块
+  （Qdrant/ES 各 112 vs 111 块，本次未进任何 top-20），登记在 `docs/EVIDENCE.md`。
+- `retrieval_gate.py` 现在显式跳过自标注夹具（单租户契约不适用于多租户集），
+  旧夹具与哈希钉不变；`RetrievalQualityMetricsTest` 增打 dev/holdout 分行读数。
+
+**同日复查：783 / 132 这个读数是错的（门禁自己抓到的）**
+
+本次全量 `verify` 的 Maven 汇总写 gateway **628**，但两个脚本从 surefire XML 现算是
+**629 / 132 suites**。差的 1 条来自 `LlmCassetteRecorder`——它是手工录 cassette 用的
+`-Dtest=` 类，类名不匹配 surefire 默认 include，`mvn verify` 根本不跑它；`target/` 里
+却留着它 03:56 的报告，被 `glob("TEST-*.xml")` 一并计入了。所以：
+
+- **规范口径是 `12 + 92 + 628 + 50 = 782 tests / 131 suites`**；原 Handoff 与
+  `docs/STATUS.md` 的 783/132 是把手工报告算进了「全量」。
+- 修法：`gen_status.py` 与 `verify_doc_truth.py` 共用一个「只算 surefire 默认 include
+  类名」的过滤（`*Test` / `Test*` / `*Tests` / `*TestCase`），README badge、复现段、
+  CI 段、TUNING_PLAN 两处与 STATUS 全部换代到 782/131。
+- 这类错误的形状值得记住：**产物目录里的旧报告会让「现算」看起来权威，其实是在算上一次
+  手工运行**。门禁的价值恰恰在于它把 Maven 汇总与 XML 现算摆在一起时能看出这 1 条差。

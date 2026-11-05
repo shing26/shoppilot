@@ -25,12 +25,24 @@ ROOT = Path(__file__).resolve().parent.parent
 MODULES = ("shoppilot-tool-api", "shoppilot-biz-mock", "shoppilot-gateway", "shoppilot-ticket")
 
 
+# 与 `gen_status.py` 同一口径：只算 surefire 默认 include 的类名。手工 `-Dtest=...`
+# 跑的非默认类（如 LlmCassetteRecorder）报告会留在 target/，不能算进 verify 全量。
+SUREFIRE_DEFAULT = re.compile(r"^(Test.*|.*Tests?|.*TestCase)$")
+
+
+def counted_report(path):
+    simple = path.stem.removeprefix("TEST-").rsplit(".", 1)[-1]
+    return bool(SUREFIRE_DEFAULT.match(simple))
+
+
 def surefire():
     counts = {}
     total = suites = 0
     for module in MODULES:
         tests = 0
         for path in (ROOT / module / "target" / "surefire-reports").glob("TEST-*.xml"):
+            if not counted_report(path):
+                continue
             root = ET.parse(path).getroot()
             tests += int(root.get("tests", "0"))
             suites += 1

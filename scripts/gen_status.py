@@ -36,10 +36,23 @@ def git(*args: str) -> str:
         return "unknown"
 
 
+# `mvn verify` 只跑 surefire 默认 include（*Test / Test* / *Tests / *TestCase）。手工
+# `-Dtest=LlmCassetteRecorder` 这类非默认类产生的报告会留在 target/ 里，若一并计数，
+# 「verify 全量」读数就会被一次本地手工运行悄悄抬高（2026-11-05 实测多算 1 条）。
+SUREFIRE_DEFAULT = re.compile(r"^(Test.*|.*Tests?|.*TestCase)$")
+
+
+def counted_report(path: Path) -> bool:
+    simple = path.stem.removeprefix("TEST-").rsplit(".", 1)[-1]
+    return bool(SUREFIRE_DEFAULT.match(simple))
+
+
 def surefire() -> tuple[int, int, int, int, int]:
     tests = failures = errors = skipped = suites = 0
     for module in MODULES:
         for path in (ROOT / module / "target" / "surefire-reports").glob("TEST-*.xml"):
+            if not counted_report(path):
+                continue
             root = ET.parse(path).getroot()
             tests += int(root.get("tests", "0"))
             failures += int(root.get("failures", "0"))

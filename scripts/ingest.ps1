@@ -7,6 +7,15 @@ $jdk = Resolve-ShoppilotJdk
 $env:JAVA_HOME = $jdk
 $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
 if ($Dir) { $env:SHOPPILOT_KNOWLEDGE_DIR = $Dir }
+# `.env` 里的内部凭证必须进到入库 JVM：biz-mock 由 start-bizmock.ps1 带着 .env 启动，入库若用
+# 仓库默认的 X-Internal-Token，拉取知识修订时会被 401 打回，按 ADR 0078 直接中止入库。
+# 与其它 launcher 同一条规矩：进程环境里已有的非空值优先（显式参数因此仍能覆盖 .env）。
+$dotEnv = Get-ShoppilotDotEnv $root
+$previousEnv = @{}
+foreach ($pair in $dotEnv.GetEnumerator()) {
+    $previousEnv[$pair.Key] = [Environment]::GetEnvironmentVariable($pair.Key)
+    Set-Item -Path "Env:$($pair.Key)" -Value $pair.Value
+}
 # 这份 jar 与常驻网关共用同一套 logback 配置：不分名的话两个进程会去轮转同一个 logs\gateway.log
 # 用环境变量而不是 -Dspring-boot.run.jvmArguments：实测后者到不了 spring-boot:run 另起的那个 JVM
 $previousLogApp = $env:LOG_APP
@@ -27,6 +36,13 @@ try {
     & mvn.cmd -B -ntp -o -pl shoppilot-gateway spring-boot:run "-Dspring-boot.run.profiles=ingest"
 } finally {
     Pop-Location
+    foreach ($key in $previousEnv.Keys) {
+        if ($null -eq $previousEnv[$key]) {
+            Remove-Item "Env:$key" -ErrorAction SilentlyContinue
+        } else {
+            Set-Item -Path "Env:$key" -Value $previousEnv[$key]
+        }
+    }
     if ($null -eq $previousLogApp) {
         Remove-Item Env:LOG_APP -ErrorAction SilentlyContinue
     } else {

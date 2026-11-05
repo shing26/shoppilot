@@ -263,7 +263,13 @@ class RetrievalFusionReplayTest {
         return found.find() ? found.group(1) : RuleChunk.PLATFORM_TENANT;
     }
 
-    /** 夹具家族是 append-only：取**最新**那一份，与 scripts/retrieval_gate.py 同一口径。 */
+    /**
+     * 夹具家族是 append-only：取**最新**那一份单租户融合夹具，与 `scripts/retrieval_gate.py` 同一口径。
+     *
+     * <p>带 `expect_doc` 的是 round48 票 206 的 120 条多租户自标注集：它跨 T001/T002/T004，
+     * 没有唯一顶层租户，过不了本类「按夹具租户的可见语料重算指纹」这个前提；那份由
+     * {@link RetrievalQualityMetricsTest} 读。显式跳过而不是靠文件名排序碰巧选到旧夹具。
+     */
     private static Path newestFixture() throws IOException {
         Path dir = repoRoot().resolve("eval");
         try (Stream<Path> files = Files.list(dir)) {
@@ -274,8 +280,24 @@ class RetrievalFusionReplayTest {
                     .sorted(Comparator.comparing((Path p) -> p.getFileName().toString()).reversed()).toList();
             assertFalse(fixtures.isEmpty(),
                     "eval/ 下没有 retrieval-fixture-*.json：先跑 python scripts/record_retrieval_fixture.py");
-            return fixtures.get(0);
+            for (Path candidate : fixtures) {
+                if (!isSelfLabeled(candidate)) {
+                    return candidate;
+                }
+            }
+            throw new IllegalStateException(
+                    "eval/ 下没有单租户融合夹具（全带 expect_doc）：先跑 python scripts/record_retrieval_fixture.py");
         }
+    }
+
+    private static boolean isSelfLabeled(Path path) throws IOException {
+        JsonNode data = MAPPER.readTree(Files.readString(path, StandardCharsets.UTF_8));
+        for (JsonNode oneCase : data.path("cases")) {
+            if (!oneCase.path("expect_doc").asText("").isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** surefire 的工作目录是模块目录，往上找到含 eval/ 与 knowledge/ 的那一层。 */

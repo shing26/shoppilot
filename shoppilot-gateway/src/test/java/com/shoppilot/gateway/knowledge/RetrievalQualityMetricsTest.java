@@ -194,9 +194,16 @@ class RetrievalQualityMetricsTest {
     private void reportSelfLabeled(Dataset dataset) {
         List<String> corpusDocs = List.copyOf(new java.util.LinkedHashSet<>(ruleIdToDoc.values()));
         List<String> unknown = new ArrayList<>();
-        int[] hit = new int[3];
-        double[] mrr = new double[3];
-        int scored = 0;
+        // 判据用的是 holdout（预注册在 docs/RETRIEVAL_ROUTING_DECISION.md），
+        // 所以除整体读数外必须单独打出 holdout 一列——否则会被 78 条 dev 稀释成看不清。
+        Map<String, int[]> hits = new LinkedHashMap<>();
+        Map<String, double[]> mrrs = new LinkedHashMap<>();
+        Map<String, Integer> scoredBySplit = new LinkedHashMap<>();
+        for (String bucket : List.of("all", "dev", "holdout")) {
+            hits.put(bucket, new int[3]);
+            mrrs.put(bucket, new double[3]);
+            scoredBySplit.put(bucket, 0);
+        }
         for (String[] row : dataset.labels()) {
             String expect = row[2];
             if (expect.isEmpty()) {
@@ -208,26 +215,35 @@ class RetrievalQualityMetricsTest {
                 continue;
             }
             JsonNode oneCase = caseById(dataset.fixture(), row[0]);
-            for (int arm = 0; arm < 3; arm++) {
-                int rank = firstRank(texts(oneCase, name(arm), 5), expect);
-                if (rank > 0) {
-                    hit[arm]++;
-                    mrr[arm] += 1.0d / rank;
+            for (String bucket : List.of("all", row[3])) {
+                hits.computeIfAbsent(bucket, unused -> new int[3]);
+                mrrs.computeIfAbsent(bucket, unused -> new double[3]);
+                scoredBySplit.merge(bucket, 1, Integer::sum);
+                for (int arm = 0; arm < 3; arm++) {
+                    int rank = firstRank(texts(oneCase, name(arm), 5), expect);
+                    if (rank > 0) {
+                        hits.get(bucket)[arm]++;
+                        mrrs.get(bucket)[arm] += 1.0d / rank;
+                    }
                 }
             }
-            scored++;
         }
         assertThat(unknown).as("%s 里有 expect_doc 指向不存在的语料", dataset.name()).isEmpty();
-        if (scored == 0) {
-            return;
-        }
-        StringBuilder line = new StringBuilder("自标注夹具读数 " + dataset.name() + "（" + scored + " 条）：");
         String[] armNames = {"BM25", "稠密", "混合"};
-        for (int arm = 0; arm < 3; arm++) {
-            line.append(String.format(" %s hit@5=%d/%d MRR@5=%.3f;", armNames[arm], hit[arm], scored,
-                    mrr[arm] / scored));
+        for (Map.Entry<String, Integer> entry : scoredBySplit.entrySet()) {
+            int scored = entry.getValue();
+            if (scored == 0) {
+                continue;
+            }
+            String bucket = entry.getKey();
+            StringBuilder line = new StringBuilder("自标注夹具读数 " + dataset.name()
+                    + " [" + ("all".equals(bucket) ? "全部" : bucket) + "]（" + scored + " 条）：");
+            for (int arm = 0; arm < 3; arm++) {
+                line.append(String.format(" %s hit@5=%d/%d MRR@5=%.3f;", armNames[arm], hits.get(bucket)[arm],
+                        scored, mrrs.get(bucket)[arm] / scored));
+            }
+            System.out.println(line);
         }
-        System.out.println(line);
     }
 
     // 下面这组期望值是**首次实跑后钉住的**，不是先写数字再凑实现。

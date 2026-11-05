@@ -206,7 +206,11 @@ def main() -> int:
         "constants": constants,
         "cases": cases,
     }
+    # `--out` 可能是相对路径；先落成绝对路径，否则下面的 relative_to(REPO) 在写完之后才炸，
+    # 夹具已经落盘却拿不到 sha256 那几行（2026-11-05 实测）。
     out = Path(args.out) if args.out else REPO / "eval" / f"retrieval-fixture-{dt.date.today():%Y%m%d}.json"
+    if not out.is_absolute():
+        out = (Path.cwd() / out).resolve()
     # **显式 LF**：Path.write_text 在 Windows 下会把 \n 翻成 \r\n，而 git diff --check 会把新增的
     # CRLF 行报成 trailing whitespace（仓库的 json/csv 一律 LF，见 .gitattributes 的分组注释）。
     with out.open("w", encoding="utf-8", newline="\n") as handle:

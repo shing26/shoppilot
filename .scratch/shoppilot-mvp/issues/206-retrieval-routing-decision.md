@@ -94,3 +94,28 @@ python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json --o
    店铺级文档不会出现在别的租户里；再确认 `intent` 过滤没有把另一主题的块挡掉。
 3. 若 holdout 判定落在「融合比稠密低 ≥0.02」：按预登记规则开票评估单稠密，**不要**先调
    `rrf-k` 把它救回来——调参救回来的增益在 holdout 上不可复现。
+
+## 2026-11-05 补录（活体栈可用后）
+
+原 Handoff「验证落点」末条的「未录 120 条夹具」**已不再成立**，本节取代它；原记录保留，便于追溯
+当时的边界。环境：本机 `scripts/up.ps1 -Profile local`（网关 8082 + ES 19200 + Qdrant 16333 +
+本机 `bge-m3`），`kb_epoch=6`、37 篇 / 111 块，语料 sha256
+`e37286406bc77f0b31273457693b33f5ae7b95daddd7ca2ad5df2ba3a4c58ee5`。
+
+- 夹具：`eval/retrieval-fixture-20261105.json`，**120/120** 条，sha256
+  `8c160439225fae5390dcbb386586dd3a73baa5d93477d496213bf9be3d4e5de1`；录制器三项干净前提
+  （两路非空且不降级 / 未走意图兜底 / 两次序一致）全部满足，无重试失败。
+- 读数（`RetrievalQualityMetricsTest`，surefire 报告）：全部 120 条 BM25 119/120 · 0.911、
+  稠密 120/120 · 0.992、混合 120/120 · 0.976；dev 78 条 77/78 · 0.893、78/78 · 0.994、78/78 · 0.963；
+  holdout 42 条 42/42 · 0.946、42/42 · 0.988、42/42 · 1.000。判定集（holdout）差 +0.012 MRR、
+  hit@5 持平 → **维持双引擎、不宣称增益**；但 dev 上混合低 0.031 MRR，方向相反，已并列写进
+  `docs/RETRIEVAL_ROUTING_DECISION.md`，不挑一个当结论。
+- 测试改为同时打印 `全部 / dev / holdout` 三行：判定集是 holdout，只打整体数会被 78 条 dev 稀释。
+- `retrieval_gate.py` 的 `newest_fixture()` 改为**显式跳过**带 `expect_doc` 的自标注夹具：
+  该门的契约是单租户 + 唯一 `corpus_sha256`，120 条集跨 T001/T002/T004，套不进去；
+  旧 10 条夹具与 `RETRIEVAL_FIXTURE_SHA256` 不变，门禁实测 `ok cases=10 fixture=retrieval-fixture-20260928.json`。
+- 记录两处起栈阻塞（已修）：`scripts/ingest.ps1` 未注入 `.env` → 拉知识修订 401；
+  `scripts/up.ps1:24` 路径里混入退格字节 0x08 → `bootstrap_env.py` 静默失败。
+  另登记未修项：入库只 upsert、不清理已从语料消失的旧修订块（Qdrant/ES 各 112 vs 111 块）；
+  本次该块未进入任何查询 top-20，未影响夹具与读数。
+- 票 207 已把「影子不实现」改为「影子已实现、默认关闭」，本票 Handoff 第 5 条以 207 为准。

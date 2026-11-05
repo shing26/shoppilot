@@ -51,11 +51,41 @@ python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json --o
 3. 120 条能做「两臂差 ≥2 条命中」这种量级的判断，**做不了显著性检验**；
 4. 语料只有 37 份，规模远小于真实店铺知识库，排序结论不能直接外推到生产分布。
 
-### 本轮未做的事（如实登记）
+### 首次录制（2026-11-05，活体栈）
 
-**没有录 120 条的夹具。** 本机 Docker 守护进程不可用（见票 204），网关也未起，
-所以本文所有数字仍来自既有的 10 条 / 16 条离线读数。新检索集的第一次真实读数
-发生在下一轮起栈录制之后；在那之前，它不是证据，只是**预先登记好的尺子**。
+夹具已录，落点 `eval/retrieval-fixture-20261105.json`（sha256 见下）。录制环境：
+本机 `scripts/up.ps1 -Profile local` 起栈（网关 8082 + ES 19200 + Qdrant 16333 + 本机
+`bge-m3`），知识库 `kb_epoch=6`、37 篇 / 111 块，语料 sha256
+`e37286406bc77f0b31273457693b33f5ae7b95daddd7ca2ad5df2ba3a4c58ee5`。
+
+```bash
+python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json \
+  --out eval/retrieval-fixture-20261105.json
+```
+
+录制器对每条用例连发两次探针并强制三项干净前提（两路非空且不降级、未走意图兜底、
+两次序一致）；120 条全部通过。夹具 sha256
+`8c160439225fae5390dcbb386586dd3a73baa5d93477d496213bf9be3d4e5de1`。
+
+**三臂读数**（同一把尺子：三臂都取 top-5；`expect_doc` 由生产切分器映射回源文件）：
+
+| 分片 | 条数 | BM25 hit@5 / MRR@5 | 稠密 hit@5 / MRR@5 | 混合 hit@5 / MRR@5 |
+| --- | --- | --- | --- | --- |
+| 全部 | 120 | 119/120 / 0.911 | 120/120 / 0.992 | 120/120 / 0.976 |
+| dev | 78 | 77/78 / 0.893 | 78/78 / 0.994 | 78/78 / 0.963 |
+| **holdout** | **42** | 42/42 / 0.946 | **42/42 / 0.988** | **42/42 / 1.000** |
+
+复现：`./mvnw.cmd -B -ntp -pl shoppilot-gateway -am -Dtest=RetrievalQualityMetricsTest test`
+——自标注夹具由测试自动发现，读数打在 surefire 报告里，**不改写**
+`docs/retrieval-quality-metrics.md`（那份仍是 10 条老夹具的口径）。
+
+### 这份夹具没进 `retrieval_gate.py`，原因是契约不同
+
+`retrieval_gate.py` 的前提是**单租户 + 一份可见语料 + 用 yml 常数复算融合序**，
+所以它要求夹具带一个顶层 `tenant`。120 条集横跨 T001/T002/T004，没有唯一的
+`corpus_sha256`——拿它过那道门只能靠伪造顶层租户。已改为：门禁**显式跳过**带
+`expect_doc` 的自标注夹具（不再靠文件名排序碰巧选中旧夹具），单租户融合门继续钉
+`retrieval-fixture-20260928.json`；120 条集由 `RetrievalQualityMetricsTest` 守结构与读数。
 
 ## 二、单引擎还是双引擎：本轮结论是「继续双引擎」，但判据先写死
 
@@ -98,6 +128,25 @@ python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json --o
 
 这些阈值是**决策阈值**，不是评测验收线：它们不替换 gold、`judge()`、降级枚举或任何入库指标的分母。
 规则先于数据写在这里，是为了避免录完之后照着结果改判据。
+
+### 按预登记规则判定（2026-11-05，holdout 42 条）
+
+| 比较 | holdout | 全部 120 | dev 78 |
+| --- | --- | --- | --- |
+| `fused` − `dense` MRR@5 | **+0.012** | −0.016 | −0.031 |
+| `fused` − `dense` hit@5 | 0 条 | 0 条 | 0 条 |
+
+- **判定集（holdout）落在第二行**：差 +0.012 MRR（< 0.02），hit@5 持平 → **维持双引擎，
+  不宣称增益**。判定阈值与判定集都没有事后调整。
+- **但 dev 的符号相反**：78 条上混合比稠密低 0.031 MRR，超过预登记的 0.02 阈值。
+  这条必须写出来，不能只引用 holdout 的 1.000 就收口：两份分片给出相反方向，
+  说明 120 条这个量级**分不清「融合无增益」和「融合偶有损秩」**。全部 120 条上差
+  −0.016，仍在阈值内，因此动作仍是「维持」，但它已不是「没有坏处」的证据。
+- **不改默认值的理由没有变**：稀疏路在既有 10 条里贡献 8 个 top-1；新集 BM25 只丢 1 条
+  dev 用例（119/120），三臂 hit@5 的差距是 1 条。在只有一份本地录制、单人非盲标注、
+  无显著性检验的情况下，删 ES 得不到支持。
+- **下一轮若要动单稠密，必须先重录一份全新 holdout**（当前 holdout 已经用掉），
+  并按同一套阈值判定；不能在已经看过的 42 条上反复调参再报告。
 
 ### 本轮没做的事
 
@@ -152,8 +201,14 @@ python scripts/record_retrieval_fixture.py --cases eval/retrieval-cases.json --o
 
 ## 四、这套决策的边界
 
-- **本文不产生新的实测数字**：检索侧是既有 10 / 16 条的复述，路由侧是 2026-10-27 的离线表。
-  新检索集尚未录制，这是本轮最大的未达成项，已在票 206 的 Handoff 与本文件第一节写实。
+- **检索侧的新读数是 2026-11-05 那一次本地录制**：120 条、单机、单次、单人非盲标注，
+  环境是 `kb_epoch=6` 的 37 篇语料；它不是生产分布，也不构成显著性证据。路由侧仍只有
+  2026-10-27 的离线表。
 - **不修改任何既有文档的读数**：`retrieval-quality-metrics.md`、`retrieval-comparison.md`、
-  `STAGE3_MODEL_ROUTING.md` 均保持原样，本文只引用。
-- **不承诺下一轮一定做**：录夹具仍要单独开票（需要活体 ES/Qdrant），按 frontier 规则领取。
+  `STAGE3_MODEL_ROUTING.md` 均保持原样，本文只引用；新数字只落在本文件与
+  `docs/EVIDENCE.md`。
+- **夹具是 append-only 的**：`eval/retrieval-fixture-20260928.json` 与它的 CI 哈希钉不变，
+  新集单独一份文件；两份夹具的契约不同（单租户融合门 / 多租户自标注质量集），
+  不要合并。
+- **单稠密评估需要新 holdout**：当前 holdout 已用于本次判定，不能在同一批 42 条上
+  调参后重新宣称结论；重录要单独开票（需要活体 ES/Qdrant），按 frontier 规则领取。

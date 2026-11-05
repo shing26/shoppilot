@@ -137,11 +137,29 @@ def validate(fixture, constants, corpus, kind_dir=KIND_DIR):
     return problems
 
 
+def _is_self_labeled(path):
+    """round48 票 206：带 `expect_doc` 的夹具是 120 条多租户自标注集。
+
+    本门的契约是「单租户 + 一份可见语料 + 常数可复算融合序」，多租户集没有唯一的
+    `corpus_sha256`，因此不能拿来过这道门；它由 `RetrievalQualityMetricsTest` 读。
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return any(case.get("expect_doc") for case in data.get("cases", []) if isinstance(case, dict))
+
+
 def newest_fixture():
     fixtures = sorted((p for p in KIND_DIR.glob("retrieval-fixture-*.json")), key=lambda p: p.name)
     if not fixtures:
         raise SystemExit("eval/ 下没有 retrieval-fixture-*.json：先跑 python scripts/record_retrieval_fixture.py")
-    return fixtures[-1]
+    # 显式排除自标注集，而不是靠文件名排序「碰巧」选到旧夹具：否则下次再录一份，
+    # 这道门会在无人察觉的情况下改测另一份数据（2026-11-05 实测：新夹具缺顶层 tenant 直接红）。
+    unlabeled = [p for p in fixtures if not _is_self_labeled(p)]
+    if not unlabeled:
+        raise SystemExit("eval/ 下没有单租户融合夹具（全带 expect_doc）：先跑 python scripts/record_retrieval_fixture.py")
+    return unlabeled[-1]
 
 
 # ---- 自检：每条断言都要有一支**必须能失败**的反证（与 eval_suites 同一条纪律）--------------

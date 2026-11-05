@@ -21,7 +21,7 @@ if (-not (Test-Path (Join-Path $root '.env'))) {
 }
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($python) {
-    & $python.Source (Join-Path $root 'scriptsootstrap_env.py') --force | Out-Null
+    & $python.Source (Join-Path $root 'scripts\bootstrap_env.py') --force | Out-Null
 }
 . (Join-Path $PSScriptRoot 'lib-launch.ps1')
 # 找不到 JDK 就在这里停：起栈脚本以前拿一个绝对路径兜底，换台机器会把 JAVA_HOME 指到不存在的目录，
