@@ -1,7 +1,7 @@
 # 票 211：TTFT 归因刷新与 embedding 方案评审（ADR 0085）
 
 Round: 49（spec：[round49-spec-ttft-embedding-review.md](../round49-spec-ttft-embedding-review.md)）
-ADR: 0085（本票产出）　Status: ready-for-agent　Blocked by: 无
+ADR: 0085（本票产出）　Status: implemented　Blocked by: 无
 
 ## What to build
 
@@ -58,4 +58,31 @@ dense-only 对比 bge-m3 基线，结果落 `eval/results/` 并登记 EVIDENCE�
 
 ## Handoff notes
 
-（收口时补：关键决策、验证落点、三个现场追问。）
+（2026-11-11 收口）
+
+**关键决策**
+
+- **裁定（草案，待所有者确认）**：主选 **A 精简 embedding sidecar 保 bge-m3**，spike 门槛 = 单条新问法 P50 ≤ 84 ms，过线立实施票（即票 212 的形态）、不过线回落 D；**B 出局**（nomic-embed-text 质量 98/120 = 81.7%，且合格中文小模型需引入第三方模型 + 重入库 + 夹具重录 + L2/极性重标定 + gold 付费复跑，判据面变更面最大）；**C 只能按部分改善登记**（预热集对判据 sweep 7 条政策问句覆盖 0/7 夹具 + 3/7 gold，不构成达标路径，登记为后续产品增强候选）；**D 兜底**。ADR 0085 Status: Proposed，所有者确认前不动任何实现代码。
+- 归因关键事实：bge-m3 延迟与文本长度无关（7 字 novel P50 388.3 ms ≈ 32 字 384.9 ms，补测落产物追加段）→ **Ollama 服务开销主导，非模型算力**，这是 A 可行的依据；历史探针 252.6/277.3 ms（2026-10-22）与本次 335-406 ms 的差异属机器负载漂移，历轮都远超 84 ms 预算。
+- 被否决项照录：云端 embedding API（ADR 0001 已否决）、改宽判据（纪律禁令）；组合裁定评估过 C+B / C+A，均被覆盖率账否掉达标资格，C 单独作为产品增强登记。
+
+**验证落点**（全部 0 付费 token，perf 档本地网关 + 本机 Ollama）
+
+- 归因（服务端指标口径）：`python scripts/ttft_attribution.py`，54 次强制未命中、单连接串行 → 服务端 TTFT 均值 771.5 ms = Mock 300.0 + 新问句向量化 355.7 + 稠密 6.8 + 词法 40.0 + 编排余量 69.0；产物 `loadtest/results/ttft-attribution-20261111-020944-1conn.csv` + 客户端口径 `loadtest/results/sse-ttft-20261111-020944-1-attrib.csv`。
+- 探针（外部口径）：`python scripts/probe_embedding_latency.py --samples 10` → bge-m3 同句 379.8 / 新问法 335.0 ms；nomic 69.7 / 74.3 ms（768 维）；同日复验跑 382.0/406.0 与 76.5/73.3 同量级；bge-m3 7 字（388.3 ms）≈ 32 字（384.9 ms）→ 长度无关、Ollama 服务开销主导（复验与补测落在产物追加段）；产物 `loadtest/results/probe-embedding-20261111.txt`。
+- 候选模型质量：dense hit@5 同候选池对比 → bge-m3 120/120（夹具 dense 序基线）vs nomic **98/120 = 81.7%**，丢失全在 fresh 池内细粒度混淆、候选独有命中 0；产物 `eval/results/retrieval-model-compare-20261111-nomic.txt`（脚本 `.scratch/probe-nomic-retrieval.py`，模型间对比口径，不判网关达标）。
+- 预热覆盖率账：判据 sweep 7 条政策问句 × 预热集（120 夹具问句 + gold/评测问句集并集 351 条，归一化整串相等）精确匹配 0/7 + 3/7，宽松包含口径同读数；算式与逐条明细 `eval/results/preheat-coverage-20261111.txt`。
+- 验证轮复算全部对上：归因 CSV 算术自洽（300+355.7+6.8+40.0 = 702.5，771.5−702.5 = 69.0）、nomic 抽测 120/120 vs 98/120 与产物一致、覆盖率账 0/7+3/7 复现；探针两处引用数字按磁盘产物更正（初稿误引了未落盘的控制台读数 371.9/377.0、64.8/70.3）。
+- `bash ./mvnw -B -ntp verify` 四模块 **782 tests / 131 suites** 不变（本票零实现代码）；`git diff --check` 干净。
+- EVIDENCE 已按追加法登记（不改旧行）；tracker README 票 211 行与 round49 行同步。
+
+**边界与残余**
+
+- 本票零实现代码、零语料/判据/gold/分母改动；ADR 现有 0001/0011/0058 原文未动，换代指针留票 212。
+- ADR 0085 的 spike 数字（ONNX CPU 前向真实耗时）尚未实测——那是票 212 的第一格，回填 ADR 附录后再立实施票。
+
+**三个现场追问**
+
+1. 若 sidecar spike 过线（≤84 ms），第五进程的内存账（预估 0.6–1 GB）是否接受推翻 ADR 0058 的记账口径？
+2. sidecar 落地后，T1 质心与 L2 写回等非关键路径的 bge-m3 调用继续走 Ollama，还是全部切 sidecar（切换面影响运维复杂度）？
+3. 选项 C 的「高频问句秒答」产品增强，是否要现在立一张不占 round49 的储备票？

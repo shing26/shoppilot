@@ -1,0 +1,8 @@
+term,count,avg_ms,max_ms,note
+shoppilot_ttft_seconds,54,771.5,1233.0,首字（含 Mock 300ms 下限）
+shoppilot_retrieve_dense_seconds,39,6.8,30.3,稠密检索：只有 Qdrant 打分，向量在缓存读阶段已算好并被进程内缓存复用
+shoppilot_retrieve_lexical_seconds,39,40.0,91.9,词法检索（ES）
+shoppilot_llm_latency_seconds,61,352.8,562.3,模型整轮（perf=Mock 固定 500ms）
+shoppilot_embedding_latency_seconds,54,355.7,470.2,新问句向量化：真打远程那一路（ADR 0044 票 47 新增）
+mock_first_token_floor,,300.0,,perf MockLLM 固定首字下限（配置值，非实测）
+orchestration_residual,54,69.0,,服务端 TTFT 减掉已知项之后的余量：状态机 + 提示词组装 + RRF + SSE 写出 + 采样误差

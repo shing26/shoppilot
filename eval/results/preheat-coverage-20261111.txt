@@ -1,0 +1,25 @@
+# 票 211 验证：预热覆盖率账复算（2026-11-11，选项 C 输入）
+
+判据 sweep 政策问句（run_sse_ttft.py QUERIES 去掉含数字动作句）：7 条
+检索夹具问句：120 条
+gold/评测问句集（cases-part1-policy.jsonl, cases-part10-autonomy.jsonl, cases-part2-action.jsonl, cases-part3-edge.jsonl, cases-part4-emotion.jsonl, cases-part5-channel.jsonl, cases-part6-plan.jsonl, cases-part7-style-feedback.jsonl, cases-part8-task.jsonl, cases-part9-hotel.jsonl, tool-cases.jsonl, answer-cases.jsonl, golden-ux-30.jsonl）：合计 552 条（各集间可能天然重叠）
+
+预热集 = 检索夹具（去重后 120 条）
+  归一化整串相等：0/7 —— 无
+  宽松包含（sweep 问句作为子串出现）：1/7 —— ['发什么快递']
+
+预热集 = gold/评测问句集（并集）（去重后 351 条）
+  归一化整串相等：3/7 —— ['发什么快递', '七天无理由怎么算', '生鲜坏了怎么赔']
+  宽松包含（sweep 问句作为子串出现）：3/7 —— ['发什么快递', '七天无理由怎么算', '生鲜坏了怎么赔']
+
+逐条明细（gold/评测问句集并集，归一化整串相等）：
+  ✓ 发什么快递
+  ✓ 七天无理由怎么算
+  ✗ 跨店满减怎么算  近似：['？？？', '？？？']
+  ✓ 生鲜坏了怎么赔
+  ✗ 你们家用的哪家物流  近似：['？？？', '？？？']
+  ✗ 下单后几天能寄出  近似：['？？？', '？？？']
+  ✗ 钱几天能退回我卡上  近似：['？？？', '？？？']
+
+结论：预热集（夹具 + 全部 gold/评测问句）对判据 sweep 政策问句的整串精确覆盖不足以构成达标路径；
+预热基准题本身 = 改测量不改能力。与 ADR 0085 选项 C 的裁定一致。

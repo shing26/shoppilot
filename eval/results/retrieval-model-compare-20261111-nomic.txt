@@ -1,0 +1,19 @@
+语料 112 块；模型 nomic-embed-text
+夹具 120 条（kb_epoch=None）
+语料嵌入耗时 6.3s
+
+hit@5（expect_doc 进入 top5 块的 sourceDoc）
+  bge-m3（夹具 dense 序）  : 120/120
+  nomic-embed-text        : 98/120
+  两者同时命中            : 98/120
+  候选独有命中            : 0/120
+
+基线中/候选丢的样例（最多 8 条）：
+  RET48-fresh-02-claim-scope-2  用了优惠券的生鲜理赔按实付还是原价  期望 fresh-02-claim-scope  候选 top3 ['fresh-03-packaging-loss', 'fresh-03-packaging-loss', 'fresh-06-seafood-dead']
+  RET48-fresh-03-packaging-loss-3  签收时没验货，事后发现破损还能赔吗  期望 fresh-03-packaging-loss  候选 top3 ['fresh-05-weight-shortage', 'fresh-02-claim-scope', 'fresh-07-exclusions']
+  RET48-fresh-04-cold-chain-1  冷链商品送到时冰袋化了算断链吗  期望 fresh-04-cold-chain  候选 top3 ['fresh-06-seafood-dead', 'fresh-05-weight-shortage', 'fresh-06-seafood-dead']
+  RET48-fresh-04-cold-chain-2  冷链温度要求是多少度  期望 fresh-04-cold-chain  候选 top3 ['fresh-06-seafood-dead', 'fresh-05-weight-shortage', 'fresh-06-seafood-dead']
+  RET48-fresh-04-cold-chain-3  断链的生鲜应该拒收还是签收后再申请  期望 fresh-04-cold-chain  候选 top3 ['fresh-03-packaging-loss', 'fresh-05-weight-shortage', 'fresh-02-claim-scope']
+  RET48-fresh-07-exclusions-1  哪些情况生鲜不能理赔  期望 fresh-07-exclusions  候选 top3 ['fresh-02-claim-scope', 'fresh-06-seafood-dead', 'fresh-01-claim-window']
+  RET48-fresh-07-exclusions-2  已经赔过一次还能再申请吗  期望 fresh-07-exclusions  候选 top3 ['fresh-02-claim-scope', 'fresh-01-claim-window', 'fresh-05-weight-shortage']
+  RET48-fresh-08-shop-t002-dead-crab-2  死蟹按只赔需要提供订单号吗  期望 fresh-08-shop-t002-dead-crab  候选 top3 ['fresh-06-seafood-dead', 'fresh-05-weight-shortage', 'fresh-06-seafood-dead']
