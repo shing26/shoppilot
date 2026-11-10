@@ -1,6 +1,6 @@
 # 未命中 TTFT 的 embedding 形态：精简 sidecar 保 bge-m3，spike 定生死
 
-Status: Proposed（裁定稿，待所有者确认；确认后本行改 Accepted）
+Status: Accepted（2026-11-11 所有者确认；spike 门槛已过，见附录；实施票 = 票 212）
 Date: 2026-11-11
 Deciders: 所有者（票 211 评审产出）
 Round: 49（spec：`.scratch/shoppilot-mvp/round49-spec-ttft-embedding-review.md`）

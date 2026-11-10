@@ -1,7 +1,8 @@
 # 票 212：embedding sidecar 落地——未命中路径切精简向量服务（TTFT 达标路径）
 
 Round: 49（spec：[round49-spec-ttft-embedding-review.md](../round49-spec-ttft-embedding-review.md)）
-ADR: 0085（含 spike 附录）　Status: ready-for-agent　Blocked by: **所有者确认 ADR 0085 裁定（Proposed → Accepted）**
+ADR: 0085（Accepted，2026-11-11 所有者确认）　Status: in-progress　Blocked by: 无
+契约：[plans/212-embedding-sidecar.md](../../plans/212-embedding-sidecar.md)（2026-11-11 冻结）
 
 ## What to build
 

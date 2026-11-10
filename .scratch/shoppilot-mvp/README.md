@@ -380,7 +380,7 @@
 | 209 | [`209-round48-closeout.md`](issues/209-round48-closeout.md) | implemented | round48 收口：指标登记换代 + 两个生成物重生成（M 组交叉验证）+ README/EVIDENCE/TUNING_PLAN/tracker 同步；残余 8 条各有触发条件 |
 | 210 | [`210-buyer-session-store-guard.md`](issues/210-buyer-session-store-guard.md) | implemented | round48 后续（回归修复，冻结线允许）：票 191 残余缺口——无 `?store=` 时旧店 session 被恢复；下沉 `lib/session.ts` 纯函数 + 7 条 vitest；独立 Verifier PASS + 容器档浏览器复验 11/11 |
 | 211 | [`211-ttft-attribution-and-embedding-adr.md`](issues/211-ttft-attribution-and-embedding-adr.md) | implemented | round49 第一票：归因刷新两口径分列（服务端 TTFT 771.5 ms = Mock 300 + embedding 355.7 + 词法 40 + 编排 69；探针 bge-m3 新问法 P50 335.0 / nomic 74.3 ms，复验与长度无关性补测落产物追加段）+ nomic 质量抽测 98/120 + 预热覆盖率账 0/7+3/7 → **ADR 0085 裁定稿（Proposed 待所有者确认）**：主选 A sidecar 保 bge-m3（spike 门槛 84 ms），B 出局、C 登记增强、D 兜底 |
-| 212 | [`212-embedding-sidecar-implementation.md`](issues/212-embedding-sidecar-implementation.md) | ready-for-agent | 实施票（形态 = A）：FastAPI+ONNX int8 sidecar 固定 8 线程 + `EmbeddingClient` 未命中路径切换 + 分账三桶不变式 + L2 0.95 工作点显式验收项 + 降级回落；**Blocked by 所有者确认 ADR 0085**；spike 已过线（HTTP 短 novel P50 34.7 ms / p90 38.9，RSS ~1.2 GB 实测记账） |
+| 212 | [`212-embedding-sidecar-implementation.md`](issues/212-embedding-sidecar-implementation.md) | in-progress | 实施票（形态 = A，**ADR 0085 已 Accepted**）：FastAPI+ONNX int8 sidecar 固定 8 线程 + `EmbeddingClient` 运行期 embed() 切 sidecar（embedWarmup 留 Ollama）+ 降级回落有账 + 分账三桶不变式 + L2 工作点显式验收；契约冻结 [plans/212-embedding-sidecar.md](../../plans/212-embedding-sidecar.md)；spike 全窗口过线（容器形态 35.5 ms） |
 | 213 | [`213-round49-closeout-registration.md`](issues/213-round49-closeout-registration.md) | ready-for-agent | 收口登记票：修后两口径读数落档，STATUS/current-metrics/README/EVIDENCE/TUNING 换代，ADR 0001/0011/0058 换代指针；判据一字不动 |
 
 ## 如何新增或领取工作
