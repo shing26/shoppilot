@@ -1,0 +1,71 @@
+# 票 211/212 spike：精简 embedding sidecar 单条延迟与 int8 质量抽检（2026-11-11，ADR 0085 选项 A 门槛实测）
+
+门槛（ADR 0085）：精简 embedding 服务单条「新问法」P50 ≤ 84 ms（判据预算 500 − Mock 300 − 稠密 6.8 − 词法 40 − 编排 69）。
+
+## 环境
+
+- 模型：`Xenova/bge-m3` `onnx/model_int8.onnx`（int8 量化，568.5 MB，经 hf-mirror 下载到本机 `.scratch/spike-sidecar/model/`，未入库）
+- 运行时：onnxruntime **1.19.2**（1.31.1 在本机 DLL 初始化失败；独立 venv `.venv-spike/`，fastembed 0.9.1 + fastapi + uvicorn + psutil + tokenizers）
+- 机器：16 逻辑核；本机同时跑着 Docker（gateway/biz-mock/ticket/ES/Redis）与 Ollama——即生产同机的真实争抢环境
+- 池化：CLS + L2 归一化（bge-m3 官方用法），输出 1024 维
+
+## 阶段 1：进程内前向（`.scratch/spike-sidecar/spike_forward.py`，novel = 每句随机后缀）
+
+| 线程 | 短 novel(7字) P50 | 长 novel(32字) P50 | repeat P50 |
+| --- | --- | --- | --- |
+| 默认(16) | 65.9 ms（p90 103.8） | 113.7 ms | 52.7 ms |
+| 4 | 36.5 ms | 65.2 ms | 27.1 ms |
+| **8** | **27.0 ms（p90 46.8）** | **45.6 ms** | **20.5 ms** |
+| 12 | 29.7 ms | 50.7 ms | 27.1 ms |
+
+默认全核因与 Docker/Ollama 争抢劣化 ~2.4x；**固定 8 线程最优**。进程 RSS 载入后 **1218 MB**
+（对照 ADR 0085 预估 0.6–1 GB，实测略超上沿）。
+
+## 阶段 2：真实 HTTP 服务形态（FastAPI+uvicorn sidecar，端口 8110，含环回往返）
+
+（`.scratch/spike-sidecar/spike_server.py` + `spike_http_probe.py`，8 线程，n=30）
+
+| 口径 | P50 | P90 | max |
+| --- | --- | --- | --- |
+| 新问法（短 7 字，novel） | **34.7 ms** | **38.9 ms** | 59.8 ms |
+| 新问法（长 32 字，novel） | **51.6 ms** | 62.6 ms | 66.4 ms |
+| 同句重复（repeat） | 28.1 ms | 31.5 ms | 43.4 ms |
+
+**门槛判定：过线**——短 novel P50 34.7 ≤ 84，且 p90 38.9 也在线内；长句 novel 51.6 同样在线内
+（判据 sweep 的 7 条政策问句全部 ≤10 字，短句口径即判据口径）。HTTP 层开销 ~8 ms。
+
+## 阶段 3：int8 质量抽检（`.scratch/spike-sidecar/spike_quality.py`，同候选池 dense hit@5）
+
+同 `.scratch/probe-nomic-retrieval.py` 口径（tenant+intent 过滤候选池、cosine 排序 top5 对照
+`eval/retrieval-fixture-20261105.json` 的 fp16 dense 序）：
+
+```text
+bge-m3 fp16（夹具 dense 序）: 120/120
+bge-m3 int8（本地 ONNX）    : 120/120
+两者同时命中                : 120/120
+int8 独有命中               : 0/120
+```
+
+**量化没有打乱 120 条夹具的 dense 序**。112 块语料全量重嵌入 19.2 s（batch=1 串行）。
+边界：hit@5 保序不等于 L2 0.95 工作点不漂——int8 向量的绝对余弦值会有轻微偏移，
+极性守卫与 0.95 工作点的显式验收项仍归实施票（带修前/修后读数）。
+
+## 结论
+
+- ADR 0085 选项 A 的 spike 门槛**过线**（34.7 ms ≪ 84 ms，p90 也过），精简 sidecar 保 bge-m3
+  的路径成立；对比 Ollama 同模型 novel P50 335-406 ms，改善 ~10x。
+- 资源账修正：+1 进程 RSS 实测 **~1.2 GB**（超 ADR 预估上沿），ADR 0058 的推翻记账按实测数。
+- 与 ADR 0011 的 20–60 ms CPU 口径对照：短句 34.7 落在区间内；长句 51.6 同样在线内。
+
+## 复现
+
+```bash
+# 一次性（本机）：HF_ENDPOINT=https://hf-mirror.com 下载 Xenova/bge-m3 的
+# onnx/model_int8.onnx + tokenizer.json 到 .scratch/spike-sidecar/model/
+.venv-spike/Scripts/python.exe .scratch/spike-sidecar/spike_forward.py --threads 8
+.venv-spike/Scripts/python.exe .scratch/spike-sidecar/spike_server.py 8   # 另一窗口
+.venv-spike/Scripts/python.exe .scratch/spike-sidecar/spike_http_probe.py
+.venv-spike/Scripts/python.exe .scratch/spike-sidecar/spike_quality.py
+```
+
+（spike 脚本与模型留在本机 `.scratch/`，不入库；本文件为登记读数与判定。）

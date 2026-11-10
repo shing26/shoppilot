@@ -77,3 +77,22 @@ spike 不过线回落 D，红值照登。B、C 不进入本轮。**
   README 的未达成归因段同步。
 - Ollama 仍承载生成模型（local 档）与 bge-m3（T1 质心、L2 写回等非关键路径调用继续走 Ollama；
   只有未命中路径的查询向量化切 sidecar——切换面在实施票冻结时定）。
+
+## 附录：spike 实测（2026-11-11，门槛已过）
+
+完整读数与复现命令见 `eval/results/spike-embedding-sidecar-20261111.txt`；模型
+`Xenova/bge-m3` `onnx/model_int8.onnx`（int8，568 MB），onnxruntime 1.19.2，本机 16 核
+（同机跑着 Docker 全栈与 Ollama 的真实争抢环境）：
+
+- **进程内前向**：默认 16 线程短 novel P50 65.9 ms（争抢劣化）；**固定 8 线程 27.0 ms**（p90 46.8）、
+  长 32 字 novel 45.6 ms、repeat 20.5 ms。
+- **真实 HTTP 服务形态**（FastAPI+uvicorn sidecar，含环回往返，n=30）：短 novel **P50 34.7 ms /
+  p90 38.9 ms**、长 novel 51.6 ms、repeat 28.1 ms。
+- **门槛判定：过线**（34.7 ≪ 84，p90 也在线内；判据 sweep 7 条问句全部 ≤10 字，短句口径即判据口径）。
+  对照 Ollama 同模型 novel P50 335–406 ms，改善 ~10x；落在 ADR 0011 的 20–60 ms CPU 口径区间内。
+- **int8 质量抽检**：同候选池 dense hit@5 **120/120 与 fp16 完全一致**、int8 独有命中 0——量化
+  未打乱 120 条夹具 dense 序。边界：hit@5 保序 ≠ L2 0.95 工作点不漂，绝对余弦的显式验收项归实施票。
+- **资源账修正**：sidecar 进程 RSS 实测 **~1.2 GB**（超本文预估 0.6–1 GB 上沿），ADR 0058 的推翻
+  记账按实测数进实施票。
+- 实施票（票 212）的形态以此为准：sidecar + `EmbeddingClient` 未命中路径切换 + L2 工作点显式
+  验收项；立票已就绪，执行等所有者对裁定（A）的确认。
