@@ -31,6 +31,7 @@ import { STATUS_LABEL, type CitationDetail, type Session, type Ticket } from './
 import type { MyOrder, OrderDetail, OrderLogistics } from './api'
 import { appendAgentStep, type ChatMessage } from './lib/format'
 import { beginAnswer, restoreChat, serializeChat, settleAnswer } from './lib/chat'
+import { restoreSession } from './lib/session'
 import TopBar from './components/TopBar.vue'
 import StoreCard from './components/StoreCard.vue'
 import LoginGate from './components/LoginGate.vue'
@@ -571,22 +572,14 @@ onMounted(() => {
  * 否则同一标签页从 A 店跳到 B 店会沿用 A 店的令牌——令牌是真的，只是店不对：店卡、快捷问题
  * 与助手回答会分裂成三家店（首页四个店铺链接就是按这个路径点的）。
  *
- * <p>没有店铺码时不做判断：那说明用户是直接打开 `/buyer/`，沿用上一次的身份比默默登出更合理。
+ * <p>round49 票 210：没有店铺码时不再沿用旧身份。直接打开 `/buyer/` 会走「缺少店铺码」/
+ * 游客态；旧存档必须删掉，否则页面虽然没显示登录门，后续请求仍会带着上一家店的令牌。
+ * 判断本身在 `lib/session.ts`，这里只负责按 `discard` 删键。
  */
 function readStoredSession(): Session | null {
-  const raw = sessionStorage.getItem(STORAGE_KEY)
-  if (!raw) return null
-  try {
-    const stored = JSON.parse(raw) as Session
-    if (STORE_CODE && stored.tenantId !== STORE_CODE) {
-      sessionStorage.removeItem(STORAGE_KEY)
-      return null
-    }
-    return stored
-  } catch (unreadable) {
-    sessionStorage.removeItem(STORAGE_KEY)
-    return null
-  }
+  const { session: restored, discard } = restoreSession(sessionStorage.getItem(STORAGE_KEY), STORE_CODE)
+  if (discard) sessionStorage.removeItem(STORAGE_KEY)
+  return restored
 }
 
 function clearStoredSession() {

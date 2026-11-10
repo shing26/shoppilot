@@ -377,6 +377,7 @@
 | 207 | [`207-audit-five-issues-followup.md`](issues/207-audit-five-issues-followup.md) | implemented | round48 补口：审计五问复核（#2 补 README/ADR/TUNING 一致性门禁、修前 7 处漂移；#3 Stage3 影子观测落地默认关；#4 活体栈录满 120 条并出 holdout 读数；#1 残余如实登记；782 tests / 131 suites，原 783/132 为手工报告误计） |
 | 208 | [`208-four-metrics-accounting.md`](issues/208-four-metrics-accounting.md) | implemented | round48 补口：四项指标复测（吞吐 1468@800/1351@1200 改判达成；缓存准入内命中 100%、80% 结构性不可达；TTFT 固定项 ≥672 ms；退款 dev 179/180、定向 18/18、local 9/18；修 `-Profile perf` 被 `.env` 覆盖的模式缺陷） |
 | 209 | [`209-round48-closeout.md`](issues/209-round48-closeout.md) | implemented | round48 收口：指标登记换代 + 两个生成物重生成（M 组交叉验证）+ README/EVIDENCE/TUNING_PLAN/tracker 同步；残余 8 条各有触发条件 |
+| 210 | [`210-buyer-session-store-guard.md`](issues/210-buyer-session-store-guard.md) | implemented | round48 后续（回归修复，冻结线允许）：票 191 残余缺口——无 `?store=` 时旧店 session 被恢复；下沉 `lib/session.ts` 纯函数 + 7 条 vitest；独立 Verifier PASS + 容器档浏览器复验 11/11 |
 
 ## 如何新增或领取工作
 
