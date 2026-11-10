@@ -90,3 +90,30 @@ int8 独有命中               : 0/120
 **min 0.9847 / mean 0.9869 / max 0.9898**；不同文本对照 0.4310（区分度充足）。
 量化漂移 ~1.3%：L2 自相似命中会从 1.0 落到 ~0.987，仍高于 0.95 工作点，但**边界问句的
 漂移归票 212 显式验收项**（修前/修后读数），此处只登记量级。
+
+────────────────────────────────────────────
+【容器形态复验（2026-11-11 验证轮追加，票 212 部署形态预演）】
+
+`docker build`（python:3.11-slim + fastapi/uvicorn/onnxruntime==1.19.2/tokenizers，579 MB 镜像，
+模型 568 MB 经 volume 挂载不进镜像层）→ `docker run -p 8111:8110`，容器内 8 线程。
+踩坑两个照登：① 基础镜像经 `docker.m.daocloud.io` 拉取（docker.io 直连 500）；② 容器内
+必须绑 `0.0.0.0`（`SPIKE_HOST` 环境变量），绑 127.0.0.1 时端口映射 Empty reply。
+
+宿主 → 容器 HTTP（n=30，整机 51.9% CPU / 96.1% 内存的重负载窗口）：
+
+| 口径 | P50 | P90 |
+| --- | --- | --- |
+| 新问法（短 7 字，novel） | **35.5 ms** | **52.1 ms** |
+| 新问法（长 32 字，novel） | **49.8 ms** | 94.5 ms |
+| 同句重复（repeat） | 29.6 ms | 54.1 ms |
+
+**容器形态门槛过线**（35.5 ≪ 84，p90 也在线内），与宿主轻负载窗口（34.7）相当——尽管宿主
+正处于重负载：Linux VM 内的 8 线程 intra_op 配置对 Windows 进程争抢有隔离效果，
+这是容器部署形态（票 212 的 compose 定义）的直接证据。容器运行内存 **1.178 GiB**
+（与宿主进程 RSS 1218 MB 一致，记账口径收敛）。质量抽检同日复跑 **120/120 仍复现**
+（语料重嵌入 14.2 s，与首测 19.2 s 的差异属负载波动）。
+
+复现：`docker build -t shoppilot-spike-embedding .scratch/spike-sidecar/ &&
+docker run -d --name spike-embedding -p 8111:8110
+-v "<repo>/.scratch/spike-sidecar/model:/app/model:ro" shoppilot-spike-embedding`，
+探针 `spike_http_probe.py http://127.0.0.1:8111`。

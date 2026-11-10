@@ -10,6 +10,10 @@ ADR: 0085（含 spike 附录）　Status: ready-for-agent　Blocked by: **所有
 1. **sidecar 进程**：FastAPI + ONNX int8（`Xenova/bge-m3` `model_int8.onnx`）+ CLS 池化，
    **固定 8 线程**（spike 实测默认 16 线程同机争抢劣化 2.4x）；模型权重与依赖进 Docker 镜像
    （568 MB 权重 + ~1.2 GB RSS 运行账，按实测数记，ADR 0058 换代指针写明理由）。
+   **容器形态已在 spike 预演通过**（`eval/results/spike-embedding-sidecar-20261111.txt` 容器段）：
+   python:3.11-slim + volume 挂模型 = 579 MB 镜像 + 1.178 GiB 运行内存，宿主→容器 HTTP
+   短 novel P50 35.5 ms 过线；两个实现坑照登——基础镜像走 `docker.m.daocloud.io`
+   （docker.io 直连 500）、容器内绑 `0.0.0.0` 而非 127.0.0.1（否则端口映射 Empty reply）。
 2. **网关切换**：`EmbeddingClient` 未命中路径的查询向量化指向 sidecar（HTTP）；
    T1 质心、L2 写回等非关键路径调用是否同切由实现时按延迟读数定，票面留痕。
 3. **指标分账不变式**：`shoppilot_embedding_latency_seconds{result=remote}` 口径保留
