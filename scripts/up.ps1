@@ -202,6 +202,36 @@ if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8092/actuator/health/r
 }
 
 Write-Host '[7/7] 网关' -ForegroundColor Cyan
+# 票 212（ADR 0085 选项 A）：本机档的 embedding sidecar 接线。Docker 可用就顺手以容器起
+# sidecar 并给网关进程导出 SHOPPILOT_EMBEDDING_SIDECAR_URL；不可用则打印跳过说明——
+# 网关回落 Ollama 是既有降级路径（fallback 有账），sidecar 的缺席不该把起栈打红。
+# 只在进程环境里没有显式给过 SHOPPILOT_EMBEDDING_SIDECAR_URL 时才自动接线，
+# .env 里手工配过的值（start-gateway.ps1 读 .env 时进程环境优先）原样生效。
+if (-not $env:SHOPPILOT_EMBEDDING_SIDECAR_URL) {
+    $dockerOk = $false
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        docker info *> $null
+        $dockerOk = ($LASTEXITCODE -eq 0)
+    }
+    if (-not $dockerOk) {
+        Write-Host '  跳过 embedding sidecar：Docker 不可用，查询向量化继续走 Ollama（回落路径）' -ForegroundColor DarkGray
+    } else {
+        try {
+            Write-Host '  起 embedding sidecar 容器（首次构建经 hf-mirror 下 568 MB 权重）' -ForegroundColor DarkGray
+            docker compose --profile full up -d --build embedding-sidecar | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw "docker compose up 退出码 $LASTEXITCODE" }
+            if (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8110/health' -TimeoutSec 3).status -eq 'ok' } 'embedding-sidecar :8110' 300) {
+                $env:SHOPPILOT_EMBEDDING_SIDECAR_URL = 'http://127.0.0.1:8110'
+                Write-Host '  OK sidecar 已就绪：网关查询向量化指向它（失败自动回落 Ollama）'
+            } else {
+                Write-Host '  !! sidecar 没就绪：继续用 Ollama 直连，看 docker compose logs embedding-sidecar' -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "  !! sidecar 启动失败：$($_.Exception.Message)。继续用 Ollama 直连（回落路径）" -ForegroundColor Yellow
+        }
+    }
+}
+
 # readiness 组：seed 5 万订单期间就是 503 OUT_OF_SERVICE，避免"health 已 UP 但库里还没数据"的抢跑
 # 180 s 不够：09-09 16:33 那次全量验收里，biz-mock 的 seed 与 [5/6] 的入库（90 块 × 向量化 + ES/Qdrant 写入）
 # 并行抢同一台 16 G 机器，3 分钟还没 UP，这一步直接红——而服务本身没坏，后面靠健康门又拉回来了。

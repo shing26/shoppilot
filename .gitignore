@@ -47,3 +47,7 @@ backups/
 config/feishu-identities.json
 # 渠道连接文件含飞书 appSecret，不入库
 config/channels.json
+
+# 票 212（ADR 0085）：embedding sidecar 的本机模型权重目录，568 MB 绝不进 git；
+# 镜像构建期经 hf-mirror 下载进镜像层，或挂卷 .scratch/spike-sidecar/model
+shoppilot-embedding-sidecar/models/

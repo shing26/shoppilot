@@ -1,0 +1,5 @@
+# 本机模型权重目录（若在本目录手工下载），绝不进 git
+models/
+__pycache__/
+*.pyc
+.venv/

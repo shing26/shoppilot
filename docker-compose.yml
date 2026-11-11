@@ -257,6 +257,31 @@ services:
       redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
 
+  # embedding sidecar（round49 票 212 / ADR 0085 选项 A）：运行期查询向量化的专用轻量进程，
+  # 非第五个 Spring JVM。协议与 Ollama /api/embed 兼容，网关 EmbeddingClient 的解析零改动；
+  # sidecar 失败由网关回落 Ollama（降级有账：shoppilot_embedding_fallback_total）。
+  # 模型权重 568 MB 构建期经 hf-mirror 下载进镜像层，不进 git；本机已有 spike 权重
+  # （.scratch/spike-sidecar/model/）时可挂卷 - ./.scratch/spike-sidecar/model:/app/models:ro 跳过下载。
+  embedding-sidecar:
+    build:
+      context: ./shoppilot-embedding-sidecar
+      dockerfile: Dockerfile
+    image: shoppilot/embedding-sidecar:local
+    profiles: ["full"]
+    restart: unless-stopped
+    # 运行 RSS 实测 ~1.2 GB（spike 容器形态 1.178 GiB）：上限按实测留余量，OOM 杀它不杀别人
+    mem_limit: 1536m
+    ports:
+      # 发布到宿主回环：本机 JVM 档（scripts/up.ps1）与探针都用它；容器档 gateway 走服务名
+      - "127.0.0.1:${SHOPPILOT_SIDECAR_PORT:-8110}:8110"
+    healthcheck:
+      # 这个镜像里没有 curl/wget（slim），用 python 标准库探活
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8110/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   gateway:
     build:
       context: .
@@ -293,6 +318,9 @@ services:
       SHOPPILOT_IDENTITY_DEMO_PASSWORD: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:-}
       # CPU-only bge-m3 在容器/低配机上单次向量化可能 >5s；容器档演示默认放宽到 30s（本机 JVM 仍 5s）。
       SHOPPILOT_EMBEDDING_TIMEOUT: ${SHOPPILOT_EMBEDDING_TIMEOUT:-30s}
+      # 票 212（ADR 0085）：运行期查询向量化切 sidecar；进程挂了网关回落 Ollama（fallback 有账）。
+      # 预热/入库路径不受影响，仍走宿主 Ollama。
+      SHOPPILOT_EMBEDDING_SIDECAR_URL: ${SHOPPILOT_EMBEDDING_SIDECAR_URL:-http://embedding-sidecar:8110}
       # 容器冷启动首请求要初始化 DispatcherServlet（实测 >3s），默认 3s 会把首个降级落单打超时。
       # 只在容器档放宽——本机档仍是 3s，口径不动。
       SHOPPILOT_TICKET_READ_TIMEOUT: "15s"
@@ -307,6 +335,8 @@ services:
       ingest: { condition: service_completed_successfully }
       biz-mock: { condition: service_started }
       ticket: { condition: service_started }
+      # 票 212：查询向量化的 sidecar 没健康就起网关，头几个未命中会各付一次回落超时
+      embedding-sidecar: { condition: service_healthy }
 
 volumes:
   qdrant-data:

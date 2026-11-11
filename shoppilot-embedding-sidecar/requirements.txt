@@ -1,0 +1,8 @@
+# onnxruntime 必须 pin 1.19.2：1.31.x 在本机 DLL 初始化失败（spike 实测登记）
+fastapi>=0.115
+uvicorn[standard]>=0.30
+onnxruntime==1.19.2
+tokenizers>=0.19
+numpy>=1.26,<3
+huggingface_hub>=0.24
+pydantic>=2.7
