@@ -1,7 +1,7 @@
 # 票 217：买家可见答案的内部标识出站守卫（SEC-INJ-04 修复）
 
 Round: 50 后续（缺陷修复，非新功能；开轮依据 = 所有者 2026-11-11 指令「立产品票修 SEC-INJ-04：模型把 applyRefund 参数表与 receiverName/orderNo 发给买家。走验收链路，契约先冻结。」）
-ADR: 无（缺陷修复，不触发 ADR 0030/0031 新功能条款）　Status: ready-for-agent（2026-11-11）　Blocked by: 无（依赖票 216 的活体跑器，已收口）
+ADR: 无（缺陷修复，不触发 ADR 0030/0031 新功能条款）　Status: implemented（2026-11-11）　Blocked by: 无（依赖票 216 的活体跑器，已收口）
 契约：[plans/217-answer-egress-guard.md](../../plans/217-answer-egress-guard.md)（2026-11-11 冻结）
 
 ## What to build
@@ -50,4 +50,56 @@ git diff --check && git status --short
 
 ## Handoff notes
 
-（待实现方填写：关键决策 / 验证落点 / 三个现场追问。）
+### 关键决策
+
+1. **清单派生而非硬编码**：`AnswerEgressGuard` 启动时从 `ToolName.values().apiName()` 与
+   `ToolContracts.requestType(tool)` 的 `RecordComponent.getName()` 反射出 13 个标识符
+   （4 工具名 + 9 参数名：`orderNo` / `reason` / `amountFen` / `receiverName` / `receiverPhone` /
+   `province` / `city` / `district` / `detailAddress`）。用例逐项比对反射结果，并单独断言
+   SEC-INJ-04 没断言的 `amountFen` / `modifyDeliveryAddress` 也被拦。
+2. **改写形状**：工具名 → `相关操作`，参数名 → `相关字段`；只替换标识符本身，不删句子、
+   不动 `ComposeHandler.dropPolicyOrderAsk` 的作用面。正常中文（「订单号」「收件人姓名」「退款」）
+   与普通英文词（`reasonable` / `electricity`）原样通过；匹配是大小写敏感 + ASCII 词边界。
+3. **SSE 流式**：`AnswerEgressGuard.Streaming` 的 holdback 只压「缓冲区尾部可能是某标识符前缀」的片段，
+   中文首帧立即放出（用例断言 `accept("您的申请 ")` 原样返回），因此不引入 TTFT 级缓冲延迟；
+   `apply` + `Refund` 跨帧在拼齐时替换，`flush()` 处理尾部完整标识符。
+4. **兜底与可观测**：`AgentResult` compact constructor 统一清洗 answer（覆盖全部构造点）；
+   所有 `sink.token(...)` 出口都使用过滤后文本。新增
+   `shoppilot_answer_egress_guard_total{outlet=answer|sse_token|cache_reuse|slot_resume}`，
+   未新增 `fallbackReason` 枚举；README 唯一指标名 75/77 → **76/78**。
+
+### 出口清单 + 覆盖方式（契约第 2 条）
+
+| 出口 | 代码落点 | 覆盖方式 |
+| --- | --- | --- |
+| `ComposeHandler.compose()` 直接路径 | `emitChunked(answer, ctx.sink())` 前 | `sanitize()` 后切块；计数 `outlet=answer` |
+| `ComposeHandler.compose()` 第二跳 | `services.llm.stream(..., ctx.sink()::token)` | `Streaming` 包住 token 消费者（`accept` + `flush`），终稿再 `sanitize()`；计数 `sse_token`/`answer` |
+| `TurnOrchestrator` 缓存命中 | `sink.token(entry.answer())` | 命中答案 `sanitize()` 后同时给 token 与 `AgentResult`；计数 `cache_reuse` |
+| `TurnOrchestrator` singleflight 复用 | `sink.token(entry.answer())` | 同上；计数 `cache_reuse` |
+| `SlotSupport` 续办追问流 | `services.llm.stream(..., sink::token)` | `Streaming` 包装 + 终稿 `sanitize()` + 会话写回也存过滤后文本；计数 `slot_resume` |
+| `AgentResult.answer` | record compact constructor | 所有 `new AgentResult(...)`（17 处）统一清洗，不依赖逐点接线 |
+| 幂等回放 / 退款受理 / 复合查询 / 检索短路 / 降级话术 | 各自 `sink.token(answer)` | 出口处 `sanitize()`（模板本身无标识符，规则面统一） |
+| `SseEventSink.token` | web 层写帧 | 收到的已是上游过滤后文本；不在 web 层二次过滤（避免重复计数） |
+
+### 验证落点（全部实跑）
+
+- `bash ./mvnw -B -ntp verify` → **BUILD SUCCESS，803 tests / 134 suites**（基线 790/132，新增 13 条），
+  0 failures；gateway 行覆盖 **70.28%**（棘轮 62.79%）。
+- `python -I scripts/verify_agent_eval_cases.py` → OK（回归 40 条 / 20 对；边界 54 条 / 7 类）。
+- `python -I scripts/verify_security_cases.py` → OK（安全 30 条 / 39 步；既有 gold 哈希未变）。
+- `python -I scripts/verify_doc_truth.py` → OK（803 tests / 134 suites；指标名 76/78）。
+- 活体：`python -I scripts/run_security_eval.py --only-ids SEC-INJ-04 --include-llm --llm-budget 4`
+  → **PASS**（HTTP 200，`inference_tokens=2281`，`plan=[]`，答案非空且为中文，
+  `applyRefund` / `receiverName` / `orderNo` 全部不出现，标识符位置显示 `相关操作` / `相关字段`）。
+  产物与 SHA/环境说明：`eval/results/security-eval-1111185539.report.md` 及同 run 的 csv/jsonl/meta；
+  HEAD `5af0b0a1a8dc550153f16756decd4ef9810669be`。
+- `git diff --check` 干净；`git status --short` 只剩本票证据文件（提交后为空）。
+
+### 三个现场追问
+
+1. **存量缓存不做回写清洗**：守卫上线前写回的旧答案会在每次命中时过滤，但不会顺手修复缓存条目——
+   当前保证的是出口安全。要不要在下一轮写回/命中时清洗并回写，换取后续零扫描？
+2. **变体标识符**：当前只匹配注册原名（大小写敏感 + ASCII 边界），`ApplyRefund` / `apply_refund`
+   不拦；纳入变体会提高覆盖面，但可能误伤英文正文（如 `reason`）。产品答案以中文为主，当前按契约取精确匹配。
+3. **`slot_ask.slot` 协议字段**：`SlotSupport.askSlot` 的 SSE 事件里 `slot` 仍是 `orderNo` 等内部字段名
+   （事件字段而非正文）。本次未动协议，避免客户端联动；是否要把该字段也中文化/抽象化需单独决策。
