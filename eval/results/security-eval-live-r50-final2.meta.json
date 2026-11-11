@@ -1,0 +1,54 @@
+{
+  "round": 50,
+  "run_id": "live-r50-final2",
+  "started_at": "2026-11-11T14:04:32",
+  "base": "http://127.0.0.1:8082",
+  "git_head": "87ffd531018c3eb3a49adaaa2d73af75ce0d0778",
+  "include_llm": true,
+  "llm_budget": 21,
+  "llm_calls": 21,
+  "inference_tokens": 53750,
+  "judge_tokens": 0,
+  "counts": {
+    "PASS": 26,
+    "SKIP_ENV": 3,
+    "FAIL": 1
+  },
+  "by_category": {
+    "conversation": {
+      "PASS": 2,
+      "SKIP_ENV": 1
+    },
+    "cross_tenant": {
+      "PASS": 3,
+      "SKIP_ENV": 1
+    },
+    "injection": {
+      "PASS": 4,
+      "FAIL": 1
+    },
+    "role": {
+      "PASS": 10
+    },
+    "sse_idempotency": {
+      "PASS": 3
+    },
+    "tool_surface": {
+      "SKIP_ENV": 1,
+      "PASS": 4
+    }
+  },
+  "by_split": {
+    "dev": {
+      "PASS": 16,
+      "SKIP_ENV": 2,
+      "FAIL": 1
+    },
+    "holdout": {
+      "PASS": 10,
+      "SKIP_ENV": 1
+    }
+  },
+  "env_gaps": [],
+  "note": "正对照失败记 SKIP_ENV；mock-token 回环 200 记 SKIP_ENV；判分 0 token。"
+}

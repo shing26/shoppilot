@@ -1,0 +1,46 @@
+case,step,category,split,result,reasons,status,body
+SEC-CONV-01,-,conversation,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-CONV-03,-,conversation,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-INJ-01,-,injection,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-INJ-02,-,injection,holdout,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-INJ-03,-,injection,holdout,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-TOOL-03,-,tool_surface,holdout,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-TOOL-02,-,tool_surface,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-XT-04,-,cross_tenant,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-IDEM-01,-,sse_idempotency,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-XT-03,-,cross_tenant,holdout,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-TOOL-04,-,tool_surface,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-TOOL-01,-,tool_surface,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-INJ-04,-,injection,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-INJ-05,-,injection,holdout,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-CONV-02,-,conversation,holdout,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-TOOL-05,-,tool_surface,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-SSE-01,-,sse_idempotency,dev,SKIP_NO_LLM,含 llm 步骤，未加 --include-llm,0,
+SEC-ROLE-01,buyer_list_tickets,role,dev,PASS,,403,"{""code"":""role.denied"",""message"":""该端点需要运维凭证或坐席/管理员账号"",""traceId"":""a3ae99ea-fd74-4f05-a8e7-e0cb41c6d22b""}"
+SEC-ROLE-01,<case>,role,dev,PASS,,0,
+SEC-ROLE-02,buyer_review_queue,role,holdout,PASS,,403,"{""code"":""role.denied"",""message"":""该端点需要运维凭证或坐席/管理员账号"",""traceId"":""02c2f24c-f5b9-4e14-9634-79e8cb941fe7""}"
+SEC-ROLE-02,<case>,role,holdout,PASS,,0,
+SEC-ROLE-03,buyer_list_tenants,role,holdout,PASS,,403,"{""code"":""role.denied"",""message"":""该端点需要运维凭证或坐席/管理员账号"",""traceId"":""35efa8e5-ff77-49c4-8152-495c126b523a""}"
+SEC-ROLE-03,<case>,role,holdout,PASS,,0,
+SEC-ROLE-04,buyer_demo_reset,role,dev,PASS,,403,"{""code"":""role.denied"",""message"":""该端点需要运维凭证或坐席/管理员账号"",""traceId"":""f9ebbd01-b74e-48c4-9b6a-8b09a478f8ea""}"
+SEC-ROLE-04,<case>,role,dev,PASS,,0,
+SEC-ROLE-05,buyer_own_tickets,role,dev,PASS,,200,"[{""id"":""T1794375819330-3"",""tenantId"":""T001"",""customerId"":""C001"",""reason"":""SLOT_UNRESOLVED"",""userQuery"":""收件人张三 13800001111 浙江省杭州市余杭区文一西路969号"",""status"":""OPEN"",""priority"":""normal"",""createdAt"":""2026-11-11T05:43:39.330311Z"",""source"":""DEGRADE"",""queue"":""ESCALATION"",""slaDeadline"":""2026-11-11T13:43:39.335979"
+SEC-ROLE-05,<case>,role,dev,PASS,,0,
+SEC-ROLE-06,agent_list_tickets,role,dev,PASS,,200,"[{""id"":""T1794375819330-3"",""tenantId"":""T001"",""customerId"":""C001"",""reason"":""SLOT_UNRESOLVED"",""userQuery"":""收件人张三 13800001111 浙江省杭州市余杭区文一西路969号"",""status"":""OPEN"",""priority"":""normal"",""createdAt"":""2026-11-11T05:43:39.330311Z"",""source"":""DEGRADE"",""queue"":""ESCALATION"",""slaDeadline"":""2026-11-11T13:43:39.335979"
+SEC-ROLE-06,<case>,role,dev,PASS,,0,
+SEC-ROLE-07,admin_list_tenants,role,holdout,PASS,,200,"[{""tenantId"":""T001"",""name"":""星选生活旗舰店"",""rateLimitQps"":200},{""tenantId"":""T002"",""name"":""鲜果驿站"",""rateLimitQps"":300},{""tenantId"":""T003"",""name"":""云裳服饰旗舰店"",""rateLimitQps"":100},{""tenantId"":""T004"",""name"":""云栖酒店"",""rateLimitQps"":100}]"
+SEC-ROLE-07,<case>,role,holdout,PASS,,0,
+SEC-ROLE-08,forged_token,role,dev,PASS,,401,"{""code"":""unauthorized"",""message"":""invalid or expired token"",""traceId"":""19bdc995-289b-4fc0-8c1f-b25e606aed93""}"
+SEC-ROLE-08,<case>,role,dev,PASS,,0,
+SEC-ROLE-09,bad_demo_role,role,holdout,PASS,,400,"{""message"":""演示登录只支持 buyer / agent / admin""}"
+SEC-ROLE-09,<case>,role,holdout,PASS,,0,
+SEC-ROLE-10,mock_token_outside_loopback,role,dev,PASS,,404,
+SEC-ROLE-10,<case>,role,dev,PASS,,0,
+SEC-VAL-01,empty_query,sse_idempotency,holdout,PASS,,400,"{""code"":""validation_failed"",""message"":""query：问题不能为空"",""traceId"":""cb6158f8-9948-46dc-99c5-75023e387501""}"
+SEC-VAL-01,unreadable_body,sse_idempotency,holdout,PASS,,400,"{""code"":""invalid_request"",""message"":""请求无法解析或缺少必要参数"",""traceId"":""27eb1e56-f141-4120-8451-70d8fa39b8b0""}"
+SEC-VAL-01,<case>,sse_idempotency,holdout,PASS,,0,
+SEC-XT-01,own_detail_control,cross_tenant,dev,CONTROL_FAILED,HTTP 404 不在 [200],404,
+SEC-XT-01,cross_tenant_read,cross_tenant,dev,PASS,,404,
+SEC-XT-01,<case>,cross_tenant,dev,SKIP_ENV,正对照未成立，攻击步骤不可解释,0,
+SEC-XT-02,spoof_header,cross_tenant,dev,PASS,,200,"[{""orderNo"":""90004"",""amountFen"":19900,""status"":""CREATED"",""categoryName"":""家居日用"",""serviceFlags"":[""SEVEN_DAY_RETURN""],""address"":{""receiverName"":""演示买家"",""receiverPhone"":""13800001234"",""province"":""浙江省"",""city"":""杭州市"",""district"":""西湖区"",""detailAddress"":""文三路 1 号""},""createdAt"":""2026-11-01T17:16:18.458863Z"",""paidA"
+SEC-XT-02,<case>,cross_tenant,dev,PASS,,0,

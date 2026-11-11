@@ -1,0 +1,39 @@
+{
+  "round": 50,
+  "run_id": "smoke-nollm",
+  "started_at": "2026-11-11T13:54:31",
+  "base": "http://127.0.0.1:8082",
+  "git_head": "87ffd531018c3eb3a49adaaa2d73af75ce0d0778",
+  "include_llm": false,
+  "llm_budget": 0,
+  "llm_calls": 0,
+  "inference_tokens": 0,
+  "judge_tokens": 0,
+  "counts": {
+    "PASS": 12,
+    "SKIP_ENV": 1
+  },
+  "by_category": {
+    "cross_tenant": {
+      "SKIP_ENV": 1,
+      "PASS": 1
+    },
+    "role": {
+      "PASS": 10
+    },
+    "sse_idempotency": {
+      "PASS": 1
+    }
+  },
+  "by_split": {
+    "dev": {
+      "PASS": 7,
+      "SKIP_ENV": 1
+    },
+    "holdout": {
+      "PASS": 5
+    }
+  },
+  "env_gaps": [],
+  "note": "正对照失败记 SKIP_ENV；mock-token 回环 200 记 SKIP_ENV；判分 0 token。"
+}

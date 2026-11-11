@@ -1,0 +1,5 @@
+case,step,category,split,result,reasons,status,body
+SEC-CONV-03,owner_first_turn,conversation,dev,PASS,,200,"{""answerId"":""17592a45-8954-4d90-9292-c21317ae69be"",""answer"":""订单90001的收货地址已成功修改为：  \n浙江省杭州市余杭区文一西路969号，收件人张三，电话13800001111。  \n\n如有其他需要，欢迎随时告诉我。"",""intent"":""ACTION_ADDRESS"",""triageLayer"":""T0"",""cacheLayer"":""NONE"",""citations"":[],""fallbackReason"":null,""ticketId"":null,""slotAsked"":false,""promptTokens"":5291"
+SEC-CONV-03,owner_second_turn,conversation,dev,PASS,,200,"{""answerId"":""88ace28e-6e8f-4532-a905-cf3ae27ab131"",""answer"":""订单90001的收货信息已更新为：  \n收件人李四，电话13900002222，  \n上海市浦东新区世纪大道100号。  \n\n如需进一步协助，请随时告知。"",""intent"":""UNKNOWN"",""triageLayer"":""T0"",""cacheLayer"":""NONE"",""citations"":[],""fallbackReason"":null,""ticketId"":null,""slotAsked"":false,""promptTokens"":5547,""comple"
+SEC-CONV-03,<case>,conversation,dev,PASS,,0,
+SEC-IDEM-01,-,sse_idempotency,dev,SKIP_BUDGET,预算 3 次已用 2，还需 2,0,

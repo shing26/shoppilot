@@ -104,16 +104,20 @@ jobs:
       # 这一步只做 Python 独有的四件事：夹具 schema、fused ⊆ dense ∪ lexical、语料 sha、
       # 常数与 yml 一致 —— **刻意不在 Python 里复算 RRF**（两份实现就是第二份判据）。
       # 哈希钉防的是"夹具被悄悄换掉"：重录夹具必须同步改这个 env（与 check_coverage.py 同模式）。
-      # round48 票 206 / ADR 0083：同一步里再加一条**用例集结构**校验（仍是九步：一步两件事）。
+      # round48 票 206 / ADR 0083：同一步里再加一条**用例集结构**校验（仍是九步：一步多件事）。
       # 它只读 `eval/retrieval-cases.json` 与 `knowledge/*.md`：规模、id/query 唯一、expect_doc 存在、
       # 意图与文档主题一致、店铺级文档租户自洽、每份文档 ≥2 条且 dev 至少 1 条、holdout 占比。
       # **不测检索效果**——效果要等活体栈录出 120 条的夹具，见 docs/RETRIEVAL_ROUTING_DECISION.md。
+      # round50：再追加回归/边界/安全三份用例集的结构与变异自检。它们只读用例集、knowledge/、
+      # prompts/ 与四个既有判据文件的哈希，不连网关、不调模型；活体跑分是 run_*_eval.py 的事。
       - name: Retrieval fusion gate (0-token)
         env:
           RETRIEVAL_FIXTURE_SHA256: f3867b09d42be419df4a989aaca6b78f76bc02f6dc8cbbcd1f9867c5e50905e9
         run: |
           python3 scripts/retrieval_gate.py
           python3 scripts/verify_retrieval_cases.py
+          python3 scripts/verify_agent_eval_cases.py
+          python3 scripts/verify_security_cases.py
 
       # round48 票 201 / ADR 0083：LLM 录放门禁。cassette、key/路径归因、响应形状、与入仓基线
       # 的逐字节一致、以及用既有 judge() 重算的结论——任何一项漂移都红，必须显式更新基线。
