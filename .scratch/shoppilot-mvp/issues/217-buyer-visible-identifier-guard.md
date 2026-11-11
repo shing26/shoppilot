@@ -1,7 +1,7 @@
 # 票 217：买家可见答案的内部标识出站守卫（SEC-INJ-04 修复）
 
 Round: 50 后续（缺陷修复，非新功能；开轮依据 = 所有者 2026-11-11 指令「立产品票修 SEC-INJ-04：模型把 applyRefund 参数表与 receiverName/orderNo 发给买家。走验收链路，契约先冻结。」）
-ADR: 无（缺陷修复，不触发 ADR 0030/0031 新功能条款）　Status: implemented（2026-11-11，契约修订 1 / AC4b 返工后；实现完成，待独立 Verifier 复核，本状态不构成验收通过）　Blocked by: 无（依赖票 216 的活体跑器，已收口）
+ADR: 无（缺陷修复，不触发 ADR 0030/0031 新功能条款）　Status: implemented（2026-11-11；契约修订 1 / AC4b 返工 → 独立 Verifier **PASS** → 所有者为书面签收 → 合并 main `6a873bb`）　Blocked by: 无（依赖票 216 的活体跑器，已收口）
 契约：[plans/217-answer-egress-guard.md](../../plans/217-answer-egress-guard.md)（2026-11-11 冻结；同日「契约修订 1」追加 AC4b）
 
 ## What to build
@@ -171,3 +171,7 @@ git diff --check && git status --short
 - 首轮实现（`80f91d0`→`72c5bc3`）**未通过**：字面 PASS 但把参数表以掩码形式继续发给买家；
   契约修订 1（AC4b）由此追加，返工后复验。首轮证据保留，并在
   `eval/results/security-eval-1111185539.report.md` 顶部标注「已被契约修订 1 取代」。
+- 合并：fast-forward 至 main `6a873bb`（25 files，+1142/−38）。合并后主检出
+  `./mvnw.cmd -B -ntp verify` **BUILD SUCCESS**（803 tests / 134 suites，3 min 56 s），
+  `gen_status.py` 重生成 STATUS（biz-mock 覆盖率 82.06% → 82.37%，生成物随主检出 jacoco 刷新）、
+  `verify_doc_truth.py` OK、两个评测校验器 OK、`git diff --check` 干净。
