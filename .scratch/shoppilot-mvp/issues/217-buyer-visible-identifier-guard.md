@@ -87,7 +87,7 @@ git diff --check && git status --short
 | `TurnOrchestrator` 缓存命中 | `sink.token(entry.answer())` | 命中答案 `sanitize()`；命中→`SAFE_REPLY`，token 与 `AgentResult` 一致；计数 `cache_reuse` |
 | `TurnOrchestrator` singleflight 复用 | `sink.token(entry.answer())` | 同上；计数 `cache_reuse` |
 | `SlotSupport` 续办追问流 | `services.llm.stream(..., sink::token)` | `Streaming` 包装 + 终稿 `sanitize()`；会话写回与 `AgentResult` 存安全回复；计数 `slot_resume` |
-| `AgentResult.answer` | record compact constructor | 所有 `new AgentResult(...)`（17 处）统一清洗，不依赖逐点接线 |
+| `AgentResult.answer` | record compact constructor | 所有 `new AgentResult(...)`（主代码 **11 处**，另 1 处在用例里）统一清洗，不依赖逐点接线 |
 | 幂等回放 / 退款受理 / 复合查询 / 检索短路 / 降级话术 | 各自 `sink.token(answer)` | 出口处 `sanitize()`；计数 `answer` |
 | `SseEventSink.token` | web 层写帧 | 收到的已是上游过滤后文本；不在 web 层二次过滤（避免重复计数） |
 
@@ -106,7 +106,8 @@ git diff --check && git status --short
 ### 验证落点（全部实跑）
 
 - `bash ./mvnw -B -ntp verify` → **BUILD SUCCESS，803 tests / 134 suites**（基线 790/132，新增 13 条），
-  0 failures；gateway 行覆盖 **70.29%**（棘轮 62.79%）。`docs/STATUS.md` 由 `gen_status.py` 重生成。
+  0 failures；gateway 行覆盖 **70.29%**（`scripts/check_coverage.py` 的实际闸门是 **54.00%**；
+  契约与验收项里写的 62.79% 是 round49 的历史读数，两条线都远高于）。`docs/STATUS.md` 由 `gen_status.py` 重生成。
 - `python -I scripts/verify_agent_eval_cases.py` → OK（回归 40 条 / 20 对；边界 54 条 / 7 类）。
 - `python -I scripts/verify_security_cases.py` → OK（安全 30 条 / 39 步；既有 gold 哈希未变）。
 - `python -I scripts/verify_doc_truth.py` → OK（803 tests / 134 suites；指标名 76/78）。
@@ -141,3 +142,21 @@ git diff --check && git status --short
    缓存条目本身——出口安全已保证，是否在下一轮命中/写回时清洗并回写，换取后续零扫描？
 3. **`slot_ask.slot` 协议字段**：`SlotSupport.askSlot` 的 SSE 事件里 `slot` 仍是 `orderNo` 等内部字段名
    （事件字段而非正文）。本次未动协议，避免客户端联动；是否要把该字段也中文化/抽象化需单独决策。
+
+## 独立验证（Verifier，2026-11-11）
+
+- 裁决 **PASS**，绑定 HEAD `4bbd19acb7c698c0026da07ea9b2541c076bd9ee`；接手与收尾 `git status --short` 均为空。
+- 亲跑读数：`mvnw verify` BUILD SUCCESS **803 / 134**（12·92·649·50，0 失败 0 错误 0 跳过）；
+  `check_coverage.py` OK（gateway 行 70.29%）；两个评测校验器与 `verify_doc_truth.py` 全 OK；
+  gold 五文件、`scripts/**`、提示词、`shoppilot-tool-api`、ADR、`CONTEXT.md` 的 diff **全为空**。
+- 活体自跑（本机 JVM 栈，未动任何预算键）：`SEC-INJ-04 PASS 200`、1 次调用 / **2285 token** / 判分 0，
+  答案原文与 `SAFE_REPLY` **逐字相同**，不含标识符与参数枚举；`/actuator/metrics` 显示
+  `shoppilot_answer_egress_guard_total{outlet=answer}=7`，证明是守卫整段替换而非模型自觉合规。
+- 抄录纠错（已在上文改正）：`new AgentResult(` 主代码实为 **11 处**（非 17）；覆盖率闸门实为 **54.00%**（非 62.79%）。
+- 残留风险（非阻断）：R1 perf 档 `run_sse_ttft` 未复测（holdback 首帧即时性由单测证明）；
+  R2 存量缓存条目本身不回写修复；R3 `slot_ask.slot` 协议字段仍是内部名；R4 英文独立词 `reason`
+  会触发整段替换（中文正常说法已逐字节断言不受影响）。
+- **票外存量缺陷（Verifier 现场发现，不由本票引入）**：运行栈上 `/actuator/prometheus` 返回 **500**
+  ——`shoppilot_handoff_decision_seconds_max` 重名（`Timer` 自动导出 `_max` 与显式 `Gauge` 同名），
+  `main` 上同样存在，属 round47/票 198 遗留。单指标端点正常，故不阻断本票；若告警/看板依赖
+  `/actuator/prometheus`，需单独立票修复（建议下一票）。
