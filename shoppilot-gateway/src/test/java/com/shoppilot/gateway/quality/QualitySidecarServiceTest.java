@@ -97,7 +97,7 @@ class QualitySidecarServiceTest {
         Timer.builder("shoppilot_handoff_decision_seconds").register(registry)
                 .record(Duration.ofMillis(250));
         AtomicLong cumulativeMax = new AtomicLong(750_000_000L);
-        Gauge.builder("shoppilot_handoff_decision_seconds_max", cumulativeMax,
+        Gauge.builder(QualitySidecarService.HANDOFF_DECISION_MAX_GAUGE, cumulativeMax,
                         nanos -> nanos.get() / 1_000_000_000d)
                 .register(registry);
 
