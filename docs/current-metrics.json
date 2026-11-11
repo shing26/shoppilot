@@ -38,10 +38,10 @@
     },
     {
       "name": "未命中 TTFT",
-      "value": "690–1499 ms",
+      "value": "TTFT 均值 416.9 ms（单连接强制未命中，Verifier 亲跑）；embedding 段 30.1 ms",
       "target": "<500 ms",
-      "status": "未达成",
-      "condition": "固定项下限：Mock 首字 300 ms + bge-m3 253–311 ms + 检索 15 ms + 编排 104 ms ≥ 672 ms；2026-11-05 探针 252.6/277.3 ms，结论不变；需 ADR 0011 的独立 embedding"
+      "status": "达成（sidecar 口径）",
+      "condition": "ADR 0085 裁定 A 落地（票 212，2026-11-11）：运行期查询向量化切 ONNX int8 sidecar（保 bge-m3 同模型同维），embedding 段 355.7→46.3/30.1 ms、TTFT 771.5→472.7/416.9 ms（实现方与独立 Verifier 双读数）；判据与 Mock 300 ms 夹具零改动；修前红值读数 690–1499 ms 保留"
     },
     {
       "name": "工具调用准确率",

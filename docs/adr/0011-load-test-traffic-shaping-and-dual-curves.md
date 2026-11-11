@@ -9,3 +9,5 @@ Consequences:
 - 工具为 Locust（Python 3.11.9 已就绪），SSE 侧用自定义 client 消费流仅记录首字节时延。
 - 必做对比实验：同一流量模型下 `spring.threads.virtual.enabled=false` + 200 平台线程池 vs 开启虚拟线程两组数据。虚拟线程收益只在 IO 等待密集处成立，没有这组对比，"开启 Virtual Threads"就只是简历上的空词。
 - 精确命中路径不做向量化是本决策成立的前提，见 ADR 0003 的路由后缓存顺序。
+
+> 换代指针（2026-11-11，ADR 0085 / 票 212）：「生产需独立 embedding 服务或批量向量化」的出口已兑现为精简 sidecar（ONNX int8，运行期查询路径），embedding 段实测 30.1–46.3 ms（判据预算 84 ms 内）；本 ADR 吞吐上限定理与其余结论原样有效。

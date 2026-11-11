@@ -128,3 +128,8 @@ git diff --check && git status --short
 3. 长句（32 字）novel 在重负载窗口曾超线（spike 复验 100.6 ms），本轮判据 sweep 的 7 条问句
    全 ≤10 字不受影响；若未来把长句问句纳入判据 sweep，sidecar 段在重负载下的 p90（52-83 ms）
    是否仍达预算需要单独复测——票 213 收口或 round50 要不要把负载窗口写进归因产物的固定字段？
+
+**合并签收（验收链路硬规则 4）**
+
+- 独立 Verifier 总裁决 **PASS**（2026-11-11，亲跑 mvnw 790/132 全绿、活体归因 TTFT 416.9 ms / embedding 段 30.1 ms 独立复现、契约 9 条全 PASS、Forbidden 零违例；唯一越界 docs/TUNING_PLAN.md 判定为 verify_doc_truth 门禁硬要求的机械换代，单列留痕不阻断）。证据绑定 HEAD `c37f3d6`。
+- 所有者书面签收：2026-11-11「接着下一步」指令（对话内书面），fast-forward 合并至 main `92e4edc`（含 Verifier 证据 CSV `ttft-attribution-20261111-083752-1conn.csv` 等三件入库）；实现方遗留的 ad-hoc `embedding-sidecar-live` 容器已清理，compose 网关恢复 UP。
