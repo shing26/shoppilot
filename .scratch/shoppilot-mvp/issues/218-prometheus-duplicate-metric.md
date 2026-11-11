@@ -1,7 +1,7 @@
 # 票 218：/actuator/prometheus 500 修复（指标重名）
 
 Round: 50 后续（缺陷修复，非新功能；开轮依据 = 所有者 2026-11-12 指令「立票修 /actuator/prometheus 500（shoppilot_handoff_decision_seconds_max 重名，round47 遗留），走验收链路」）
-ADR: 0082（仅追加换代指针，正文不动）　Status: implemented（2026-11-12，分支 `fix/218-prometheus-duplicate`，待独立验证）　Blocked by: 无
+ADR: 0082（仅追加换代指针，正文不动）　Status: implemented（2026-11-12，分支 `fix/218-prometheus-duplicate`；独立 Verifier **PASS**，待所有者书面签收合并）　Blocked by: 无
 契约：[plans/218-prometheus-duplicate-metric.md](../../plans/218-prometheus-duplicate-metric.md)（2026-11-12 冻结）
 
 ## What to build
@@ -75,3 +75,21 @@ curl -s http://127.0.0.1:8082/actuator/prometheus | grep -c "shoppilot_handoff_d
 1. **抓取正文里仍有 `shoppilot_handoff_decision_seconds_max`**：那是 Timer 自动导出的**时间窗**最大值，不是累计最大 Gauge。看板/告警应改用新 Gauge `shoppilot_handoff_decision_max_seconds`；旧名保留是 Micrometer 的自动行为，关闭它属于掩盖（契约禁止）。
 2. **通用唯一性断言只展开本仓库实际使用的 meter 类型**（COUNTER / GAUGE / TIMER / DISTRIBUTION_SUMMARY）；`LongTaskTimer` 等未展开。未来引入新类型时要扩 `prometheusExportNames`，否则可能漏掉同类重名。
 3. **README 的 Allowed paths 写「仅该指标名文本」，但 `verify_doc_truth.py` 强制 badge / 复现段 / CI 段与 surefire 实数一致**。新增 3 条用例后按 Verification commands 机械更新 803→806、134→135、gateway 649→652（TUNING_PLAN 两处同改），未改其他正文。若裁决方认为越界，可回退这些数字，但 doc-truth 会红。
+
+## 独立验证（Verifier，2026-11-12）
+
+- 裁决 **PASS**，绑定 HEAD `1861158`；接手与收尾 `git status --short` 均为空。
+- 亲跑：`mvnw verify` BUILD SUCCESS **806/135**（自算 surefire XML 一致）；`verify_doc_truth.py` OK；
+  `gen_status.py --check` OK；gold/`scripts/**`/提示词/tool-api 零字节；ADR 0082 为纯追加 5 行；
+  唯一指标名亲算 **76/78 不变**；gateway 行覆盖 70.31%（≥ 基线 70.29%）。
+- **红→绿由其独立复现**（不采信实现方日志）：在仓库外临时目录用源码同款 Timer 构建链，旧名
+  `SCRAPE_THREW IllegalStateException: shoppilot_handoff_decision_seconds_max: duplicate metric name.`，
+  新名 `SCRAPE_OK lines=85`。
+- 活体由其亲起亲测（perf 档 MockLLM，0 付费 token）：`/actuator/prometheus` 连续两次 **200**，
+  109 个 TYPE 声明中**同名异型冲突 = NONE**；Timer 自动导出的 `_seconds_max` 仍在（未掩盖）。
+- 判定接受实现方对 README 数字的机械同步：`verify_doc_truth.py:63-129` 从 surefire 现算并强制校 badge /
+  复现段 / CI 段，属门禁要求而非改判据。
+- **两条非阻断留痕**：① `everyPrometheusExportNameIsUnique` 的注册表范围是**用例自建注册表**，
+  不是全应用注册表——AC3 字面达成，但「同类问题在别的模块复发」不被它覆盖（防复发强度弱于字面读感）；
+  ② 证据文件原为单行 CRLF，`git diff --check main...HEAD` 报一处 trailing whitespace——
+  已在合并前提交 `d59ad85` 统一为 LF，范围 diff-check 转干净。
