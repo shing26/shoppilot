@@ -96,3 +96,25 @@ spike 不过线回落 D，红值照登。B、C 不进入本轮。**
   记账按实测数进实施票。
 - 实施票（票 212）的形态以此为准：sidecar + `EmbeddingClient` 未命中路径切换 + L2 工作点显式
   验收项；立票已就绪，执行等所有者对裁定（A）的确认。
+
+────────────────────────────────────────────
+【附录追加：实施落地读数（2026-11-11，票 212；只追加不改上文）】
+
+票 212 按本裁定 A 落地（切换面：`EmbeddingClient.embed()` 切 sidecar、`embedWarmup()` 留
+Ollama；T1 质心与 L2 写回**未切**——保守方案，离线链路可靠性不押新进程）。活体归因
+（perf 档本地 JVM + sidecar 容器，单连接 45 s 强制未命中，负载窗口 = 容器栈 + Ollama + sidecar
+在跑、无构建进程）：
+
+- **embedding 段（`result=remote` 服务端计时）46.3 ms**（修前 355.7，判据预算 ≤84 达标；
+  `shoppilot_embedding_fallback_total` 全程 0——85 次 remote 全部直达 sidecar，零回落）。
+- **服务端 TTFT 均值 472.7 ms**（修前 771.5，判据 ≤500 达标）＝ Mock 300 + 向量化 46.3 +
+  稠密 7.4 + 词法 41.6 + 编排余量 77.4 ms。
+- **L2 工作点（显式验收项，阈值零改动）**：hit 层分布修前 L1=0/L2=4/NONE=50，修后
+  L1=0/L2=2/NONE=83 与 L1=0/L2=9/NONE=89——int8 查询 × fp16 缓存的 L2 语义命中修后仍发生
+  （两个窗口夹住修前比率，样本噪声量级），极性守卫 0 拦截（207 次 L2 查找）。无边界漂移，
+  0.95 工作点原值不动、无重标定。
+- 资源记账：镜像 ~579 MB + 权重层 568 MB，运行 RSS ~1.2 GB（与 spike 容器形态 1.178 GiB 一致）。
+
+产物 `loadtest/results/ttft-attribution-20261111-081438-sidecar-1conn.csv`、
+`sse-ttft-20261111-081604-1-sidecar.csv`；实现与验证全账见票 212 Handoff notes。
+ADR 0058 的换代指针与 RSS 记账按本段实测数归票 213 收口。

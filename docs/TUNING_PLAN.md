@@ -16,7 +16,7 @@
 
 | 评测 | 当前读数 | 说明 |
 | --- | --- | --- |
-| JVM | **782 tests / 131 suites** | 2026-11-05 `mvnw verify` 全绿（只统计 surefire 默认 include；手工 `-Dtest=` 的报告不算） |
+| JVM | **790 tests / 132 suites** | 2026-11-11 `mvnw verify` 全绿（只统计 surefire 默认 include；手工 `-Dtest=` 的报告不算） |
 | UX Golden 30 · demo | **30/30** | 模板档，不证明模型能力 |
 | UX Golden 30 · dev（qwen-plus） | **30/30** | 2026-10-24 epoch24；2026-10-27 复验 30/30（139.6s） |
 | UX Golden 30 · local（qwen2.5:3b） | **30/30** | 2026-10-27 票 167，224.0s |
@@ -200,7 +200,7 @@ ACTION_ADDRESS 用定向 18/18 补齐到 **100%**；gold / 阈值零改动。证
 | local UX 30 | ≥29/30 | 当前 27/30 |
 | dev UX 30 | 30/30 | 不回落 |
 | POLICY 180 | 100% | 不回落 |
-| JVM | 782 / 131 全绿 | 新增测试只增不减 |
+| JVM | 790 / 132 全绿 | 新增测试只增不减 |
 | CI | success | 每次提交 |
 
 ## 六、明确不做
@@ -291,7 +291,7 @@ ACTION_ADDRESS 用定向 18/18 补齐到 **100%**；gold / 阈值零改动。证
 
 | 项 | 读数 | 产物 |
 | --- | --- | --- |
-| JVM | **782 tests / 131 suites**，0 失败 | `mvnw -B -ntp verify` surefire |
+| JVM | **790 tests / 132 suites**，0 失败 | `mvnw -B -ntp verify` surefire |
 | UX Golden 30 · dev / local | **30/30 / 30/30** | `golden-ux-20261027-104018-dev-167c.json`、`…-094821-local-167.json` |
 | Gold 180 · dev | **179/180 = 99.4%**，仅 ACT-RFD-13 红 | `tool-eval-20261027-104110-dev-dev-167*` |
 | 退款定向 | **18/18**（单列，不并入全量） | `tool-eval-20261027-110143-dev-refund-168b*` |
