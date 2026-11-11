@@ -1,15 +1,18 @@
 # round50：Agent 评测集扩展（回归 / 边界 / 安全，判决确定性 0 token）
 
-Round: 50（候选轮，**未获所有者开轮批准**）
-Status: Draft（候选规格 + 用例集 + 校验器 + 跑器已落盘，待所有者裁决定稿）
-边界声明：本文件是**登记注记的唯一落点**。`.scratch/shoppilot-mvp/README.md` 与 `docs/EVIDENCE.md`
-由另一会话持有，本任务不编辑、不预填、不代签。
+Round: 50（**已获所有者开轮批准，2026-11-11**）
+Status: Approved（规格定稿；票 214-216 已登记 tracker，实现随分支 4 提交合并；既有判据零触碰）
+边界声明：本文件是 round50 的规格落点。开轮前 tracker README 与 `docs/EVIDENCE.md` 由另一会话持有、
+本规格不代签；**开轮批准后（2026-11-11）** round 行、票索引与 EVIDENCE 台账行已由登记会话统一补入。
 
 ## 0. 开轮依据与判定
 
 - 触发判定：本任务只新增**评测资产**（用例集、0 token 校验器、活体跑器），不改产品行为、不改运行时
   依赖、不改数据库 schema、不改既有判据，因此不触发 ADR 0030 / 0031 的新功能冻结条款。若所有者要把
   新用例接成发布门禁（票 216），那一步按“交付流程变更”另行批准。
+- **开轮裁定（2026-11-11）**：所有者书面指令「批准开轮 round50：把 spec 转正、tracker 登记 round50 与
+  票 214-216，然后把评测集 4 个 commit 合并到 main」——开轮与票 216 的 CI 接线（只追加 0-token 校验、
+  不新增 job/步骤）在同一条指令里批准。
 - 现状缺口：`eval/tool-cases.jsonl`（180 条）与 `eval/answer-cases.jsonl` 覆盖的是**主路径**；
   历史故障只留在 `git log fix(roundNN)` 与 `docs/EVIDENCE.md` 的未达成项里，没有可复跑的回归集；
   越权、会话串号、工具面滥用、提示注入、SSE 中断没有黑盒用例。结果是“修过的坑会再掉进去”，
@@ -172,7 +175,9 @@ prompt+completion，只作成本记录，不参与判定）。
 | **216** | 两个活体跑器 + CI 0-token 接线 + 证据落档（含本机活体安全跑） | 214、215 | 1 天 |
 
 本轮交付已按这三张票的契约**预落地**（用例集、校验器、跑器、CI 追加均已就位）；开轮批准后是评审与
-签收，不是重写。票面文件本身尚未创建——tracker 由另一会话持有。
+签收，不是重写。票面已于 2026-11-11 开轮批准后创建并登记：
+[214](issues/214-regression-and-edge-eval-sets.md) / [215](issues/215-security-blackbox-eval-set.md) /
+[216](issues/216-live-runners-and-ci-wiring.md)（状态均 implemented，合并签收见票 216）。
 
 每票的契约（候选实现已按此评审；批准后不再重写）：
 
@@ -270,7 +275,7 @@ eval/handoff-golden.jsonl  3d91c590…ec1a6f5
 | 结构 + 变异自检（安全） | 命令输出，见 §9 | 0 token |
 | 活体安全跑（非 llm，12 PASS / 1 SKIP_ENV） | `eval/results/security-eval-smoke-nollm.*` | 0 token |
 | 活体安全跑（全量 30 条，预算 21 次推理） | `eval/results/security-eval-live-r50-final2.*` + `security-live-r50-final2.stdout.txt` | 26 PASS / 3 SKIP_ENV / 1 FAIL；判分 0 token，推理 21 次 / 53,750 token |
-| 会话正对照补跑（控制放宽后） | `eval/results/security-eval-live-r50e.*` + `security-live-r50e.stdout.txt` | CONV-03 PASS；判分 0 token，推理 2 次 / 11,244 token |
+| 会话正对照补跑（控制放宽后） | `eval/results/security-eval-live-r50e.*`（csv / jsonl / meta） | CONV-03 PASS；判分 0 token，推理 2 次 / 11,244 token |
 | 用例集指纹 | 回归 `caa034c3…`、边界 `e2727760…`、安全 `70c77123…`（sha256 前 16 位） | 提交时点 |
 
 **不做**：不修改、不移动任何历史证据目录；不把本机日志写进 `docs/`；不把评测问句回灌语料。
@@ -340,3 +345,13 @@ git status --short
 2. `max-slot-asks: 1` 是产品口径还是本机配置？若是本机配置，多轮边界用例可以拆成真正的两次追问；
    若是产品口径，现有 `E-SL-05/07` 的升级期望就是对的。
 3. 回归/边界集的活体复跑预算由谁批、按多少条抽样？全量 124 条在 dev 档是真实费用，本轮没有偷跑。
+
+**开轮与登记（2026-11-11，所有者批准后）**
+
+- 所有者书面指令批准开轮，并把「CI 追加 0-token 校验」这一交付流程变更一并批准。
+- 本次登记补入：本规格状态 Draft → Approved；tracker round50 行与票 214/215/216 索引；
+  三张票面（含 Handoff notes 与合并签收）；`docs/EVIDENCE.md` 一条台账行。
+- 验收形态：本轮为评测资产，零产品代码 / 零运行时依赖 / 零 schema / 零既有判据改动，不触发
+  `CLAUDE.md` 的验收链路清单，故未设独立 Verifier；证据 = 分支 4 提交 + 实现会话活体读数 +
+  合并前登记会话在干净 worktree 复跑的两个 0-token 校验器与自检（全绿）。活体读数**未**被独立复现，
+  原因是 LLM 日预算已熔断且复跑是付费推理——这条限制原样登在票 216。
