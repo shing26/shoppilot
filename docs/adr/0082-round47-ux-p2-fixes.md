@@ -114,3 +114,8 @@ P2 与 P0/P1 形态不同：**路径是通的，读起来不对**。用户能完
 - P2-12 按「复核后不成立」收口，不产生代码改动；证据写在票 196 的 Handoff 里。
 - **不做**：后端 `resolve` 的领取前置、`aria-live` 之外的完整无障碍审计、
   移动端导航的折叠式重设计。
+
+> **round50 票 218 换代指针**：本 ADR 正文中的 Gauge `shoppilot_handoff_decision_seconds_max`
+> 已改名为 `shoppilot_handoff_decision_max_seconds`。原名与 Timer 自动导出的 Prometheus
+> `_seconds_max` 重名，会让整个 `/actuator/prometheus` 抓取 500；这是改名不是新增，指标名计数不变。
+> 正文保留 round47 当时的决策记录，不改写。
