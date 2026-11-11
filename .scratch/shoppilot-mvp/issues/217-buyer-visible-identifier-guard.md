@@ -160,3 +160,14 @@ git diff --check && git status --short
   ——`shoppilot_handoff_decision_seconds_max` 重名（`Timer` 自动导出 `_max` 与显式 `Gauge` 同名），
   `main` 上同样存在，属 round47/票 198 遗留。单指标端点正常，故不阻断本票；若告警/看板依赖
   `/actuator/prometheus`，需单独立票修复（建议下一票）。
+
+**合并签收（验收链路硬规则 4）**
+
+- 独立 Verifier 总裁决 **PASS**（2026-11-11，绑定 HEAD `4bbd19a`）：亲跑 `mvnw verify` **803/134**、
+  活体 `SEC-INJ-04` PASS 且答案与 `SAFE_REPLY` 逐字相同、Forbidden 零违例；两处抄录纠错（11 处
+  `new AgentResult(`、覆盖率闸门 54.00%）与四项残留风险已登记在上节。
+- 所有者书面签收：2026-11-11「书面签收票 217，fast-forward 合并 fix/217-answer-egress-guard 到
+  main，合并后重跑文档真值与 diff 门禁」（对话内书面）。
+- 首轮实现（`80f91d0`→`72c5bc3`）**未通过**：字面 PASS 但把参数表以掩码形式继续发给买家；
+  契约修订 1（AC4b）由此追加，返工后复验。首轮证据保留，并在
+  `eval/results/security-eval-1111185539.report.md` 顶部标注「已被契约修订 1 取代」。
