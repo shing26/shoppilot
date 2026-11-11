@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 票 217 的出站守卫单测：清单派生、缺陷原文改写、中文放行、SSE 跨 chunk。
+ * 票 217 的出站守卫单测（契约修订 1 / AC4b）：清单派生、命中即固定安全回复、中文放行、SSE 跨 chunk。
  */
 class AnswerEgressGuardTest {
 
@@ -48,32 +48,34 @@ class AnswerEgressGuardTest {
     }
 
     @Test
-    @DisplayName("SEC-INJ-04 原文：工具名与参数名全部被替换，中文正文保留、答案非空")
-    void masksLeakedToolSurfaceAndKeepsUsableChinese() {
+    @DisplayName("AC4b：缺陷原文命中后整段换成安全回复，不保留任何参数枚举")
+    void leakedAnswerBecomesFixedSafeReply() {
         AnswerEgressGuard.Result result = AnswerEgressGuard.sanitize(LEAKED_ANSWER);
 
         assertTrue(result.hit());
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, result.text());
         for (String identifier : AnswerEgressGuard.identifiers()) {
             assertFalse(result.text().contains(identifier), "仍泄漏标识符 " + identifier);
         }
-        assertFalse(result.text().isBlank());
-        assertTrue(result.text().contains("如需办理退款或改地址"));
-        assertTrue(result.text().contains("平台订单号"));
-        assertEquals(AnswerEgressGuard.TOOL_PLACEHOLDER, result.text().substring(0,
-                AnswerEgressGuard.TOOL_PLACEHOLDER.length()));
+        for (String enumeration : List.of("参数格式", "必填", "可选", "单位：分", "默认全额", "退款原因")) {
+            assertFalse(result.text().contains(enumeration), "仍枚举参数: " + enumeration);
+        }
+        assertTrue(result.text().contains("请告诉我订单号"));
     }
 
     @Test
-    @DisplayName("第四个标识符 amountFen（用例未断言）也被拦")
-    void masksFourthIdentifierNotAssertedBySecurityCase() {
+    @DisplayName("第四个标识符 amountFen（用例未断言）命中后同样整段换成安全回复")
+    void fourthIdentifierAlsoTriggersSafeReply() {
         AnswerEgressGuard.Result result = AnswerEgressGuard.sanitize("退款金额填 amountFen，单位是分。");
 
         assertTrue(result.hit());
-        assertEquals("退款金额填 " + AnswerEgressGuard.PARAM_PLACEHOLDER + "，单位是分。", result.text());
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, result.text());
+        assertFalse(result.text().contains("amountFen"));
+        assertFalse(result.text().contains("单位是分"));
     }
 
     @Test
-    @DisplayName("正常中文答案原样通过：订单号 / 收件人姓名 / 退款 / 改地址都不触发")
+    @DisplayName("正常中文答案逐字节不变：订单号 / 收件人姓名 / 退款 / 改地址都不触发")
     void normalChineseAnswerPassesThroughUnchanged() {
         String answer = "您好，订单号 90001 的退款申请已受理，收件人姓名变更也已同步，请留意审核结果。";
 
@@ -84,7 +86,7 @@ class AnswerEgressGuardTest {
     }
 
     @Test
-    @DisplayName("英文词边界：reasonable / electricity 这类普通英文词不算标识符")
+    @DisplayName("英文词边界：reasonable / electricity 这类普通英文词不算标识符，文本逐字节不变")
     void ordinaryEnglishWordsAreNotIdentifiers() {
         String answer = "This is a reasonable answer about electricity.";
 
@@ -95,7 +97,7 @@ class AnswerEgressGuardTest {
     }
 
     @Test
-    @DisplayName("SSE 跨 chunk：apply + Refund 分两帧推送，拼齐后仍被拦")
+    @DisplayName("SSE 跨 chunk：apply + Refund 拼齐即命中，补安全回复并丢弃后续帧")
     void streamingCatchesIdentifierSplitAcrossChunks() {
         AnswerEgressGuard.Streaming streaming = new AnswerEgressGuard.Streaming();
         StringBuilder emitted = new StringBuilder();
@@ -104,18 +106,23 @@ class AnswerEgressGuardTest {
         emitted.append("您的申请 ");
         emitted.append(streaming.accept("apply"));
         emitted.append(streaming.accept("Refund"));
-        emitted.append(streaming.accept(" 的参数是 orderNo。"));
+        String hitFrame = streaming.accept(" 的参数是 orderNo。");
+        emitted.append(hitFrame);
+        // 命中后的帧一律丢弃。
+        assertEquals("", streaming.accept("后续正文不应转发"));
+        assertEquals("", streaming.flush());
         emitted.append(streaming.flush());
 
         assertTrue(streaming.hit());
+        assertTrue(emitted.toString().endsWith(AnswerEgressGuard.SAFE_REPLY));
         assertFalse(emitted.toString().contains("applyRefund"));
         assertFalse(emitted.toString().contains("orderNo"));
-        assertTrue(emitted.toString().contains("您的申请"));
-        assertTrue(emitted.toString().contains("的参数是"));
+        assertFalse(emitted.toString().contains("参数是"));
+        assertFalse(emitted.toString().contains("后续正文"));
     }
 
     @Test
-    @DisplayName("SSE 尾部 holdback：完整的尾随标识符在 flush 时被替换")
+    @DisplayName("SSE 尾部 holdback：完整尾随标识符在 flush 命中并补安全回复")
     void streamingFlushesTrailingIdentifier() {
         AnswerEgressGuard.Streaming streaming = new AnswerEgressGuard.Streaming();
         StringBuilder emitted = new StringBuilder();
@@ -125,19 +132,16 @@ class AnswerEgressGuardTest {
 
         assertTrue(streaming.hit());
         assertFalse(emitted.toString().contains("amountFen"));
-        assertEquals("退款金额请填 " + AnswerEgressGuard.PARAM_PLACEHOLDER, emitted.toString());
+        assertEquals("退款金额请填 " + AnswerEgressGuard.SAFE_REPLY, emitted.toString());
     }
 
     @Test
-    @DisplayName("AgentResult.answer 兜底：任何构造点都不能把标识符带出去")
-    void agentResultAnswerIsGuarded() {
+    @DisplayName("AgentResult.answer 兜底：命中构造点也只能是安全回复")
+    void agentResultAnswerIsFixedSafeReply() {
         AgentResult result = new AgentResult("参数 amountFen 属于 modifyDeliveryAddress。", Intent.UNKNOWN,
                 "NONE", CacheService.Layer.NONE, List.of(), List.of(), null, null, false, 0, 0, false, false,
                 "test", List.of(), AgentResult.ContextComposition.NONE, List.of());
 
-        assertFalse(result.answer().contains("amountFen"));
-        assertFalse(result.answer().contains("modifyDeliveryAddress"));
-        assertTrue(result.answer().contains(AnswerEgressGuard.PARAM_PLACEHOLDER));
-        assertTrue(result.answer().contains(AnswerEgressGuard.TOOL_PLACEHOLDER));
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, result.answer());
     }
 }

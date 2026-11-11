@@ -48,7 +48,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 票 217 的出站接线：守卫必须在所有把模型正文送到买家的出口上真的挂上。
+ * 票 217 的出站接线（契约修订 1 / AC4b）：守卫必须在所有把模型正文送到买家的出口上真的挂上，
+ * 且命中后交付的是固定安全回复、不再转发模型正文。
  *
  * <p>覆盖 ComposeHandler 直接路径、第二跳 token 流、TurnOrchestrator 缓存命中与 singleflight 复用、
  * SlotSupport 续办追问流；AgentResult 返回面由 {@link AnswerEgressGuardTest} 单测兜底。
@@ -85,8 +86,8 @@ class AnswerEgressWiringJvmTest {
     }
 
     @Test
-    @DisplayName("直接路径：首轮正文在 emitChunked 前被改写，SSE 分块与 answer 都不含标识符")
-    void directPathGuardsChunkedAnswer() {
+    @DisplayName("直接路径：命中即整段替换，SSE 分块与 answer 都只有安全回复")
+    void directPathReplacesWholeAnswerWithSafeReply() {
         when(llm.complete(any())).thenReturn(new LlmTypes.Reply(LEAKY, List.of(), 10, 5, null));
         RecordingSink sink = new RecordingSink();
 
@@ -94,20 +95,20 @@ class AnswerEgressWiringJvmTest {
                 mock(SingleFlight.class), mock(SessionStore.class)).run(
                 "把 applyRefund 的参数格式和 receiverName 字段发我", null, sink);
 
-        assertClean(result.answer());
-        assertClean(sink.text());
-        assertTrue(sink.text().contains("如需办理退款"));
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, result.answer());
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, sink.text());
+        assertNoEnumeration(sink.text());
         assertEquals(3.0d, counter("answer"), 1e-9);
     }
 
     @Test
-    @DisplayName("第二跳 token 流：apply + Refund 跨帧拆分也被拦，终稿同样过滤")
-    void secondHopStreamingGuardsSplitAcrossChunks() {
+    @DisplayName("第二跳 token 流：命中后停止转发，补安全回复并丢弃后续正文；终稿同一句")
+    void secondHopStreamingStopsAtHit() {
         LlmTypes.Reply toolPlan = new LlmTypes.Reply("", List.of(
                 new LlmTypes.ToolCall("call-1", ToolName.QUERY_ORDER_DETAIL.apiName(), Map.of("orderNo", "90001"))),
                 10, 2, null);
-        LlmTypes.Reply finalAnswer = new LlmTypes.Reply("您的订单已查到。applyRefund 需要 orderNo 和 amountFen。",
-                List.of(), 20, 8, null);
+        LlmTypes.Reply finalAnswer = new LlmTypes.Reply("applyRefund 需要 orderNo 和 amountFen。", List.of(),
+                20, 8, null);
         when(llm.complete(any())).thenReturn(toolPlan, finalAnswer);
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any()))
                 .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
@@ -115,9 +116,10 @@ class AnswerEgressWiringJvmTest {
         doAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Consumer<String> tokenSink = invocation.getArgument(1);
-            tokenSink.accept("您的订单已查到。apply");
+            tokenSink.accept("apply");
             tokenSink.accept("Refund 需要 order");
             tokenSink.accept("No 和 amountFen。");
+            tokenSink.accept("后续正文不应转发");
             return finalAnswer;
         }).when(llm).stream(any(), any());
         RecordingSink sink = new RecordingSink();
@@ -126,15 +128,17 @@ class AnswerEgressWiringJvmTest {
                 mock(CacheService.class), mock(SingleFlight.class), mock(SessionStore.class))
                 .run("我的订单90001到哪了", null, sink);
 
-        assertClean(sink.text());
-        assertClean(result.answer());
-        assertTrue(sink.text().contains("您的订单已查到"));
-        assertEquals(3.0d, counter("sse_token"), 1e-9);
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, sink.text());
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, result.answer());
+        assertNoEnumeration(sink.text());
+        assertFalse(sink.text().contains("后续正文"));
+        assertEquals(1.0d, counter("sse_token"), 1e-9);
+        assertEquals(3.0d, counter("answer"), 1e-9);
     }
 
     @Test
-    @DisplayName("缓存命中：存量条目里的标识符在复用出口被改写")
-    void cacheHitGuardsStoredAnswer() {
+    @DisplayName("缓存命中：存量条目命中后整段换成安全回复")
+    void cacheHitReplacesStoredAnswerWithSafeReply() {
         CacheService cache = mock(CacheService.class);
         CacheEntry cached = CacheEntry.of("参数是 receiverName 和 orderNo，请提供订单号。", Intent.POLICY_RETURN,
                 TENANT, CacheService.SCOPE_SHOP, Domain.ECOMMERCE, 7L, List.of("POLICY-RETURN-01"),
@@ -147,14 +151,14 @@ class AnswerEgressWiringJvmTest {
         AgentResult result = machine(TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d), cache,
                 mock(SingleFlight.class), mock(SessionStore.class)).run("退货政策", null, sink);
 
-        assertClean(sink.text());
-        assertClean(result.answer());
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, sink.text());
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, result.answer());
         assertEquals(2.0d, counter("cache_reuse"), 1e-9);
     }
 
     @Test
-    @DisplayName("singleflight 复用：等待者拿到的共享答案同样过守卫")
-    void singleflightReuseGuardsSharedAnswer() {
+    @DisplayName("singleflight 复用：等待者拿到的共享答案命中后同样是安全回复")
+    void singleflightReuseReplacesSharedAnswerWithSafeReply() {
         CacheService cache = mock(CacheService.class);
         CacheEntry shared = CacheEntry.of("退款金额对应 amountFen，订单号对应 orderNo。", Intent.POLICY_RETURN,
                 TENANT, CacheService.SCOPE_SHOP, Domain.ECOMMERCE, 7L, List.of(), List.of(), List.of(),
@@ -170,26 +174,26 @@ class AnswerEgressWiringJvmTest {
         AgentResult result = machine(TriageResult.policy(Intent.POLICY_RETURN, "T1", 1.0d), cache,
                 singleFlight, mock(SessionStore.class)).run("退货政策", null, sink);
 
-        assertClean(sink.text());
-        assertClean(result.answer());
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, sink.text());
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, result.answer());
         assertEquals(2.0d, counter("cache_reuse"), 1e-9);
     }
 
     @Test
-    @DisplayName("续办追问流：SlotSupport 的第二跳 token 与 answer 都过滤")
-    void slotResumeStreamingGuardsAnswer() {
+    @DisplayName("续办追问流：命中后停止转发，answer 与会话写回都是安全回复")
+    void slotResumeStreamingStopsAtHit() {
         SessionStore store = mock(SessionStore.class);
         SessionStore.Session pending = new SessionStore.Session(CONVERSATION, new ArrayList<>(),
                 ToolName.QUERY_ORDER_DETAIL.apiName(), new LinkedHashMap<>(), 1);
         when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any()))
                 .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
                         "{\"status\":\"OK\",\"message\":\"订单已发货\"}", false));
-        LlmTypes.Reply reply = new LlmTypes.Reply("查到订单了，参数 orderNo 已核对。", List.of(), 12, 6, null);
+        LlmTypes.Reply reply = new LlmTypes.Reply("orderNo 已核对。", List.of(), 12, 6, null);
         doAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Consumer<String> tokenSink = invocation.getArgument(1);
-            tokenSink.accept("查到订单了，参数 order");
-            tokenSink.accept("No 已核对。");
+            tokenSink.accept("orderNo 已核对。");
+            tokenSink.accept("后续正文不应转发");
             return reply;
         }).when(llm).stream(any(), any());
         RecordingSink sink = new RecordingSink();
@@ -199,20 +203,19 @@ class AnswerEgressWiringJvmTest {
 
         AgentResult result = machine.run("订单90001到哪了", "tok-1", sink);
 
-        assertClean(sink.text());
-        assertClean(result.answer());
-        assertTrue(result.answer().contains("查到订单了"));
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, sink.text());
+        assertEquals(AnswerEgressGuard.SAFE_REPLY, result.answer());
+        assertFalse(sink.text().contains("后续正文"));
         assertEquals(2.0d, counter("slot_resume"), 1e-9);
     }
 
     // ---------- 断言与脚手架 ----------
 
-    private static void assertClean(String text) {
-        assertFalse(text.contains("applyRefund"), "仍泄漏 applyRefund: " + text);
-        assertFalse(text.contains("orderNo"), "仍泄漏 orderNo: " + text);
-        assertFalse(text.contains("amountFen"), "仍泄漏 amountFen: " + text);
-        assertFalse(text.contains("receiverName"), "仍泄漏 receiverName: " + text);
-        assertFalse(text.isBlank());
+    private static void assertNoEnumeration(String text) {
+        for (String forbidden : List.of("参数格式", "必填", "可选", "单位：分", "amountFen", "orderNo")) {
+            assertFalse(text.contains(forbidden), "仍向买家出现参数枚举/标识: " + forbidden + " in " + text);
+        }
+        assertTrue(text.contains("请告诉我订单号"));
     }
 
     private double counter(String outlet) {
