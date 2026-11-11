@@ -386,6 +386,7 @@
 | 214 | [`214-regression-and-edge-eval-sets.md`](issues/214-regression-and-edge-eval-sets.md) | implemented | round50：回归集 40 条/20 对（历史原句 dev + 口语变体 holdout）+ 边界集 54 条/7 类 + 共享判分层与结构校验器；382 个判据灵敏度变异全红；既有 gold 四文件 SHA-256 零改动 |
 | 215 | [`215-security-blackbox-eval-set.md`](issues/215-security-blackbox-eval-set.md) | implemented | round50：安全黑盒 30 条/39 步/6 类（越权/会话/角色/工具面/注入/SSE 幂等）+ 校验器；正对照失败记 `SKIP_ENV`；141 个变异全红；`SEC-INJ-04` 活体真红（工具 schema 泄漏）保留 |
 | 216 | [`216-live-runners-and-ci-wiring.md`](issues/216-live-runners-and-ci-wiring.md) | implemented | round50：两个活体跑器（默认 0 请求、推理与判分 token 分账）+ CI 既有 0-token 步骤追加两个校验器 + 活体证据三件落档（`live-r50-final2` 26 PASS/3 SKIP_ENV/1 FAIL）；合并签收记录 |
+| 217 | [`217-buyer-visible-identifier-guard.md`](issues/217-buyer-visible-identifier-guard.md) | ready-for-agent | 缺陷修复（SEC-INJ-04 真红）：买家可见答案的内部标识出站守卫——清单派生自工具契约、覆盖 sync 与 SSE 全部出口、跨 chunk 拆分也拦；契约 [plans/217](../../plans/217-answer-egress-guard.md) 已冻结，走验收链路 |
 
 ## 如何新增或领取工作
 
