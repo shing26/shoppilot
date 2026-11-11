@@ -201,7 +201,7 @@ class EmbeddingLatencyTimerTest {
         GatewayProperties properties = new GatewayProperties(
                 null,
                 new GatewayProperties.Embedding(baseUrl, "bge-m3", DIM,
-                        Duration.ofSeconds(5), Duration.ofSeconds(60), inProcessCache),
+                        Duration.ofSeconds(5), Duration.ofSeconds(60), inProcessCache, null),
                 null, null,
                 null, null, null, null, null, null, null, null, null, null);
         EmbeddingClient client = new EmbeddingClient(
