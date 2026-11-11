@@ -93,3 +93,12 @@ curl -s http://127.0.0.1:8082/actuator/prometheus | grep -c "shoppilot_handoff_d
   不是全应用注册表——AC3 字面达成，但「同类问题在别的模块复发」不被它覆盖（防复发强度弱于字面读感）；
   ② 证据文件原为单行 CRLF，`git diff --check main...HEAD` 报一处 trailing whitespace——
   已在合并前提交 `d59ad85` 统一为 LF，范围 diff-check 转干净。
+
+**合并签收（验收链路硬规则 4）**
+
+- 独立 Verifier 总裁决 **PASS**（2026-11-12，绑定 HEAD `1861158`）：亲跑 806/135、活体
+  `/actuator/prometheus` 200、在仓库外独立复现旧名红（异常逐字一致）与新名绿、Forbidden 零违例；
+  AC3 的注册表范围局限与证据行尾问题已在上节留痕（后者合并前已修）。
+- 所有者书面签收：2026-11-12「书面签收票 218，fast-forward 合并 fix/218-prometheus-duplicate 到
+  main，合并后重跑 verify 与文档真值」（对话内书面）。
+- 首轮即通过，无返工；与票 217 的差别是这张票的回归用例本来就能复现缺陷（红→绿是设计的一部分）。
