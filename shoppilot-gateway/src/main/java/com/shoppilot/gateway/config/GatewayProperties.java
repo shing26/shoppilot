@@ -84,6 +84,9 @@ public record GatewayProperties(
      * @param inProcessCache 进程内向量缓存开关，默认开。
      *                       {@code no-embedding-cache} profile 关掉它，用来把
      *                       "L2 曲线的天花板是编排层还是本地 bge-m3 推理"这件事分开归因。
+     * @param queryBaseUrl   运行期查询向量化的 sidecar 地址（ADR 0085 选项 A / 票 212），
+     *                       默认空 = 行为与没有 sidecar 的现状完全一致（仍打 {@code baseUrl}）。
+     *                       预热与入库路径（{@code embedWarmup}）**不受它影响**，永远打 {@code baseUrl}。
      */
     public record Embedding(
             String baseUrl,
@@ -93,7 +96,8 @@ public record GatewayProperties(
             Duration timeout,
             @DurationMin(nanos = 1, message = "shoppilot.embedding.warmup-timeout must be greater than 0")
             Duration warmupTimeout,
-            boolean inProcessCache) {
+            boolean inProcessCache,
+            String queryBaseUrl) {
     }
 
     public record Retrieval(String qdrantUrl, String esUrl, String ruleCollection, String cacheCollection,

@@ -46,6 +46,8 @@ class ConfigValidationTest {
             // 票 173：渠道连接配置文件可覆盖。
             "SHOPPILOT_CHANNELS_FILE",
             "SHOPPILOT_EMBED_MODEL",
+            // 票 212（ADR 0085）：运行期查询向量化的 sidecar 地址，默认空 = 行为与现状一致。
+            "SHOPPILOT_EMBEDDING_SIDECAR_URL",
             "SHOPPILOT_ES_URL",
             "SHOPPILOT_INTERNAL_TOKEN",
             "SHOPPILOT_JWT_SECRET",

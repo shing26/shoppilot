@@ -47,6 +47,7 @@ public class EmbeddingClient {
     private final ObjectMapper mapper;
     private final GatewayProperties.Embedding config;
     private final Counter failureCounter;
+    private final Counter fallbackCounter;
     private final Counter remoteCounter;
     private final Counter cacheHitCounter;
     private final Counter dedupeMergedCounter;
@@ -74,6 +75,11 @@ public class EmbeddingClient {
         this.mapper = mapper;
         this.config = properties.embedding();
         this.failureCounter = Counter.builder("shoppilot_embedding_failure_total").register(registry);
+        // sidecar（ADR 0085 选项 A / 票 212）运行期失败后回落 base-url 的次数：降级要有账，
+        // 静默换实现等于把「sidecar 挂了」从监控里藏起来
+        this.fallbackCounter = Counter.builder("shoppilot_embedding_fallback_total")
+                .description("sidecar 查询向量化失败后回落原 base-url 的次数（预热/入库路径不走 sidecar）")
+                .register(registry);
         // "命中路径零 embedding 调用"这条断言要能证伪，就得把进程内命中与真打 Ollama 分开记
         this.remoteCounter = Counter.builder("shoppilot_embedding_calls_total")
                 .tag("result", "remote").register(registry);
@@ -97,9 +103,9 @@ public class EmbeddingClient {
     public float[] embed(String text) {
         String normalized = text == null ? "" : text.trim();
         if (!config.inProcessCache()) {
-            // 归因实验（no-embedding-cache profile）：去重层整体关掉，每个请求真打一次 bge-m3。
+            // 归因实验（no-embedding-cache profile）：去重层整体关掉，每个请求真打一次向量化。
             remoteCounter.increment();
-            return remoteTimer.record(() -> request(normalized, config.timeout()));
+            return remoteTimer.record(() -> embedRemote(normalized));
         }
         float[] cached = cache.get(normalized);
         if (cached != null) {
@@ -108,6 +114,30 @@ public class EmbeddingClient {
             return cached;
         }
         return loadOnce(normalized);
+    }
+
+    /**
+     * 运行期的远程向量化（ADR 0085 选项 A / 票 212）：配了 sidecar（{@code query-base-url} 非空）
+     * 就先打 sidecar——协议与 Ollama 的 {@code /api/embed} 相同，{@link #request} 的解析零改动；
+     * sidecar 失败（连接拒绝/超时/非 2xx/维度错）回落原 {@code base-url} 重试一次，回落事件记进
+     * {@link #fallbackCounter}。回落也失败才抛 {@link #request} 的既有异常。
+     *
+     * <p>只切运行期：预热与入库的 {@link #embedWarmup(String)} 不经过这里，永远打 {@code base-url}——
+     * 入库批次对延迟不敏感、对稳定敏感，而 sidecar 是新的常驻进程，不该把离线链路的可靠性押在它上面。
+     * {@code result=remote} 的计数与计时口径不变，只是远程的指向变了。
+     */
+    private float[] embedRemote(String normalized) {
+        String sidecarUrl = config.queryBaseUrl();
+        if (sidecarUrl == null || sidecarUrl.isBlank()) {
+            return request(normalized, config.timeout(), config.baseUrl());
+        }
+        try {
+            return request(normalized, config.timeout(), sidecarUrl);
+        } catch (RuntimeException sidecarFailure) {
+            fallbackCounter.increment();
+            log.warn("sidecar 向量化失败，回落 {}：{}", config.baseUrl(), sidecarFailure.getMessage());
+            return request(normalized, config.timeout(), config.baseUrl());
+        }
     }
 
     /**
@@ -127,7 +157,7 @@ public class EmbeddingClient {
         }
         remoteCounter.increment();
         try {
-            float[] vector = remoteTimer.record(() -> request(normalized, config.timeout()));
+            float[] vector = remoteTimer.record(() -> embedRemote(normalized));
             leader.complete(vector);
             if (cache.size() > CACHE_MAX) {
                 cache.clear();
@@ -169,7 +199,7 @@ public class EmbeddingClient {
         RuntimeException last = null;
         for (int attempt = 1; attempt <= WARMUP_ATTEMPTS; attempt++) {
             try {
-                return request(normalized, config.warmupTimeout());
+                return request(normalized, config.warmupTimeout(), config.baseUrl());
             } catch (RuntimeException failure) {
                 last = failure;
                 if (attempt == WARMUP_ATTEMPTS) {
@@ -202,12 +232,12 @@ public class EmbeddingClient {
         return vector;
     }
 
-    private float[] request(String text, Duration timeout) {
+    private float[] request(String text, Duration timeout, String baseUrl) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("model", config.model());
         payload.put("input", text);
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(config.baseUrl() + "/api/embed"))
+            HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/embed"))
                     .timeout(timeout)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload)))

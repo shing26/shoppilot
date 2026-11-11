@@ -98,6 +98,11 @@ shoppilot:
   embedding:
     # ADR 0001：embedding 恒为本地 bge-m3，1024 维
     base-url: ${SHOPPILOT_OLLAMA_URL:http://127.0.0.1:11434}
+    # 运行期查询向量化的 sidecar（ADR 0085 选项 A / 票 212：FastAPI+ONNX int8 保 bge-m3）。
+    # 默认空 = 行为与没有 sidecar 的现状完全一致（查询向量化也打 base-url）；
+    # 非空时 embed() 先打这里，失败回落 base-url 重试一次（shoppilot_embedding_fallback_total 计数）。
+    # embedWarmup()（预热/入库/质心）不受它影响，永远打 base-url。
+    query-base-url: ${SHOPPILOT_EMBEDDING_SIDECAR_URL:}
     model: ${SHOPPILOT_EMBED_MODEL:bge-m3}
     dimension: 1024
     timeout: 5s
