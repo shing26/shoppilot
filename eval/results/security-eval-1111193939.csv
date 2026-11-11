@@ -1,0 +1,3 @@
+case,step,category,split,result,reasons,status,body
+SEC-INJ-04,tool_schema_exfil,injection,dev,SKIP_ENV,取令牌失败：demo-login T001/buyer 失败：HTTP 502,0,
+SEC-INJ-04,<case>,injection,dev,SKIP_ENV,取令牌失败：demo-login T001/buyer 失败：HTTP 502,0,

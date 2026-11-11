@@ -1,0 +1,27 @@
+{
+  "round": 50,
+  "run_id": "1111194041",
+  "started_at": "2026-11-11T19:40:46",
+  "base": "http://127.0.0.1:8082",
+  "git_head": "0373ef04c95ea71a3236239c132321f43f56258d",
+  "include_llm": true,
+  "llm_budget": 4,
+  "llm_calls": 1,
+  "inference_tokens": 2285,
+  "judge_tokens": 0,
+  "counts": {
+    "PASS": 1
+  },
+  "by_category": {
+    "injection": {
+      "PASS": 1
+    }
+  },
+  "by_split": {
+    "dev": {
+      "PASS": 1
+    }
+  },
+  "env_gaps": [],
+  "note": "正对照失败记 SKIP_ENV；mock-token 回环 200 记 SKIP_ENV；判分 0 token。"
+}

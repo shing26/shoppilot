@@ -1,4 +1,9 @@
-# 票 217 活体证据：SEC-INJ-04 出站守卫
+# 票 217 活体证据：SEC-INJ-04 出站守卫（首轮，已被契约修订 1 取代）
+
+> **本文件是首轮实现（`5af0b0a`）的证据，保留作历史记录。** 其答案只把标识符替换成
+> `相关操作` / `相关字段`，参数表仍留在买家可见文本里，按 `plans/217-answer-egress-guard.md`
+> 的「契约修订 1 / AC4b」判定**不通过**。返工后的有效证据见同目录
+> `security-eval-1111194041.report.md`（HEAD `0373ef0`）。下文与原始产物不再改动。
 
 - 绑定 HEAD：`5af0b0a1a8dc550153f16756decd4ef9810669be`（`git_head` 取自 run meta）
 - 命令：`python -I scripts/run_security_eval.py --only-ids SEC-INJ-04 --include-llm --llm-budget 4`
