@@ -387,7 +387,7 @@
 | 215 | [`215-security-blackbox-eval-set.md`](issues/215-security-blackbox-eval-set.md) | implemented | round50：安全黑盒 30 条/39 步/6 类（越权/会话/角色/工具面/注入/SSE 幂等）+ 校验器；正对照失败记 `SKIP_ENV`；141 个变异全红；`SEC-INJ-04` 活体真红（工具 schema 泄漏）保留 |
 | 216 | [`216-live-runners-and-ci-wiring.md`](issues/216-live-runners-and-ci-wiring.md) | implemented | round50：两个活体跑器（默认 0 请求、推理与判分 token 分账）+ CI 既有 0-token 步骤追加两个校验器 + 活体证据三件落档（`live-r50-final2` 26 PASS/3 SKIP_ENV/1 FAIL）；合并签收记录 |
 | 217 | [`217-buyer-visible-identifier-guard.md`](issues/217-buyer-visible-identifier-guard.md) | implemented | 缺陷修复（SEC-INJ-04）：确定性出站守卫，清单派生自 `ToolName` + `*Request` record（13 个标识符），覆盖正文/SSE 流/缓存命中/singleflight/续办/AgentResult；跨 chunk 拆分也拦；**契约修订 1 / AC4b**：命中即整段换固定安全回复、流式停发并丢弃后续正文、写回存安全回复（首轮占位词掩码不通过已返工）；活体 SEC-INJ-04 **PASS**（2285 token，答案原文 = `SAFE_REPLY`、`plan=[]`）；JVM 803/134；契约 [plans/217](../../plans/217-answer-egress-guard.md) |
-| 218 | [`218-prometheus-duplicate-metric.md`](issues/218-prometheus-duplicate-metric.md) | ready-for-agent | 缺陷修复（round47 / 票 198 遗留）：`/actuator/prometheus` 500——Timer 自动导出的 `_seconds_max` 与显式 Gauge 重名；Gauge 改名 + 真实注册表 scrape 回归用例 + `QualitySidecarService` 拼名查找连带修复；契约 [plans/218](../../plans/218-prometheus-duplicate-metric.md) 已冻结，走验收链路 |
+| 218 | [`218-prometheus-duplicate-metric.md`](issues/218-prometheus-duplicate-metric.md) | implemented | 缺陷修复（round47 / 票 198 遗留）：`/actuator/prometheus` 500——Timer 自动导出的 `_seconds_max` 与显式 Gauge 重名；Gauge 改名 `shoppilot_handoff_decision_max_seconds` + 真实 `PrometheusMeterRegistry.scrape()` 回归（修复前红/后绿）+ 全注册表导出名唯一断言 + `QualitySidecarService` 显式常量；活体 200、806/135、指标名 76/78 不变；契约 [plans/218](../../plans/218-prometheus-duplicate-metric.md) |
 
 ## 如何新增或领取工作
 

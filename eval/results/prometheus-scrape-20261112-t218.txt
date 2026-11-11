@@ -1,0 +1,36 @@
+# 票 218 活体证据：/actuator/prometheus 抓取
+captured_at=2026-11-12T03:04:03+08:00
+head_sha=6f81864cb4b47e6d53c2b2f4b718f7442ef0af46
+git_status_short:
+?? eval/results/prometheus-scrape-20261112-t218.txt
+
+## 环境
+- 本机 JVM：JDK 21.0.12.1，profile=perf（MockLLM，0 付费 token）
+- Redis 3.2.100 @127.0.0.1:16379（原生 redis-server），biz-mock @127.0.0.1:8091
+- Qdrant / Elasticsearch 未起：网关按降级模式启动（启动日志 WARN，readiness 仍 200）
+- Ollama @127.0.0.1:11434（仅向量化预热）
+- jar：mvnw verify 构建（fix 提交同一源码）
+
+## 命令与读数
+$ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8082/actuator/prometheus
+200
+
+$ curl -s http://127.0.0.1:8082/actuator/prometheus | grep -c "shoppilot_handoff_decision"
+85
+
+$ curl -s http://127.0.0.1:8082/actuator/prometheus | grep "shoppilot_handoff_decision" | grep -v "_bucket"
+# HELP shoppilot_handoff_decision_max_seconds Handoff 触发器判定耗时的进程内累计最大值（秒）
+# TYPE shoppilot_handoff_decision_max_seconds gauge
+shoppilot_handoff_decision_max_seconds 0.0
+# HELP shoppilot_handoff_decision_seconds Handoff 触发器判定耗时
+# TYPE shoppilot_handoff_decision_seconds histogram
+shoppilot_handoff_decision_seconds_count 0
+shoppilot_handoff_decision_seconds_sum 0.0
+# HELP shoppilot_handoff_decision_seconds_max Handoff 触发器判定耗时
+# TYPE shoppilot_handoff_decision_seconds_max gauge
+shoppilot_handoff_decision_seconds_max 0.0
+
+## 断言
+PASS 正文含 shoppilot_handoff_decision_seconds_count
+PASS 正文含 shoppilot_handoff_decision_max_seconds（新 Gauge）
+PASS 无 duplicate metric name
