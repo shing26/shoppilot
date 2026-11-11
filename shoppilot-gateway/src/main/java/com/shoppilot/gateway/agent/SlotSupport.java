@@ -273,12 +273,27 @@ final class SlotSupport {
                 : "【第一次调用】\n" + firstFailure + "\n【重试后】\n" + dispatch.json();
         messages.add(LlmTypes.Message.user(query + "\n\n【业务系统返回】\n" + businessResult));
         try {
+            // 票 217：续办追问的第二跳同样逐 token 直推买家，必须过同一个流式守卫。
+            AnswerEgressGuard.Streaming egress = new AnswerEgressGuard.Streaming();
             LlmTypes.Reply reply = services.llm.stream(new LlmTypes.Request(messages, List.of(),
-                    services.properties.llm().temperature()), sink::token);
+                    services.properties.llm().temperature()), delta -> {
+                        String safe = egress.accept(delta);
+                        if (!safe.isEmpty()) {
+                            sink.token(safe);
+                        }
+                    });
+            String tail = egress.flush();
+            if (!tail.isEmpty()) {
+                sink.token(tail);
+            }
+            AnswerEgressGuard.count(services.registry, "slot_resume", egress.hits());
             usage.add(reply);
+            AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(reply.content());
+            AnswerEgressGuard.count(services.registry, "slot_resume", guarded.hits());
+            String answer = guarded.text();
             services.sessionStore.save(tenantId, customerId,
-                    services.sessionStore.appendTurn(TurnServices.clearPending(session), query, reply.content()));
-            return new AgentResult(reply.content(), tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(),
+                    services.sessionStore.appendTurn(TurnServices.clearPending(session), query, answer));
+            return new AgentResult(answer, tool.intent(), "SESSION", CacheService.Layer.NONE, List.of(),
                     trace, null, null, false, usage.prompt(), usage.completion(), true, false,
                     services.promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE, List.of());
         } catch (LlmException failure) {

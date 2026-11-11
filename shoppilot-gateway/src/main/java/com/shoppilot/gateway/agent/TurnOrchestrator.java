@@ -226,13 +226,18 @@ final class TurnOrchestrator {
                 sink.meta(conversationId, triage.intent(), lookup.layer());
                 TurnServices.step(trace, sink, AgentState.REPLY, "cache=" + lookup.layer());
                 CacheEntry entry = lookup.entry().get();
-                sink.token(entry.answer());
+                // 票 217：缓存里可能还躺着守卫上线前写回的旧答案，复用出口照样要过滤；
+                // 新答案在写回前已经过滤（见 ComposeHandler），这里同时兜住存量条目。
+                AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(entry.answer());
+                AnswerEgressGuard.count(services.registry, "cache_reuse", guarded.hits());
+                String cachedAnswer = guarded.text();
+                sink.token(cachedAnswer);
                 // 票 49 的不变量「context.ruleIds 与 citations 同源同序」在命中路径同样成立：
                 // 缓存条目随带引用（ADR 0003），这里把它镜像进观测字段。另外两格照实为零——
                 // 命中路径没有 Prompt，所以没有历史轮、也没有估出来的 token 数。
                 // 但 token 字段**不是零**（票 145 / R12 的第三处缺口）：这一跳入口层的情绪分类已经付过钱，
                 // 账本里就记着它。
-                return new AgentResult(entry.answer(), triage.intent(), triage.layer(), lookup.layer(),
+                return new AgentResult(cachedAnswer, triage.intent(), triage.layer(), lookup.layer(),
                         entry.sourceRuleIds(), trace, null, null, false, usage.prompt(), usage.completion(),
                         false, false, services.promptCatalog.version(), List.of(),
                         new AgentResult.ContextComposition(List.copyOf(entry.sourceRuleIds()), 0, 0),
@@ -252,17 +257,23 @@ final class TurnOrchestrator {
             if (!gate.leader()) {
                 sink.meta(conversationId, triage.intent(), CacheService.Layer.FLIGHT);
                 TurnServices.step(trace, sink, AgentState.CACHE_READ, "singleflight-reuse");
-                gate.shared().ifPresent(entry -> sink.token(entry.answer()));
-                return gate.shared()
-                        .map(entry -> new AgentResult(entry.answer(), triage.intent(), triage.layer(),
-                                CacheService.Layer.FLIGHT, entry.sourceRuleIds(), trace, null, null, false,
-                                usage.prompt(), usage.completion(), false, false,
-                                services.promptCatalog.version(), List.of(),
-                                AgentResult.ContextComposition.NONE,
-                                ComposeHandler.citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings(),
-                                        entry.sourceDocs())))
-                        .orElseGet(() -> services.fallback(AgentState.CACHE_READ, trace, sink,
-                                FallbackReason.INTENT_UNRESOLVED, query, null, styleTier, usage));
+                if (gate.shared().isPresent()) {
+                    CacheEntry entry = gate.shared().get();
+                    // 票 217：穿透等待者复用同一份缓存答案，出口与缓存命中同样过守卫。
+                    AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(entry.answer());
+                    AnswerEgressGuard.count(services.registry, "cache_reuse", guarded.hits());
+                    String sharedAnswer = guarded.text();
+                    sink.token(sharedAnswer);
+                    return new AgentResult(sharedAnswer, triage.intent(), triage.layer(),
+                            CacheService.Layer.FLIGHT, entry.sourceRuleIds(), trace, null, null, false,
+                            usage.prompt(), usage.completion(), false, false,
+                            services.promptCatalog.version(), List.of(),
+                            AgentResult.ContextComposition.NONE,
+                            ComposeHandler.citationDetailsOf(entry.sourceRuleIds(), entry.sourceHeadings(),
+                                    entry.sourceDocs()));
+                }
+                return services.fallback(AgentState.CACHE_READ, trace, sink,
+                        FallbackReason.INTENT_UNRESOLVED, query, null, styleTier, usage);
             }
             boolean published = false;
             try {
@@ -345,7 +356,10 @@ final class TurnOrchestrator {
                     logistics.json(), ctx.styleTier(), usage);
         }
 
-        String answer = compoundOrderAnswer(detail, logistics);
+        // 票 217：确定性复合答案也过出站守卫，SSE token 与 AgentResult 用同一份过滤后文本。
+        AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(compoundOrderAnswer(detail, logistics));
+        AnswerEgressGuard.count(services.registry, "answer", guarded.hits());
+        String answer = guarded.text();
         sink.token(answer);
         persist.completeTurn(ctx, answer);
         services.registry.counter("shoppilot_compound_tasks_total", "result", "COMPLETED").increment();
@@ -445,7 +459,10 @@ final class TurnOrchestrator {
 
         RetrieveHandler.Retrieval retrieval = retrieve.retrieve(ctx, messages);
         if (retrieval.shortCircuit() != null) {
-            String answer = retrieval.shortCircuit();
+            // 票 217：检索短路的确定性回答同样过守卫（当前文案全是中文，规则面保持一致）。
+            AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(retrieval.shortCircuit());
+            AnswerEgressGuard.count(services.registry, "answer", guarded.hits());
+            String answer = guarded.text();
             sink.token(answer);
             persist.completeTurn(ctx, answer);
             return ModelRun.solo(new AgentResult(answer, intent, triage.layer(), CacheService.Layer.NONE,

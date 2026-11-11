@@ -56,13 +56,33 @@ final class ComposeHandler {
             // 首轮就给出内容，或预算检查后模型明确不再要工具：直接把它按打字机切块推出去，不再多打一次模型。
             // token 字段照旧走总账（票 145 / R12 的第一处缺口：这里此前只报这一跳，4 轮用例因此上报 2,811 vs 计费 11,338）
             answer = localPolicyAnswerGuard(lastReply.content(), intent, ctx.query(), retrieved);
+            // 票 217：买家可见正文过出站守卫，再切块——切块本身不会重新拼出标识符。
+            AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(answer);
+            AnswerEgressGuard.count(services.registry, "answer", guarded.hits());
+            answer = guarded.text();
             emitChunked(answer, ctx.sink());
         } else {
+            // 票 217：第二跳逐 token 直推 SSE。文本先过带 holdback 的流式守卫，跨 chunk 的标识符
+            // （apply + Refund）在拼齐那一帧被替换；flush 放出末尾 holdback。
+            AnswerEgressGuard.Streaming egress = new AnswerEgressGuard.Streaming();
             try {
                 LlmTypes.Reply finalReply = services.llm.stream(new LlmTypes.Request(messages, List.of(),
-                        services.properties.llm().temperature()), ctx.sink()::token);
+                        services.properties.llm().temperature()), delta -> {
+                            String safe = egress.accept(delta);
+                            if (!safe.isEmpty()) {
+                                ctx.sink().token(safe);
+                            }
+                        });
+                String tail = egress.flush();
+                if (!tail.isEmpty()) {
+                    ctx.sink().token(tail);
+                }
+                AnswerEgressGuard.count(services.registry, "sse_token", egress.hits());
                 ctx.usage().add(finalReply);
-                answer = finalReply.content();
+                // AgentResult / 缓存写回拿到的也是过滤后的正文；流里已过滤，这里兜住终稿。
+                AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(finalReply.content());
+                AnswerEgressGuard.count(services.registry, "answer", guarded.hits());
+                answer = guarded.text();
             } catch (LlmException failure) {
                 return ComposeOutcome.terminal(services.fallback(AgentState.REPLY, ctx.trace(), ctx.sink(),
                         TurnServices.mapLlmFailure(failure), ctx.query(), failure.getMessage(), ctx.styleTier(),
@@ -95,7 +115,11 @@ final class ComposeHandler {
                              EventSink sink, List<AgentResult.TraceStep> trace, String tenantId,
                              String customerId, String conversationId, TokenUsage usage) {
         Intent intent = replay.tool().intent();
-        String answer = ReplayReply.render(replay.tool(), replay.resultJson());
+        // 票 217：确定性话术同样过出站守卫（回放模板本身不含标识符，但出口规则保持同一条）。
+        AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(
+                ReplayReply.render(replay.tool(), replay.resultJson()));
+        AnswerEgressGuard.count(services.registry, "answer", guarded.hits());
+        String answer = guarded.text();
         sink.meta(conversationId, intent, CacheService.Layer.NONE);
         TurnServices.step(trace, sink, AgentState.REPLY, "replay=" + replay.tool().apiName());
         sink.duplicateSubmit(replay.tool(), answer);
@@ -120,7 +144,11 @@ final class ComposeHandler {
                                       String tenantId, String customerId, String layer,
                                       List<AgentResult.PlanStep> planSteps, TokenUsage usage) {
         services.registry.counter("shoppilot_refund_pending_total").increment();
-        String answer = ReplayReply.pendingApproval(dispatch.tool(), dispatch.json());
+        // 票 217：受理话术也走同一个出站规则，出口清单不靠"这句文案我读过"来兜底。
+        AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(
+                ReplayReply.pendingApproval(dispatch.tool(), dispatch.json()));
+        AnswerEgressGuard.count(services.registry, "answer", guarded.hits());
+        String answer = guarded.text();
         TurnServices.step(trace, sink, AgentState.REPLY, "pending-approval=" + dispatch.tool().apiName());
         services.sessionStore.save(tenantId, customerId,
                 services.sessionStore.appendTurn(TurnServices.clearPending(session), query, answer));

@@ -26,6 +26,15 @@ public record AgentResult(String answer, Intent intent, String triageLayer, Cach
                           boolean toolUsed, boolean degraded, String promptVersion,
                           List<PlanStep> plan, ContextComposition context, List<CitationDetail> citationDetails) {
 
+    /**
+     * 出站最后一道网（round50 票 217 / SEC-INJ-04）：{@code answer} 是对外可见正文，任何构造点
+     * 都不允许把工具名/参数名原样带出去。真正的出口（SSE token、缓存复用）在调用点另有过滤，
+     * 这里兜住 {@code AgentResult} 本身的返回面——同步端点直接序列化它。
+     */
+    public AgentResult {
+        answer = AnswerEgressGuard.sanitize(answer).text();
+    }
+
     public record TraceStep(String state, long atMillis, String detail) {
     }
 

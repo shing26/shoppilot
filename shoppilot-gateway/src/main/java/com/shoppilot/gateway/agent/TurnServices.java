@@ -151,8 +151,11 @@ final class TurnServices {
                 : fallbackService.escalate(reason, query, detail);
         sink.fallback(reason, ticket.orElse(null));
         // 话术选择随风格档位联动（ADR 0038）：FRIENDLY 档在话术前加安抚短句，不改话术生成
-        String answer = styleService.fallbackPrefix(styleTier) + reason.userMessage()
-                + ticket.map(id -> "（工单号 " + id + "）").orElse("");
+        // 票 217：降级话术也是买家可见正文，过同一道出站规则（出口清单不留"模板一定安全"的口头假设）。
+        AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(styleService.fallbackPrefix(styleTier)
+                + reason.userMessage() + ticket.map(id -> "（工单号 " + id + "）").orElse(""));
+        AnswerEgressGuard.count(registry, "answer", guarded.hits());
+        String answer = guarded.text();
         sink.token(answer);
         // 降级出口也回填已经花掉的轮次（票 145 / R12 的第二处缺口）：此前恒报 0，
         // 而"办了 4 轮最后降级"的请求其实已经付过钱了。
