@@ -73,6 +73,15 @@ final class TurnServices {
     final Timer handoffDecisionTimer;
     final AtomicLong handoffDecisionMaxNanos = new AtomicLong();
 
+    /** Handoff 判定耗时在源码里的唯一注册名；Timer 与累计最大 Gauge 必须成对出现。 */
+    static final String HANDOFF_DECISION_TIMER_NAME = "shoppilot_handoff_decision_seconds";
+    /**
+     * 累计最大 Gauge 名。**不能**等于 Timer 名 + "_max"：Prometheus 注册表会为 Timer 自动导出该名，
+     * 两者同名但类型不同，会让整个 {@code /actuator/prometheus} 抓取 500（round50 票 218）。
+     * 这是改名不是新增：唯一指标名计数不变。
+     */
+    static final String HANDOFF_DECISION_MAX_GAUGE_NAME = "shoppilot_handoff_decision_max_seconds";
+
     TurnServices(TriageEngine triageEngine, CacheService cacheService, SingleFlight singleFlight,
                  WriteBackPolicy writeBackPolicy, KbEpoch kbEpoch, TenantDomainRegistry domainRegistry,
                  HybridRetriever retriever, LlmGateway llm, ToolDispatcher dispatcher,
@@ -116,7 +125,19 @@ final class TurnServices {
         this.reflectionExhaustedCounter = Counter.builder("shoppilot_reflection_total")
                 .tag("outcome", "exhausted").register(registry);
         // H4：sidecar 的口径源。都不是 LLM 调用；blocked reason / friction 只进指标与工单，不改路由。
-        this.handoffDecisionTimer = Timer.builder("shoppilot_handoff_decision_seconds")
+        this.handoffDecisionTimer = registerHandoffDecisionMeters(registry, handoffDecisionMaxNanos);
+    }
+
+    /**
+     * 注册 Handoff 判定耗时的 Timer 与进程内累计最大 Gauge（round47 票 198 / round50 票 218）。
+     *
+     * <p>Timer 走 {@link Timer.Builder#publishPercentileHistogram()}，Prometheus 注册表会为它导出
+     * {@code _count / _sum / _bucket / _max}；累计最大 Gauge 因此必须用独立名字，
+     * 不能拼成 {@code <timer>_max}（那正是 round50 票 218 的 duplicate metric name）。
+     * 抽成静态方法是为了让回归用例走与生产完全相同的注册路径。
+     */
+    static Timer registerHandoffDecisionMeters(MeterRegistry registry, AtomicLong maxNanos) {
+        Timer timer = Timer.builder(HANDOFF_DECISION_TIMER_NAME)
                 .description("Handoff 触发器判定耗时")
                 // 触发器是纯规则/图查询，正常在微秒级；桶按毫秒量级钉住，
                 // 否则默认秒级桶会把退化压进 100ms/250ms，告警失去区分度。
@@ -129,10 +150,11 @@ final class TurnServices {
                 .register(registry);
         // Timer.max() 走的是 TimeWindowMax：空闲一个时间窗就归零，而均值是进程累计值，
         // 于是报表会出现「均值 0.06ms、最大 0.00ms」。累计最大单独记一份（round47 票 198）。
-        Gauge.builder("shoppilot_handoff_decision_seconds_max", handoffDecisionMaxNanos,
+        Gauge.builder(HANDOFF_DECISION_MAX_GAUGE_NAME, maxNanos,
                         nanos -> nanos.get() / 1_000_000_000d)
                 .description("Handoff 触发器判定耗时的进程内累计最大值（秒）")
                 .register(registry);
+        return timer;
     }
 
     // ── 出口 ──────────────────────────────────────────────────────────────

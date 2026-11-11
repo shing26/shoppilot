@@ -29,6 +29,16 @@ public class QualitySidecarService {
     private static final int AUDIT_WINDOW_MINUTES = 15;
     private static final int AUDIT_CACHE_TTL_SECONDS = 30;
 
+    /**
+     * 累计最大 Gauge 的显式名（round47 票 198 / round50 票 218）。
+     *
+     * <p>**不能用 {@code <timer 名> + "_max"} 拼**：Timer 的 Prometheus 导出本来就带 {@code _max}
+     * （时间窗最大值、空闲后衰减），拼名会读错对象；round50 票 218 还发现它与自动导出同名会让
+     * 整个 {@code /actuator/prometheus} 抓取 500。这里与 {@code agent/TurnServices} 的注册名是
+     * 同一个常量值的两份声明，回归用例会钉住两者一致。
+     */
+    public static final String HANDOFF_DECISION_MAX_GAUGE = "shoppilot_handoff_decision_max_seconds";
+
     private final MeterRegistry registry;
     private final StringRedisTemplate redis;
 
@@ -175,7 +185,7 @@ public class QualitySidecarService {
         double maxSeconds = timer == null ? 0d : timer.max(java.util.concurrent.TimeUnit.SECONDS);
         // Timer.max() 是时间窗最大值，空闲后衰减回 0；AgentStateMachine 另记一份累计最大值。
         // 读得到就以后者为准，读不到（老注册表 / 测试替身）保留 Timer.max() 的原口径。
-        Gauge cumulativeMax = registry.find(name + "_max").gauge();
+        Gauge cumulativeMax = registry.find(HANDOFF_DECISION_MAX_GAUGE).gauge();
         if (cumulativeMax != null) {
             maxSeconds = cumulativeMax.value();
         }
