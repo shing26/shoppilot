@@ -1,7 +1,7 @@
 # 票 218：/actuator/prometheus 500 修复（指标重名）
 
 Round: 50 后续（缺陷修复，非新功能；开轮依据 = 所有者 2026-11-12 指令「立票修 /actuator/prometheus 500（shoppilot_handoff_decision_seconds_max 重名，round47 遗留），走验收链路」）
-ADR: 0082（仅追加换代指针，正文不动）　Status: implemented（2026-11-12，分支 `fix/218-prometheus-duplicate`；独立 Verifier **PASS**，待所有者书面签收合并）　Blocked by: 无
+ADR: 0082（仅追加换代指针，正文不动）　Status: implemented（2026-11-12；独立 Verifier **PASS** → 所有者书面签收 → 合并 main `db50de6`）　Blocked by: 无
 契约：[plans/218-prometheus-duplicate-metric.md](../../plans/218-prometheus-duplicate-metric.md)（2026-11-12 冻结）
 
 ## What to build
@@ -102,3 +102,7 @@ curl -s http://127.0.0.1:8082/actuator/prometheus | grep -c "shoppilot_handoff_d
 - 所有者书面签收：2026-11-12「书面签收票 218，fast-forward 合并 fix/218-prometheus-duplicate 到
   main，合并后重跑 verify 与文档真值」（对话内书面）。
 - 首轮即通过，无返工；与票 217 的差别是这张票的回归用例本来就能复现缺陷（红→绿是设计的一部分）。
+- 合并：fast-forward 至 main `db50de6`（13 files，+241/−17）。合并后主检出
+  `./mvnw.cmd -B -ntp verify` **BUILD SUCCESS**（806 tests / 135 suites，3 min 05 s）；
+  `gen_status.py` 重生成 STATUS（覆盖率随主检出 jacoco 刷新，biz-mock 81.45% → 82.37%、
+  ticket 78.20% → 78.62%，在脚本 ±1.5pp 容差内）、`verify_doc_truth.py` OK、`git diff --check` 干净。
