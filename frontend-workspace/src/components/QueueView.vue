@@ -6,9 +6,8 @@
  * 换队列要先更新值再拉数据，依赖同一事件上两个处理器的先后顺序太脆。
  */
 import { computed, ref } from 'vue'
-import { shortId } from 'frontend-shared'
 import { PRIORITY_LABEL, QUEUE_LABEL, QUEUES, SOURCE_LABEL, STATUS_LABEL, type Ticket } from '../types'
-import { formatTime, isOverdue, payloadField, slaText } from '../lib/format'
+import { formatTime, isOverdue, payloadField, shortTicketId, slaText } from '../lib/format'
 import type { StatusFilter } from '../lib/ui'
 
 const props = defineProps<{
@@ -39,6 +38,10 @@ const emit = defineEmits<{
   openRefunds: []
   reviewFeedback: [feedbackId: string]
 }>()
+
+const mobileDetail = ref(false)
+const copyNote = ref('')
+let copyTimer = 0
 
 /**
  * 复核单指回的那条反馈（round46 票 194）：`payload.feedbackId` 由 biz-mock 开单时写入。
@@ -94,26 +97,55 @@ function onSourceChange(event: Event) {
 function onQueueChange(event: Event) {
   emit('changeQueue', (event.target as HTMLSelectElement).value)
 }
+
+function openTicket(id: string) {
+  emit('select', id)
+  mobileDetail.value = true
+}
+
+function backToList() {
+  mobileDetail.value = false
+}
+
+async function copySelectedId() {
+  if (!props.selected) return
+  try {
+    await navigator.clipboard.writeText(props.selected.id)
+    copyNote.value = '已复制'
+  } catch {
+    copyNote.value = '复制失败'
+  }
+  window.clearTimeout(copyTimer)
+  copyTimer = window.setTimeout(() => {
+    copyNote.value = ''
+  }, 1600)
+}
 </script>
 
 <template>
   <section class="view-panel">
-    <section class="summary">
-      <button class="kpi" :class="{ active: statusFilter === 'ALL' }" type="button" @click="emit('setFilter', 'ALL')">
-        <span>当前队列</span><strong>{{ tickets.length }}</strong>
-      </button>
-      <button class="kpi" :class="{ active: statusFilter === 'OPEN' }" type="button" @click="emit('setFilter', 'OPEN')">
-        <span>待处理</span><strong>{{ counts.open }}</strong>
-      </button>
-      <button class="kpi" :class="{ active: statusFilter === 'ASSIGNED' }" type="button" @click="emit('setFilter', 'ASSIGNED')">
-        <span>处理中</span><strong>{{ counts.assigned }}</strong>
-      </button>
-      <button class="kpi danger" :class="{ active: statusFilter === 'OVERDUE' }" type="button" @click="emit('setFilter', 'OVERDUE')">
-        <span>已超时</span><strong>{{ counts.overdue }}</strong>
-      </button>
-      <button class="kpi refund" type="button" @click="emit('openRefunds')">
-        <span>待审退款</span><strong>{{ refundCount }}</strong>
-      </button>
+    <section class="summary" aria-label="队列概览">
+      <div class="summary-lead">
+        <button class="kpi lead" :class="{ active: statusFilter === 'ALL' }" type="button" @click="emit('setFilter', 'ALL')">
+          <span>当前队列</span>
+          <strong>{{ tickets.length }}</strong>
+          <small>张工单待查看</small>
+        </button>
+        <button class="refund-entry" type="button" @click="emit('openRefunds')">
+          待审退款 <b>{{ refundCount }}</b><span>去审核 →</span>
+        </button>
+      </div>
+      <div class="kpi-cluster">
+        <button class="kpi mini" :class="{ active: statusFilter === 'OPEN' }" type="button" @click="emit('setFilter', 'OPEN')">
+          <span>待处理</span><strong>{{ counts.open }}</strong><small>未领取</small>
+        </button>
+        <button class="kpi mini" :class="{ active: statusFilter === 'ASSIGNED' }" type="button" @click="emit('setFilter', 'ASSIGNED')">
+          <span>处理中</span><strong>{{ counts.assigned }}</strong><small>已领取</small>
+        </button>
+        <button class="kpi mini danger" :class="{ active: statusFilter === 'OVERDUE' }" type="button" @click="emit('setFilter', 'OVERDUE')">
+          <span>已超时</span><strong>{{ counts.overdue }}</strong><small>超过 SLA</small>
+        </button>
+      </div>
     </section>
 
     <section class="toolbar">
@@ -139,17 +171,17 @@ function onQueueChange(event: Event) {
           @input="onKeyword"
         />
       </label>
-      <button class="ghost" type="button" @click="emit('refresh')">刷新</button>
+      <span class="toolbar-count">{{ visibleTickets.length }} 张</span>
     </section>
     <p class="toolbar-hint">
-      共 {{ visibleTickets.length }} 张；按优先级排序，SLA 只标记超时，不承诺解决时限。
+      按优先级排序；SLA 只标记超时，不承诺解决时限。
     </p>
 
     <p v-if="loadError" class="err">{{ loadError }}</p>
     <p v-if="actionError" class="err">{{ actionError }}</p>
     <p v-if="actionNote" class="note">{{ actionNote }}</p>
 
-    <div class="workspace">
+    <div class="workspace" :class="{ 'show-detail': mobileDetail && selected }">
       <section class="queue-pane">
         <div class="pane-head">
           <h2>工单队列</h2>
@@ -165,25 +197,26 @@ function onQueueChange(event: Event) {
             :class="{ active: selectedId === t.id, overdue: isOverdue(t, now), urgent: t.priority === 'high' }"
             role="listitem"
             tabindex="0"
-            @click="emit('select', t.id)"
-            @keyup.enter="emit('select', t.id)"
+            @click="openTicket(t.id)"
+            @keyup.enter="openTicket(t.id)"
           >
             <div class="ticket-top">
               <span class="priority" :class="priorityTone(t.priority)">
                 <i class="prio-dot" aria-hidden="true"></i>
                 {{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}
               </span>
-              <span class="source-badge">{{ SOURCE_LABEL[t.source ?? ''] ?? t.source ?? '未标注' }}</span>
-              <span class="status-pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
+              <time class="ticket-time">{{ formatTime(t.createdAt) }}</time>
             </div>
             <p class="ticket-query">{{ t.userQuery }}</p>
             <div class="ticket-meta">
+              <span class="source-badge">{{ SOURCE_LABEL[t.source ?? ''] ?? t.source ?? '未标注' }}</span>
               <span>{{ QUEUE_LABEL[t.queue ?? ''] ?? t.queue ?? '—' }}</span>
-              <span class="sla" :class="{ danger: isOverdue(t, now) }">{{ slaText(t, now) }}</span>
+              <span class="status-pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
+              <span v-if="isOverdue(t, now)" class="sla danger">已超时</span>
             </div>
             <div class="ticket-foot">
               <span>{{ t.assignee ?? '待分配' }}</span>
-              <span class="mono">{{ shortId(t.id) }}</span>
+              <span class="mono" :title="'工单号 ' + t.id">{{ shortTicketId(t.id) }}</span>
             </div>
           </article>
         </div>
@@ -192,25 +225,28 @@ function onQueueChange(event: Event) {
       <aside v-if="selected" class="detail-pane">
         <header class="detail-head">
           <div>
-            <p class="eyebrow">工单详情</p>
-            <h2 class="mono">{{ selected.id }}</h2>
+            <p class="eyebrow">工单</p>
+            <h2 class="mono" :title="selected.id">#{{ shortTicketId(selected.id) }}</h2>
+            <p class="detail-sub">
+              {{ SOURCE_LABEL[selected.source ?? ''] ?? selected.source ?? '未标注' }}
+              · {{ QUEUE_LABEL[selected.queue ?? ''] ?? selected.queue ?? '—' }}
+              · {{ formatTime(selected.createdAt) }}
+            </p>
           </div>
-          <span class="status-pill">{{ STATUS_LABEL[selected.status] ?? selected.status }}</span>
+          <div class="detail-head-right">
+            <span class="status-pill">{{ STATUS_LABEL[selected.status] ?? selected.status }}</span>
+            <button class="ghost mobile-back" type="button" @click="backToList">返回队列</button>
+          </div>
         </header>
+
+        <button class="copy-id" type="button" @click="copySelectedId">
+          {{ copyNote || '复制完整工单号' }}
+        </button>
 
         <section class="detail-query quote">
           <p class="quote-label">买家原始诉求</p>
           <p class="quote-text">{{ selected.userQuery }}</p>
         </section>
-
-        <div class="detail-meta">
-          <div><span>来源</span><strong>{{ SOURCE_LABEL[selected.source ?? ''] ?? selected.source ?? '—' }}</strong></div>
-          <div><span>队列</span><strong>{{ QUEUE_LABEL[selected.queue ?? ''] ?? selected.queue ?? '—' }}</strong></div>
-          <div><span>优先级</span><strong>{{ PRIORITY_LABEL[selected.priority ?? 'normal'] ?? selected.priority }}</strong></div>
-          <div><span>SLA</span><strong :class="{ danger: isOverdue(selected, now) }">{{ slaText(selected, now) }}</strong></div>
-          <div><span>责任人</span><strong>{{ selected.assignee ?? '待领取' }}</strong></div>
-          <div v-if="selectedOrderNo"><span>关联订单</span><strong class="mono">{{ selectedOrderNo }}</strong></div>
-        </div>
 
         <div class="detail-actions">
           <button class="primary" type="button" :disabled="!!inFlight || !!selected.assignee || selected.status === 'RESOLVED'" @click="emit('claim', selected)">
@@ -242,48 +278,72 @@ function onQueueChange(event: Event) {
         </p>
         <p class="actor-stamp">领取与结单署名取自登录账号，页面不能手填。</p>
 
-        <section class="block">
-          <h3>生命周期</h3>
-          <p class="lifecycle-tags">
-            <span>{{ SOURCE_LABEL[selected.source ?? ''] ?? selected.source ?? '—' }}</span>
-            <span>{{ QUEUE_LABEL[selected.queue ?? ''] ?? selected.queue ?? '—' }}</span>
-            <span v-if="selected.escalatedAt" class="danger">已升级</span>
-          </p>
-          <ol class="timeline">
-            <li class="done"><span>已创建</span><time>{{ formatTime(selected.createdAt) }}</time></li>
-            <li v-if="selected.escalatedAt" class="warn"><span>已超时升级</span><time>{{ formatTime(selected.escalatedAt) }}</time></li>
-            <li :class="{ done: !!selected.assignee }">
-              <span>{{ selected.assignee ? `坐席 ${selected.assignee} 已领取` : '待领取' }}</span>
-            </li>
-            <li :class="{ done: selected.status === 'RESOLVED' }">
-              <span>{{ selected.status === 'RESOLVED' ? '已结单' : (STATUS_LABEL[selected.status] ?? selected.status) }}</span>
-              <time v-if="selected.status !== 'RESOLVED'">{{ slaText(selected, now) }}</time>
-            </li>
-          </ol>
-        </section>
+        <div class="detail-body">
+          <div class="detail-main">
+            <section class="block lifecycle-block">
+              <h3>生命周期</h3>
+              <ol class="lifecycle-chain">
+                <li class="done">
+                  <span class="step-title">买家提交工单</span>
+                  <span class="step-note">{{ formatTime(selected.createdAt) }} · 对话问题已留存</span>
+                </li>
+                <li v-if="selected.escalatedAt" class="warn done">
+                  <span class="step-title">超时升级</span>
+                  <span class="step-note">{{ formatTime(selected.escalatedAt) }} · 优先级已抬高</span>
+                </li>
+                <li :class="{ done: !!selected.assignee, current: !selected.assignee && selected.status !== 'RESOLVED' }">
+                  <span class="step-title">{{ selected.assignee ? `坐席 ${selected.assignee} 已领取` : '等待领取' }}</span>
+                  <span class="step-note">{{ selected.assignee ? '责任已落到登录账号' : '领取后进入处理中' }}</span>
+                </li>
+                <li :class="{ done: selected.status === 'RESOLVED', current: selected.status !== 'RESOLVED' }">
+                  <span class="step-title">{{ selected.status === 'RESOLVED' ? '已结单' : (STATUS_LABEL[selected.status] ?? selected.status) }}</span>
+                  <span class="step-note">
+                    {{ selected.status === 'RESOLVED' ? (selected.resolutionNote || '已记录处理结论') : `${slaText(selected, now)} · 结论会回到买家` }}
+                  </span>
+                </li>
+              </ol>
+            </section>
 
-        <section class="block">
-          <h3>转人工上下文</h3>
-          <div v-if="selected.transcript" class="transcript">
-            <div class="bubble buyer">
-              <span class="bubble-role">买家提问</span>
-              <p>{{ selected.userQuery }}</p>
-            </div>
-            <div class="bubble system">
-              <span class="bubble-role">系统记录 · 原文未解析</span>
-              <pre>{{ selected.transcript }}</pre>
-            </div>
+            <section class="block">
+              <h3>转人工上下文</h3>
+              <div v-if="selected.transcript" class="transcript">
+                <div class="bubble buyer">
+                  <span class="bubble-role">买家提问</span>
+                  <p>{{ selected.userQuery }}</p>
+                </div>
+                <div class="bubble system">
+                  <span class="bubble-role">系统记录 · 原文未解析</span>
+                  <pre>{{ selected.transcript }}</pre>
+                </div>
+              </div>
+              <p v-else class="empty">这张单没有记录失败/升级上下文</p>
+              <p v-if="selected.transcript" class="fine">
+                这一格是降级出口写下的诊断事实（失败原因、被拦的交接、工具回执），不是完整对话记录。
+              </p>
+            </section>
           </div>
-          <p v-else class="empty">这张单没有记录失败/升级上下文</p>
-          <p v-if="selected.transcript" class="fine">
-            这一格是降级出口写下的诊断事实（失败原因、被拦的交接、工具回执），不是完整对话记录。
-          </p>
-        </section>
 
-        <section v-if="selected.status === 'RESOLVED'" class="resolution">
-          <h3>处理结论</h3>
-          <p>{{ selected.resolutionNote || '本次没有填写结单说明' }}</p>
-        </section>
+          <aside class="detail-side">
+            <section class="side-block">
+              <h3>工单信息</h3>
+              <dl class="detail-meta">
+                <div><dt>来源</dt><dd>{{ SOURCE_LABEL[selected.source ?? ''] ?? selected.source ?? '—' }}</dd></div>
+                <div><dt>队列</dt><dd>{{ QUEUE_LABEL[selected.queue ?? ''] ?? selected.queue ?? '—' }}</dd></div>
+                <div><dt>优先级</dt><dd>{{ PRIORITY_LABEL[selected.priority ?? 'normal'] ?? selected.priority }}</dd></div>
+                <div><dt>SLA</dt><dd :class="{ danger: isOverdue(selected, now) }">{{ slaText(selected, now) }}</dd></div>
+                <div><dt>责任人</dt><dd>{{ selected.assignee ?? '待领取' }}</dd></div>
+                <div v-if="selectedOrderNo"><dt>关联订单</dt><dd class="mono">{{ selectedOrderNo }}</dd></div>
+              </dl>
+            </section>
+
+            <section v-if="selected.status === 'RESOLVED'" class="resolution side-block">
+              <h3>处理结论</h3>
+              <p>{{ selected.resolutionNote || '本次没有填写结单说明' }}</p>
+            </section>
+
+            <p class="actor-note">署名来自登录账号；页面不提供自报操作人。</p>
+          </aside>
+        </div>
       </aside>
       <aside v-else class="detail-pane empty-pane">选择左侧一张工单查看详情</aside>
     </div>
@@ -293,83 +353,145 @@ function onQueueChange(event: Event) {
 <style scoped>
 .summary {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.65fr);
+  gap: 12px;
   margin: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+}
+.summary-lead {
+  display: grid;
+  grid-template-rows: 1fr auto;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+}
+.kpi-cluster {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
   overflow: hidden;
 }
 .kpi {
   text-align: left;
   background: transparent;
   border: none;
-  border-right: 1px solid var(--line);
   border-radius: 0;
-  padding: 12px 16px;
   cursor: pointer;
-  min-height: 64px;
 }
-.kpi:last-child { border-right: none; }
-.kpi span { display: block; color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-.kpi strong { display: block; font-size: 22px; line-height: 1.2; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.kpi:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line); }
-.kpi.active { background: var(--teal-wash); box-shadow: inset 0 -2px 0 var(--teal); }
+.kpi span { display: block; color: var(--ink-3); font-size: 12px; letter-spacing: .02em; }
+.kpi strong { display: block; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi.lead {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 94px;
+  padding: 16px 20px 14px;
+}
+.kpi.lead strong {
+  margin: 4px 0 2px;
+  font-family: var(--serif);
+  font-size: 42px;
+  font-weight: 600;
+}
+.kpi.lead small {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.kpi.lead.active { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--teal); }
+.refund-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 20px;
+  border: none;
+  border-top: 1px solid var(--line-2);
+  border-radius: 0;
+  background: var(--panel-2);
+  color: var(--ink-2);
+  text-align: left;
+  font-size: 13px;
+}
+.refund-entry b { color: var(--amber); font-variant-numeric: tabular-nums; }
+.refund-entry span { margin-left: auto; color: var(--teal); font-size: 12px; }
+.refund-entry:hover:not(:disabled) { background: var(--amber-soft); border-color: var(--line-2); }
+.kpi.mini {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 118px;
+  padding: 16px 20px;
+  border-right: 1px solid var(--line-2);
+}
+.kpi.mini:last-child { border-right: none; }
+.kpi.mini strong { margin: 0; font-size: 30px; font-weight: 650; }
+.kpi.mini small { color: var(--ink-3); font-size: 12px; }
+.kpi.mini:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line-2); }
+.kpi.mini.active { background: var(--panel-2); box-shadow: inset 0 -2px 0 var(--teal); }
 .kpi.danger strong { color: var(--rose); }
-.kpi.refund strong { color: var(--amber); }
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0; }
-.filter-field { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
-.toolbar select { padding: 5px 8px; font-size: 12px; }
+.filter-field { font-size: 13px; color: var(--ink-3); display: flex; align-items: center; gap: 7px; }
+.toolbar select { min-height: 34px; padding: 5px 9px; font-size: 13px; }
 .search-field {
-  flex: 1; min-width: 220px;
+  flex: 1; min-width: 240px;
   display: flex; align-items: center; gap: 7px;
   border: 1px solid var(--line); border-radius: var(--radius-md);
-  background: var(--panel); padding: 0 10px; height: 32px;
+  background: var(--panel); padding: 0 11px; height: 36px;
   color: var(--ink-3);
 }
 .search-field:focus-within { border-color: var(--teal-line-2); box-shadow: var(--ring); }
 .search-field input {
   flex: 1; min-width: 0; border: none; background: none; padding: 0;
-  font-size: 12px; color: var(--ink);
+  font-size: 13px; color: var(--ink);
 }
 .search-field input:focus { outline: none; box-shadow: none; }
-.toolbar-hint { margin: -6px 0 0; color: var(--ink-3); font-size: 11px; }
-.toolbar .ghost { margin-left: auto; }
+.toolbar-count { margin-left: auto; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.toolbar-hint { margin: -7px 0 0; color: var(--ink-3); font-size: 12px; }
 .workspace {
   display: grid;
-  grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(330px, 390px) minmax(0, 1fr);
+  gap: 14px;
   align-items: stretch;
-  height: calc(100dvh - 236px);
-  min-height: 420px;
+  height: calc(100dvh - 318px);
+  min-height: 440px;
 }
 .queue-pane, .detail-pane {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: 14px 16px;
+  border-radius: var(--radius-panel);
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 .detail-pane { overflow: auto; }
-.ticket-list { display: grid; gap: 8px; }
-.ticket-list { overflow-y: auto; padding-right: 2px; }
+.ticket-list { display: grid; overflow-y: auto; padding-right: 2px; }
 .ticket-card {
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid var(--line-2);
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  padding: 13px 12px;
   cursor: pointer;
-  transition: border-color .15s ease, background .15s ease;
+  background: transparent;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
-.ticket-card:hover { border-color: var(--teal-line); border-left-color: var(--teal-line); background: var(--panel-2); }
-.ticket-card.active { border-color: var(--teal-line); border-left-color: var(--teal); background: var(--teal-wash); }
-.ticket-card.overdue { border-left: 3px solid var(--rose); }
-.ticket-top { display: flex; align-items: center; gap: 7px; }
+.ticket-card:last-child { border-bottom: none; }
+.ticket-card:hover { background: var(--panel-2); border-left-color: var(--teal-line); }
+.ticket-card.active { background: var(--panel-active); border-left-color: var(--teal); }
+.ticket-card.overdue { border-left-color: var(--rose); }
+.ticket-card.overdue.active { border-left-color: var(--teal); }
+.ticket-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .priority {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; color: var(--ink-2); letter-spacing: .02em;
+  font-size: 12px; color: var(--ink-2); letter-spacing: .02em;
 }
 .prio-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); display: inline-block; }
 .priority.urgent { color: var(--rose); }
@@ -377,85 +499,169 @@ function onQueueChange(event: Event) {
 .priority.money { color: var(--amber-ink); }
 .priority.money .prio-dot { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
 .priority.normal .prio-dot { background: var(--ink-3); }
+.ticket-time { color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .source-badge {
-  font-size: 10px; color: var(--ink-3); background: var(--bg);
-  border: 1px solid var(--line-2); border-radius: var(--radius-full); padding: 0 7px;
+  font-size: 12px; color: var(--ink-3); background: none;
+  border: none; border-radius: 0; padding: 0;
   white-space: nowrap;
 }
-.ticket-top .status-pill { margin-left: auto; }
 .ticket-card.urgent .priority { color: var(--rose); font-weight: 600; }
-.ticket-query { margin: 6px 0 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
-.ticket-meta { display: flex; gap: 12px; flex-wrap: wrap; color: var(--ink-3); font-size: 11px; }
-.ticket-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; color: var(--ink-3); font-size: 11px; }
-.detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.detail-head h2 { margin: 2px 0 0; font-size: 14px; }
+.ticket-query {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  margin: 7px 0 9px;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.ticket-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
+.ticket-meta .status-pill { margin-left: auto; }
+.ticket-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; color: var(--ink-3); font-size: 12px; }
+.detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.detail-head h2 { margin: 3px 0 0; font-family: var(--serif); font-size: 20px; font-weight: 600; }
+.detail-sub { margin: 5px 0 0; color: var(--ink-3); font-size: 12px; line-height: 1.55; }
+.detail-head-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.mobile-back { display: none; }
+.copy-id {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  min-height: 22px;
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--teal);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .detail-query.quote {
-  margin: 12px 0;
+  margin: 14px 0;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-left: 3px solid var(--teal-line-2);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
 }
 .quote-label {
-  margin: 0 0 4px; color: var(--ink-3); font-size: 10px;
-  letter-spacing: .06em; text-transform: uppercase;
+  margin: 0 0 5px; color: var(--ink-3); font-size: 12px;
+  letter-spacing: .02em;
 }
 .quote-text {
-  margin: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; color: var(--ink);
+  margin: 0; overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; color: var(--ink);
 }
-.detail-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
-.detail-meta div { display: grid; gap: 2px; }
-.detail-meta span { color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-.detail-meta strong { font-size: 13px; }
-.detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
+.detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; }
 .action-hint { margin: -8px 0 16px; color: var(--ink-2); font-size: 12px; }
-.actor-stamp { margin: -8px 0 16px; color: var(--ink-3); font-size: 11px; }
-.block { border-top: 1px solid var(--line-2); padding-top: 14px; margin-top: 14px; }
-.block h3 { font-size: 13px; margin: 0 0 8px; }
-.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.timeline li { position: relative; padding-left: 16px; color: var(--ink-3); font-size: 13px; }
-.timeline li::before { content: ''; position: absolute; left: 0; top: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
-.timeline li.done::before { background: var(--teal); }
-.timeline li.warn { color: var(--amber-ink); }
-.timeline li.warn::before { background: var(--amber); }
-.timeline time { margin-left: 6px; }
-.lifecycle-tags { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 9px; }
-.lifecycle-tags span {
-  font-size: 11px; color: var(--ink-3); background: var(--bg);
-  border-radius: var(--radius-full); padding: 1px 8px;
+.actor-stamp { margin: -2px 0 16px; color: var(--ink-3); font-size: 12px; }
+.detail-body { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(230px, .7fr); gap: 22px; align-items: start; }
+.detail-main { min-width: 0; }
+.detail-side { display: grid; gap: 12px; }
+.block { border-top: 1px solid var(--line-2); padding-top: 16px; margin-top: 16px; }
+.lifecycle-block { border-top: none; padding-top: 0; margin-top: 2px; }
+.block h3, .side-block h3 { font-family: var(--serif); font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+.lifecycle-chain {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 2px 22px;
+  position: relative;
+  display: grid;
 }
-.lifecycle-tags .danger { color: var(--rose); background: var(--rose-soft); }
+.lifecycle-chain::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  bottom: 12px;
+  width: 1px;
+  background: var(--line);
+}
+.lifecycle-chain li { position: relative; display: grid; gap: 2px; padding: 0 0 18px; }
+.lifecycle-chain li:last-child { padding-bottom: 0; }
+.lifecycle-chain li::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--ink-3);
+}
+.lifecycle-chain li.done::before { background: var(--teal); border-color: var(--teal); }
+.lifecycle-chain li.current::before {
+  background: var(--panel);
+  border: 2px solid var(--teal);
+  box-shadow: 0 0 0 4px var(--teal-soft);
+}
+.lifecycle-chain li.warn::before { background: var(--amber); border-color: var(--amber); }
+.step-title { color: var(--ink); font-size: 13px; font-weight: 500; }
+.step-note { color: var(--ink-3); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
 .transcript { display: grid; gap: 8px; max-height: 320px; overflow: auto; padding-right: 2px; }
 .bubble {
   max-width: 92%; border-radius: var(--radius-md); padding: 8px 10px;
-  font-size: 12px; line-height: 1.55;
+  font-size: 13px; line-height: 1.6;
 }
-.bubble-role { display: block; font-size: 11px; color: var(--ink-3); margin-bottom: 3px; }
+.bubble-role { display: block; font-size: 12px; color: var(--ink-3); margin-bottom: 3px; }
 .bubble p { margin: 0; overflow-wrap: anywhere; }
-.bubble pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 var(--mono); }
+.bubble pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 var(--mono); }
 .bubble.buyer {
   justify-self: end; background: var(--ink); border: 1px solid var(--ink); color: #fff;
 }
 .bubble.system { justify-self: start; background: var(--bg); border: 1px solid var(--line); color: var(--ink-2); }
-.resolution { border-top: 1px solid var(--line-2); margin-top: 14px; padding-top: 14px; }
-.resolution h3 { font-size: 13px; margin: 0 0 6px; color: var(--teal); }
-.resolution p { margin: 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.side-block {
+  padding: 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-xl);
+}
+.side-block h3 { margin-bottom: 10px; }
+.detail-meta { display: grid; gap: 0; margin: 0; }
+.detail-meta div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.detail-meta div:last-child { border-bottom: none; }
+.detail-meta dt { color: var(--ink-3); font-size: 12px; }
+.detail-meta dd { margin: 0; color: var(--ink); font-size: 13px; text-align: right; overflow-wrap: anywhere; }
+.resolution p { margin: 0; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.actor-note { margin: 0; color: var(--ink-3); font-size: 12px; line-height: 1.6; }
 .empty-pane { display: grid; place-items: center; color: var(--ink-3); min-height: 220px; }
 
 @media (max-width: 960px) {
   .workspace { grid-template-columns: 1fr; height: auto; min-height: 0; }
   .queue-pane, .detail-pane { max-height: none; }
   .ticket-list { overflow: visible; }
-  .summary { grid-template-columns: repeat(3, 1fr); }
-  .kpi:nth-child(3) { border-right: none; }
-  .detail-meta { grid-template-columns: 1fr 1fr; }
+  .summary { grid-template-columns: 1fr; }
+  .kpi.mini { min-height: 104px; }
+  .workspace:not(.show-detail) .detail-pane { display: none; }
+  .workspace.show-detail .queue-pane { display: none; }
+  .workspace.show-detail .detail-pane { display: flex; }
+  .mobile-back { display: inline-flex; }
+  .detail-body { grid-template-columns: 1fr; gap: 16px; }
+  .detail-side { grid-template-columns: 1fr 1fr; align-items: start; }
+  .actor-note { grid-column: 1 / -1; }
 }
 
 @media (max-width: 640px) {
-  .summary { grid-template-columns: repeat(2, 1fr); }
-  .kpi { border-right: 1px solid var(--line); }
-  .kpi:nth-child(2n) { border-right: none; }
-  .detail-meta { grid-template-columns: 1fr; }
+  .summary-lead { grid-template-rows: 1fr auto; }
+  .kpi.lead { min-height: 88px; padding: 14px 16px 12px; }
+  .kpi.lead strong { font-size: 36px; }
+  .refund-entry { padding: 8px 16px; }
+  .kpi.mini { min-height: 104px; padding: 13px 12px; }
+  .kpi.mini strong { font-size: 26px; }
+  .detail-head { flex-direction: column; gap: 10px; }
+  .detail-head-right { width: 100%; justify-content: space-between; }
+  .detail-side { grid-template-columns: 1fr; }
+  .queue-pane, .detail-pane { padding: 14px; }
+  .toolbar-count { display: none; }
 }
 </style>

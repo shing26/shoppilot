@@ -10,7 +10,7 @@
  * 不持有副本——`session` 一份喂登录门、每个 API 调用和 gate/layout 切换，
  * 复制出去就会出现「登录了但没登录」。
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   answerFeedback,
   demoBuyerLogin,
@@ -88,6 +88,8 @@ const orderDetailError = ref('')
 const sideTab = ref<'orders' | 'tickets'>('orders')
 const showAllOrders = ref(false)
 const showAllTickets = ref(false)
+const mobileSideOpen = ref(false)
+const sideClose = ref<HTMLButtonElement | null>(null)
 const now = ref(Date.now())
 let conversation = restoredChat.conversation
 
@@ -112,8 +114,19 @@ let clockTimer = 0
 // 登录前拿不到店名时显示「本店」，不把内部租户号 T001 当产品文案。
 const storeLabel = computed(() => storeName.value || '本店')
 
-/** 顶栏署名：取自令牌里的账号，页面上没有可编辑入口。 */
-const who = computed(() => session.value?.username ?? '')
+/**
+ * 买家展示名：优先用令牌里的 `displayName`，没有时才回退到账号。
+ *
+ * <p>`guest` 是免密入口的内部账号，不能直接出现在页面上；侧栏会话信息与顶栏
+ * 共用这一个展示名，避免同一身份在一屏里出现两种说法。
+ */
+const who = computed(() => {
+  const current = session.value
+  if (!current) return ''
+  const display = current.displayName?.trim()
+  if (display) return display
+  return current.username === 'guest' ? '访客' : current.username
+})
 
 interface HelpCategory {
   key: string
@@ -347,6 +360,7 @@ async function refreshOrders() {
 }
 
 async function askOrder(order: MyOrder) {
+  mobileSideOpen.value = false
   query.value = `帮我查一下订单 ${order.orderNo} 的物流`
   // 窄屏是单列（先聊天后侧栏）：不滚回去，用户只会看到按钮下方那句「已提交」。
   if (window.innerWidth <= 960) {
@@ -442,6 +456,7 @@ async function loadTicketDetail(showSpinner = true) {
 }
 
 function openTicket(ticket: Ticket) {
+  mobileSideOpen.value = false
   selectedTicket.value = ticket
   detailError.value = ''
   progressNote.value = ''
@@ -464,11 +479,32 @@ function closeTicket() {
   }
 }
 
+/** 移动端抽屉：打开后焦点进入关闭按钮，Esc 可退出；背景不跟着滚。 */
+watch(mobileSideOpen, async (open) => {
+  if (open) {
+    document.body.style.overflow = 'hidden'
+    await nextTick()
+    // 抽屉用 visibility 做开合；首帧仍是 hidden，focus() 会被浏览器忽略。
+    // 等两帧让可见性生效后再把焦点送进关闭按钮。
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => sideClose.value?.focus())
+    })
+    return
+  }
+  document.body.style.overflow = ''
+})
+
 onUnmounted(() => {
   setUnauthorizedHandler(null)
+  window.removeEventListener('keydown', onEscape)
+  document.body.style.overflow = ''
   if (detailTimer) window.clearInterval(detailTimer)
   if (clockTimer) window.clearInterval(clockTimer)
 })
+
+function onEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape' && mobileSideOpen.value) mobileSideOpen.value = false
+}
 
 /** 一次流式回答。ask 与 retry 共用，保证「停止 / 重试」不会产生两套状态机。 */
 async function runAnswer(text: string, index: number) {
@@ -598,6 +634,7 @@ async function retry(index: number) {
 
 onMounted(() => {
   setUnauthorizedHandler(onUnauthorized)
+  window.addEventListener('keydown', onEscape)
   if (session.value) {
     void refreshTickets()
     void refreshOrders()
@@ -677,7 +714,9 @@ function clearStoredChat() {
       :has-session="!!session"
       :who="who"
       :store-label="storeLabel"
+      :activity-count="orders.length + tickets.length"
       @sign-out="signOut"
+      @open-activity="mobileSideOpen = true"
     />
 
     <StoreCard v-if="session" :label="storeLabel" :business="storeBusiness" :guarantees="storeGuarantees" />
@@ -711,9 +750,8 @@ function clearStoredChat() {
               </p>
             </div>
             <div class="help-grid" aria-label="常见问题分类">
-              <article v-for="(category, index) in HELP_CATEGORIES" :key="category.key" class="help-card">
+              <article v-for="category in HELP_CATEGORIES" :key="category.key" class="help-card">
                 <header class="help-head">
-                  <span class="help-index mono">{{ String(index + 1).padStart(2, '0') }}</span>
                   <div>
                     <h2>{{ category.title }}</h2>
                     <p>{{ category.hint }}</p>
@@ -759,7 +797,21 @@ function clearStoredChat() {
           <Composer v-model:query="query" :asking="asking" @submit="ask" @stop="stopAnswer" />
         </div>
 
-        <aside class="buyer-side">
+        <button
+          v-if="mobileSideOpen"
+          class="drawer-scrim"
+          type="button"
+          aria-label="关闭订单与进度"
+          @click="mobileSideOpen = false"
+        ></button>
+        <aside class="buyer-side" :class="{ open: mobileSideOpen }" @keydown.esc="mobileSideOpen = false">
+          <div class="side-drawer-head">
+            <div>
+              <strong>订单与进度</strong>
+              <span>本次会话的上下文</span>
+            </div>
+            <button ref="sideClose" class="ghost" type="button" @click="mobileSideOpen = false">关闭</button>
+          </div>
           <SideActivity
             v-model:side-tab="sideTab"
             v-model:show-all-orders="showAllOrders"
@@ -806,9 +858,9 @@ function clearStoredChat() {
 
 <style scoped>
 .wrap {
-  max-width: 1400px;
+  max-width: 1360px;
   margin: 0 auto;
-  padding: 0 24px 24px;
+  padding: 0 32px 32px;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -816,7 +868,7 @@ function clearStoredChat() {
 .buyer-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 16px;
+  gap: 20px;
   align-items: stretch;
   flex: 1;
   min-height: 0;
@@ -825,82 +877,75 @@ function clearStoredChat() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 172px);
-  min-height: 560px;
+  height: calc(100dvh - 176px);
+  min-height: 580px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-panel);
   overflow: hidden;
 }
 .buyer-side {
   position: sticky;
-  top: 72px;
+  top: 80px;
   display: grid;
-  gap: 12px;
+  gap: 14px;
   align-content: start;
   max-height: calc(100dvh - 96px);
   overflow-y: auto;
   padding-right: 2px;
 }
 .welcome {
-  padding: 40px 40px 28px;
+  padding: 36px 44px 28px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  padding-top: 44px;
-  max-width: 940px;
+  justify-content: center;
+  max-width: 980px;
   overflow-y: auto;
 }
-.welcome-head { margin-bottom: 24px; }
+.welcome-head { margin-bottom: 26px; }
 .welcome h1 {
-  margin: 0 0 10px;
-  font-size: 28px;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 .welcome p { margin: 0; color: var(--ink-2); }
-.welcome-lede { max-width: 560px; line-height: 1.7; font-size: 14px; }
+.welcome-lede { max-width: 620px; line-height: 1.75; font-size: 14px; }
 
 .help-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 18px;
+  gap: 14px;
+  margin-bottom: 20px;
 }
 .help-card {
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xl);
   background: var(--panel);
-  padding: 14px 14px 10px;
+  padding: 16px 18px 10px;
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
 .help-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding-bottom: 10px;
+  display: block;
+  padding-bottom: 11px;
   border-bottom: 1px solid var(--line-2);
-}
-.help-index {
-  color: var(--teal);
-  font-size: 10px;
-  line-height: 18px;
-  letter-spacing: .04em;
-  flex: none;
 }
 .help-head h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 .help-head p {
-  margin: 1px 0 0;
+  margin: 3px 0 0;
   color: var(--ink-3);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.55;
 }
 .help-questions { display: grid; }
 .quick-row {
@@ -909,7 +954,7 @@ function clearStoredChat() {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 2px;
+  padding: 10px 2px;
   border: none;
   border-bottom: 1px solid var(--line-2);
   border-radius: 0;
@@ -935,28 +980,79 @@ function clearStoredChat() {
 .welcome-foot-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 20px;
+  gap: 6px 24px;
   border-top: 1px solid var(--line);
-  padding-top: 12px;
+  padding-top: 14px;
 }
 .welcome-foot {
   color: var(--ink-3);
   font-size: 12px;
 }
+.drawer-scrim,
+.side-drawer-head {
+  display: none;
+}
 
 @media (max-width: 960px) {
   .buyer-layout { grid-template-columns: 1fr; min-height: 0; }
-  .buyer-side { position: static; grid-template-columns: 1fr; max-height: none; overflow: visible; }
+  .buyer-side {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 40;
+    width: min(390px, 94vw);
+    box-sizing: border-box;
+    max-height: none;
+    padding: 16px;
+    background: var(--bg);
+    border-left: 1px solid var(--line);
+    box-shadow: var(--shadow-3);
+    overflow-y: auto;
+    transform: translateX(105%);
+    visibility: hidden;
+    transition: transform var(--dur-2) var(--ease), visibility var(--dur-2) var(--ease);
+  }
+  .buyer-side.open { transform: none; visibility: visible; }
+  .side-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 2px 2px 12px;
+  }
+  .side-drawer-head strong {
+    display: block;
+    font-family: var(--serif);
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .side-drawer-head span {
+    display: block;
+    margin-top: 2px;
+    color: var(--ink-3);
+    font-size: 12px;
+  }
+  .drawer-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: rgba(30, 33, 31, 0.34);
+  }
   .buyer-main { height: auto; min-height: 0; }
   .welcome { padding: 28px 24px; overflow: visible; }
 }
 
 @media (max-width: 640px) {
   .wrap { padding: 0 12px 24px; }
-  .welcome { padding: 22px 16px; }
-  .welcome h1 { font-size: 24px; }
+  .welcome { padding: 24px 16px; }
+  .welcome h1 { font-size: 26px; }
   .welcome-head { margin-bottom: 20px; }
   .help-grid { grid-template-columns: 1fr; }
   .buyer-layout { gap: 14px; }
+  .buyer-side { width: 100%; border-left: none; }
 }
 </style>

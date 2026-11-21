@@ -29,24 +29,24 @@ function toggleLogin() {
   <section class="gate">
     <div class="gate-brand">
       <div class="gate-mark">SP</div>
-      <p class="eyebrow">SHOPPILOT SUPPORT</p>
-      <h1>把每一次售后<br>都办到可追踪</h1>
+      <p class="eyebrow">买家服务</p>
+      <h1>订单、政策与售后，<br>在同一条对话里说清楚</h1>
       <p class="lede">
         政策咨询、订单核验与售后办理在同一条对话里完成。需要人工时直接转，
         并留下一个可追踪的工单号。
       </p>
-      <ul class="gate-points">
-        <li><span>01</span>订单与物流核验</li>
-        <li><span>02</span>退换与理赔办理</li>
-        <li><span>03</span>转人工后工单可追踪</li>
-      </ul>
+      <ol class="gate-chain" aria-label="一次售后如何完成">
+        <li><b>带订单提问</b><span>订单、物流与售后上下文一次带入</span></li>
+        <li><b>按政策核验</b><span>回答附命中条款，办理前核验归属</span></li>
+        <li><b>需要时转人工</b><span>生成工单，坐席接单并留下结论</span></li>
+      </ol>
       <p class="gate-foot">本店客服在线 · 办理类问题先核验归属</p>
     </div>
 
     <div class="gate-form">
-      <p class="eyebrow">在线客服</p>
+      <p class="eyebrow">开始咨询</p>
       <h2>登录{{ storeLabel === '本店' ? '店铺客服' : storeLabel }}</h2>
-      <p class="form-lede">登录后可查看订单、工单进度与历史对话。</p>
+      <p class="form-lede">登录后可查看订单、工单进度与历史对话；演示档可直接进入。</p>
       <div class="gate-actions">
         <button class="primary big" type="button" @click="toggleLogin">
           {{ showLogin ? '收起账号登录' : '用买家账号登录' }}
@@ -82,19 +82,19 @@ function toggleLogin() {
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
-  max-width: 1000px;
+  max-width: 1040px;
   width: 100%;
   margin: 48px auto 0;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-panel);
   overflow: hidden;
   box-shadow: var(--shadow-2);
 }
 .gate-brand {
   background: var(--chrome);
   color: var(--chrome-ink);
-  padding: 40px;
+  padding: 44px;
   display: flex;
   flex-direction: column;
 }
@@ -108,72 +108,100 @@ function toggleLogin() {
 .gate-brand .eyebrow { color: var(--teal-line); margin: 0 0 12px; }
 .gate-brand h1 {
   margin: 0 0 16px;
-  font-size: 30px;
-  line-height: 1.22;
-  letter-spacing: -0.02em;
+  font-family: var(--serif);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
 }
 .gate-brand .lede {
   margin: 0 0 28px;
   color: var(--chrome-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.75;
-  max-width: 380px;
+  max-width: 400px;
 }
-.gate-points {
+.gate-chain {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 4px 0 4px 22px;
   display: grid;
-  gap: 0;
+  gap: 14px;
+  position: relative;
   border-top: 1px solid var(--chrome-line);
-}
-.gate-points li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 0;
   border-bottom: 1px solid var(--chrome-line);
-  font-size: 13px;
-  color: var(--chrome-ink);
 }
-.gate-points span {
-  font-family: var(--mono);
-  font-size: 11px;
+.gate-chain::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 16px;
+  bottom: 16px;
+  width: 1px;
+  background: var(--chrome-line);
+}
+.gate-chain li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 8px 0;
+}
+.gate-chain li::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 14px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--chrome);
+  border: 1px solid var(--teal-line);
+}
+.gate-chain b {
+  color: var(--chrome-ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+.gate-chain span {
   color: var(--chrome-muted);
+  font-size: 12px;
+  line-height: 1.55;
 }
 .gate-foot {
   margin: 24px 0 0;
   color: var(--chrome-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .gate-form {
-  padding: 40px;
+  padding: 44px;
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 .gate-form h2 {
   margin: 0 0 8px;
-  font-size: 22px;
-  line-height: 1.3;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.35;
   letter-spacing: -0.01em;
 }
-.form-lede { margin: 0 0 24px; color: var(--ink-2); font-size: 13px; }
+.form-lede { margin: 0 0 24px; color: var(--ink-2); font-size: 14px; line-height: 1.65; }
 .gate-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .big { padding: 9px 18px; font-size: 14px; }
 .login {
   display: grid; gap: 10px; margin: 24px 0 0; text-align: left;
   padding-top: 20px; border-top: 1px solid var(--line);
 }
-.login label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.login label { display: grid; gap: 5px; font-size: 13px; color: var(--ink-2); }
 .login input { width: 100%; box-sizing: border-box; }
 .login button { margin-top: 2px; }
 
 @media (max-width: 640px) {
   .gate { grid-template-columns: 1fr; margin: 16px 0 0; }
   .gate-brand { padding: 24px 20px; }
-  .gate-brand h1 { font-size: 24px; }
-  .gate-points, .gate-foot { display: none; }
+  .gate-brand h1 { font-size: 25px; }
+  .gate-chain, .gate-foot { display: none; }
   .gate-form { padding: 24px 20px; }
   .gate-actions { flex-direction: column; align-items: stretch; }
   .gate-actions .link { align-self: center; margin-top: 10px; }

@@ -165,7 +165,7 @@ const emit = defineEmits<{
 .conversation-messages li { padding: 8px 10px; border-radius: var(--radius-md); background: var(--bg); max-width: 86%; }
 .conversation-messages li.user { justify-self: end; background: var(--teal-soft); }
 .conversation-messages li.agent { background: var(--amber-soft); }
-.message-head { display: flex; gap: 8px; justify-content: space-between; color: var(--ink-3); font-size: 11px; margin-bottom: 3px; }
+.message-head { display: flex; gap: 8px; justify-content: space-between; color: var(--ink-3); font-size: 12px; margin-bottom: 3px; }
 .conversation-messages p { margin: 0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
 .conversation-reply { margin-top: 12px; border-top: 1px solid var(--line-2); padding-top: 12px; }
 .conversation-reply textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line);
@@ -173,7 +173,7 @@ const emit = defineEmits<{
 .conversation-reply textarea:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); }
 .conversation-tags { display: flex; align-items: center; gap: 6px; }
 .unread-pill { min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--rose); color: #fff;
-  font-size: 11px; line-height: 18px; text-align: center; }
+  font-size: 12px; line-height: 18px; text-align: center; }
 
 @media (max-width: 960px) {
   .conversation-layout { grid-template-columns: 1fr; }

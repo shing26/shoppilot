@@ -98,7 +98,7 @@ const rows = computed<RefundRow[]>(() =>
 }
 .decision-path li {
   flex: 1; display: grid; gap: 1px; padding-top: 9px; position: relative;
-  color: var(--ink-3); font-size: 11px;
+  color: var(--ink-3); font-size: 12px;
 }
 .decision-path li::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--line);

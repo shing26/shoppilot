@@ -225,21 +225,21 @@ onMounted(() => {
   box-shadow: 0 0 0 3px var(--green-soft, #ecfdf3);
 }
 .thread-id strong { display: block; font-size: 13px; line-height: 1.3; }
-.thread-id small { display: block; color: var(--ink-3); font-size: 11px; }
+.thread-id small { display: block; color: var(--ink-3); font-size: 12px; }
 .thread-context { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .order-chip {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; color: var(--teal-ink);
+  font-size: 12px; color: var(--teal-ink);
   background: var(--teal-soft); border: 1px solid var(--teal-line);
   border-radius: var(--radius-full); padding: 2px 9px; white-space: nowrap;
 }
 .order-chip b { font-weight: 600; }
 .conv {
-  color: var(--ink-3); font-size: 10px; max-width: 150px;
+  color: var(--ink-3); font-size: 12px; max-width: 150px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .day-divider {
-  display: flex; align-items: center; gap: 10px; color: var(--ink-3); font-size: 10px;
+  display: flex; align-items: center; gap: 10px; color: var(--ink-3); font-size: 12px;
   letter-spacing: .06em; text-transform: uppercase;
 }
 .day-divider::before, .day-divider::after {
@@ -248,7 +248,7 @@ onMounted(() => {
 .thread { display: flex; flex-direction: column; gap: 16px; padding: 24px 24px 8px; flex: 1; min-height: 0; overflow-y: auto; }
 .msg { max-width: 88%; }
 .msg.user { align-self: flex-end; text-align: right; }
-.msg-who { font-size: 11px; color: var(--ink-3); margin-bottom: 4px; letter-spacing: 0.02em; }
+.msg-who { font-size: 12px; color: var(--ink-3); margin-bottom: 4px; letter-spacing: 0.02em; }
 .bubble {
   border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 10px 14px;
   white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel-2); text-align: left;
@@ -288,7 +288,7 @@ onMounted(() => {
 .agent-dot.running { animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(15, 118, 110, .12); } }
 .agent-title { color: var(--ink); font-weight: 600; }
-.agent-meta { color: var(--ink-3); font-size: 11px; }
+.agent-meta { color: var(--ink-3); font-size: 12px; }
 .agent-chevron { margin-left: auto; color: var(--ink-3); transition: transform .15s ease; }
 .agent-run[open] .agent-chevron { transform: rotate(90deg); }
 .agent-body { padding: 10px 12px 12px; display: grid; gap: 12px; }
@@ -302,7 +302,7 @@ onMounted(() => {
 }
 .agent-phase header { display: flex; align-items: baseline; gap: 8px; margin: 0 0 5px; }
 .phase-title { color: var(--ink); font-weight: 600; font-size: 12px; }
-.phase-hint { color: var(--ink-3); font-size: 11px; }
+.phase-hint { color: var(--ink-3); font-size: 12px; }
 .agent-phase ol { list-style: none; margin: 0; padding: 0 0 0 3px; display: grid; gap: 4px; }
 .agent-phase li { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-2); line-height: 1.45; }
 .step-dot {
@@ -312,7 +312,7 @@ onMounted(() => {
 .agent-phase li.warn .step-dot { background: var(--amber); }
 .agent-phase li.danger .step-dot { background: var(--rose); }
 .agent-raw { border-top: 1px dashed var(--line); padding-top: 8px; }
-.agent-raw summary { cursor: pointer; color: var(--ink-3); font-size: 11px; padding: 0; border: none; }
+.agent-raw summary { cursor: pointer; color: var(--ink-3); font-size: 12px; padding: 0; border: none; }
 .agent-raw ol { list-style: none; margin: 6px 0 0; padding: 0 0 0 12px; display: grid; gap: 4px; border-left: 1px dashed var(--teal-line-2); }
 .agent-raw li { position: relative; color: var(--ink-3); line-height: 1.45; }
 .agent-raw li::before {
@@ -346,8 +346,8 @@ onMounted(() => {
 }
 .cite-group ul { margin: 0; padding-left: 16px; display: grid; gap: 3px; }
 .cite-group li { color: var(--ink-2); }
-.cite-rule { color: var(--ink-3); margin-left: 6px; font-size: 11px; }
-.cite-foot { margin: 0; color: var(--ink-3); font-size: 11px; }
+.cite-rule { color: var(--ink-3); margin-left: 6px; font-size: 12px; }
+.cite-foot { margin: 0; color: var(--ink-3); font-size: 12px; }
 .rate {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   margin-top: 6px; text-align: left; font-size: 12px;

@@ -7,6 +7,7 @@ const props = defineProps<{
   hasSession: boolean
   /** 登录令牌里的角色；界面只做标识，不据此隐藏后端仍允许的入口。 */
   role: string
+  tenantId: string
 }>()
 
 const emit = defineEmits<{ refresh: []; signOut: [] }>()
@@ -28,8 +29,8 @@ const roleLabel = computed(() => {
       </div>
     </a>
     <div v-if="hasSession" class="top-right">
-      <span class="identity">{{ who }}</span>
-      <span class="role">{{ roleLabel }}</span>
+      <span v-if="who" class="identity">{{ who }}</span>
+      <span class="role">{{ roleLabel }}<template v-if="tenantId"> · 店铺 {{ tenantId }}</template></span>
       <button class="ghost" type="button" @click="emit('refresh')">刷新队列</button>
       <button class="link" type="button" @click="emit('signOut')">退出</button>
     </div>
@@ -48,9 +49,9 @@ const roleLabel = computed(() => {
 }
 .brand { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
 .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--teal); color: #fff;
-  display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+  display: grid; place-items: center; font-size: 12px; font-weight: 700; }
 .brand strong { display: block; font-size: 14px; line-height: 1.2; color: var(--chrome-ink); letter-spacing: -0.01em; }
-.brand small { color: var(--chrome-muted); font-size: 11px; }
+.brand small { color: var(--chrome-muted); font-size: 12px; }
 .top-right { display: flex; align-items: center; gap: 12px; }
 .identity {
   color: var(--chrome-muted);
@@ -60,7 +61,7 @@ const roleLabel = computed(() => {
 }
 .role {
   color: var(--chrome-ink);
-  font-size: 11px;
+  font-size: 12px;
   border: 1px solid var(--chrome-line);
   border-radius: var(--radius-full);
   padding: 1px 8px;

@@ -180,9 +180,8 @@ const kbError = ref('')
 
 let timer = 0
 
-const who = computed(() =>
-  session.value ? `${session.value.username} · ${session.value.tenantId}` : '',
-)
+/** 顶栏只展示产品化身份：优先账号展示名，内部账号名不上屏。 */
+const who = computed(() => session.value?.displayName?.trim() ?? '')
 
 const counts = computed(() => countTickets(tickets.value, now.value))
 
@@ -1154,7 +1153,14 @@ function clearStoredSession() {
 
 <template>
   <main class="shell">
-    <TopBar :who="who" :has-session="!!session" :role="session?.role ?? ''" @refresh="refresh" @sign-out="signOut" />
+    <TopBar
+      :who="who"
+      :has-session="!!session"
+      :role="session?.role ?? ''"
+      :tenant-id="session?.tenantId ?? ''"
+      @refresh="refresh"
+      @sign-out="signOut"
+    />
 
     <LoginCard
       v-if="!session"
@@ -1371,7 +1377,7 @@ function clearStoredSession() {
 .denied-code {
   margin: 0;
   color: var(--rose);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;

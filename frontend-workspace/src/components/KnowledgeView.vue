@@ -327,7 +327,7 @@ function scopeOf(value: string): string {
 .flow-label { color: var(--ink-3); font-size: 12px; }
 .flow-value { font-size: 20px; line-height: 1.2; }
 .flow-step.ingest .flow-value { font-size: 15px; color: var(--teal); }
-.flow-hint { color: var(--ink-3); font-size: 11px; }
+.flow-hint { color: var(--ink-3); font-size: 12px; }
 
 .panel {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
@@ -394,7 +394,7 @@ function scopeOf(value: string): string {
 .rev-path .done .dot { background: var(--teal); }
 .rev-path .stopped .dot { background: var(--rose); }
 .rev-path .waiting .dot { background: var(--amber); }
-.rev-path .who { color: var(--teal); font-size: 11px; }
+.rev-path .who { color: var(--teal); font-size: 12px; }
 .rev-actions { display: flex; gap: 8px; }
 .ingest-note {
   margin: 0; padding: 8px 10px; border-radius: var(--radius-md);

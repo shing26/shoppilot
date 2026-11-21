@@ -54,8 +54,8 @@ const can = (capability: Capability) => hasCapability(props.capabilities, capabi
       <span>渠道连接</span><em aria-hidden="true">●</em>
     </button>
     <div class="nav-foot">
-      <strong>{{ tenantId }}</strong>
-      <span>{{ roleLabel }} · SLA 每 10 秒刷新</span>
+      <strong>店铺 {{ tenantId }}</strong>
+      <span>{{ roleLabel }} · SLA 自动刷新</span>
     </div>
   </aside>
 </template>
@@ -73,10 +73,9 @@ const can = (capability: Capability) => hasCapability(props.capabilities, capabi
 .nav-title {
   margin: 0 10px 10px;
   color: var(--chrome-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: .1em;
-  text-transform: uppercase;
+  letter-spacing: .06em;
 }
 .nav-title-2 { margin-top: 18px; }
 .nav-item {
@@ -105,7 +104,7 @@ const can = (capability: Capability) => hasCapability(props.capabilities, capabi
   font-weight: 600;
   box-shadow: inset 2px 0 0 var(--teal);
 }
-.nav-item em { font-style: normal; color: var(--chrome-muted); font-size: 11px; }
+.nav-item em { font-style: normal; color: var(--chrome-muted); font-size: 12px; }
 .nav-item.active em { color: var(--chrome-ink); }
 .nav-item em.unread-badge { color: #fff; background: var(--rose); border-radius: var(--radius-full); min-width: 20px; text-align: center; }
 .nav-foot {
@@ -116,7 +115,7 @@ const can = (capability: Capability) => hasCapability(props.capabilities, capabi
   gap: 2px;
 }
 .nav-foot strong { font-size: 12px; color: var(--chrome-ink); }
-.nav-foot span { color: var(--chrome-muted); font-size: 11px; }
+.nav-foot span { color: var(--chrome-muted); font-size: 12px; }
 
 @media (max-width: 960px) {
   /* 最多六个视图：三列两行比一行六列好按，也不会把「渠道会话」压成两个字一行。 */

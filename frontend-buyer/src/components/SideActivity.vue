@@ -9,7 +9,7 @@ import { computed } from 'vue'
 import { countLabel } from 'frontend-shared'
 import type { MyOrder, OrderDetail, OrderLogistics } from '../api'
 import { PRIORITY_LABEL, STATUS_LABEL, type Ticket } from '../types'
-import { ORDER_STATUS_LABEL, formatTime, slaText } from '../lib/format'
+import { ORDER_STATUS_LABEL, formatTime, shortTicketId, slaText } from '../lib/format'
 import OrderCard from './OrderCard.vue'
 
 const sideTab = defineModel<'orders' | 'tickets'>('sideTab', { required: true })
@@ -157,7 +157,7 @@ function toggleTickets() {
           @keyup.enter="emit('openTicket', t)"
         >
           <div class="ticket-top">
-            <strong class="mono">{{ t.id }}</strong>
+            <strong class="mono ticket-number" :title="'工单号 ' + t.id">{{ shortTicketId(t.id) }}</strong>
             <span class="pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
           </div>
           <p class="ticket-query">{{ t.userQuery }}</p>
@@ -213,12 +213,12 @@ function toggleTickets() {
 .tab-count {
   min-width: 18px; padding: 0 5px; border-radius: var(--radius-full); background: var(--panel-2);
   border: 1px solid var(--line);
-  color: var(--ink-3); font-size: 11px; line-height: 18px; text-align: center;
+  color: var(--ink-3); font-size: 12px; line-height: 18px; text-align: center;
 }
 .side-tab.active .tab-count { background: var(--teal-soft); border-color: var(--teal-line); color: var(--teal-ink); }
 .side-activity .section-head { margin-bottom: 8px; }
 .side-activity .section-head h2 { font-size: 12px; }
-.section-note { color: var(--ink-3); font-size: 10px; margin-left: auto; }
+.section-note { color: var(--ink-3); font-size: 12px; margin-left: auto; }
 .context-order {
   border: 1px solid var(--teal-line);
   background: var(--teal-wash);
@@ -240,7 +240,7 @@ function toggleTickets() {
   border: 1px dashed var(--line);
   border-radius: var(--radius-md);
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
 }
 .orders-head { padding-top: 2px; }
@@ -250,7 +250,7 @@ function toggleTickets() {
 .ticket-list { display: grid; gap: 10px; }
 .ticket-card {
   box-sizing: border-box;
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 13px 14px;
   border-left: 3px solid var(--line);
 }
 .ticket-card.clickable { cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
@@ -259,6 +259,7 @@ function toggleTickets() {
 .ticket-open { margin-left: auto; color: var(--teal); white-space: nowrap; }
 .ticket-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ticket-top strong { font-size: 13px; overflow-wrap: anywhere; }
+.ticket-number { letter-spacing: .01em; }
 .ticket-query { margin: 6px 0 8px; color: var(--ink); overflow-wrap: anywhere; }
 .ticket-timeline { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 8px; color: var(--ink-3); font-size: 12px; }
 .step { position: relative; padding-left: 10px; }
@@ -273,12 +274,12 @@ function toggleTickets() {
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
-.session-info h2 { margin: 0 0 8px; font-size: 12px; }
+.session-info h2 { margin: 0 0 8px; font-size: 13px; }
 .session-info dl { margin: 0; display: grid; gap: 6px; }
 .session-info div { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; align-items: baseline; }
-.session-info dt { color: var(--ink-3); font-size: 11px; }
+.session-info dt { color: var(--ink-3); font-size: 12px; }
 .session-info dd {
-  margin: 0; color: var(--ink-2); font-size: 11px;
+  margin: 0; color: var(--ink-2); font-size: 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 

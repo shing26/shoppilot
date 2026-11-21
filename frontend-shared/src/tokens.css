@@ -15,48 +15,48 @@
  */
 :root {
   /* 颜色：中性 */
-  --bg: #f4f5f7;
-  --panel: #fff;
-  --panel-2: #f9fafb;
-  --ink: #101828;
-  --ink-2: #475467;
-  --ink-3: #667085;
-  --line: #e4e7ec;
-  --line-2: #f0f1f3;
+  --bg: #f5f2ec;
+  --panel: #fffdf9;
+  --panel-2: #f8f5ef;
+  --ink: #1e211f;
+  --ink-2: #555a56;
+  --ink-3: #687069;
+  --line: rgba(30, 33, 31, 0.14);
+  --line-2: rgba(30, 33, 31, 0.08);
 
-  /* 产品外壳：深墨色顶栏与侧栏，把「演示页」和「工作台」分开。 */
-  --chrome: #101828;
-  --chrome-2: #1d2939;
-  --chrome-ink: #f9fafb;
-  --chrome-muted: #98a2b3;
-  --chrome-line: #344054;
+  /* 产品外壳：暖墨色，取工单夹与印章台的颜色，不用冷灰机房。 */
+  --chrome: #232723;
+  --chrome-2: #2d322d;
+  --chrome-ink: #f7f3eb;
+  --chrome-muted: #b6bab3;
+  --chrome-line: rgba(247, 243, 235, 0.14);
 
   /* 颜色：语义三件套（实色 / soft 底 / line 边） */
-  --teal: #0e7a5f;
-  --teal-ink: #0a5c47;
-  --teal-soft: #eef8f4;
-  --teal-soft-2: #e6f4ee;
-  --teal-line: #c3e3d6;
-  --teal-line-2: #d4ebe1;
+  --teal: #146b55;
+  --teal-ink: #0f5543;
+  --teal-soft: #e6f0eb;
+  --teal-soft-2: #dce9e2;
+  --teal-line: #bfd6cb;
+  --teal-line-2: #cfe0d7;
   /* 浅青底的两档：`wash` 用于内嵌面板，`wash-deep` 用于导航选中态。 */
-  --teal-wash: #f4faf7;
-  --teal-wash-deep: #eaf5f0;
+  --teal-wash: #f2f7f4;
+  --teal-wash-deep: #e7f0eb;
 
-  --amber: #b54708;
-  --amber-ink: #93370d;
-  --amber-soft: #fff7ed;
-  --amber-line: #f5d5b0;
+  --amber: #9a4f27;
+  --amber-ink: #7e3d1c;
+  --amber-soft: #f7ece3;
+  --amber-line: #e3c7b7;
 
-  --rose: #b42318;
-  --rose-soft: #fef3f2;
-  --rose-line: #f4c7c3;
+  --rose: #a33d31;
+  --rose-soft: #f8ece9;
+  --rose-line: #e1beb7;
 
-  --green: #067647;
-  --green-soft: #ecfdf3;
-  --green-line: #b7e4c7;
+  --green: #146b55;
+  --green-soft: #e6f0eb;
+  --green-line: #bfd6cb;
 
-  /* 被选中的卡片底：比 `--panel` 偏青一点点，用来在没有阴影时也能读出选中。 */
-  --panel-active: #f6fbf8;
+  /* 选中底回到暖纸色；选中语义交给左侧印章绿细线，不再整块泛绿。 */
+  --panel-active: #f7f3eb;
 
   /* 字阶与行高 */
   --text-xs: 12px;
@@ -79,19 +79,20 @@
   --space-8: 64px;
 
   /* 圆角 */
-  --radius-xs: 3px;
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
   --radius-xl: 12px;
   --radius-full: 999px;
+  --radius-panel: 14px;
   /* 旧名保留：基础控件的现有引用不必改动，值仍是 8px。 */
   --radius: 8px;
 
   /* 阴影 */
-  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-2: 0 4px 12px rgba(16, 24, 40, 0.08);
-  --shadow-3: 0 16px 40px rgba(16, 24, 40, 0.16);
+  --shadow-1: 0 1px 2px rgba(30, 33, 31, 0.05);
+  --shadow-2: 0 8px 24px rgba(30, 33, 31, 0.06);
+  --shadow-3: 0 20px 60px rgba(30, 33, 31, 0.16);
 
   /* 动效 */
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
@@ -100,10 +101,12 @@
   --dur-3: 380ms;
 
   /* 焦点环：只在键盘焦点出现，鼠标点击不受影响。 */
-  --ring: 0 0 0 3px rgba(14, 122, 95, 0.24);
+  --ring: 0 0 0 3px rgba(20, 107, 85, 0.24);
 
   /* 字体族与基准字号：保持字面量，避免 var 替换在 font 简写里产生差异。 */
-  --font: 14px/1.55 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Noto Sans SC", sans-serif;
+  --font: 14px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Noto Sans SC", sans-serif;
+  /* 标题只做「工单桌」的性格，不把正文换成衬线；全部为本地回退，不发网络请求。 */
+  --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif;
   --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
 }
 
@@ -112,6 +115,13 @@ body {
   background: var(--bg);
   color: var(--ink);
   font: var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--teal-soft);
+  color: var(--ink);
 }
 
 button,
@@ -143,14 +153,14 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--ink);
+  background: var(--teal);
   color: #fff;
-  border-color: var(--ink);
+  border-color: var(--teal);
 }
 
 button.primary:hover:not(:disabled) {
-  background: var(--chrome-2);
-  border-color: var(--chrome-2);
+  background: var(--teal-ink);
+  border-color: var(--teal-ink);
 }
 
 input,
@@ -160,6 +170,14 @@ textarea {
   border-radius: var(--radius-md);
   padding: 7px 10px;
   background: var(--panel);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: var(--ring);
 }
 
 /* 键盘可达性：`outline: none` 只在 focus-visible 上换成语义环，

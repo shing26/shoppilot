@@ -161,15 +161,15 @@ async function copyTracking() {
 .order-card.expanded { border-color: var(--teal-line); background: var(--panel-active); }
 .order-card:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .order-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.order-top strong { font-size: 12px; overflow-wrap: anywhere; }
+.order-top strong { font-size: 13px; overflow-wrap: anywhere; }
 .order-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 12px; color: var(--ink-2); }
 .order-meta strong { color: var(--ink); font-size: 13px; }
-.order-foot { margin: 5px 0 0; color: var(--ink-3); font-size: 11px; }
+.order-foot { margin: 5px 0 0; color: var(--ink-3); font-size: 12px; }
 .order-ask { margin-top: 8px; font-size: 12px; }
 
 .order-detail { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--teal-line-2); cursor: default; }
 .progress { list-style: none; display: flex; margin: 0 0 12px; padding: 0; }
-.progress li { flex: 1; position: relative; display: grid; gap: 2px; padding-top: 12px; color: var(--ink-3); font-size: 11px; }
+.progress li { flex: 1; position: relative; display: grid; gap: 2px; padding-top: 12px; color: var(--ink-3); font-size: 12px; }
 .progress li::before {
   content: ''; position: absolute; top: 4px; left: 0; right: 0; height: 2px; background: var(--line);
 }
@@ -183,22 +183,22 @@ async function copyTracking() {
 .progress li.done::before { background: var(--teal-line); }
 .progress li.done .dot { background: var(--teal); }
 .progress li .step-label { text-align: center; }
-.progress li time { text-align: center; font-size: 10px; color: var(--ink-3); }
+.progress li time { text-align: center; font-size: 12px; color: var(--ink-3); }
 
 .order-facts { display: flex; gap: 14px; margin: 0 0 10px; }
 .order-facts div { display: grid; gap: 1px; }
-.order-facts dt { color: var(--ink-3); font-size: 11px; }
+.order-facts dt { color: var(--ink-3); font-size: 12px; }
 .order-facts dd { margin: 0; font-size: 12px; }
 
 .flags { list-style: none; display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 10px; padding: 0; }
 .flags li {
-  font-size: 11px; color: var(--teal); background: var(--teal-soft);
-  border: 1px solid var(--teal-line); border-radius: var(--radius-full); padding: 1px 8px;
+  font-size: 12px; color: var(--teal-ink);
+  border-bottom: 1px solid var(--teal-line); padding: 0 0 1px;
 }
 
 .block { border-top: 1px solid var(--line-2); padding-top: 9px; margin-top: 9px; }
 .block h3 { font-size: 12px; margin: 0 0 6px; display: flex; align-items: center; gap: 6px; }
-.carrier { color: var(--ink-3); font-weight: 400; font-size: 11px; }
+.carrier { color: var(--ink-3); font-weight: 400; font-size: 12px; }
 .address { margin: 0; font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .masked { color: var(--ink-2); }
 .address-line { margin: 3px 0 0; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
@@ -218,7 +218,7 @@ async function copyTracking() {
 .timeline li:not(:last-child)::after {
   content: ''; position: absolute; left: 2px; top: 14px; bottom: -8px; width: 1px; background: var(--line);
 }
-.timeline time { font-size: 11px; color: var(--ink-3); }
+.timeline time { font-size: 12px; color: var(--ink-3); }
 .node-desc { overflow-wrap: anywhere; }
 
 /* 触屏目标 ≥40px（round47 票 196）；桌面仍是行内链接的密度。 */

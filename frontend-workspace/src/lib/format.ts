@@ -25,6 +25,18 @@ export function formatTime(value: string | null | undefined): string {
   return formatStamp(value) ?? '—'
 }
 
+/**
+ * 工单号在队列与详情标题里的短显：保留首字母与末 8 位。
+ *
+ * <p>完整工单号仍放在 `title` 与「复制完整工单号」里；这里只解决
+ * `T1795260990650-5` 这类值把列表右列和详情标题撑满的问题。
+ */
+export function shortTicketId(id: string): string {
+  if (id.length <= 14) return id
+  const tail = id.slice(-8)
+  return /^[A-Za-z]$/.test(id[0]) ? `${id[0]}…${tail}` : `…${tail}`
+}
+
 export function ratioText(value: number | undefined | null): string {
   return `${((value ?? 0) * 100).toFixed(1)}%`
 }

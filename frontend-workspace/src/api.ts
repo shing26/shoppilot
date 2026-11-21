@@ -37,6 +37,8 @@ export interface Session {
   role: string
   tenantId: string
   customerId: string | null
+  /** 账号的展示名；登录与 demo-login 都会返回，旧存档可能没有。 */
+  displayName?: string | null
   capabilities: Capability[]
 }
 

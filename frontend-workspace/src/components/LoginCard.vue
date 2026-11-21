@@ -26,23 +26,23 @@ function toggleLogin() {
   <section class="login-wrap">
     <div class="login-brand">
       <div class="login-mark">SP</div>
-      <p class="eyebrow">SHOPPILOT WORKSPACE</p>
+      <p class="eyebrow">坐席工作台</p>
       <h1>让每一张售后工单<br>都有交接、有结论</h1>
       <p class="brand-lede">
         队列、会话接管、退款审核与结单意见在同一个工作台完成。
         所有动作记审计，署名取自登录账号。
       </p>
-      <ul class="brand-points">
-        <li><span>01</span>工单队列与 SLA</li>
-        <li><span>02</span>渠道会话接管</li>
-        <li><span>03</span>退款审核与审计</li>
-      </ul>
+      <ol class="brand-chain" aria-label="工单处理链路">
+        <li><b>接单</b><span>队列按优先级排序，SLA 只标记超时</span></li>
+        <li><b>处理</b><span>订单、会话与上下文在同一条工单里</span></li>
+        <li><b>结单</b><span>结论回到买家，责任落在登录账号</span></li>
+      </ol>
     </div>
 
     <div class="login-card">
-      <p class="eyebrow">坐席工作台</p>
+      <p class="eyebrow">开始值班</p>
       <h2>登录坐席工作台</h2>
-      <p class="lede">登录后进入工单队列，处理会话、结单与退款审核。</p>
+      <p class="lede">登录后进入工单队列，处理会话、结单与退款审核；演示档可直接进入。</p>
       <div class="login-actions">
         <button class="primary big" type="button" @click="toggleLogin">
           {{ showLogin ? '收起账号登录' : '用账号口令登录' }}
@@ -71,20 +71,20 @@ function toggleLogin() {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
   place-items: stretch;
-  max-width: 1000px;
+  max-width: 1040px;
   max-height: 640px;
   width: 100%;
   margin: auto;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-panel);
   overflow: hidden;
   box-shadow: var(--shadow-2);
 }
 .login-brand {
   background: var(--chrome);
   color: var(--chrome-ink);
-  padding: 40px;
+  padding: 44px;
   display: flex;
   flex-direction: column;
 }
@@ -98,55 +98,83 @@ function toggleLogin() {
 .login-brand .eyebrow { color: var(--teal-line); margin: 0 0 12px; }
 .login-brand h1 {
   margin: 0 0 16px;
-  font-size: 30px;
-  line-height: 1.22;
-  letter-spacing: -0.02em;
+  font-family: var(--serif);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
 }
 .brand-lede {
   margin: 0 0 28px;
   color: var(--chrome-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.75;
-  max-width: 380px;
+  max-width: 400px;
 }
-.brand-points {
+.brand-chain {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 4px 0 4px 22px;
+  position: relative;
+  display: grid;
+  gap: 14px;
   border-top: 1px solid var(--chrome-line);
-}
-.brand-points li {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 0;
   border-bottom: 1px solid var(--chrome-line);
-  font-size: 13px;
 }
-.brand-points span { font-family: var(--mono); font-size: 11px; color: var(--chrome-muted); }
+.brand-chain::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 16px;
+  bottom: 16px;
+  width: 1px;
+  background: var(--chrome-line);
+}
+.brand-chain li { position: relative; display: grid; gap: 2px; padding: 8px 0; }
+.brand-chain li::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 14px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--chrome);
+  border: 1px solid var(--teal-line);
+}
+.brand-chain b { color: var(--chrome-ink); font-size: 14px; font-weight: 500; }
+.brand-chain span { color: var(--chrome-muted); font-size: 12px; line-height: 1.55; }
 
 .login-card {
   box-sizing: border-box;
-  padding: 40px;
+  padding: 44px;
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
-.login-card h2 { margin: 0 0 8px; font-size: 22px; line-height: 1.3; letter-spacing: -0.01em; }
-.lede { color: var(--ink-2); margin: 0 0 24px; font-size: 13px; }
+.login-card h2 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.lede { color: var(--ink-2); margin: 0 0 24px; font-size: 14px; line-height: 1.65; }
 .login-actions { display: flex; justify-content: flex-start; gap: 10px; flex-wrap: wrap; }
 .big { padding: 9px 18px; font-size: 14px; }
 .login-form {
   display: grid; gap: 10px; margin: 20px 0 0; text-align: left;
   padding-top: 20px; border-top: 1px solid var(--line);
 }
-.login-form label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.login-form label { display: grid; gap: 5px; font-size: 13px; color: var(--ink-2); }
 .login-form input { width: 100%; box-sizing: border-box; }
 .login-card .link { align-self: flex-start; margin-top: 12px; }
 
 @media (max-width: 640px) {
   .login-wrap { grid-template-columns: 1fr; max-height: none; margin: 16px; }
   .login-brand { padding: 24px 20px; }
-  .login-brand h1 { font-size: 24px; }
-  .brand-points, .brand-lede { display: none; }
+  .login-brand h1 { font-size: 25px; }
+  .brand-chain, .brand-lede { display: none; }
   .login-card { padding: 24px 20px; }
 }
 </style>

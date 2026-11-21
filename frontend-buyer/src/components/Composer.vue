@@ -20,6 +20,10 @@ function onEnter(event: KeyboardEvent) {
 
 <template>
   <section class="composer">
+    <div class="composer-head">
+      <strong>描述你的问题</strong>
+      <span>会先核验订单归属，再办理</span>
+    </div>
     <div class="composer-box">
       <input
         v-model="query"
@@ -38,28 +42,49 @@ function onEnter(event: KeyboardEvent) {
 <style scoped>
 .composer {
   position: sticky; bottom: 0; z-index: 10;
-  padding: 12px 16px 14px; margin-top: auto;
+  padding: 14px 20px 16px; margin-top: auto;
   background: var(--panel);
   border-top: 1px solid var(--line);
+}
+.composer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 2px 9px;
+}
+.composer-head strong {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+}
+.composer-head span {
+  color: var(--ink-3);
+  font-size: 12px;
 }
 .composer-box {
   display: flex; gap: 10px; align-items: center;
 }
 .composer input {
-  flex: 1; min-width: 0; height: 40px; box-sizing: border-box;
-  border-radius: var(--radius-md); padding: 0 12px; background: var(--panel-2);
+  flex: 1; min-width: 0; height: 48px; box-sizing: border-box;
+  border-radius: var(--radius-lg); padding: 0 14px; background: var(--panel-2);
+  border-color: var(--line);
+  font-size: 14px;
 }
 .composer input:focus { outline: none; border-color: var(--teal); box-shadow: var(--ring); background: var(--panel); }
-.composer button { height: 40px; padding: 0 18px; flex: none; }
+.composer button { height: 48px; padding: 0 22px; flex: none; }
 .stop { background: var(--panel); border-color: var(--line); color: var(--rose); }
 .composer-hint {
-  margin: 8px 0 0;
+  margin: 7px 2px 0;
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 @media (max-width: 640px) {
-  .composer { padding: 10px 12px 12px; }
+  .composer { padding: 12px; }
+  .composer-head span { display: none; }
+  .composer input { height: 44px; }
+  .composer button { height: 44px; }
   .composer button { padding: 0 14px; }
   .composer-hint { display: none; }
 }
