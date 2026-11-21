@@ -3,149 +3,314 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ShopPilot · 多租户智能客服</title>
+<title>ShopPilot · 售后服务工作台</title>
 <style>
   :root {
-    --bg: #f4f6f5;
+    --chrome: #101828;
+    --chrome-2: #1a2433;
+    --chrome-line: #2a3546;
+    --chrome-ink: #f2f4f7;
+    --chrome-muted: #98a2b3;
+    --canvas: #f4f5f7;
     --panel: #ffffff;
-    --ink: #14161a;
-    --ink-2: #5c636e;
-    --ink-3: #6b7280;
-    --line: #dfe2e7;
-    --teal: #0f766e;
-    --teal-soft: #eef8f6;
+    --ink: #101828;
+    --ink-2: #475467;
+    --ink-3: #667085;
+    --line: #e4e7ec;
+    --line-2: #eef0f3;
+    --teal: #0e7a5f;
+    --teal-dark: #0a5f4a;
+    --teal-soft: #ecfdf5;
+    --teal-line: #b7e4d6;
     --amber: #b45309;
-    --green: #15803d;
+    --amber-soft: #fffaeb;
+    --green: #12805c;
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  html, body { margin: 0; }
   body {
-    margin: 0;
     min-height: 100dvh;
-    background:
-      radial-gradient(1200px 500px at 10% -10%, #dff0ec 0%, transparent 60%),
-      radial-gradient(900px 400px at 100% 0%, #e8eef7 0%, transparent 55%),
-      var(--bg);
+    background: var(--canvas);
     color: var(--ink);
-    font: 15px/1.65 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+    font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  .shell { max-width: 1120px; margin: 0 auto; padding: 28px 20px 40px; }
-  header { display: flex; align-items: center; gap: 12px; }
-  .logo { width: 38px; height: 38px; border-radius: 11px; background: var(--teal); color: #fff;
-    display: grid; place-items: center; font-weight: 750; font-size: 18px; }
-  header h1 { font-size: 17px; margin: 0; letter-spacing: .01em; }
-  header .tag { margin-left: auto; font-size: 12px; color: var(--teal); background: var(--teal-soft);
-    border: 1px solid #b7ddd8; border-radius: 999px; padding: 3px 10px; }
-  .hero { margin: 54px 0 34px; max-width: 760px; }
-  .hero h2 { font-size: clamp(28px, 4.4vw, 46px); line-height: 1.18; margin: 0 0 16px; letter-spacing: -.02em; }
-  .hero h2 em { font-style: normal; color: var(--teal); }
-  .hero p { color: var(--ink-2); font-size: 16px; margin: 0; max-width: 640px; }
-  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px;
-    display: flex; flex-direction: column; min-height: 240px; box-shadow: 0 1px 0 rgba(20,22,26,.03); }
-  .card .kicker { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
-    font-weight: 650; }
-  .card h3 { font-size: 20px; margin: 8px 0 8px; }
-  .card p { color: var(--ink-2); font-size: 14px; margin: 0; }
-  .card .actions { margin-top: auto; padding-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    text-decoration: none; border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600;
-    border: 1px solid var(--line); color: var(--ink); background: #fff; transition: .15s ease; }
-  .btn:hover { border-color: var(--teal); color: var(--teal); transform: translateY(-1px); }
+  a { color: inherit; }
+  .topbar {
+    background: var(--chrome);
+    border-bottom: 1px solid var(--chrome-line);
+    color: var(--chrome-ink);
+  }
+  .topbar-inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: var(--teal); color: #fff;
+    display: grid; place-items: center;
+    font-size: 11px; font-weight: 700; letter-spacing: .4px;
+  }
+  .brand-name { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+  .brand-sub { color: var(--chrome-muted); font-size: 11px; }
+  .topbar-spacer { flex: 1; }
+  .status {
+    display: inline-flex; align-items: center; gap: 7px;
+    color: var(--chrome-muted); font-size: 12px;
+    border: 1px solid var(--chrome-line); border-radius: 999px;
+    padding: 4px 11px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+  .dot.up { background: #34d399; box-shadow: 0 0 0 3px rgba(52, 211, 153, .14); }
+  .dot.down { background: #fb7185; }
+
+  .shell { max-width: 1180px; margin: 0 auto; padding: 40px 24px 28px; }
+  .intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr);
+    gap: 32px;
+    align-items: start;
+    margin-bottom: 32px;
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--teal);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .intro h1 {
+    margin: 0 0 14px;
+    font-size: clamp(26px, 3.2vw, 36px);
+    line-height: 1.2;
+    letter-spacing: -.025em;
+    max-width: 700px;
+    text-wrap: balance;
+  }
+  .intro p { margin: 0; color: var(--ink-2); max-width: 620px; font-size: 15px; }
+  .scope {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+  .scope h2 { margin: 0 0 12px; font-size: 12px; color: var(--ink-3); font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+  .scope dl { margin: 0; display: grid; gap: 10px; }
+  .scope div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; }
+  .scope dt { color: var(--ink-3); font-size: 12px; }
+  .scope dd { margin: 0; font-size: 12px; color: var(--ink-2); }
+  .scope dd strong { color: var(--ink); font-weight: 600; }
+
+  .entries { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); gap: 16px; }
+  .entry {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    min-height: 236px;
+  }
+  .entry.primary { border-top: 3px solid var(--teal); }
+  .entry-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .entry h2 { margin: 0 0 6px; font-size: 19px; letter-spacing: -.01em; }
+  .entry p { margin: 0; color: var(--ink-2); font-size: 13px; }
+  .entry-tag {
+    flex: none; font-size: 11px; color: var(--teal);
+    background: var(--teal-soft); border: 1px solid var(--teal-line);
+    border-radius: 999px; padding: 2px 9px;
+  }
+  .stores { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
+  .store {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 11px; text-decoration: none; font-size: 13px;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .store:hover { border-color: var(--teal-line); background: var(--teal-soft); }
+  .store span { color: var(--ink-3); font-family: var(--mono); font-size: 11px; }
+  .entry-actions { margin-top: auto; padding-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 36px; padding: 0 14px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel);
+    color: var(--ink); text-decoration: none; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--teal-line); color: var(--teal); }
   .btn.primary { background: var(--teal); border-color: var(--teal); color: #fff; }
-  .btn.primary:hover { background: #0b5f59; color: #fff; }
-  .store-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .store { font-size: 13px; border: 1px solid #d7dbe1; background: #fff; color: var(--ink);
-    border-radius: 999px; padding: 5px 11px; text-decoration: none; }
-  .store:hover { border-color: var(--teal); color: var(--teal); }
-  .hero-card { grid-column: span 3; min-height: 0; flex-direction: row; align-items: center; gap: 24px;
-    background: linear-gradient(110deg, #0f766e, #115e59 62%, #134e4a); border: 0; color: #fff; }
-  .hero-card .txt { flex: 1; }
-  .hero-card h3 { color: #fff; margin-top: 2px; }
-  .hero-card p { color: #cde9e4; }
-  .hero-card .btn { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.35); color: #fff; }
-  .hero-card .btn:hover { background: rgba(255,255,255,.2); color: #fff; }
-  .art { width: 150px; height: 96px; border-radius: 14px; background: rgba(255,255,255,.1);
-    border: 1px solid rgba(255,255,255,.25); display: grid; place-items: center; flex: none; }
-  .art span { font-size: 40px; filter: saturate(.4); }
-  footer { margin-top: 28px; display: flex; align-items: center; gap: 10px; color: var(--ink-3); font-size: 13px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); display: inline-block; }
-  .dot.up { background: var(--green); }
-  .dot.down { background: #be123c; }
+  .btn.primary:hover { background: var(--teal-dark); color: #fff; }
+  .entry .fine { margin-top: 12px; color: var(--ink-3); font-size: 11px; }
+
+  .capabilities {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .cap { padding: 16px 18px; border-right: 1px solid var(--line-2); }
+  .cap:last-child { border-right: none; }
+  .cap h3 { margin: 0 0 4px; font-size: 13px; }
+  .cap p { margin: 0; color: var(--ink-3); font-size: 12px; line-height: 1.55; }
+
+  details.ops {
+    margin-top: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  details.ops summary {
+    cursor: pointer; list-style: none;
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 18px; color: var(--ink-2); font-size: 12px;
+  }
+  details.ops summary::-webkit-details-marker { display: none; }
+  details.ops summary strong { color: var(--ink); font-size: 13px; }
+  details.ops summary .chev { margin-left: auto; color: var(--ink-3); transition: transform .15s ease; }
+  details.ops[open] summary .chev { transform: rotate(90deg); }
+  details.ops[open] summary { border-bottom: 1px solid var(--line-2); }
+  .ops-body { padding: 14px 18px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .ops-body .note { flex-basis: 100%; margin: 2px 0 0; color: var(--ink-3); font-size: 11px; }
+
+  footer {
+    max-width: 1180px; margin: 0 auto;
+    padding: 0 24px 28px;
+    display: flex; flex-wrap: wrap; gap: 8px 18px;
+    color: var(--ink-3); font-size: 11px;
+  }
   footer .sep { color: var(--line); }
-  @media (max-width: 860px) {
-    .grid { grid-template-columns: 1fr; }
-    .hero-card { grid-column: span 1; flex-direction: column; align-items: flex-start; }
-    .art { display: none; }
-    .hero { margin-top: 38px; }
+  .mono { font-family: var(--mono); }
+
+  @media (max-width: 900px) {
+    .intro, .entries { grid-template-columns: 1fr; }
+    .capabilities { grid-template-columns: 1fr; }
+    .cap { border-right: none; border-bottom: 1px solid var(--line-2); }
+    .cap:last-child { border-bottom: none; }
+  }
+  @media (max-width: 560px) {
+    .topbar-inner, .shell, footer { padding-left: 14px; padding-right: 14px; }
+    .shell { padding-top: 26px; }
+    .stores { grid-template-columns: 1fr; }
+    .scope div { grid-template-columns: 1fr; gap: 2px; }
   }
 </style>
 </head>
 <body>
-<div class="shell">
-  <header>
-    <div class="logo">S</div>
-    <h1>ShopPilot</h1>
-    <span class="tag">本机演示栈</span>
-  </header>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="logo">SP</div>
+    <div>
+      <div class="brand-name">ShopPilot</div>
+      <div class="brand-sub">售后服务工作台</div>
+    </div>
+    <div class="topbar-spacer"></div>
+    <span class="status"><span class="dot" id="status-dot"></span><span id="status-text">正在读取服务状态</span></span>
+  </div>
+</header>
 
-  <section class="hero">
-    <h2>从买家提问，到坐席结单，<br><em>一条能跑通的客服链路</em>。</h2>
-    <p>多租户隔离、政策检索、工具办理、降级落单与结果回流都在同一条链路上。先选一个入口，不用登录也能开聊。</p>
+<main class="shell">
+  <section class="intro">
+    <div>
+      <p class="eyebrow">Buyer support · Agent workspace</p>
+      <h1>把每一次售后，办成一条可追踪的链路</h1>
+      <p>
+        买家从店铺入口带着订单提问，客服按店铺政策回答并核验归属；需要人工时转成工单，
+        坐席在队列里领取、处理、结单，结论回到买家。每个动作都留痕，不靠口头承诺。
+      </p>
+    </div>
+    <aside class="scope" aria-label="运行口径">
+      <h2>运行口径</h2>
+      <dl>
+        <div><dt>身份</dt><dd>登录令牌决定账号、角色与所属店铺，页面不能自报。</dd></div>
+        <div><dt>数据</dt><dd>当前为<strong>演示档</strong>：工单与对话不跨重启保留。</dd></div>
+        <div><dt>办理</dt><dd>涉及资金的动作由人工审核，回答附政策条款依据。</dd></div>
+      </dl>
+    </aside>
   </section>
 
-  <main class="grid">
-    <article class="hero-card card">
-      <div class="txt">
-        <div class="kicker" style="color:#a7d8d1">Buyer experience</div>
-        <h3>买家端 · 免登录直接开聊</h3>
-        <p>选一家店进入，自动以访客身份开始对话；店铺名片、快捷问题、我的订单、我的工单与政策引用都在同一页。</p>
-        <div class="store-row">
-          <a class="store" href="/buyer/?store=T001">星选生活旗舰店</a>
-          <a class="store" href="/buyer/?store=T002">鲜果驿站</a>
-          <a class="store" href="/buyer/?store=T003">云裳服饰旗舰店</a>
-          <a class="store" href="/buyer/?store=T004">云栖酒店</a>
+  <section class="entries" aria-label="产品入口">
+    <article class="entry primary">
+      <div class="entry-head">
+        <div>
+          <h2>买家服务</h2>
+          <p>查订单、退换货、生鲜理赔与转人工。进入店铺后可直接提问，办理类问题先核验订单归属。</p>
         </div>
+        <span class="entry-tag">买家端</span>
       </div>
-      <div class="art"><span>💬</span></div>
+      <div class="stores">
+        <a class="store" href="/buyer/?store=T001">星选生活旗舰店<span>T001</span></a>
+        <a class="store" href="/buyer/?store=T002">鲜果驿站<span>T002</span></a>
+        <a class="store" href="/buyer/?store=T003">云裳服饰旗舰店<span>T003</span></a>
+        <a class="store" href="/buyer/?store=T004">云栖酒店<span>T004</span></a>
+      </div>
+      <p class="fine">店铺入口按店铺码进入；正式部署由店铺链接或登录态决定，买家不需要选择内部编号。</p>
     </article>
 
-    <article class="card">
-      <div class="kicker">Agent workspace</div>
-      <h3>坐席控制台</h3>
-      <p>工单队列、退款审核、编排质量三视图；结单意见、上下文与 Handoff 指标都在同一个工作区。本机演示可一键体验坐席或管理员。</p>
-      <div class="actions">
-        <a class="btn primary" href="/workspace/">进入控制台</a>
+    <article class="entry">
+      <div class="entry-head">
+        <div>
+          <h2>坐席工作台</h2>
+          <p>工单队列、渠道会话、退款审核、知识复核与质量观测。领取与结单都记在登录账号名下。</p>
+        </div>
+        <span class="entry-tag">坐席 / 管理员</span>
       </div>
-    </article>
-
-    <article class="card">
-      <div class="kicker">Operations</div>
-      <h3>运维调试台</h3>
-      <p>状态机时间线、故障注入、缓存与模型读数。它是工程师的工具，不是产品首页。</p>
-      <div class="actions">
-        <a class="btn" href="/console.html">打开调试台</a>
-        <a class="btn" href="/admin/debug">/admin/debug</a>
+      <div class="entry-actions">
+        <a class="btn primary" href="/workspace/">进入工作台</a>
       </div>
+      <p class="fine">需要坐席账号；工作台内不提供故障注入或令牌编辑。</p>
     </article>
+  </section>
 
-    <article class="card">
-      <div class="kicker">Runtime</div>
-      <h3>服务状态</h3>
-      <p id="status-line">正在读取网关就绪状态…</p>
-      <div class="actions">
-        <a class="btn" href="/actuator/health/readiness" target="_blank" rel="noreferrer">readiness</a>
-        <a class="btn" href="/actuator/prometheus" target="_blank" rel="noreferrer">metrics</a>
-      </div>
-    </article>
-  </main>
+  <section class="capabilities" aria-label="链路能力">
+    <div class="cap">
+      <h3>政策问答与引用</h3>
+      <p>回答只引用命中的店铺条款，并标出规则来源；没有依据时明确说明，不编造政策。</p>
+    </div>
+    <div class="cap">
+      <h3>订单与工具办理</h3>
+      <p>查订单、查物流、发起售后都先核验租户与买家归属；缺参数时追问，不替用户猜。</p>
+    </div>
+    <div class="cap">
+      <h3>转人工与工单追踪</h3>
+      <p>降级或显式转人工都会落一张工单，买家可查进度，坐席领取后署名处理并回传结论。</p>
+    </div>
+  </section>
 
-  <footer>
-    <span class="dot" id="status-dot"></span>
-    <span id="status-text">网关状态读取中</span>
-    <span class="sep">|</span>
-    <span>产品入口不依赖调试台；两者共用同一套网关与身份面</span>
-  </footer>
-</div>
+  <details class="ops">
+    <summary>
+      <strong>工程入口</strong>
+      <span>调试台、就绪探针与运行指标，供开发与运维排障使用</span>
+      <span class="chev">›</span>
+    </summary>
+    <div class="ops-body">
+      <a class="btn" href="/console.html">打开调试台</a>
+      <a class="btn" href="/actuator/health/readiness" target="_blank" rel="noreferrer">readiness</a>
+      <a class="btn" href="/actuator/prometheus" target="_blank" rel="noreferrer">metrics</a>
+      <a class="btn" href="/admin/debug">/admin/debug</a>
+      <p class="note">调试台会展示令牌、故障注入与缓存操作，不属于产品面；生产部署应按运维规范限制访问。</p>
+    </div>
+  </details>
+</main>
+
+<footer>
+  <span id="status-line">正在读取网关就绪状态…</span>
+  <span class="sep">|</span>
+  <span>演示档数据不跨重启保留；正式档以部署配置为准</span>
+  <span class="sep">|</span>
+  <span class="mono">ShopPilot</span>
+</footer>
+
 <script>
   (async () => {
     const dot = document.getElementById('status-dot')
@@ -158,8 +323,8 @@
       dot.classList.add(up ? 'up' : 'down')
       text.textContent = up ? '网关就绪' : '网关未就绪'
       line.textContent = up
-        ? '网关已就绪。模型、检索与下游依赖的健康分项以 readiness 详情为准。'
-        : '网关可达但未就绪：先看 readiness 的失败分项，再进调试台。'
+        ? '网关已就绪；模型、检索与下游依赖的分项健康以 readiness 详情为准。'
+        : '网关可达但未就绪：请查看 readiness 的失败分项。'
     } catch (err) {
       dot.classList.add('down')
       text.textContent = '网关不可达'

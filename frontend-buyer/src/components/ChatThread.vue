@@ -14,11 +14,18 @@ import {
   agentStepText,
   agentStepTone,
   groupCitations,
+  renderMarkdown,
 } from '../lib/format'
 
 const props = defineProps<{
   messages: ChatMessage[]
   asking: boolean
+  /** 店铺名，会话头用它说明「正在和谁对话」。 */
+  storeLabel: string
+  /** 会话号；没有回答时为空。 */
+  conversationId: string
+  /** 本次对话里识别到的订单号；为空时不显示关联 chip。 */
+  orderNo: string
   /** 正在写原因的那一条（只有点踩会展开表单）；null 表示没有。 */
   feedbackDraft: { index: number; verdict: 'UP' | 'DOWN' } | null
   feedbackInFlight: boolean
@@ -70,19 +77,42 @@ onMounted(() => {
 </script>
 
 <template>
-  <section
-    ref="threadEl"
-    class="thread"
-    role="log"
-    aria-live="polite"
-    aria-relevant="additions text"
-    aria-atomic="false"
-    @scroll="onThreadScroll"
-  >
-    <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
+  <div class="thread-shell">
+    <header class="thread-head">
+      <div class="thread-id">
+        <span class="live-dot" aria-hidden="true"></span>
+        <div>
+          <strong>在线客服</strong>
+          <small>{{ storeLabel }} · 通常几分钟内回复</small>
+        </div>
+      </div>
+      <div class="thread-context">
+        <span v-if="orderNo" class="order-chip">
+          关联订单 <b class="mono">{{ orderNo }}</b>
+        </span>
+        <span v-if="conversationId" class="conv mono" :title="'会话号 ' + conversationId">{{ conversationId }}</span>
+      </div>
+    </header>
+
+    <section
+      ref="threadEl"
+      class="thread"
+      role="log"
+      aria-live="polite"
+      aria-relevant="additions text"
+      aria-atomic="false"
+      @scroll="onThreadScroll"
+    >
+      <div class="day-divider"><span>本次会话</span></div>
+      <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
       <div class="msg-who">{{ m.role === 'user' ? '我' : '客服' }}</div>
       <div class="bubble" :class="{ streaming: m.pending }">
         <span v-if="m.pending && !m.text" class="typing">正在回答</span>
+        <span
+          v-else-if="m.role === 'assistant'"
+          class="bubble-text md"
+          v-html="renderMarkdown(m.text)"
+        ></span>
         <template v-else>{{ m.text }}</template>
       </div>
       <p v-if="m.note" class="fallback">{{ m.note }}</p>
@@ -177,27 +207,73 @@ onMounted(() => {
         <button class="link" type="button" :disabled="feedbackInFlight" @click="emit('cancelFeedback')">取消</button>
       </form>
       <p v-if="m.feedbackError" class="rate-error">{{ m.feedbackError }}</p>
-    </div>
-  </section>
+      </div>
+    </section>
+  </div>
 </template>
 
 <style scoped>
-.thread { display: flex; flex-direction: column; gap: 14px; padding: 8px 4px 4px 0; flex: 1; min-height: 0; overflow-y: auto; }
+.thread-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.thread-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 20px; border-bottom: 1px solid var(--line); flex: none;
+  background: var(--panel);
+}
+.thread-id { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.live-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex: none;
+  box-shadow: 0 0 0 3px var(--green-soft, #ecfdf3);
+}
+.thread-id strong { display: block; font-size: 13px; line-height: 1.3; }
+.thread-id small { display: block; color: var(--ink-3); font-size: 11px; }
+.thread-context { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.order-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--teal-ink);
+  background: var(--teal-soft); border: 1px solid var(--teal-line);
+  border-radius: var(--radius-full); padding: 2px 9px; white-space: nowrap;
+}
+.order-chip b { font-weight: 600; }
+.conv {
+  color: var(--ink-3); font-size: 10px; max-width: 150px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.day-divider {
+  display: flex; align-items: center; gap: 10px; color: var(--ink-3); font-size: 10px;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.day-divider::before, .day-divider::after {
+  content: ''; height: 1px; background: var(--line-2); flex: 1;
+}
+.thread { display: flex; flex-direction: column; gap: 16px; padding: 24px 24px 8px; flex: 1; min-height: 0; overflow-y: auto; }
 .msg { max-width: 88%; }
 .msg.user { align-self: flex-end; text-align: right; }
-.msg-who { font-size: 12px; color: var(--ink-3); margin-bottom: 3px; }
+.msg-who { font-size: 11px; color: var(--ink-3); margin-bottom: 4px; letter-spacing: 0.02em; }
 .bubble {
-  border: 1px solid var(--line); border-radius: 14px; padding: 9px 13px;
-  white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); text-align: left;
+  border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 10px 14px;
+  white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel-2); text-align: left;
+  font-size: 14px; line-height: 1.65;
 }
-.msg.user .bubble { background: var(--teal-soft-2); border-color: var(--teal-line-2); }
+.msg.user .bubble { background: var(--ink); border-color: var(--ink); color: #fff; }
 .bubble.streaming::after { content: '▍'; color: var(--teal); margin-left: 2px; animation: blink 1s steps(2, start) infinite; }
+.msg.user .bubble.streaming::after { color: #fff; }
 @keyframes blink { 50% { opacity: 0; } }
+.md p { margin: 0 0 8px; }
+.md p:last-child { margin-bottom: 0; }
+.md ul, .md ol { margin: 2px 0 8px; padding-left: 20px; }
+.md ul:last-child, .md ol:last-child { margin-bottom: 0; }
+.md li { margin: 2px 0; }
+.md strong { color: var(--ink); font-weight: 650; }
+.md code {
+  font-family: var(--mono); font-size: .92em;
+  background: var(--bg); border: 1px solid var(--line-2);
+  border-radius: 4px; padding: 0 4px;
+}
 .typing { color: var(--ink-3); }
 .typing::after { content: '…'; }
 .agent-run {
-  margin: 8px 0 0; text-align: left; border: 1px solid var(--line);
-  border-radius: 12px; background: var(--panel); font-size: 12px; overflow: hidden;
+  margin: 10px 0 0; text-align: left; border: 1px solid var(--line);
+  border-radius: var(--radius-md); background: var(--panel); font-size: 12px; overflow: hidden;
 }
 .agent-run summary {
   cursor: pointer; color: var(--ink-2); display: flex; align-items: center; gap: 8px;
@@ -218,7 +294,7 @@ onMounted(() => {
 .agent-body { padding: 10px 12px 12px; display: grid; gap: 12px; }
 .agent-plan {
   list-style: none; margin: 0; padding: 8px 10px; display: grid; gap: 5px;
-  background: var(--teal-wash); border: 1px solid var(--teal-line-2); border-radius: 9px;
+  background: var(--teal-wash); border: 1px solid var(--teal-line-2); border-radius: var(--radius-sm);
 }
 .agent-plan li { display: flex; align-items: flex-start; gap: 7px; color: var(--ink-2); line-height: 1.45; }
 .plan-dot {
@@ -247,12 +323,12 @@ onMounted(() => {
 .msg-actions .fine { margin: 0; }
 .fallback {
   color: var(--amber-ink); background: var(--amber-soft); border: 1px solid var(--amber-line);
-  border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 8px 0 0;
+  border-radius: var(--radius-md); padding: 8px 10px; font-size: 13px; margin: 8px 0 0;
   text-align: left;
 }
 .cites {
   margin: 8px 0 0; text-align: left; font-size: 13px;
-  border: 1px solid var(--line); border-radius: 12px; background: var(--teal-wash);
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel);
   overflow: hidden;
 }
 .cites summary {
@@ -289,7 +365,7 @@ onMounted(() => {
 .rate-done { color: var(--ink-3); }
 .rate-reason { display: flex; align-items: center; gap: 8px; margin-top: 8px; text-align: left; }
 .rate-reason input {
-  flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 9px;
+  flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-md);
   padding: 6px 10px; font: inherit; font-size: 13px; background: var(--panel); color: var(--ink);
 }
 .rate-reason input:focus-visible {
@@ -297,7 +373,7 @@ onMounted(() => {
 }
 .rate-submit {
   border: 1px solid var(--teal); background: var(--teal); color: #fff;
-  border-radius: 9px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  border-radius: var(--radius-md); padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
 }
 .rate-submit:disabled { opacity: .6; cursor: default; }
 .rate-error { margin: 6px 0 0; color: var(--rose); font-size: 12px; text-align: left; }
@@ -307,6 +383,10 @@ onMounted(() => {
 }
 
 @media (max-width: 640px) {
+  .thread-head { padding: 10px 14px; }
+  .conv { display: none; }
+  .order-chip { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+  .thread { padding: 16px 14px 6px; }
   .msg { max-width: 96%; }
 }
 </style>

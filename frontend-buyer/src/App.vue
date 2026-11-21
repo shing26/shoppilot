@@ -115,14 +115,62 @@ const storeLabel = computed(() => storeName.value || '本店')
 /** 顶栏署名：取自令牌里的账号，页面上没有可编辑入口。 */
 const who = computed(() => session.value?.username ?? '')
 
-const QUICK_QUESTIONS = computed(() => {
+interface HelpCategory {
+  key: string
+  title: string
+  hint: string
+  questions: string[]
+}
+
+/**
+ * 帮助首页按「要办的事」分类，而不是按演示话术列三条。
+ *
+ * <p>酒店与生鲜店有各自的业务语言，直接复用通用退换货清单会让买家第一眼就觉得
+ * 「这不是我们店」。分类只改入口文案，不改任何问答链路。
+ */
+const HELP_CATEGORIES = computed<HelpCategory[]>(() => {
   if (tenant.value === 'T004') {
-    return ['你们酒店是卖什么的？', '入住和退房时间是几点？', '帮我查一下订单 90001 的物流']
+    return [
+      { key: 'stay', title: '入住与退房', hint: '时间、加床与到店安排', questions: ['入住和退房时间是几点？', '能不能加床？'] },
+      { key: 'change', title: '订单变更', hint: '取消、改期与担保规则', questions: ['订错了能不能免费取消？', '可以改期吗？'] },
+      { key: 'invoice', title: '发票与报销', hint: '开票主体与抬头', questions: ['怎么开发票？', '发票能开公司抬头吗？'] },
+      { key: 'service', title: '到店服务', hint: '停车、延迟退房等', questions: ['可以延迟退房吗？', '酒店有停车场吗？'] },
+    ]
   }
   if (tenant.value === 'T002') {
-    return ['你们店是卖什么的？', '生鲜坏了怎么赔', '帮我查一下订单 90001 的物流']
+    return [
+      { key: 'fresh', title: '生鲜理赔', hint: '坏果、死蟹与冷链异常', questions: ['生鲜坏了怎么赔', '死蟹签收后怎么申请'] },
+      { key: 'refund', title: '退货退款', hint: '无理由、运费与退款进度', questions: ['七天无理由怎么退', '退货运费谁承担'] },
+      { key: 'logistics', title: '物流与签收', hint: '查件、延误与破损', questions: ['查一下订单 90001 的物流', '冷链延误怎么办'] },
+      { key: 'promo', title: '优惠与价保', hint: '优惠券、价保与活动规则', questions: ['坏果理赔影响优惠券吗', '下单后降价能价保吗'] },
+    ]
   }
-  return ['你们店是卖什么的？', '七天无理由怎么退', '帮我查一下订单 90001 的物流']
+  return [
+    { key: 'refund', title: '退货退款', hint: '无理由、运费与退款进度', questions: ['七天无理由怎么退', '退货运费谁承担'] },
+    { key: 'logistics', title: '物流与签收', hint: '查件、改地址与签收异常', questions: ['查一下订单 90001 的物流', '签收时发现破损怎么办'] },
+    { key: 'promo', title: '优惠与价保', hint: '优惠券、价保与活动规则', questions: ['优惠券没用上能补吗', '下单后降价能价保吗'] },
+    { key: 'account', title: '账号与订单', hint: '地址、合并发货与账号问题', questions: ['怎么修改收货地址', '订单能合并发货吗'] },
+  ]
+})
+
+/** 会话号取最近一条回答携带的 conversationId；没有回答时为空。 */
+const conversationId = computed(() => {
+  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+    const id = messages.value[i].conversationId
+    if (id) return id
+  }
+  return ''
+})
+
+/** 会话头与侧栏的订单上下文：优先当前展开的订单，其次最近一条消息里出现的订单号。 */
+const ORDER_NO_RE = /\b(?:ORD-\d{8}-\d{4}|\d{5,})\b/
+const orderContextNo = computed(() => {
+  if (expandedOrderNo.value) return expandedOrderNo.value
+  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+    const match = messages.value[i].text.match(ORDER_NO_RE)
+    if (match) return match[0]
+  }
+  return ''
 })
 
 async function loadStoreInfo() {
@@ -628,10 +676,11 @@ function clearStoredChat() {
       :guest-mode="guestMode"
       :has-session="!!session"
       :who="who"
+      :store-label="storeLabel"
       @sign-out="signOut"
     />
 
-    <StoreCard :label="storeLabel" :business="storeBusiness" :guarantees="storeGuarantees" />
+    <StoreCard v-if="session" :label="storeLabel" :business="storeBusiness" :guarantees="storeGuarantees" />
 
     <template v-if="!session">
       <LoginGate
@@ -653,16 +702,41 @@ function clearStoredChat() {
       <div class="buyer-layout">
         <div ref="buyerMain" class="buyer-main">
           <section v-if="!messages.length" class="welcome">
-            <p class="eyebrow">在线客服 · {{ storeLabel }}</p>
-            <h1>有什么可以帮你？</h1>
-            <p class="welcome-lede">我会先查店铺规则和订单；需要人工时直接转，不让你重复描述。</p>
-            <div class="welcome-points">
-              <span>查订单与物流</span><span>退换与理赔</span><span>转人工可追踪</span>
+            <div class="welcome-head">
+              <p class="eyebrow">帮助中心 · {{ storeLabel }}</p>
+              <h1>今天需要处理什么？</h1>
+              <p class="welcome-lede">
+                选择一类问题，或直接在下方描述。涉及订单时，客服会先核验归属再办理；
+                需要人工时会转成一张可追踪的工单。
+              </p>
             </div>
-            <div class="quick">
-              <button v-for="q in QUICK_QUESTIONS" :key="q" type="button" class="chip" :disabled="asking" @click="askQuick(q)">
-                {{ q }}
-              </button>
+            <div class="help-grid" aria-label="常见问题分类">
+              <article v-for="(category, index) in HELP_CATEGORIES" :key="category.key" class="help-card">
+                <header class="help-head">
+                  <span class="help-index mono">{{ String(index + 1).padStart(2, '0') }}</span>
+                  <div>
+                    <h2>{{ category.title }}</h2>
+                    <p>{{ category.hint }}</p>
+                  </div>
+                </header>
+                <div class="help-questions">
+                  <button
+                    v-for="q in category.questions"
+                    :key="q"
+                    type="button"
+                    class="quick-row"
+                    :disabled="asking"
+                    @click="askQuick(q)"
+                  >
+                    <span class="quick-text">{{ q }}</span>
+                    <span class="quick-arrow" aria-hidden="true">→</span>
+                  </button>
+                </div>
+              </article>
+            </div>
+            <div class="welcome-foot-row">
+              <p class="welcome-foot">回答会附上店铺政策依据；办理类问题会先核验订单归属。</p>
+              <p class="welcome-foot">直接说「转人工」，会生成可追踪的工单号。</p>
             </div>
           </section>
 
@@ -671,6 +745,9 @@ function clearStoredChat() {
             v-model:feedback-reason="feedbackReason"
             :messages="messages"
             :asking="asking"
+            :store-label="storeLabel"
+            :conversation-id="conversationId"
+            :order-no="orderContextNo"
             :feedback-draft="feedbackDraft"
             :feedback-in-flight="feedbackInFlight"
             @retry="retry"
@@ -699,6 +776,10 @@ function clearStoredChat() {
             :order-logistics="orderLogistics"
             :order-detail-loading="orderDetailLoading"
             :order-detail-error="orderDetailError"
+            :conversation-id="conversationId"
+            :buyer-name="who"
+            :store-label="storeLabel"
+            :order-context-no="orderContextNo"
             @refresh-orders="refreshOrders"
             @refresh-tickets="refreshTickets"
             @toggle-order="toggleOrder"
@@ -725,60 +806,157 @@ function clearStoredChat() {
 
 <style scoped>
 .wrap {
-  max-width: 1160px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 20px 80px;
-  min-height: 100vh;
+  padding: 0 24px 24px;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
 .buyer-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 22px;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
   align-items: stretch;
   flex: 1;
-  min-height: calc(100vh - 200px);
+  min-height: 0;
 }
 .buyer-main {
-  min-width: 0; display: flex; flex-direction: column;
-  height: calc(100vh - 200px); min-height: 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 172px);
+  min-height: 560px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 .buyer-side {
-  position: sticky; top: 76px; display: grid; gap: 12px; align-content: start;
-  max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 2px;
+  position: sticky;
+  top: 72px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
+  padding-right: 2px;
 }
 .welcome {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
-  padding: 26px; box-shadow: 0 10px 32px rgba(20, 22, 26, .05);
+  padding: 40px 40px 28px;
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding-top: 44px;
+  max-width: 940px;
+  overflow-y: auto;
 }
-.welcome h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.25; }
-.welcome p { margin: 0 0 16px; color: var(--ink-2); }
-.welcome-lede { max-width: 520px; line-height: 1.7; }
-.welcome-points { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
-.welcome-points span {
-  font-size: 12px; color: var(--teal); background: var(--teal-soft);
-  border: 1px solid var(--teal-line); border-radius: 999px; padding: 3px 9px;
+.welcome-head { margin-bottom: 24px; }
+.welcome h1 {
+  margin: 0 0 10px;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
-.quick { display: flex; gap: 8px; flex-wrap: wrap; }
-.chip {
-  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-  border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+.welcome p { margin: 0; color: var(--ink-2); }
+.welcome-lede { max-width: 560px; line-height: 1.7; font-size: 14px; }
+
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
 }
-.chip:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
-.chip:disabled { opacity: 0.55; cursor: default; }
+.help-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  padding: 14px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.help-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-2);
+}
+.help-index {
+  color: var(--teal);
+  font-size: 10px;
+  line-height: 18px;
+  letter-spacing: .04em;
+  flex: none;
+}
+.help-head h2 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+.help-head p {
+  margin: 1px 0 0;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.help-questions { display: grid; }
+.quick-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 2px;
+  border: none;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.help-questions .quick-row:last-child { border-bottom: none; }
+.quick-row:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--panel-2);
+}
+.quick-text { overflow-wrap: anywhere; }
+.quick-arrow {
+  color: var(--ink-3);
+  transition: transform var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.quick-row:hover:not(:disabled) .quick-arrow {
+  color: var(--teal);
+  transform: translateX(2px);
+}
+.welcome-foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.welcome-foot {
+  color: var(--ink-3);
+  font-size: 12px;
+}
 
 @media (max-width: 960px) {
   .buyer-layout { grid-template-columns: 1fr; min-height: 0; }
   .buyer-side { position: static; grid-template-columns: 1fr; max-height: none; overflow: visible; }
   .buyer-main { height: auto; min-height: 0; }
+  .welcome { padding: 28px 24px; overflow: visible; }
 }
 
 @media (max-width: 640px) {
-  .wrap { padding: 0 12px 92px; }
-  .welcome { padding: 20px 16px; border-radius: 16px; }
-  .welcome h1 { font-size: 22px; }
+  .wrap { padding: 0 12px 24px; }
+  .welcome { padding: 22px 16px; }
+  .welcome h1 { font-size: 24px; }
+  .welcome-head { margin-bottom: 20px; }
+  .help-grid { grid-template-columns: 1fr; }
   .buyer-layout { gap: 14px; }
 }
 </style>

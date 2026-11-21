@@ -15,41 +15,48 @@
  */
 :root {
   /* 颜色：中性 */
-  --bg: #f2f3f5;
+  --bg: #f4f5f7;
   --panel: #fff;
-  --panel-2: #fbfcfd;
-  --ink: #14161a;
-  --ink-2: #5c636e;
-  --ink-3: #5c636e;
-  --line: #dfe2e7;
-  --line-2: #eceef1;
+  --panel-2: #f9fafb;
+  --ink: #101828;
+  --ink-2: #475467;
+  --ink-3: #667085;
+  --line: #e4e7ec;
+  --line-2: #f0f1f3;
+
+  /* 产品外壳：深墨色顶栏与侧栏，把「演示页」和「工作台」分开。 */
+  --chrome: #101828;
+  --chrome-2: #1d2939;
+  --chrome-ink: #f9fafb;
+  --chrome-muted: #98a2b3;
+  --chrome-line: #344054;
 
   /* 颜色：语义三件套（实色 / soft 底 / line 边） */
-  --teal: #0f766e;
-  --teal-ink: #0b5d57;
-  --teal-soft: #eef8f6;
-  --teal-soft-2: #e7f4f2;
-  --teal-line: #b7ddd8;
-  --teal-line-2: #c9e6e1;
+  --teal: #0e7a5f;
+  --teal-ink: #0a5c47;
+  --teal-soft: #eef8f4;
+  --teal-soft-2: #e6f4ee;
+  --teal-line: #c3e3d6;
+  --teal-line-2: #d4ebe1;
   /* 浅青底的两档：`wash` 用于内嵌面板，`wash-deep` 用于导航选中态。 */
-  --teal-wash: #f4faf9;
-  --teal-wash-deep: #edf7f5;
+  --teal-wash: #f4faf7;
+  --teal-wash-deep: #eaf5f0;
 
-  --amber: #b45309;
-  --amber-ink: #9a3412;
+  --amber: #b54708;
+  --amber-ink: #93370d;
   --amber-soft: #fff7ed;
-  --amber-line: #fed7aa;
+  --amber-line: #f5d5b0;
 
-  --rose: #be123c;
-  --rose-soft: #fff1f4;
-  --rose-line: #f7c6d2;
+  --rose: #b42318;
+  --rose-soft: #fef3f2;
+  --rose-line: #f4c7c3;
 
-  --green: #15803d;
-  --green-soft: #f0fdf4;
-  --green-line: #bbf7d0;
+  --green: #067647;
+  --green-soft: #ecfdf3;
+  --green-line: #b7e4c7;
 
   /* 被选中的卡片底：比 `--panel` 偏青一点点，用来在没有阴影时也能读出选中。 */
-  --panel-active: #fbfefd;
+  --panel-active: #f6fbf8;
 
   /* 字阶与行高 */
   --text-xs: 12px;
@@ -57,9 +64,9 @@
   --text-base: 14px;
   --text-lg: 16px;
   --text-xl: 20px;
-  --text-2xl: 26px;
+  --text-2xl: 24px;
   --leading-tight: 1.25;
-  --leading-base: 1.6;
+  --leading-base: 1.55;
 
   /* 间距 */
   --space-1: 4px;
@@ -72,19 +79,19 @@
   --space-8: 64px;
 
   /* 圆角 */
-  --radius-xs: 4px;
+  --radius-xs: 3px;
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
   --radius-full: 999px;
   /* 旧名保留：基础控件的现有引用不必改动，值仍是 8px。 */
   --radius: 8px;
 
   /* 阴影 */
-  --shadow-1: 0 1px 2px rgba(20, 22, 26, 0.06);
-  --shadow-2: 0 4px 16px rgba(20, 22, 26, 0.08);
-  --shadow-3: 0 12px 32px rgba(20, 22, 26, 0.14);
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-2: 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-3: 0 16px 40px rgba(16, 24, 40, 0.16);
 
   /* 动效 */
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
@@ -93,10 +100,10 @@
   --dur-3: 380ms;
 
   /* 焦点环：只在键盘焦点出现，鼠标点击不受影响。 */
-  --ring: 0 0 0 3px rgba(15, 118, 110, 0.28);
+  --ring: 0 0 0 3px rgba(14, 122, 95, 0.24);
 
   /* 字体族与基准字号：保持字面量，避免 var 替换在 font 简写里产生差异。 */
-  --font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+  --font: 14px/1.55 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Noto Sans SC", sans-serif;
   --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
 }
 
@@ -118,8 +125,10 @@ textarea {
 button {
   border: 1px solid var(--line);
   background: var(--panel);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   padding: 6px 12px;
+  min-height: 32px;
+  font-weight: 500;
   cursor: pointer;
   transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
@@ -139,12 +148,17 @@ button.primary {
   border-color: var(--ink);
 }
 
+button.primary:hover:not(:disabled) {
+  background: var(--chrome-2);
+  border-color: var(--chrome-2);
+}
+
 input,
 select,
 textarea {
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  padding: 7px 10px;
   background: var(--panel);
 }
 
@@ -172,6 +186,8 @@ th {
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* ---- 跨端原子：ui- 前缀，供各页按需引用 ---- */

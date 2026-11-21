@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,7 +36,38 @@ class AuthControllerDemoLoginTest {
         Map<?, ?> body = (Map<?, ?>) response.getBody();
         assertThat(body.get("role")).isEqualTo("BUYER");
         assertThat(body.get("customerId")).isEqualTo("C001");
+        assertThat((List<?>) body.get("capabilities")).isEmpty();
         assertThat(body.get("token")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("坐席一键体验：capabilities 是五项日常能力，不含渠道/店铺")
+    void agentDemoLoginReturnsAgentCapabilities() {
+        when(identity.authenticate("T001", "agent", DEMO_PASSWORD)).thenReturn(new IdentityClient.Attempt(
+                200, new AccountView("acc-agent", "T001", "agent", UserRole.AGENT, null, "体验坐席"), null));
+
+        ResponseEntity<?> response = controller.demoLogin(
+                new AuthController.DemoLoginRequest("T001", "agent"), localRequest("127.0.0.1"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        assertThat(body.get("capabilities")).isEqualTo(
+                List.of("tickets", "conversations", "refunds", "knowledge", "quality"));
+    }
+
+    @Test
+    @DisplayName("管理员一键体验：capabilities 在坐席之上增加渠道/店铺")
+    void adminDemoLoginReturnsAdminCapabilities() {
+        when(identity.authenticate("T001", "admin", DEMO_PASSWORD)).thenReturn(new IdentityClient.Attempt(
+                200, new AccountView("acc-admin", "T001", "admin", UserRole.ADMIN, null, "体验管理员"), null));
+
+        ResponseEntity<?> response = controller.demoLogin(
+                new AuthController.DemoLoginRequest("T001", "admin"), localRequest("127.0.0.1"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        assertThat(body.get("capabilities")).isEqualTo(
+                List.of("tickets", "conversations", "refunds", "knowledge", "quality", "channels", "tenants"));
     }
 
     @Test

@@ -303,8 +303,8 @@ function scopeOf(value: string): string {
 .kb { display: grid; gap: 14px; }
 .kb-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-  padding: 18px 20px; box-shadow: 0 8px 28px rgba(20, 22, 26, .05);
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 18px 20px;
 }
 .kb-head h2 { margin: 2px 0 8px; font-size: 19px; line-height: 1.35; }
 .kb-head .lede { margin: 0; max-width: 620px; color: var(--ink-2); font-size: 13px; line-height: 1.7; }
@@ -317,7 +317,7 @@ function scopeOf(value: string): string {
 .flow-step {
   position: relative;
   display: grid; gap: 2px; padding: 12px 14px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-md);
 }
 .flow-step + .flow-step::before {
   content: '›'; position: absolute; left: -9px; top: 50%; transform: translateY(-50%);
@@ -330,8 +330,8 @@ function scopeOf(value: string): string {
 .flow-hint { color: var(--ink-3); font-size: 11px; }
 
 .panel {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-  padding: 16px 18px 18px; box-shadow: 0 8px 28px rgba(20, 22, 26, .04);
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 16px 18px 18px;
 }
 .panel-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
@@ -344,7 +344,7 @@ function scopeOf(value: string): string {
 }
 .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .row {
-  border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px;
   display: grid; gap: 8px; justify-items: start;
 }
 .row-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; }
@@ -357,7 +357,7 @@ function scopeOf(value: string): string {
 .tag-active { color: var(--teal); font-size: 12px; }
 
 .draft-form {
-  margin-top: 12px; padding: 14px; border-radius: 12px;
+  margin-top: 12px; padding: 14px; border-radius: var(--radius-md);
   background: var(--teal-wash); border: 1px solid var(--teal-line-2);
   display: grid; gap: 10px;
 }
@@ -370,7 +370,7 @@ function scopeOf(value: string): string {
 .revision-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .revision-card {
   border: 1px solid var(--line); border-left: 3px solid var(--teal-line);
-  border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px;
+  border-radius: var(--radius-md); padding: 12px 14px; display: grid; gap: 8px;
 }
 .revision-card.draft { border-left-color: var(--amber); }
 .revision-card.published { border-left-color: var(--green); }
@@ -383,7 +383,7 @@ function scopeOf(value: string): string {
 }
 .rev-body summary { cursor: pointer; color: var(--ink-3); font-size: 12px; }
 .rev-body pre {
-  margin: 8px 0 0; padding: 10px; border-radius: 10px; background: var(--bg);
+  margin: 8px 0 0; padding: 10px; border-radius: var(--radius-md); background: var(--bg);
   white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit;
   font-size: 13px; line-height: 1.7; color: var(--ink-2);
 }
@@ -397,7 +397,7 @@ function scopeOf(value: string): string {
 .rev-path .who { color: var(--teal); font-size: 11px; }
 .rev-actions { display: flex; gap: 8px; }
 .ingest-note {
-  margin: 0; padding: 8px 10px; border-radius: 10px;
+  margin: 0; padding: 8px 10px; border-radius: var(--radius-md);
   background: var(--amber-soft); border: 1px solid var(--amber-line);
   color: var(--amber-ink); font-size: 12px; line-height: 1.6;
 }

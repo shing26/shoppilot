@@ -8,7 +8,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
 [![ADR](https://img.shields.io/badge/Architecture-84%20ADRs-blueviolet)](docs/adr/)
-[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-806-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
+[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-827-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
 [![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
 **10** 态有界状态机 · **4** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
@@ -58,7 +58,7 @@
 
 | 评估维度 | 依据路径 | 关键设计考量与实测读数 |
 | :--- | :--- | :--- |
-| **架构决策演进** | [`docs/adr/`](docs/adr/) | 84 个编号 / 83 篇成文（ADR-0022 有意预留未占用），包含完整选型权衡、备选方案与后果推演。 |
+| **架构决策演进** | [`docs/adr/`](docs/adr/) | 85 个编号位 / 84 篇成文（ADR-0022 有意预留未占用；篇数 11-21 实点），包含完整选型权衡、备选方案与后果推演。 |
 | **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求实打 bge-m3 为 24–65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平。 |
 | **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0-token 判据抓出三个静默缺陷。 |
 | **全套技术栈本地运行** | [快速开始](#-快速开始一条命令) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |
@@ -224,8 +224,8 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
 ├── shoppilot-ticket/          # 工单流转服务：SLA 路由规则、涉资操作审核队列、出站通知
 ├── shoppilot-biz-mock/        # 下游电商业务基座：多租户行级隔离、身份域、审计流
 ├── shoppilot-tool-api/        # 工具规范抽象：JSON Schema 自动派生、ToolStatus 契约定义
-├── frontend-buyer/            # 买家交互端应用 (Vue 3 + Vite)：对话流、我的工单
-├── frontend-workspace/        # 客服审核工作台 (Vue 3 + Vite)：队列、领取、结单、退款审核
+├── frontend-buyer/            # 买家交互端应用 (Vue 3 + Vite)：任务化首屏、对话流、我的工单、帮助分类（票 219 产品重设计）
+├── frontend-workspace/        # 客服审核工作台 (Vue 3 + Vite)：全高操作台、队列筛选与优先级、领取、结单、退款审核、SLA 与买家原话（票 219）
 ├── frontend-shared/           # 两个产品入口共用的设计令牌、契约类型与请求封装
 ├── loadtest/                  # locust 流量模型与压测产物（ladder-*.csv / env-*.json）
 ├── knowledge/                 # 30 篇政策语料（ingest 入库后推进 kb_epoch）
@@ -261,9 +261,9 @@ start http://127.0.0.1:8082
 
 ### 服务接入端点（本地回环绑定）
 
-* **产品首页**：`http://127.0.0.1:8082/`（买家端 / 坐席控制台 / 调试台三个入口，含服务状态）
+* **产品首页**：`http://127.0.0.1:8082/`（售后服务工作台：买家端 / 坐席控制台 / 工程调试入口；票 219 后工程入口折叠，含服务状态）
 * **买家服务界面**：`http://127.0.0.1:8082/buyer/?store=T001`（对话主区 + 服务侧栏：我的订单、我的工单进度、服务范围，回答可展开“计划先行 + 执行轨迹”的 Agent Run；可用 T002 鲜果驿站、T003 云裳服饰、T004 云栖酒店）
-* **坐席控制台**：`http://127.0.0.1:8082/workspace/`（工单队列 / 退款审核 / 编排质量三视图；质量报表只读，坐席或管理员登录令牌即可读取）
+* **坐席控制台**：`http://127.0.0.1:8082/workspace/`（工单队列 / 退款审核 / 编排质量三视图；质量报表只读，坐席或管理员登录令牌即可读取；渠道连接与店铺管理为管理员专属，AGENT 返回 `role.denied` 403 且不登出——票 221 角色菜单按 `/me` 返回的 capabilities 渲染，不写进 JWT，每次按角色重算；该票所有者签收状态待确认）
 * **运维调试台**：`http://127.0.0.1:8082/console.html`（别名 `/admin/debug`；静态页可读，写动作由 ops token / staff 令牌把门）
 * **网关 Metrics (Prometheus)**：`http://127.0.0.1:8082/actuator/prometheus`
 * **工单服务健康检查**：`http://127.0.0.1:8092/actuator/health`
@@ -322,7 +322,9 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 * **Handoff Golden 23**（`eval/handoff-golden.jsonl`）：ADR 0072 的路由纯函数 / 角色工具面 / 有向边 / 同诉求升级 / 风险面原因判据，由 JVM 重算；覆盖售前意图、售后动作、UNKNOWN、行业门、允许边、反向边、深度超限、同角色、无办理证据的 route reset、首次路由与工具面拒绝原因，不连模型、不并分母。
 * **Quality Sidecar**（ADR 0072 H4）：`GET /api/v1/support/ops/quality/report` 只读汇总 Handoff 计数 / blocked 分布 / 决策耗时 / tool risk / friction（工具成功仍降级、重复追问槽位），并从 Redis `shoppilot:audit` 聚合最近 15 分钟坐席动作（报表内 30 秒缓存，只输出动作名不输出坐席 ID）；需要 `X-Ops-Token`，不改路由、不加 LLM 调用。Prometheus 新增 blocked handoff、tool-success-fallback、handoff-context-loss 三条告警，promtool 双侧测试入库。
 
-**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **806 条** JVM 测试（tool-api 12 + biz-mock 92 + ticket 50 + gateway 652）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
+**持久化档验收边界**：票 220 的 Postgres 档容器验收（重启存活、灾难恢复 14/14、业务读回，合计 20/20）使用的是 2026-11-10 / 11-01 构建的镜像、非 HEAD 重编，且只验 `-DockerExec` 分支；默认宿主模式未实跑（`.scratch/shoppilot-mvp/issues/220`）。
+
+**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **827 条** JVM 测试（tool-api 12 + biz-mock 92 + ticket 50 + gateway 673）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
 
 ---
 
@@ -410,9 +412,9 @@ slot_ask | fallback | duplicate_submit | rate_limited
 | 业务侧 | H2 + Spring Data JPA | Mock 的是业务系统而不是业务逻辑：状态机、归属校验、幂等约束都是真的；工单带 `priority`（情绪升级单为 high）、反馈行与工单同库同生命周期（ADR 0039） |
 | 通道 | Spring MVC `SseEmitter` | 单向推流 + 断线重连够用；POST SSE 需要自带读流（浏览器 `EventSource` 不支持 POST）；webhook/email 走整段 JSON |
 | 模型依赖 | dev / local / perf / demo / replay 五模式 | 数字归属清晰：吞吐类指标只算编排层，推理成本另开一条曲线（ADR 0001）；dev 口径下每请求多一跳情绪分类调用，token 成本随口径登记；replay 只守编排/提示词回归（ADR 0083） |
-| **身份与责任** | 自建轻量身份域（`users` 表 + BCrypt + 三角色），落在 biz-mock（ADR 0056、0058） | 退款放行是不可逆的资金动作，它的责任人曾经是一个请求头。现在登录换来的令牌带角色，工单动作与退款审核要 `AGENT`/`ADMIN`（或运维凭证），审计事件的 actor 带着「这个名字是否来自已验签令牌」一起落库。登录面 `/auth/login` `/auth/register` `/auth/me` 在网关；账号数据在 biz-mock。密码策略只做到演示口径：BCrypt cost 10、最短 8 位、无失败锁定、无 refresh token（ADR 0056 的非目标） |
+| **身份与责任** | 自建轻量身份域（`users` 表 + BCrypt + 三角色），落在 biz-mock（ADR 0056、0058） | 退款放行是不可逆的资金动作，它的责任人曾经是一个请求头。现在登录换来的令牌带角色，工单动作与退款审核要 `AGENT`/`ADMIN`（或运维凭证），审计事件的 actor 带着「这个名字是否来自已验签令牌」一起落库。登录面 `/auth/login` `/auth/register` `/auth/me` 在网关，`/demo-login` 供演示；`/me` 返回按角色实时计算的 capabilities（BUYER 空 / AGENT 五项 / ADMIN 七项），不写进 JWT、每次重算，供前端菜单与 403 门禁共用；账号数据在 biz-mock。密码策略只做到演示口径：BCrypt cost 10、最短 8 位、无失败锁定、无 refresh token（ADR 0056 的非目标） |
 | **结果回流** | 工单结单 → `channel.outbound`（Redis Streams）→ 网关消费端投递（ADR 0059、0054） | 买家问 → 转人工落单 → 坐席处理若干分钟到若干小时 → **结论送回原渠道**：这是 program 主线的最后一格。**「送达」的定义是目标返回 2xx**，不是「发出去了」；至少一次投递所以消费端按 `event_id` 幂等；送不到落 `CHANNEL_RECEIPT` 工单而不是丢。email 不真发（无 SMTP 依赖），web 渠道不发出站 |
-| **三个前端入口** | `/` 运维调试台、`/workspace/` 坐席工作台、`/buyer/` 买家中心（两个 Vite+Vue3 工程 + 共享层 `frontend-shared`；产物入库、CI 逐字节校验） | 买家中心能登录、连续提问（对话流保留历史）、看**自己**的工单（买家号只从已验签身份取，同店另一买家的单一条都不出现）；坐席能看到转人工上下文（失败/升级说明）并填写结单结论（结论随结果回流送到买家）。三个入口的静态放行面由 `StaticEntryExemptionTest` 一次钉住，调试台页脚提供两个产品入口（ADR 0057、0005、0070） |
+| **三个前端入口** | `/` 运维调试台、`/workspace/` 坐席工作台、`/buyer/` 买家中心（两个 Vite+Vue3 工程 + 共享层 `frontend-shared`；产物入库、CI 逐字节校验） | 买家中心能登录、连续提问（对话流保留历史）、看**自己**的工单（买家号只从已验签身份取，同店另一买家的单一条都不出现）；坐席能看到转人工上下文（失败/升级说明）并填写结单结论（结论随结果回流送到买家）。票 219 后首页标题改为「售后服务工作台」并折叠工程入口，采用深墨色 / 翡翠基调、买家任务化首屏与坐席全高操作台，含 Markdown 安全渲染与 UI 等价断言；票 221 后菜单按 capabilities 分级渲染。三个入口的静态放行面由 `StaticEntryExemptionTest` 一次钉住（ADR 0057、0005、0070） |
 
 </details>
 
@@ -605,7 +607,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 <summary>🔁 复现：压测、评测与验收命令</summary>
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（四模块 12 + 92 + 652 + 50 = 806 项；当前值以 docs/STATUS.md 为准）
+# 单元、架构与主链路 JVM 集成测试（四模块 12 + 92 + 673 + 50 = 827 项；当前值以 docs/STATUS.md 为准）
 mvn -o test
 # LLM 录放门禁（0 token）：cassette / key / 基线 / 既有 judge() 逐条比对；缺卡即红
 python scripts/verify_llm_replay.py

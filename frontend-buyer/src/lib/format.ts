@@ -201,3 +201,74 @@ export function groupCitations(citations: CitationDetail[] | undefined): Citatio
   }
   return [...groups].map(([doc, items]) => ({ doc, items }))
 }
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function inlineMarkdown(value: string): string {
+  return value
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+}
+
+/**
+ * 把模型回答里常见的 Markdown 子集渲染成安全 HTML。
+ *
+ * <p>模型输出经常带 `**加粗**`、有序/无序列表。原样塞进气泡会露出一串星号，
+ * 观感像调试输出。这里**先整体转义再插入固定标签**，不引入第三方渲染器，
+ * 也不支持链接或原始 HTML——回答内容不可信，渲染层不能成为注入面。
+ *
+ * <p>只覆盖产品里实际出现的子集：粗体、斜体、行内代码、`-`/`•`/`*` 列表与 `1.` 步骤。
+ * 未闭合的 `**` 在流式过程中会原样显示，等闭合后再变粗体。
+ */
+export function renderMarkdown(text: string): string {
+  if (!text) return ''
+  const lines = escapeHtml(text).replace(/\r\n?/g, '\n').split('\n')
+  const out: string[] = []
+  let list: 'ul' | 'ol' | null = null
+
+  const closeList = () => {
+    if (!list) return
+    out.push(`</${list}>`)
+    list = null
+  }
+
+  for (const raw of lines) {
+    const line = raw.trimEnd()
+    if (!line.trim()) {
+      closeList()
+      continue
+    }
+    const bullet = line.match(/^\s*[-•*]\s+(.*)$/)
+    if (bullet) {
+      if (list !== 'ul') {
+        closeList()
+        out.push('<ul>')
+        list = 'ul'
+      }
+      out.push(`<li>${inlineMarkdown(bullet[1])}</li>`)
+      continue
+    }
+    const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)$/)
+    if (numbered) {
+      if (list !== 'ol') {
+        closeList()
+        out.push('<ol>')
+        list = 'ol'
+      }
+      out.push(`<li value="${numbered[1]}">${inlineMarkdown(numbered[2])}</li>`)
+      continue
+    }
+    closeList()
+    out.push(`<p>${inlineMarkdown(line)}</p>`)
+  }
+  closeList()
+  return out.join('')
+}

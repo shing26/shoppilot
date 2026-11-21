@@ -72,6 +72,7 @@ public class AccountController {
                     body.put("customerId", identity.customerId());
                     body.put("accountId", identity.accountId());
                     body.put("role", identity.role().name());
+                    body.put("capabilities", Capabilities.of(identity.role()));
                     return ResponseEntity.ok(body);
                 })
                 .orElseGet(() -> errors.entity(HttpStatus.UNAUTHORIZED.value(), ApiError.UNAUTHORIZED,
@@ -101,6 +102,7 @@ public class AccountController {
         body.put("tenantId", account.tenantId());
         body.put("customerId", account.subjectRef());
         body.put("role", account.role().name());
+        body.put("capabilities", Capabilities.of(account.role()));
         body.put("displayName", account.displayName());
         body.put("expiresInSeconds", jwtService.ttl().toSeconds());
         return ResponseEntity.ok(body);

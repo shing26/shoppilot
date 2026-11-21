@@ -249,4 +249,88 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 
 - **票 217 预算键恢复（2026-11-12）**：首轮驳回跑批按 compose 口径把 `shoppilot:llm:tokens:20261111` 从 **201,684** 重置为 0（budget 200,000 未动），该键随后实际累计 **4,562**（= 2,281 × 2，两次同题模型调用均真实计费；早先按单次读数记的 ~203,965 作废）。本次用 `SET shoppilot:llm:tokens:20261111 206246 KEEPTTL` 恢复真值 **206,246 = 201,684 + 4,562**，保留原 36h TTL（首次写入 2026-11-11 18:54，约 2026-11-13 06:50 到期），budget 配置与当日键均未触碰。口径沿用票 208「预算键保留不清零、真实消费不洗白」。复跑读数：`docker exec shoppilot-redis redis-cli GET shoppilot:llm:tokens:20261111` → `206246`；`TTL` → 约 80,000 秒。恢复前另修复本机 Docker Desktop 启动故障（`%LOCALAPPDATA%\Docker\run` 与 `docker-secrets-engine` 下的残留 socket 在 Windows 侧不可删，从 WSL 侧清理后引擎 29.5.3 正常启动；容器与卷未重建，计数写入在该栈完成）。
 
+- **票 220 持久化档验收（2026-11-20，round52）**：容器 `full` 档实跑，验证 Postgres 持久档的
+  “重启存活 + 灾难恢复 + 业务读回”。`scripts/verify-persistence-tier.ps1` 先核对
+  `shoppilot-biz-mock-1` / `shoppilot-ticket-1` 的 `SPRING_PROFILES_ACTIVE=postgres` 与
+  `SHOPPILOT_DB_HOST=postgres`，再通过网关注册买家 `t220515446`（`accountId=U1e51c451e4b7`，
+  `customerId=C001`）并落工单 `T1795177582376-1`（`OPEN`）。`docker restart` 重启
+  gateway / biz-mock / ticket 后，同一凭据登录仍返回同一 `accountId`，网关
+  `/api/v1/support/ops/tickets/mine/T1795177582376-1` 仍返回同一工单与状态。随后运行既有
+  `scripts/verify-backup-restore.ps1 -DockerExec`：**PASS 14 / FAIL 0、exit 0**，覆盖
+  `pg_dump -Fc`、`DROP DATABASE ... FORCE`（服务不重启）、`pg_restore`、大对象直读
+  （`len=50` 逐字相等）与跨库授权拒绝；恢复后再次登录同一账号并读回同一工单。
+  总脚本汇总 **PASS 20 / FAIL 0**。容器镜像：gateway
+  `sha256:7863e098862f8ba4e118caacaa6f05ef5a6151c542f85b2acfdd0013b4f0a5a7`、biz-mock
+  `sha256:097ece9cf1d1c7cee60db2ae35b5407f97e53e26fc852fef085815035208188f`、ticket
+  `sha256:5ed8e95e97983923c0c46d9bf69dfb2846d42cafd5724b2c3cf26207a66853b3`；绑定 HEAD
+  `20fe0965c47ab06e2d67788386c28f7e5769ae27`。本机日志
+  `logs/persistence-tier-220-20261120-202620.log`、备份
+  `backups/{bizmock,ticket}-20261120-202642.dump`（均不入库）。**契约修订 1**：容器 full 档不发布
+  8091/8092，既有 `verify-backup-restore.ps1` 新增 `-DockerExec` 分支（`docker exec + curl`），
+  默认宿主模式与断言不变；第一次容器模式实跑抓到 `curl -X Post` 405 与 PowerShell 变量
+  `$container` 覆盖 `$Container` 两个问题，修正后才得到上述绿读数。**边界**：当前运行镜像是
+  2026-11-10（gateway）/2026-11-01（biz-mock、ticket）的构建，不是 HEAD 源码重新构建；
+  本次证明的是这套部署镜像的持久档行为。本机 full 档未发布 8091/8092，默认宿主模式没有实跑，
+  只验证了 `-DockerExec` 分支（默认分支仅语法检查与代码对照）。未验证多实例、跨主机、
+  备份加密/异地带、Postgres TLS 与前端持久档标识。
+
+- **票 221 角色级 403 与菜单能力（2026-11-21，round53）**：把工作台权限从“前端标识”推进到
+  可验证的角色契约。后端新增 `Capabilities` 单一派生：BUYER `[]`、AGENT
+  `tickets/conversations/refunds/knowledge/quality`、ADMIN 再加 `channels/tenants`；
+  `/auth/login`、`/auth/demo-login`、`/auth/me` 均返回该数组。`/api/v1/support/ops/channels/**`
+  与 `/api/v1/support/ops/tenants` 对 AGENT 返回 **403 `role.denied`**、文案含“管理员”；
+  ADMIN 放行。`X-Ops-Token` 仍是平台兜底路径，不进入 `capabilities`；退款审核仍只认
+  AGENT/ADMIN，平台故障注入仍只认 ops token。工作台 `Session` 持久化能力，侧栏按能力渲染；
+  AGENT 不显示“渠道连接”，直接进入该视图显示 403 面板且不登出。**读数**：全仓
+  `MAVEN_OPTS=-Xmx512m .\mvnw.cmd -B -ntp verify` **BUILD SUCCESS**，四模块
+  `12 + 92 + 673 + 50 = 827 tests / 136 suites`、0 失败；工作台 typecheck +
+  `13/13` vitest + build，买家端 typecheck + `37/37` vitest + build；PowerShell 语法
+  `files=37 errors=0`；`gen_status.py --check` 与 `verify_doc_truth.py` 在契约修订 1
+  同步机械计数后通过（STATUS `827/136`、gateway `673`、README/TUNING_PLAN 同锚点）。
+  **活体**：起独立 Redis 容器 + 本机 JVM 三服务（biz-mock 30 单 H2、ticket H2、gateway demo），
+  gateway readiness `UP`；`scripts/verify-role-menu.ps1` **PASS 39 / FAIL 0 / SKIP 0**，
+  `scripts/verify-role-ui.mjs` **PASS 11 / FAIL 0**。日志（本机，不入库）
+  `logs/role-menu-221-r3-20261121-045017.log`、
+  `logs/role-ui-221-r3-20261121-045017.log`、`logs/verify-221-jvm-r3-20261121-045017.log`，
+  `git status --short` 快照 `logs/status-221-r3-20261121-045017.txt`；绑定 HEAD
+  `20fe0965c47ab06e2d67788386c28f7e5769ae27`。
+  **首轮 Verifier FAIL → 修复**：独立 Verifier 判定 AC6 未过——AGENT/ADMIN 无
+  `X-Ops-Token` 访问 `GET /api/v1/support/ops/llm-fault` 仍返回 200。根因是该 GET 没有
+  token 参数，平台动作又只靠逐方法守卫。修复把平台动作收敛为拦截器默认拒绝集合
+  （`fault`、`stats`、`demo/reset`、`retrieval`、`epoch/bump`、`cache/flush`、
+  `llm-fault`、`negative-cache`）：正确 ops token 放行，AGENT/ADMIN 无 token 返回
+  403 `role.denied` 且文案含“运维”。新增 `OpsAuthorizationInterceptorTest` 全路径矩阵与
+  `RoleGuardAndActorTest.agentCannotReadLlmFault`，定向 **30/30**；活体补
+  AGENT/ADMIN/ops token 三档后 **34/34**。总测试数同步为 `824/136`。
+  **第二轮 Verifier FAIL → 矩阵参数修复**：Spring MVC 会剥离 `;x` 矩阵参数后再路由，
+  但拦截器按原始 `getRequestURI()` 匹配，导致 AGENT 访问
+  `GET /ops/channels;x` 与 `GET /ops/llm-fault;x` 返回 200。修复改用
+  `UrlPathHelper.defaultInstance.getPathWithinApplication(request)`，让拦截器与 MVC
+  使用同一路径口径；新增管理员面与全部平台路径的矩阵参数断言，定向 **33/33**，
+  变异对照把修复退回后 **3/3 红**。活体补 AGENT / ADMIN / ops token 的 `;x` 五组断言后
+  **39/39**。最终总测试数 `827/136`（gateway `673`）。**独立 Verifier 第三轮 PASS**：
+  亲跑定向 33/33、全量 827/136、两端前端门禁、脚本语法与文档真值全部通过；矩阵参数
+  AGENT `/channels;x` 与 `/llm-fault;x` 均 403，ADMIN `/llm-fault;x` 403、
+  `/channels;x` 200，ops token `/llm-fault;x` 200。等价路径探测覆盖尾斜杠、重复斜杠、
+  额外矩阵参数、编码字符、`%2F`/`%5C`、双编码、Unicode 分号、`.`/`..`、HEAD 与 BUYER
+  变体，未发现第三条数据绕过；未执行写请求。边界备注：匿名 `/tickets/mine;x.html`
+  fail-closed 返回 502“缺少已验签身份”，无数据返回，不属角色绕过、不在本票 AC 内。
+  证据 `logs/verifier-221-r3-20261121-0500.log`。**所有者 2026-11-21 对话内书面签收
+  「签收票221」**；签收范围 AC1–AC13、契约修订 1 与两轮修复。实现仍未 commit：工作树同时含
+  票 219/220 的未提交改动，二者尚未签收，按「无签收合并即失败」不单独提交或合并本票。
+
+- **票 219/220/221 统一签收（2026-11-21，round51–53 收口）**：所有者对话内书面指令
+  「签署 219/220 后统一收口」，三票状态一并转为 `done`。签收依据：219 的两端
+  typecheck/vitest/build、807/136 与活体等价断言 18/18；220 的持久化档 `PASS 20 / 0`、
+  备份恢复 `14/14`；221 的独立 Verifier 第三轮 PASS、827/136、活体 API `39/39` 与浏览器
+  `11/11`。边界原样保留：220 的容器镜像非 HEAD 重编、只实跑 `-DockerExec` 分支；
+  221 的匿名 `/tickets/mine;x.html` 为既有 fail-closed 502；219 的 README 产品叙述属
+  交付文档同步、不改 API/认证/状态归属。三票工作树改动统一提交，但不包含本机截图、
+  `docs/design-samples/`、`.scratch/*` 探针、日志、备份或其它未跟踪草稿。
+  **边界**：本机仅约 446 MB 空闲且其他项目 15 个容器仍在运行，未起容器 `full` 档；活体是
+  本机 JVM + H2 默认档，不是 Postgres 镜像重建（持久化档由票 220 覆盖），且网关在
+  Qdrant/ES/embedding sidecar 未起的降级模式启动——本票只验身份、授权与菜单，不调用检索/聊天。
+  未验证 refresh token、改密、失败锁定、会话吊销、登录审计或渠道热生效。实现仍在工作树，
+  未 commit，等待独立 Verifier 与所有者书面签收。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。

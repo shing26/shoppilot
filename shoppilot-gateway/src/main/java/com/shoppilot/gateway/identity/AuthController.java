@@ -123,6 +123,7 @@ public class AuthController {
         body.put("tenantId", account.tenantId());
         body.put("customerId", account.subjectRef());
         body.put("role", account.role().name());
+        body.put("capabilities", Capabilities.of(account.role()));
         body.put("displayName", account.displayName());
         body.put("expiresInSeconds", jwtService.ttl().toSeconds());
         return ResponseEntity.ok(body);

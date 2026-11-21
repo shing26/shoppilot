@@ -5,7 +5,7 @@
  * <p>`queue` / `statusFilter` / `selectedId` 都用**显式 prop + 事件**而不是 `v-model`：
  * 换队列要先更新值再拉数据，依赖同一事件上两个处理器的先后顺序太脆。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { shortId } from 'frontend-shared'
 import { PRIORITY_LABEL, QUEUE_LABEL, QUEUES, SOURCE_LABEL, STATUS_LABEL, type Ticket } from '../types'
 import { formatTime, isOverdue, payloadField, slaText } from '../lib/format'
@@ -49,6 +49,48 @@ const reviewFeedbackId = computed(() => {
   return payloadField(props.selected, 'feedbackId')
 })
 
+// 筛选条是视图内状态：不改根组件的队列与状态筛选，只收窄当前列表。
+const keyword = ref('')
+const sourceFilter = ref('ALL')
+const SOURCE_FILTERS = ['ALL', ...Object.keys(SOURCE_LABEL)]
+
+const visibleTickets = computed(() => {
+  const q = keyword.value.trim().toLowerCase()
+  return props.filtered.filter((ticket) => {
+    if (sourceFilter.value !== 'ALL' && (ticket.source ?? '') !== sourceFilter.value) return false
+    if (!q) return true
+    return [ticket.id, ticket.userQuery, ticket.assignee ?? '', ticket.queue ?? '']
+      .some((value) => value.toLowerCase().includes(q))
+  })
+})
+
+const selectedOrderNo = computed(() => {
+  if (!props.selected) return ''
+  return payloadField(props.selected, 'orderNo') ?? ''
+})
+
+function priorityTone(priority: string | null | undefined) {
+  if (priority === 'high') return 'urgent'
+  if (priority === 'money') return 'money'
+  return 'normal'
+}
+
+function syncSelection() {
+  if (!visibleTickets.value.some((ticket) => ticket.id === props.selectedId)) {
+    emit('select', visibleTickets.value[0]?.id ?? '')
+  }
+}
+
+function onKeyword(event: Event) {
+  keyword.value = (event.target as HTMLInputElement).value
+  syncSelection()
+}
+
+function onSourceChange(event: Event) {
+  sourceFilter.value = (event.target as HTMLSelectElement).value
+  syncSelection()
+}
+
 function onQueueChange(event: Event) {
   emit('changeQueue', (event.target as HTMLSelectElement).value)
 }
@@ -75,14 +117,33 @@ function onQueueChange(event: Event) {
     </section>
 
     <section class="toolbar">
-      <label>队列
+      <label class="filter-field">队列
         <select :value="queue" @change="onQueueChange">
           <option v-for="q in QUEUES" :key="q" :value="q">{{ QUEUE_LABEL[q] ?? q }}</option>
         </select>
       </label>
-      <span class="toolbar-hint">按优先级排序；SLA 每 10 秒刷新</span>
+      <label class="filter-field">来源
+        <select :value="sourceFilter" @change="onSourceChange">
+          <option v-for="source in SOURCE_FILTERS" :key="source" :value="source">
+            {{ source === 'ALL' ? '全部来源' : (SOURCE_LABEL[source] ?? source) }}
+          </option>
+        </select>
+      </label>
+      <label class="search-field">
+        <span aria-hidden="true">⌕</span>
+        <input
+          :value="keyword"
+          type="search"
+          placeholder="搜索工单号、买家或问题关键词"
+          aria-label="搜索工单"
+          @input="onKeyword"
+        />
+      </label>
       <button class="ghost" type="button" @click="emit('refresh')">刷新</button>
     </section>
+    <p class="toolbar-hint">
+      共 {{ visibleTickets.length }} 张；按优先级排序，SLA 只标记超时，不承诺解决时限。
+    </p>
 
     <p v-if="loadError" class="err">{{ loadError }}</p>
     <p v-if="actionError" class="err">{{ actionError }}</p>
@@ -92,13 +153,13 @@ function onQueueChange(event: Event) {
       <section class="queue-pane">
         <div class="pane-head">
           <h2>工单队列</h2>
-          <span class="count">{{ filtered.length }}</span>
+          <span class="count">{{ visibleTickets.length }}</span>
         </div>
         <p v-if="loading" class="empty">正在读取队列…</p>
-        <p v-else-if="!loadError && !filtered.length" class="empty">这一档队列里没有待处理工单</p>
+        <p v-else-if="!loadError && !visibleTickets.length" class="empty">当前筛选下没有工单</p>
         <div v-else class="ticket-list" role="list">
           <article
-            v-for="t in filtered"
+            v-for="t in visibleTickets"
             :key="t.id"
             class="ticket-card"
             :class="{ active: selectedId === t.id, overdue: isOverdue(t, now), urgent: t.priority === 'high' }"
@@ -108,14 +169,17 @@ function onQueueChange(event: Event) {
             @keyup.enter="emit('select', t.id)"
           >
             <div class="ticket-top">
-              <span class="priority">{{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}</span>
+              <span class="priority" :class="priorityTone(t.priority)">
+                <i class="prio-dot" aria-hidden="true"></i>
+                {{ PRIORITY_LABEL[t.priority ?? 'normal'] ?? t.priority }}
+              </span>
+              <span class="source-badge">{{ SOURCE_LABEL[t.source ?? ''] ?? t.source ?? '未标注' }}</span>
               <span class="status-pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
             </div>
             <p class="ticket-query">{{ t.userQuery }}</p>
             <div class="ticket-meta">
-              <span>{{ SOURCE_LABEL[t.source ?? ''] ?? t.source ?? '—' }}</span>
               <span>{{ QUEUE_LABEL[t.queue ?? ''] ?? t.queue ?? '—' }}</span>
-              <span :class="{ danger: isOverdue(t, now) }">{{ slaText(t, now) }}</span>
+              <span class="sla" :class="{ danger: isOverdue(t, now) }">{{ slaText(t, now) }}</span>
             </div>
             <div class="ticket-foot">
               <span>{{ t.assignee ?? '待分配' }}</span>
@@ -134,13 +198,18 @@ function onQueueChange(event: Event) {
           <span class="status-pill">{{ STATUS_LABEL[selected.status] ?? selected.status }}</span>
         </header>
 
-        <p class="detail-query">{{ selected.userQuery }}</p>
+        <section class="detail-query quote">
+          <p class="quote-label">买家原始诉求</p>
+          <p class="quote-text">{{ selected.userQuery }}</p>
+        </section>
 
         <div class="detail-meta">
           <div><span>来源</span><strong>{{ SOURCE_LABEL[selected.source ?? ''] ?? selected.source ?? '—' }}</strong></div>
           <div><span>队列</span><strong>{{ QUEUE_LABEL[selected.queue ?? ''] ?? selected.queue ?? '—' }}</strong></div>
           <div><span>优先级</span><strong>{{ PRIORITY_LABEL[selected.priority ?? 'normal'] ?? selected.priority }}</strong></div>
           <div><span>SLA</span><strong :class="{ danger: isOverdue(selected, now) }">{{ slaText(selected, now) }}</strong></div>
+          <div><span>责任人</span><strong>{{ selected.assignee ?? '待领取' }}</strong></div>
+          <div v-if="selectedOrderNo"><span>关联订单</span><strong class="mono">{{ selectedOrderNo }}</strong></div>
         </div>
 
         <div class="detail-actions">
@@ -171,6 +240,7 @@ function onQueueChange(event: Event) {
         <p v-if="!selected.assignee && selected.status !== 'RESOLVED'" class="action-hint">
           先领取这张工单，再处理完成
         </p>
+        <p class="actor-stamp">领取与结单署名取自登录账号，页面不能手填。</p>
 
         <section class="block">
           <h3>生命周期</h3>
@@ -221,42 +291,126 @@ function onQueueChange(event: Event) {
 </template>
 
 <style scoped>
-.summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 0; }
-.kpi { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-  padding: 10px 12px; cursor: pointer; }
-.kpi span { display: block; color: var(--ink-3); font-size: 12px; }
-.kpi strong { display: block; font-size: 22px; line-height: 1.2; margin-top: 2px; }
-.kpi.active { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal) inset; }
+.summary {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  margin: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.kpi {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  padding: 12px 16px;
+  cursor: pointer;
+  min-height: 64px;
+}
+.kpi:last-child { border-right: none; }
+.kpi span { display: block; color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.kpi strong { display: block; font-size: 22px; line-height: 1.2; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.kpi:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line); }
+.kpi.active { background: var(--teal-wash); box-shadow: inset 0 -2px 0 var(--teal); }
 .kpi.danger strong { color: var(--rose); }
 .kpi.refund strong { color: var(--amber); }
-.toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 14px; }
-.toolbar label { font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
-.toolbar select { padding: 5px 8px; }
-.toolbar-hint { color: var(--ink-3); font-size: 12px; }
-.workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); gap: 16px; align-items: start; }
-.queue-pane, .detail-pane { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
-.detail-pane { position: sticky; top: 74px; max-height: calc(100vh - 96px); overflow: auto; }
+.toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0; }
+.filter-field { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.toolbar select { padding: 5px 8px; font-size: 12px; }
+.search-field {
+  flex: 1; min-width: 220px;
+  display: flex; align-items: center; gap: 7px;
+  border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: var(--panel); padding: 0 10px; height: 32px;
+  color: var(--ink-3);
+}
+.search-field:focus-within { border-color: var(--teal-line-2); box-shadow: var(--ring); }
+.search-field input {
+  flex: 1; min-width: 0; border: none; background: none; padding: 0;
+  font-size: 12px; color: var(--ink);
+}
+.search-field input:focus { outline: none; box-shadow: none; }
+.toolbar-hint { margin: -6px 0 0; color: var(--ink-3); font-size: 11px; }
+.toolbar .ghost { margin-left: auto; }
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  height: calc(100dvh - 236px);
+  min-height: 420px;
+}
+.queue-pane, .detail-pane {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.detail-pane { overflow: auto; }
 .ticket-list { display: grid; gap: 8px; }
-.ticket-card { border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; cursor: pointer;
-  transition: border-color .15s ease, box-shadow .15s ease; }
-.ticket-card:hover { border-color: var(--teal-line); }
-.ticket-card.active { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal) inset; background: var(--panel-active); }
+.ticket-list { overflow-y: auto; padding-right: 2px; }
+.ticket-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.ticket-card:hover { border-color: var(--teal-line); border-left-color: var(--teal-line); background: var(--panel-2); }
+.ticket-card.active { border-color: var(--teal-line); border-left-color: var(--teal); background: var(--teal-wash); }
 .ticket-card.overdue { border-left: 3px solid var(--rose); }
-.ticket-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.priority { font-size: 12px; color: var(--ink-3); }
+.ticket-top { display: flex; align-items: center; gap: 7px; }
+.priority {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--ink-2); letter-spacing: .02em;
+}
+.prio-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); display: inline-block; }
+.priority.urgent { color: var(--rose); }
+.priority.urgent .prio-dot { background: var(--rose); box-shadow: 0 0 0 3px var(--rose-soft); }
+.priority.money { color: var(--amber-ink); }
+.priority.money .prio-dot { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+.priority.normal .prio-dot { background: var(--ink-3); }
+.source-badge {
+  font-size: 10px; color: var(--ink-3); background: var(--bg);
+  border: 1px solid var(--line-2); border-radius: var(--radius-full); padding: 0 7px;
+  white-space: nowrap;
+}
+.ticket-top .status-pill { margin-left: auto; }
 .ticket-card.urgent .priority { color: var(--rose); font-weight: 600; }
-.ticket-query { margin: 6px 0 8px; font-size: 14px; overflow-wrap: anywhere; }
-.ticket-meta { display: flex; gap: 12px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
-.ticket-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; color: var(--ink-3); font-size: 12px; }
+.ticket-query { margin: 6px 0 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.ticket-meta { display: flex; gap: 12px; flex-wrap: wrap; color: var(--ink-3); font-size: 11px; }
+.ticket-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; color: var(--ink-3); font-size: 11px; }
 .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.detail-head h2 { margin: 2px 0 0; font-size: 15px; }
-.detail-query { margin: 12px 0; background: var(--bg); border-radius: 10px; padding: 10px 12px; overflow-wrap: anywhere; }
-.detail-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.detail-head h2 { margin: 2px 0 0; font-size: 14px; }
+.detail-query.quote {
+  margin: 12px 0;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--teal-line-2);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+.quote-label {
+  margin: 0 0 4px; color: var(--ink-3); font-size: 10px;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.quote-text {
+  margin: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; color: var(--ink);
+}
+.detail-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
 .detail-meta div { display: grid; gap: 2px; }
-.detail-meta span { color: var(--ink-3); font-size: 12px; }
+.detail-meta span { color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 .detail-meta strong { font-size: 13px; }
 .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
 .action-hint { margin: -8px 0 16px; color: var(--ink-2); font-size: 12px; }
+.actor-stamp { margin: -8px 0 16px; color: var(--ink-3); font-size: 11px; }
 .block { border-top: 1px solid var(--line-2); padding-top: 14px; margin-top: 14px; }
 .block h3 { font-size: 13px; margin: 0 0 8px; }
 .timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -274,14 +428,14 @@ function onQueueChange(event: Event) {
 .lifecycle-tags .danger { color: var(--rose); background: var(--rose-soft); }
 .transcript { display: grid; gap: 8px; max-height: 320px; overflow: auto; padding-right: 2px; }
 .bubble {
-  max-width: 92%; border-radius: 12px; padding: 8px 10px;
+  max-width: 92%; border-radius: var(--radius-md); padding: 8px 10px;
   font-size: 12px; line-height: 1.55;
 }
 .bubble-role { display: block; font-size: 11px; color: var(--ink-3); margin-bottom: 3px; }
 .bubble p { margin: 0; overflow-wrap: anywhere; }
 .bubble pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 var(--mono); }
 .bubble.buyer {
-  justify-self: end; background: var(--teal-soft-2); border: 1px solid var(--teal-line-2); color: var(--ink);
+  justify-self: end; background: var(--ink); border: 1px solid var(--ink); color: #fff;
 }
 .bubble.system { justify-self: start; background: var(--bg); border: 1px solid var(--line); color: var(--ink-2); }
 .resolution { border-top: 1px solid var(--line-2); margin-top: 14px; padding-top: 14px; }
@@ -290,13 +444,18 @@ function onQueueChange(event: Event) {
 .empty-pane { display: grid; place-items: center; color: var(--ink-3); min-height: 220px; }
 
 @media (max-width: 960px) {
-  .workspace { grid-template-columns: 1fr; }
-  .detail-pane { position: static; max-height: none; }
+  .workspace { grid-template-columns: 1fr; height: auto; min-height: 0; }
+  .queue-pane, .detail-pane { max-height: none; }
+  .ticket-list { overflow: visible; }
   .summary { grid-template-columns: repeat(3, 1fr); }
+  .kpi:nth-child(3) { border-right: none; }
+  .detail-meta { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 640px) {
   .summary { grid-template-columns: repeat(2, 1fr); }
+  .kpi { border-right: 1px solid var(--line); }
+  .kpi:nth-child(2n) { border-right: none; }
   .detail-meta { grid-template-columns: 1fr; }
 }
 </style>

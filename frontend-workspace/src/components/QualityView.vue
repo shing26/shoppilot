@@ -116,7 +116,7 @@ const emit = defineEmits<{ refresh: [] }>()
 <style scoped>
 .quality-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .quality-kpi {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
   padding: 14px; display: grid; gap: 4px;
 }
 .quality-kpi span { color: var(--ink-3); font-size: 12px; }
@@ -124,12 +124,12 @@ const emit = defineEmits<{ refresh: [] }>()
 .quality-kpi small { color: var(--ink-3); font-size: 12px; }
 .danger-kpi strong { color: var(--rose); }
 .quality-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.quality-block { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.quality-block { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 14px; }
 .quality-block h3 { margin: 0 0 10px; font-size: 13px; }
 .distribution { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
 .distribution li {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 7px 8px; background: var(--bg); border-radius: 8px; font-size: 12px;
+  padding: 7px 8px; background: var(--bg); border-radius: var(--radius-sm); font-size: 12px;
 }
 .distribution span { color: var(--ink-2); overflow-wrap: anywhere; }
 .distribution strong { color: var(--ink); }

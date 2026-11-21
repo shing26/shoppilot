@@ -93,7 +93,8 @@ onUnmounted(() => {
 .drawer {
   width: min(460px, 100%); height: 100%; overflow-y: auto;
   box-sizing: border-box; padding: 22px;
-  background: var(--panel); box-shadow: -12px 0 40px rgba(20, 22, 26, 0.16);
+  background: var(--panel); box-shadow: -12px 0 40px rgba(16, 24, 40, 0.16);
+  border-left: 1px solid var(--line);
 }
 .drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .drawer-head h2 { margin: 2px 0 0; font-size: 16px; overflow-wrap: anywhere; }
@@ -111,7 +112,7 @@ onUnmounted(() => {
 .detail-grid dd { margin: 2px 0 0; font-size: 13px; overflow-wrap: anywhere; }
 .detail-note { color: var(--ink-2); font-size: 13px; line-height: 1.6; }
 .resolution {
-  background: var(--teal-wash); border: 1px solid var(--teal-line-2); border-radius: 12px;
+  background: var(--teal-wash); border: 1px solid var(--teal-line-2); border-radius: var(--radius-md);
   padding: 12px 14px; margin: 0 0 14px;
 }
 .resolution h3 { margin: 0 0 6px; font-size: 13px; color: var(--teal); }
@@ -120,12 +121,12 @@ onUnmounted(() => {
 .muted { color: var(--ink-3); }
 .progress {
   color: var(--teal); background: var(--teal-soft); border: 1px solid var(--teal-line);
-  border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 12px 0 0;
+  border-radius: var(--radius-md); padding: 8px 10px; font-size: 13px; margin: 12px 0 0;
 }
 
 @media (max-width: 640px) {
   .drawer-mask { align-items: flex-end; }
-  .drawer { width: 100%; height: auto; max-height: 86vh; border-radius: 16px 16px 0 0; padding: 18px; }
+  .drawer { width: 100%; height: auto; max-height: 86vh; border-radius: var(--radius-xl) var(--radius-xl) 0 0; padding: 18px; }
   .detail-grid { grid-template-columns: 1fr; }
 }
 </style>

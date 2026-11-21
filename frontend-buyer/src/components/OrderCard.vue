@@ -154,10 +154,10 @@ async function copyTracking() {
 
 <style scoped>
 .order-card {
-  border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px;
   cursor: pointer; transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
 }
-.order-card:hover { border-color: var(--teal-line); box-shadow: 0 3px 12px rgba(15, 118, 110, .07); }
+.order-card:hover { border-color: var(--teal-line); background: var(--panel-2); }
 .order-card.expanded { border-color: var(--teal-line); background: var(--panel-active); }
 .order-card:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .order-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

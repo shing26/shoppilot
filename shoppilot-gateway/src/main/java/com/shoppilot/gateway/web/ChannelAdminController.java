@@ -16,7 +16,8 @@ import java.util.Map;
  * 渠道连接管理 v1（票 173）：状态、凭据测试、保存飞书连接。
  *
  * <p>挂在 /api/v1/support/ops/** 下，复用 OpsAuthorizationInterceptor：
- * 没有 X-Ops-Token 或 ops 关闭时一律拒绝。API 不回显 secret，只回遮罩 appId。
+ * 票 221 起这一面只允许管理员账号或 X-Ops-Token；坐席账号返回 403。
+ * API 不回显 secret，只回遮罩 appId。
  */
 @RestController
 @RequestMapping("/api/v1/support/ops/channels")

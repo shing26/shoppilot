@@ -23,6 +23,9 @@
     前置：① shoppilot-postgres 容器在跑；② biz-mock / ticket 两服务**已在持久档运行**
     （readiness UP）；③ .env 提供 SHOPPILOT_INTERNAL_TOKEN 与 SHOPPILOT_DB_PASSWORD。
     演练会在库与宿主 backups/ 留下 b2drill 痕迹与 dump 文件——它们是演练证据，不清理。
+
+    容器 full 档不把 biz-mock:8091 / ticket:8092 发布到宿主，此时加 `-DockerExec`：
+    脚本改用 `docker exec + curl` 调容器内接口，默认宿主模式与全部断言不变。
 #>
 param(
     [string]$BizMockBase = "http://127.0.0.1:8091",
@@ -31,7 +34,10 @@ param(
     [string]$Superuser = "shoppilot",
     [string]$OutDir = "backups",
     [string]$InternalToken,
-    [string]$DbPassword
+    [string]$DbPassword,
+    [switch]$DockerExec,
+    [string]$BizMockContainer = "shoppilot-biz-mock-1",
+    [string]$TicketContainer = "shoppilot-ticket-1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,16 +62,44 @@ function Assert-True([bool]$Condition, [string]$Name, [string]$Detail = "") {
 }
 
 function Invoke-InternalJson([string]$Method, [string]$Uri, [string]$Body) {
-    Invoke-RestMethod -Method $Method -Uri $Uri -Body $Body -ContentType "application/json" -Headers @{
+    $Method = $Method.ToUpperInvariant()
+    $headers = @{
         "X-Internal-Token" = $InternalToken
         "X-Tenant-Id"      = "T001"
     }
+    if (-not $DockerExec) {
+        return Invoke-RestMethod -Method $Method -Uri $Uri -Body $Body -ContentType "application/json" -Headers $headers
+    }
+    $targetContainer = if ($Uri.StartsWith($BizMockBase)) { $BizMockContainer } else { $TicketContainer }
+    $dockerArgs = @("exec", "-i", $targetContainer, "curl", "-fsS", "-X", $Method, $Uri)
+    foreach ($key in $headers.Keys) {
+        $dockerArgs += @("-H", "$key`: $($headers[$key])")
+    }
+    if ($Body) {
+        $dockerArgs += @("-H", "Content-Type: application/json", "--data-binary", "@-")
+        $raw = $Body | & docker @dockerArgs
+    }
+    else {
+        $raw = & docker @dockerArgs
+    }
+    if ($LASTEXITCODE -ne 0) { throw "docker exec curl 失败: $Method $Uri" }
+    return ($raw | ConvertFrom-Json)
+}
+
+function Test-ServiceReadiness([string]$Uri, [string]$Container) {
+    if (-not $DockerExec) {
+        return (Invoke-RestMethod -Uri $Uri -TimeoutSec 5).status -eq "UP"
+    }
+    $raw = & docker exec $Container curl -fsS $Uri 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    return (($raw | ConvertFrom-Json).status -eq "UP")
 }
 
 # ---- 0. 前置 ----------------------------------------------------------------
 foreach ($svc in @(@("biz-mock", "$BizMockBase/actuator/health/readiness"), @("ticket", "$TicketBase/actuator/health/readiness"))) {
+    $svcContainer = if ($svc[0] -eq "biz-mock") { $BizMockContainer } else { $TicketContainer }
     try {
-        $ok = (Invoke-RestMethod -Uri $svc[1] -TimeoutSec 5).status -eq "UP"
+        $ok = Test-ServiceReadiness $svc[1] $svcContainer
     }
     catch { $ok = $false }
     Assert-True $ok "前置：$($svc[0]) 在持久档运行（readiness UP）"

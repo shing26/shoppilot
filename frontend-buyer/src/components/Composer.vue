@@ -20,34 +20,47 @@ function onEnter(event: KeyboardEvent) {
 
 <template>
   <section class="composer">
-    <input
-      v-model="query"
-      type="text"
-      placeholder="输入问题，例如：订单 90001 到哪了"
-      aria-label="输入问题"
-      @keydown.enter="onEnter"
-    />
-    <button v-if="asking" class="stop" type="button" @click="emit('stop')">停止</button>
-    <button v-else class="primary" type="button" :disabled="!query.trim()" @click="emit('submit')">发送</button>
+    <div class="composer-box">
+      <input
+        v-model="query"
+        type="text"
+        placeholder="输入问题，例如：订单 90001 到哪了"
+        aria-label="输入问题"
+        @keydown.enter="onEnter"
+      />
+      <button v-if="asking" class="stop" type="button" @click="emit('stop')">停止</button>
+      <button v-else class="primary" type="button" :disabled="!query.trim()" @click="emit('submit')">发送</button>
+    </div>
+    <p class="composer-hint">Enter 发送 · 回答基于店铺政策与订单数据，办理前会核验归属</p>
   </section>
 </template>
 
 <style scoped>
 .composer {
   position: sticky; bottom: 0; z-index: 10;
+  padding: 12px 16px 14px; margin-top: auto;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+.composer-box {
   display: flex; gap: 10px; align-items: center;
-  padding: 12px 0 18px; margin-top: auto;
-  background: linear-gradient(180deg, rgba(242, 243, 245, 0), var(--bg) 34%);
 }
 .composer input {
-  flex: 1; min-width: 0; height: 42px; box-sizing: border-box;
-  border-radius: 10px; padding: 0 12px;
+  flex: 1; min-width: 0; height: 40px; box-sizing: border-box;
+  border-radius: var(--radius-md); padding: 0 12px; background: var(--panel-2);
 }
-.composer button { height: 42px; padding: 0 18px; flex: none; }
+.composer input:focus { outline: none; border-color: var(--teal); box-shadow: var(--ring); background: var(--panel); }
+.composer button { height: 40px; padding: 0 18px; flex: none; }
 .stop { background: var(--panel); border-color: var(--line); color: var(--rose); }
+.composer-hint {
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font-size: 11px;
+}
 
 @media (max-width: 640px) {
-  .composer { padding: 10px 0 14px; }
+  .composer { padding: 10px 12px 12px; }
   .composer button { padding: 0 14px; }
+  .composer-hint { display: none; }
 }
 </style>

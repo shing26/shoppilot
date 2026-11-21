@@ -82,7 +82,7 @@ const emit = defineEmits<{ refresh: []; save: []; test: [] }>()
 </template>
 
 <style scoped>
-.channel-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel-2); }
+.channel-card { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px; background: var(--panel-2); }
 .channel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .channel-head h3 { margin: 2px 0 0; font-size: 15px; }
 .channel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
@@ -91,7 +91,7 @@ const emit = defineEmits<{ refresh: []; save: []; test: [] }>()
 .channel-grid strong { font-size: 13px; overflow-wrap: anywhere; }
 .channel-warn { margin: 12px 0 0; padding: 7px 10px; border: 1px solid var(--amber-line); border-radius: 8px;
   background: var(--amber-soft); color: var(--amber-ink); font-size: 12px; }
-.channel-form { margin-top: 16px; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); }
+.channel-form { margin-top: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px; background: var(--panel); }
 .channel-form .pane-head { margin-bottom: 6px; }
 .channel-check { display: flex; align-items: center; gap: 8px; margin: 10px 0 12px; color: var(--ink-2); font-size: 13px; }
 .channel-check input { width: 16px; height: 16px; accent-color: var(--teal); }
@@ -99,7 +99,7 @@ const emit = defineEmits<{ refresh: []; save: []; test: [] }>()
 .channel-form-grid label { display: grid; gap: 5px; color: var(--ink-2); font-size: 12px; }
 .channel-form-grid label.wide { grid-column: 1 / -1; }
 .channel-form-grid input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line);
-  border-radius: 8px; font: inherit; background: #fff; }
+  border-radius: var(--radius-md); font: inherit; background: #fff; }
 .channel-form-grid input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); }
 .channel-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 

@@ -11,7 +11,7 @@
 .ghost {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 6px 12px;
   cursor: pointer;
 }
@@ -144,10 +144,10 @@
 
 .dialog {
   background: var(--panel);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 22px;
   width: min(540px, 100%);
-  box-shadow: 0 18px 48px rgba(20, 22, 26, 0.22);
+  box-shadow: var(--shadow-3);
 }
 
 .dialog h2 {
@@ -165,7 +165,7 @@
   color: var(--amber-ink);
   background: var(--amber-soft);
   border: 1px solid var(--amber-line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   font-size: 13px;
 }
@@ -183,7 +183,7 @@
   padding: 8px;
   font: inherit;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   resize: vertical;
   box-sizing: border-box;
 }

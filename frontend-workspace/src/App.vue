@@ -57,6 +57,7 @@ import { setUnauthorizedHandler } from 'frontend-shared'
 import { type Ticket } from './types'
 import { entriesOf } from './lib/format'
 import { countTickets, filterTickets } from './lib/queue'
+import { canView, firstVisibleView, hasCapability, normalizeCapabilities } from './lib/nav'
 import { DOMAINS, POLICY_INTENTS, SCOPES, type ChannelForm, type StatusFilter, type WorkspaceView } from './lib/ui'
 import TopBar from './components/TopBar.vue'
 import LoginCard from './components/LoginCard.vue'
@@ -180,7 +181,7 @@ const kbError = ref('')
 let timer = 0
 
 const who = computed(() =>
-  session.value ? `${session.value.username}（${session.value.role}）@ ${session.value.tenantId}` : '',
+  session.value ? `${session.value.username} · ${session.value.tenantId}` : '',
 )
 
 const counts = computed(() => countTickets(tickets.value, now.value))
@@ -203,6 +204,31 @@ const handoffContextLossCount = computed(() =>
 const knowledgeTodo = computed(
   () => feedback.value.length + revisions.value.filter((revision) => revision.status === 'DRAFT').length,
 )
+
+const VIEW_LABEL: Record<WorkspaceView, string> = {
+  queue: '工单队列',
+  conversations: '渠道会话',
+  refunds: '退款审核',
+  knowledge: '知识飞轮',
+  quality: '编排质量',
+  channels: '渠道连接',
+}
+
+/** 当前视图是否在会话能力内；不在时主区显示明确的 403 状态，而不是空白页。 */
+const currentViewAllowed = computed(
+  () => !session.value || canView(session.value.capabilities, view.value),
+)
+
+const accessDeniedMessage = computed(() => {
+  if (!session.value) return ''
+  if (session.value.capabilities.length === 0) {
+    return '这个账号没有坐席权限。请退出后使用坐席或管理员账号登录。'
+  }
+  if (view.value === 'channels') {
+    return '渠道连接只对管理员开放；当前账号是坐席。'
+  }
+  return '当前账号没有访问这个功能的权限。'
+})
 
 async function doLogin() {
   loginError.value = ''
@@ -233,12 +259,26 @@ async function doDemoLogin(role: 'agent' | 'admin') {
 }
 
 async function acceptSession(logged: Session) {
-  session.value = logged
+  const normalized: Session = {
+    ...logged,
+    capabilities: normalizeCapabilities(logged.capabilities, logged.role),
+  }
+  session.value = normalized
   password.value = ''
   showLogin.value = false
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(logged))
-  startConversationStream()
-  await Promise.all([refresh(), refreshRefunds(), refreshConversations(), refreshKnowledge()])
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+  if (!canView(normalized.capabilities, view.value)) {
+    view.value = firstVisibleView(normalized.capabilities) ?? 'queue'
+  }
+  const tasks: Promise<unknown>[] = []
+  if (hasCapability(normalized.capabilities, 'tickets')) tasks.push(refresh())
+  if (hasCapability(normalized.capabilities, 'refunds')) tasks.push(refreshRefunds())
+  if (hasCapability(normalized.capabilities, 'conversations')) {
+    startConversationStream()
+    tasks.push(refreshConversations())
+  }
+  if (hasCapability(normalized.capabilities, 'knowledge')) tasks.push(refreshKnowledge())
+  await Promise.all(tasks)
 }
 
 /**
@@ -255,6 +295,7 @@ function onUnauthorized() {
 function signOut() {
   stopConversationStream()
   session.value = null
+  view.value = 'queue'
   loginError.value = ''
   clearStoredSession()
   conversations.value = []
@@ -271,6 +312,12 @@ function signOut() {
   refundError.value = ''
   refundNote.value = ''
   refundTarget.value = null
+  channel.value = null
+  channelError.value = ''
+  channelNote.value = ''
+  channelProbe.value = null
+  quality.value = null
+  qualityError.value = ''
   feedback.value = []
   feedbackError.value = ''
   reviewedFeedback.value = []
@@ -290,6 +337,11 @@ async function refresh() {
     loading.value = false
     return
   }
+  if (!hasCapability(session.value.capabilities, 'tickets')) {
+    tickets.value = []
+    loading.value = false
+    return
+  }
   loading.value = true
   const result = await listTickets(queue.value, session.value)
   loading.value = false
@@ -299,7 +351,7 @@ async function refresh() {
     return
   }
   if (result.status === 401 || result.status === 403) {
-    loadError.value = result.status === 401 ? '登录已失效，请重新登录' : '这个账号没有坐席权限'
+    loadError.value = describe(result, '')
     tickets.value = []
     return
   }
@@ -401,6 +453,11 @@ async function refreshQuality() {
     quality.value = null
     return
   }
+  if (!hasCapability(session.value.capabilities, 'quality')) {
+    quality.value = null
+    qualityLoading.value = false
+    return
+  }
   qualityLoading.value = true
   const result = await qualityReport(session.value)
   qualityLoading.value = false
@@ -422,7 +479,7 @@ function emptyDraft(): RevisionDraft {
 }
 
 async function refreshKnowledge() {
-  if (!session.value) {
+  if (!session.value || !hasCapability(session.value.capabilities, 'knowledge')) {
     feedback.value = []
     reviewedFeedback.value = []
     reviewedTotal.value = 0
@@ -436,7 +493,7 @@ async function refreshKnowledge() {
 
 async function refreshFeedbackQueue() {
   feedbackError.value = ''
-  if (!session.value) {
+  if (!session.value || !hasCapability(session.value.capabilities, 'knowledge')) {
     feedback.value = []
     reviewedFeedback.value = []
     reviewedTotal.value = 0
@@ -470,7 +527,7 @@ async function refreshFeedbackQueue() {
 
 async function refreshKnowledgeRevisions() {
   revisionsError.value = ''
-  if (!session.value) {
+  if (!session.value || !hasCapability(session.value.capabilities, 'knowledge')) {
     revisions.value = []
     revisionsLoading.value = false
     return
@@ -599,6 +656,10 @@ function openFeedbackReview(feedbackId: string) {
 
 function selectView(next: WorkspaceView) {
   view.value = next
+  if (!session.value || !canView(session.value.capabilities, next)) {
+    // 不清空当前数据：用户可能只是误点。主区会显示 403 状态与返回入口。
+    return
+  }
   if (next === 'refunds') void refreshRefunds()
   if (next === 'quality' && (!quality.value || qualityError.value)) void refreshQuality()
   if (next === 'channels') void refreshChannels()
@@ -608,8 +669,9 @@ function selectView(next: WorkspaceView) {
 
 async function refreshConversations() {
   conversationError.value = ''
-  if (!session.value) {
+  if (!session.value || !hasCapability(session.value.capabilities, 'conversations')) {
     conversations.value = []
+    conversationLoading.value = false
     return
   }
   conversationLoading.value = true
@@ -663,7 +725,9 @@ async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null
 }
 
 async function enablePush(): Promise<boolean> {
-  if (!session.value || !('PushManager' in window)) return false
+  if (!session.value
+      || !hasCapability(session.value.capabilities, 'conversations')
+      || !('PushManager' in window)) return false
   const registration = await registerServiceWorker()
   if (!registration) return false
   try {
@@ -695,7 +759,9 @@ async function enablePush(): Promise<boolean> {
 }
 
 async function restorePush() {
-  if (!notificationsEnabled.value || !session.value) return
+  if (!notificationsEnabled.value
+      || !session.value
+      || !hasCapability(session.value.capabilities, 'conversations')) return
   const registration = await registerServiceWorker()
   if (!registration) return
   const existing = await registration.pushManager.getSubscription()
@@ -705,6 +771,7 @@ async function restorePush() {
 function handleServiceWorkerMessage(event: MessageEvent) {
   const data = event.data as { type?: string; conversationId?: string } | null
   if (data?.type !== 'channel-notification-click' || !data.conversationId) return
+  if (!session.value || !hasCapability(session.value.capabilities, 'conversations')) return
   view.value = 'conversations'
   selectedConversationId.value = data.conversationId
   void refreshConversations()
@@ -794,6 +861,7 @@ function notifyConversation(conversation: ChannelConversation) {
   })
   notification.onclick = () => {
     window.focus()
+    if (!session.value || !hasCapability(session.value.capabilities, 'conversations')) return
     view.value = 'conversations'
     selectedConversationId.value = conversation.conversationId
     void readConversation(conversation.conversationId)
@@ -821,7 +889,9 @@ async function readConversation(id: string) {
 }
 
 function startConversationStream() {
-  if (!session.value || conversationStreamAbort) return
+  if (!session.value
+      || !hasCapability(session.value.capabilities, 'conversations')
+      || conversationStreamAbort) return
   const controller = new AbortController()
   conversationStreamAbort = controller
   void streamChannelConversations(session.value, applyConversationStream, controller.signal)
@@ -897,8 +967,9 @@ async function sendConversationReply() {
 async function refreshChannels() {
   channelError.value = ''
   channelProbe.value = null
-  if (!session.value) {
+  if (!session.value || !hasCapability(session.value.capabilities, 'channels')) {
     channel.value = null
+    channelLoading.value = false
     return
   }
   channelLoading.value = true
@@ -971,6 +1042,10 @@ async function refreshRefunds() {
     refunds.value = []
     return
   }
+  if (!hasCapability(session.value.capabilities, 'refunds')) {
+    refunds.value = []
+    return
+  }
   const result = await listPendingRefunds(session.value)
   if (result.status === 0) {
     refundError.value = messageOf(result.body) ?? '网关不可达'
@@ -978,7 +1053,7 @@ async function refreshRefunds() {
     return
   }
   if (result.status === 401 || result.status === 403) {
-    refundError.value = result.status === 401 ? '登录已失效，请重新登录' : '这个账号没有坐席权限'
+    refundError.value = describe(result, '')
     refunds.value = []
     return
   }
@@ -1032,11 +1107,16 @@ onMounted(() => {
     navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
   }
   if (session.value) {
-    void refresh()
-    void refreshRefunds()
-    void refreshConversations()
-    void refreshKnowledge()
-    startConversationStream()
+    if (!canView(session.value.capabilities, view.value)) {
+      view.value = firstVisibleView(session.value.capabilities) ?? 'queue'
+    }
+    if (hasCapability(session.value.capabilities, 'tickets')) void refresh()
+    if (hasCapability(session.value.capabilities, 'refunds')) void refreshRefunds()
+    if (hasCapability(session.value.capabilities, 'conversations')) {
+      void refreshConversations()
+      startConversationStream()
+    }
+    if (hasCapability(session.value.capabilities, 'knowledge')) void refreshKnowledge()
   }
   timer = window.setInterval(() => {
     now.value = Date.now()
@@ -1056,7 +1136,11 @@ function readStoredSession(): Session | null {
   const raw = sessionStorage.getItem(STORAGE_KEY)
   if (!raw) return null
   try {
-    return JSON.parse(raw) as Session
+    const stored = JSON.parse(raw) as Session
+    return {
+      ...stored,
+      capabilities: normalizeCapabilities(stored.capabilities, stored.role),
+    }
   } catch (unreadable) {
     sessionStorage.removeItem(STORAGE_KEY)
     return null
@@ -1070,7 +1154,7 @@ function clearStoredSession() {
 
 <template>
   <main class="shell">
-    <TopBar :who="who" :has-session="!!session" @refresh="refresh" @sign-out="signOut" />
+    <TopBar :who="who" :has-session="!!session" :role="session?.role ?? ''" @refresh="refresh" @sign-out="signOut" />
 
     <LoginCard
       v-if="!session"
@@ -1093,12 +1177,29 @@ function clearStoredSession() {
           :refund-count="refunds.length"
           :knowledge-count="knowledgeTodo"
           :tenant-id="session.tenantId"
+          :capabilities="session.capabilities"
+          :role="session.role"
           @select="selectView"
         />
 
         <div class="work-area">
+          <section v-if="!currentViewAllowed" class="access-denied" role="alert">
+            <p class="denied-code">403 · 权限不足</p>
+            <h2>这个账号不能访问「{{ VIEW_LABEL[view] }}」</h2>
+            <p>{{ accessDeniedMessage }}</p>
+            <div class="denied-actions">
+              <button
+                v-if="session.capabilities.includes('tickets')"
+                class="primary"
+                type="button"
+                @click="selectView('queue')"
+              >返回工单队列</button>
+              <button class="ghost" type="button" @click="signOut">换一个账号</button>
+            </div>
+          </section>
+
           <QueueView
-            v-if="view === 'queue'"
+            v-else-if="view === 'queue'"
             :queue="queue"
             :status-filter="statusFilter"
             :selected-id="selectedId"
@@ -1234,24 +1335,59 @@ function clearStoredSession() {
 
 <style scoped>
 .shell {
-  max-width: 1280px; margin: 0 auto; padding: 0 20px 40px;
-  min-height: 100vh; display: flex; flex-direction: column;
+  height: 100dvh;
+  min-height: 640px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .console {
   flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 212px minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-  padding-top: 18px;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
 }
-.work-area { min-width: 0; display: grid; gap: 14px; }
+.work-area {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+}
+.access-denied {
+  max-width: 560px;
+  margin: 56px auto;
+  padding: 28px;
+  display: grid;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.denied-code {
+  margin: 0;
+  color: var(--rose);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.access-denied h2 { margin: 0; font-size: var(--text-xl); line-height: var(--leading-tight); }
+.access-denied p { margin: 0; color: var(--ink-2); line-height: var(--leading-base); }
+.denied-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 
 @media (max-width: 960px) {
+  .shell { height: auto; min-height: 100dvh; overflow: visible; }
   .console { grid-template-columns: 1fr; }
+  .work-area { overflow: visible; padding: 16px; }
+  .access-denied { margin: 24px auto; }
 }
 
 @media (max-width: 640px) {
-  .shell { padding: 0 12px 24px; }
+  .work-area { padding: 12px; }
 }
 </style>

@@ -89,7 +89,7 @@ const rows = computed<RefundRow[]>(() =>
 
 <style scoped>
 .refund-list { display: grid; gap: 10px; }
-.refund-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel-2); }
+.refund-card { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px; background: var(--panel-2); }
 .refund-top { display: flex; justify-content: space-between; gap: 12px; }
 .amount { color: var(--amber); font-weight: 600; }
 .refund-order { color: var(--ink-2); margin: 6px 0 10px; }

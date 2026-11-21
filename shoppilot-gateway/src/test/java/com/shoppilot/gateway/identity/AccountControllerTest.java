@@ -54,6 +54,8 @@ class AccountControllerTest {
 
         assertThat(body.path("role").asText()).isEqualTo("AGENT");
         assertThat(body.path("accountId").asText()).isEqualTo("U0001");
+        assertThat(body.path("capabilities").toString())
+                .isEqualTo("[\"tickets\",\"conversations\",\"refunds\",\"knowledge\",\"quality\"]");
         // username 这一格是清场日补的：登录响应原本**不发**它，而两个前端的 Session 都声明了它，
         // 于是工作台把 `{{ username }}` 渲染成 undefined（买家端因为写了 `displayName ?? username`
         // 才侥幸没露）。钉住它，免得再被删一次。
@@ -127,6 +129,27 @@ class AccountControllerTest {
         assertThat(body.path("role").asText()).isEqualTo("AGENT");
         assertThat(body.path("accountId").asText()).isEqualTo("U0001");
         assertThat(body.path("tenantId").asText()).isEqualTo("T001");
+        assertThat(body.path("capabilities").toString())
+                .isEqualTo("[\"tickets\",\"conversations\",\"refunds\",\"knowledge\",\"quality\"]");
+    }
+
+    @Test
+    @DisplayName("capabilities 由角色派生：管理员含渠道/店铺，买家为空")
+    void capabilitiesFollowTheRole() throws Exception {
+        when(identity.authenticate(eq("T001"), eq("admin1"), anyString()))
+                .thenReturn(new IdentityClient.Attempt(200,
+                        new AccountView("U0009", "T001", "admin1", UserRole.ADMIN, null, "管理员"), null));
+        when(identity.authenticate(eq("T001"), eq("buyer1"), anyString()))
+                .thenReturn(new IdentityClient.Attempt(200,
+                        new AccountView("U0010", "T001", "buyer1", UserRole.BUYER, "C001", "买家"), null));
+
+        JsonNode admin = login("{\"tenantId\":\"T001\",\"username\":\"admin1\",\"password\":\"x\"}");
+        assertThat(admin.path("capabilities").toString()).isEqualTo(
+                "[\"tickets\",\"conversations\",\"refunds\",\"knowledge\",\"quality\",\"channels\",\"tenants\"]");
+
+        JsonNode buyer = login("{\"tenantId\":\"T001\",\"username\":\"buyer1\",\"password\":\"x\"}");
+        assertThat(buyer.path("capabilities").isArray()).isTrue();
+        assertThat(buyer.path("capabilities").size()).isZero();
     }
 
     @Test

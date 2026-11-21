@@ -37,6 +37,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -77,6 +78,7 @@ class RoleGuardAndActorTest {
                 mock(TokenBudget.class), mock(HybridRetriever.class), mock(TenantDomainRegistry.class),
                 mock(DevDefaultsPolicy.class), writer,
                 registry))
+                .addInterceptors(new OpsAuthorizationInterceptor(properties, writer))
                 .build();
     }
 
@@ -266,6 +268,77 @@ class RoleGuardAndActorTest {
         assertThat(response.getStatus()).isEqualTo(403);
         assertThat(envelope(response).path("code").asText()).isEqualTo("role.denied");
         verify(http, never()).send(any(), any());
+    }
+
+    @Test
+    @DisplayName("坐席不能枚举店铺：控制器自己的守卫也返回 403，请求没出网关")
+    void agentCannotReadTenants() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-admin-1", UserRole.AGENT, "U0007", "agent"));
+
+        MockHttpServletResponse response = mvc().perform(get("/api/v1/support/ops/tenants"))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(envelope(response).path("code").asText()).isEqualTo("role.denied");
+        assertThat(envelope(response).path("message").asText()).contains("管理员");
+        verify(http, never()).send(any(), any());
+    }
+
+    @Test
+    @DisplayName("坐席不能读取模型故障注入状态：平台动作只认 ops token")
+    void agentCannotReadLlmFault() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-llm-fault", UserRole.AGENT, "U0007", "agent"));
+
+        MockHttpServletResponse response = mvc().perform(get("/api/v1/support/ops/llm-fault"))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(envelope(response).path("code").asText()).isEqualTo("role.denied");
+        assertThat(envelope(response).path("message").asText()).contains("运维");
+    }
+
+    @Test
+    @DisplayName("分号矩阵参数不能把平台动作或渠道连接降级成坐席路径")
+    void agentCannotBypassGuardWithMatrixParameter() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-matrix", UserRole.AGENT, "U0007", "agent"));
+
+        for (String path : new String[]{
+                "/api/v1/support/ops/llm-fault;x",
+                "/api/v1/support/ops/fault;x"}) {
+            MockHttpServletResponse response = mvc().perform(get(path)).andReturn().getResponse();
+
+            assertThat(response.getStatus()).as(path).isEqualTo(403);
+            assertThat(envelope(response).path("code").asText()).as(path).isEqualTo("role.denied");
+        }
+    }
+
+    @Test
+    @DisplayName("管理员可枚举店铺：控制器守卫放行并转发到 biz-mock")
+    void adminCanReadTenants() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-admin-2", UserRole.ADMIN, "U0001", "admin"));
+        stubTicketService(200, "[]");
+        ArgumentCaptor<HttpRequest> captured = ArgumentCaptor.forClass(HttpRequest.class);
+
+        MockHttpServletResponse response = mvc().perform(get("/api/v1/support/ops/tenants"))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(http).send(captured.capture(), any());
+        assertThat(captured.getValue().uri().toString())
+                .isEqualTo("http://127.0.0.1:8091/api/admin/tenants");
+    }
+
+    @Test
+    @DisplayName("运维凭证仍可枚举店铺：平台路径不受管理员角色收紧影响")
+    void opsTokenCanReadTenants() throws Exception {
+        TenantContext.set(new Identity("T001", "C001", "conv-admin-3"));
+        stubTicketService(200, "[]");
+
+        MockHttpServletResponse response = mvc().perform(get("/api/v1/support/ops/tenants")
+                        .header("X-Ops-Token", OPS_TOKEN))
+                .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(200);
     }
 
     private MockHttpServletResponse claim(String opsToken, String selfReported) throws Exception {

@@ -17,6 +17,19 @@ export type { ApiResult }
 
 const BASE = '/api/v1/support/ops'
 
+/**
+ * 工作台能力名（票 221）。后端是唯一来源；前端只拿它决定入口可见性。
+ * `tenants` 目前没有工作台入口，留给调试台/后续管理面，不在侧栏出现。
+ */
+export type Capability =
+  | 'tickets'
+  | 'conversations'
+  | 'refunds'
+  | 'knowledge'
+  | 'quality'
+  | 'channels'
+  | 'tenants'
+
 /** 登录态。票据 83 起它只有一件东西：登录换来的令牌。 */
 export interface Session {
   token: string
@@ -24,6 +37,7 @@ export interface Session {
   role: string
   tenantId: string
   customerId: string | null
+  capabilities: Capability[]
 }
 
 export function api<T>(method: string, path: string, opts: { token?: string; body?: unknown } = {}): Promise<ApiResult<T>> {
@@ -102,7 +116,7 @@ export async function login(tenantId: string, username: string, password: string
 export function describe(result: ApiResult<unknown>, done: string): string {
   if (result.status === 0) return messageOf(result.body) ?? '网关不可达'
   if (result.status === 401) return '登录已失效，请重新登录'
-  if (result.status === 403) return '这个账号没有坐席权限'
+  if (result.status === 403) return messageOf(result.body) ?? '这个账号没有访问该功能的权限'
   if (result.status === 409) return '这张单现在不在你手上（已被别人领走或已结单）'
   if (result.status === 404) return '这张单不存在或不属于本店'
   if (result.status >= 200 && result.status < 300) return done
@@ -439,7 +453,7 @@ export function rejectRevision(id: string, session: Session): Promise<ApiResult<
 export function describeKnowledge(result: ApiResult<unknown>, done: string): string {
   if (result.status === 0) return messageOf(result.body) ?? '网关不可达'
   if (result.status === 401) return '登录已失效，请重新登录'
-  if (result.status === 403) return '这个账号没有坐席权限'
+  if (result.status === 403) return messageOf(result.body) ?? '这个账号没有访问该功能的权限'
   if (result.status === 404) return '这条反馈或修订不存在，或不属于本店'
   if (result.status === 409) return '现在走不了这一步：状态不允许（未复核就附稿、或已发布再发布）'
   if (result.status === 400) return downstreamError(result.body) ?? '附稿字段不合法'

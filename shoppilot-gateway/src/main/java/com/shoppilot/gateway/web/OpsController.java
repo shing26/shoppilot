@@ -8,6 +8,7 @@ import com.shoppilot.gateway.config.DevDefaultsPolicy;
 import com.shoppilot.gateway.config.GatewayProperties;
 import com.shoppilot.gateway.config.OpsAccess;
 import com.shoppilot.gateway.config.TenantDomainRegistry;
+import com.shoppilot.gateway.identity.Capabilities;
 import com.shoppilot.gateway.identity.TenantContext;
 import com.shoppilot.gateway.llm.LlmFaultInjector;
 import com.shoppilot.gateway.llm.TokenBudget;
@@ -238,9 +239,18 @@ public class OpsController {
     /**
      * 店铺清单：调试台的租户下拉从这里取，不在页面里写死一份名单。
      * 写死的那份会和 biz-mock 的 tenants 表悄悄分家，届时"选不到店"会被当成前端 bug 查。
+     *
+     * <p>票 221：渠道凭据与平台店铺枚举同属管理员面；坐席账号返回 403。
+     * 运维凭证仍是平台路径，调试台不受影响。
      */
     @GetMapping("/tenants")
-    public ResponseEntity<String> tenants() {
+    public ResponseEntity<String> tenants(
+            @RequestHeader(value = "X-Ops-Token", required = false) String opsToken) {
+        OpsAccess access = opsAccess(opsToken);
+        if (!access.allowed() && !adminOnly()) {
+            return access == OpsAccess.DISABLED ? denied(access)
+                    : errors.entity(HttpStatus.FORBIDDEN.value(), "role.denied", "店铺清单需要管理员账号");
+        }
         return forward("GET", "/api/admin/tenants", null, false);
     }
 
@@ -557,6 +567,12 @@ public class OpsController {
     private boolean staff() {
         UserRole role = TenantContext.current().role();
         return role == UserRole.AGENT || role == UserRole.ADMIN;
+    }
+
+    /** 管理员专属动作：从同一份能力映射判定，不在控制器里另写一套角色等级。 */
+    private boolean adminOnly() {
+        return TenantContext.present()
+                && Capabilities.allows(TenantContext.current().role(), Capabilities.TENANTS);
     }
 
     /** 从令牌解出操作人；没有账号（mock 令牌与老令牌）才回落到自称，并标成未认证。 */

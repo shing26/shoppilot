@@ -9,7 +9,7 @@ import { computed } from 'vue'
 import { countLabel } from 'frontend-shared'
 import type { MyOrder, OrderDetail, OrderLogistics } from '../api'
 import { PRIORITY_LABEL, STATUS_LABEL, type Ticket } from '../types'
-import { formatTime, slaText } from '../lib/format'
+import { ORDER_STATUS_LABEL, formatTime, slaText } from '../lib/format'
 import OrderCard from './OrderCard.vue'
 
 const sideTab = defineModel<'orders' | 'tickets'>('sideTab', { required: true })
@@ -30,6 +30,12 @@ const props = defineProps<{
   orderLogistics: OrderLogistics | null
   orderDetailLoading: boolean
   orderDetailError: string
+  /** 本次对话识别到的订单号；用于「本次涉及的订单」上下文卡。 */
+  orderContextNo: string
+  /** 会话号、买家与店铺用于侧栏底部的会话信息，不参与任何请求。 */
+  conversationId: string
+  buyerName: string
+  storeLabel: string
 }>()
 
 const emit = defineEmits<{
@@ -43,6 +49,9 @@ const emit = defineEmits<{
 // P0 侧栏：默认只露出 2 条，避免工单历史把聊天淹没。
 const visibleOrders = computed(() => (showAllOrders.value ? props.orders : props.orders.slice(0, 2)))
 const visibleTickets = computed(() => (showAllTickets.value ? props.tickets : props.tickets.slice(0, 2)))
+const contextOrder = computed(() =>
+  props.orderContextNo ? props.orders.find((order) => order.orderNo === props.orderContextNo) ?? null : null,
+)
 
 function pickTab(tab: 'orders' | 'tickets') {
   sideTab.value = tab
@@ -84,7 +93,28 @@ function toggleTickets() {
 
     <template v-if="sideTab === 'orders'">
       <div class="section-head">
-        <h2>最近订单</h2>
+        <h2>本次涉及的订单</h2>
+        <span class="section-note">来自对话上下文</span>
+      </div>
+      <div v-if="contextOrder" class="context-order">
+        <div class="context-top">
+          <strong class="mono">{{ contextOrder.orderNo }}</strong>
+          <span class="pill">{{ ORDER_STATUS_LABEL[contextOrder.status] ?? contextOrder.status }}</span>
+        </div>
+        <p class="context-meta">
+          {{ contextOrder.categoryName }}
+          <span>¥{{ (contextOrder.amountFen / 100).toFixed(2) }}</span>
+        </p>
+        <button class="link context-link" type="button" @click="emit('toggleOrder', contextOrder.orderNo)">
+          查看订单详情与物流 →
+        </button>
+      </div>
+      <p v-else class="context-empty">
+        本次对话还没有关联订单。展开任一订单后提问，客服会带上这单的上下文。
+      </p>
+
+      <div class="section-head orders-head">
+        <h2>全部订单</h2>
         <button class="link" type="button" @click="emit('refreshOrders')">刷新</button>
       </div>
       <p v-if="orderError" class="err">{{ orderError }}</p>
@@ -111,7 +141,7 @@ function toggleTickets() {
 
     <template v-else>
       <div class="section-head">
-        <h2>最近工单</h2>
+        <h2>售后进度</h2>
         <button class="link" type="button" @click="emit('refreshTickets')">刷新</button>
       </div>
       <p v-if="ticketError" class="err">{{ ticketError }}</p>
@@ -150,36 +180,81 @@ function toggleTickets() {
         {{ showAllTickets ? '收起' : '查看全部工单' }}
       </button>
     </template>
+
+    <section class="session-info">
+      <h2>会话信息</h2>
+      <dl>
+        <div><dt>会话号</dt><dd class="mono">{{ conversationId || '提问后生成' }}</dd></div>
+        <div><dt>买家</dt><dd>{{ buyerName || '未登录' }}</dd></div>
+        <div><dt>所属店铺</dt><dd>{{ storeLabel }}</dd></div>
+        <div><dt>答复依据</dt><dd>每次回答附命中条款</dd></div>
+      </dl>
+    </section>
   </section>
 </template>
 
 <style scoped>
 .side-tabs {
-  display: flex; gap: 4px; padding: 3px; margin: 0 0 12px;
-  background: var(--bg); border-radius: 10px;
+  display: flex; gap: 20px; padding: 0; margin: 0 0 14px;
+  border-bottom: 1px solid var(--line);
 }
 .side-tab {
-  flex: 1; border: none; background: transparent; color: var(--ink-3);
-  border-radius: 8px; padding: 7px 8px; cursor: pointer; font-size: 13px;
+  border: none; background: transparent; color: var(--ink-3);
+  border-radius: 0; padding: 8px 2px 9px; cursor: pointer; font-size: 13px;
   display: flex; align-items: center; justify-content: center; gap: 6px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
 }
-.side-tab.active { background: var(--panel); color: var(--ink); box-shadow: 0 1px 4px rgba(20, 22, 26, .08); font-weight: 600; }
+.side-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--teal);
+  font-weight: 600;
+}
 .tab-count {
-  min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--teal-soft-2);
-  color: var(--teal); font-size: 11px; line-height: 18px; text-align: center;
+  min-width: 18px; padding: 0 5px; border-radius: var(--radius-full); background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink-3); font-size: 11px; line-height: 18px; text-align: center;
 }
-.side-tab:not(.active) .tab-count { background: var(--line); color: var(--ink-3); }
+.side-tab.active .tab-count { background: var(--teal-soft); border-color: var(--teal-line); color: var(--teal-ink); }
 .side-activity .section-head { margin-bottom: 8px; }
+.side-activity .section-head h2 { font-size: 12px; }
+.section-note { color: var(--ink-3); font-size: 10px; margin-left: auto; }
+.context-order {
+  border: 1px solid var(--teal-line);
+  background: var(--teal-wash);
+  border-radius: var(--radius-md);
+  padding: 10px 11px;
+  margin-bottom: 16px;
+}
+.context-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.context-top strong { font-size: 12px; overflow-wrap: anywhere; }
+.context-meta {
+  display: flex; justify-content: space-between; gap: 8px;
+  margin: 4px 0 6px; color: var(--ink-2); font-size: 12px;
+}
+.context-meta span { color: var(--ink); font-weight: 600; }
+.context-link { font-size: 12px; }
+.context-empty {
+  margin: 0 0 16px;
+  padding: 10px 11px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.orders-head { padding-top: 2px; }
 .side-more { display: block; margin: 8px auto 0; font-size: 12px; }
 /* 只留侧栏这一层滚动（round46 票 192）：卡片内部的第二个滚动区会把展开的深度卡裁掉。 */
 .order-list { display: grid; gap: 8px; }
 .ticket-list { display: grid; gap: 10px; }
 .ticket-card {
   box-sizing: border-box;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px;
+  border-left: 3px solid var(--line);
 }
-.ticket-card.clickable { cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
-.ticket-card.clickable:hover { border-color: var(--teal-line); box-shadow: 0 4px 16px rgba(15, 118, 110, 0.08); }
+.ticket-card.clickable { cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+.ticket-card.clickable:hover { border-color: var(--teal-line); border-left-color: var(--teal); background: var(--panel-2); }
 .ticket-card.clickable:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .ticket-open { margin-left: auto; color: var(--teal); white-space: nowrap; }
 .ticket-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -193,6 +268,19 @@ function toggleTickets() {
 .step.warn::before { background: var(--amber); }
 .step time { margin-left: 4px; }
 .ticket-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
+.session-info {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.session-info h2 { margin: 0 0 8px; font-size: 12px; }
+.session-info dl { margin: 0; display: grid; gap: 6px; }
+.session-info div { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.session-info dt { color: var(--ink-3); font-size: 11px; }
+.session-info dd {
+  margin: 0; color: var(--ink-2); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* 触屏目标 ≥40px（round47 票 196）；桌面密度不变。 */
 @media (max-width: 640px) {
