@@ -49,6 +49,17 @@
     `python scripts/gen_status.py --check`（必要时先重生成）与
     `python scripts/verify_doc_truth.py` 退出 0；`git diff --check` 退出 0。
 
+## 验证期修正（2026-11-22，独立 Verifier 复跑后）
+
+- `scripts/verify-workspace.mjs` 的发布/驳回断言原用全局 `.revision-card.draft` /
+  `.revision-card.rejected` 计数。修订库是内存态，连续跑门禁会留下历史 DRAFT，
+  导致「1 版已驳回 / 1 版待发布」的假红（Verifier 实测 22/23）。
+- 修正为按本次 `feedbackId` 限定修订卡：仍断言 DRAFT → PUBLISHED、
+  DRAFT → REJECTED，以及该稿不再留在待发布；覆盖点不降低，只去掉顺序依赖。
+- 同一轮复跑还发现：队列里有历史复核工单时，「详情当前选中行」可能是已结单票据，
+  领取/结单动作会打到它上面。`verify-workspace.mjs` 改为按本次转人工响应里的
+  `ticketId` 精确选中队列行，并断言该行存在；领取、对话框、结单意见断言本身不变。
+
 ## Verification commands
 
 ```powershell

@@ -93,12 +93,18 @@ const buyerToken = await (await fetch(`${BASE}/auth/mock-token`, {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ tenantId: 'T001', customerId: 'C001' }),
 })).json().then((r) => r.token);
-const seeded = await fetch(`${BASE}/api/v1/support/chat`, {
+const seededResponse = await fetch(`${BASE}/api/v1/support/chat`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${buyerToken}` },
   body: JSON.stringify({ query: '我不想跟机器说了，转人工', idempotencyToken: `ws-gate-${Date.now()}` }),
 });
-check('买家会话能走到显式转人工（降级落单那条路是通的）', seeded.ok, `HTTP ${seeded.status}`);
+const seededBody = await seededResponse.json().catch(() => ({}));
+const seededTicketId = seededBody.ticketId;
+check(
+  '买家会话能走到显式转人工（降级落单那条路是通的）',
+  seededResponse.ok && Boolean(seededTicketId),
+  `HTTP ${seededResponse.status} ticketId=${seededTicketId || '(无)'}`,
+);
 
 await page.locator('button:has-text("刷新队列")').click();
 await page.waitForLoadState('networkidle');
@@ -130,6 +136,18 @@ if (new Set(ranks).size >= 2) {
   // 队列里只有一种优先级时排序无从证明。**打 WARN 而不是静默跳过**：
   // 门禁自己跳过的断言和通过的断言，在读数里长得一样。
   console.log(`WARN  队列只有一种优先级（${labels.join(',') || '空'}），本轮未覆盖排序断言`);
+}
+
+// 队列可能同时装着历史复核工单（它们通常已结单）；必须按本次返回的 ticketId 精确选中，
+// 否则「第一行」会把领取/结单动作打到另一张已结单的票上，变成状态污染型假红。
+const seededRow = page.locator('.ticket-card').filter({
+  has: page.locator(`[title="工单号 ${seededTicketId}"]`),
+});
+const seededRowCount = await seededRow.count();
+check('队列里能找到本次门禁创建的那张工单', seededRowCount === 1, `${seededRowCount} 行匹配 ${seededTicketId || '(无)'}`);
+if (seededRowCount > 0) {
+  await seededRow.first().click({ noWaitAfter: true }).catch(() => {});
+  await page.waitForTimeout(300);
 }
 
 // 领取：真点一次，并看它是否进了「已领取」那一档（领取人的名字出现在详情里）。
@@ -237,19 +255,23 @@ check(
 await page.fill('.draft-form input[type="text"]', '七天无理由退货的起算点（门禁写入）');
 await page.fill('.draft-form textarea', '签收次日 0 点起算，满 7 天当日 24 点截止；生鲜类不适用。');
 await page.locator('.draft-form button[type="submit"]').click({ noWaitAfter: true }).catch(() => {});
-await page.waitForSelector('.revision-card.draft', { timeout: 10000 }).catch(() => {});
+// 断言必须落到「本次反馈生成的那一稿」：工单/修订库是内存态，连续跑门禁会留下历史 DRAFT；
+// 用全局 .revision-card.draft 计数会把上一轮残留读成这一轮的失败。
+const draftForFeedback = page.locator('.revision-card.draft', { hasText: feedbackId ?? '(none)' });
+await draftForFeedback.waitFor({ timeout: 10000 }).catch(() => {});
 check(
   '附稿后出现一版待发布的修订稿（DRAFT）',
-  (await page.locator('.revision-card.draft').count()) > 0,
-  `${await page.locator('.revision-card.draft').count()} 版待发布`,
+  (await draftForFeedback.count()) > 0,
+  `${await draftForFeedback.count()} 版待发布`,
 );
 
-await page.locator('.revision-card.draft button:has-text("发布")').first().click({ noWaitAfter: true }).catch(() => {});
-await page.waitForSelector('.ingest-note', { timeout: 10000 }).catch(() => {});
+await draftForFeedback.locator('button:has-text("发布")').click({ noWaitAfter: true }).catch(() => {});
+const publishedCard = page.locator('.revision-card', { hasText: feedbackId ?? '(none)' });
+await publishedCard.locator('.ingest-note').waitFor({ timeout: 10000 }).catch(() => {});
 check(
   '发布后给出「不立即生效、需重跑 ingest」的显式提示',
-  await page.locator('.ingest-note').first().isVisible().catch(() => false),
-  (await page.locator('.ingest-note').first().innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 60),
+  await publishedCard.locator('.ingest-note').isVisible().catch(() => false),
+  (await publishedCard.locator('.ingest-note').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 60),
 );
 
 // 驳回是这条链的**另一个终态**，票 190 验收项写的是「读、附稿、发布、驳回」四件事。
@@ -276,11 +298,13 @@ await page.waitForSelector('.draft-form', { timeout: 10000 }).catch(() => {});
 await page.fill('.draft-form input[type="text"]', '驳回路径的修订稿（门禁写入）');
 await page.fill('.draft-form textarea', '这一稿会被驳回，用来验证终态。');
 await page.locator('.draft-form button[type="submit"]').click({ noWaitAfter: true }).catch(() => {});
-await page.waitForSelector('.revision-card.draft', { timeout: 10000 }).catch(() => {});
-await page.locator('.revision-card.draft button:has-text("驳回")').first().click({ noWaitAfter: true }).catch(() => {});
-await page.waitForSelector('.revision-card.rejected', { timeout: 10000 }).catch(() => {});
-const rejectedCount = await page.locator('.revision-card.rejected').count();
-const draftLeft = await page.locator('.revision-card.draft').count();
+const rejectDraft = page.locator('.revision-card.draft', { hasText: rejectFeedbackId ?? '(none)' });
+await rejectDraft.waitFor({ timeout: 10000 }).catch(() => {});
+await rejectDraft.locator('button:has-text("驳回")').click({ noWaitAfter: true }).catch(() => {});
+const rejectedCard = page.locator('.revision-card.rejected', { hasText: rejectFeedbackId ?? '(none)' });
+await rejectedCard.waitFor({ timeout: 10000 }).catch(() => {});
+const rejectedCount = await rejectedCard.count();
+const draftLeft = await page.locator('.revision-card.draft', { hasText: rejectFeedbackId ?? '(none)' }).count();
 check(
   '驳回后修订卡进入终态（REJECTED），不再留在待发布',
   rejectedCount > 0 && draftLeft === 0,
