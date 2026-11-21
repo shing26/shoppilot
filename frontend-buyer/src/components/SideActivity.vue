@@ -9,7 +9,7 @@ import { computed } from 'vue'
 import { countLabel } from 'frontend-shared'
 import type { MyOrder, OrderDetail, OrderLogistics } from '../api'
 import { PRIORITY_LABEL, STATUS_LABEL, type Ticket } from '../types'
-import { ORDER_STATUS_LABEL, formatTime, shortTicketId, slaText } from '../lib/format'
+import { ORDER_STATUS_LABEL, formatTime, slaText } from '../lib/format'
 import OrderCard from './OrderCard.vue'
 
 const sideTab = defineModel<'orders' | 'tickets'>('sideTab', { required: true })
@@ -64,30 +64,45 @@ function toggleOrders() {
 function toggleTickets() {
   showAllTickets.value = !showAllTickets.value
 }
+
+function refreshActive() {
+  if (sideTab.value === 'orders') emit('refreshOrders')
+  else emit('refreshTickets')
+}
 </script>
 
 <template>
   <section class="side-card side-activity">
-    <div class="side-tabs" role="tablist" aria-label="订单与工单">
+    <div class="side-tabbar">
+      <div class="side-tabs" role="tablist" aria-label="订单与工单">
+        <button
+          class="side-tab"
+          :class="{ active: sideTab === 'orders' }"
+          type="button"
+          role="tab"
+          :aria-selected="sideTab === 'orders'"
+          @click="pickTab('orders')"
+        >
+          订单<span class="tab-count">{{ countLabel(orders.length) }}</span>
+        </button>
+        <button
+          class="side-tab"
+          :class="{ active: sideTab === 'tickets' }"
+          type="button"
+          role="tab"
+          :aria-selected="sideTab === 'tickets'"
+          @click="pickTab('tickets')"
+        >
+          工单<span class="tab-count">{{ countLabel(tickets.length) }}</span>
+        </button>
+      </div>
       <button
-        class="side-tab"
-        :class="{ active: sideTab === 'orders' }"
+        class="link tab-refresh"
         type="button"
-        role="tab"
-        :aria-selected="sideTab === 'orders'"
-        @click="pickTab('orders')"
+        :disabled="ordersLoading || ticketsLoading"
+        @click="refreshActive"
       >
-        订单<span class="tab-count">{{ countLabel(orders.length) }}</span>
-      </button>
-      <button
-        class="side-tab"
-        :class="{ active: sideTab === 'tickets' }"
-        type="button"
-        role="tab"
-        :aria-selected="sideTab === 'tickets'"
-        @click="pickTab('tickets')"
-      >
-        工单<span class="tab-count">{{ countLabel(tickets.length) }}</span>
+        刷新
       </button>
     </div>
 
@@ -115,7 +130,6 @@ function toggleTickets() {
 
       <div class="section-head orders-head">
         <h2>全部订单</h2>
-        <button class="link" type="button" @click="emit('refreshOrders')">刷新</button>
       </div>
       <p v-if="orderError" class="err">{{ orderError }}</p>
       <p v-else-if="ordersLoading" class="empty">正在读取订单…</p>
@@ -142,7 +156,6 @@ function toggleTickets() {
     <template v-else>
       <div class="section-head">
         <h2>售后进度</h2>
-        <button class="link" type="button" @click="emit('refreshTickets')">刷新</button>
       </div>
       <p v-if="ticketError" class="err">{{ ticketError }}</p>
       <p v-else-if="ticketsLoading" class="empty">正在读取…</p>
@@ -157,7 +170,7 @@ function toggleTickets() {
           @keyup.enter="emit('openTicket', t)"
         >
           <div class="ticket-top">
-            <strong class="mono ticket-number" :title="'工单号 ' + t.id">{{ shortTicketId(t.id) }}</strong>
+            <strong class="mono ticket-number" :title="'工单号 ' + t.id">{{ t.id }}</strong>
             <span class="pill">{{ STATUS_LABEL[t.status] ?? t.status }}</span>
           </div>
           <p class="ticket-query">{{ t.userQuery }}</p>
@@ -194,9 +207,17 @@ function toggleTickets() {
 </template>
 
 <style scoped>
-.side-tabs {
-  display: flex; gap: 20px; padding: 0; margin: 0 0 14px;
+.side-tabbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
   border-bottom: 1px solid var(--line);
+}
+.side-tabs {
+  display: flex; gap: 20px; padding: 0; margin: 0;
+  border-bottom: none;
 }
 .side-tab {
   border: none; background: transparent; color: var(--ink-3);
@@ -205,15 +226,17 @@ function toggleTickets() {
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }
+.tab-refresh { margin-bottom: 10px; font-size: 12px; flex: none; }
 .side-tab.active {
   color: var(--ink);
   border-bottom-color: var(--teal);
   font-weight: 600;
 }
 .tab-count {
-  min-width: 18px; padding: 0 5px; border-radius: var(--radius-full); background: var(--panel-2);
+  min-width: 18px; padding: 0 5px; border-radius: var(--radius-xs); background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--ink-3); font-size: 12px; line-height: 18px; text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 .side-tab.active .tab-count { background: var(--teal-soft); border-color: var(--teal-line); color: var(--teal-ink); }
 .side-activity .section-head { margin-bottom: 8px; }
@@ -223,7 +246,7 @@ function toggleTickets() {
   border: 1px solid var(--teal-line);
   background: var(--teal-wash);
   border-radius: var(--radius-md);
-  padding: 10px 11px;
+  padding: 14px 20px;
   margin-bottom: 16px;
 }
 .context-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -232,11 +255,11 @@ function toggleTickets() {
   display: flex; justify-content: space-between; gap: 8px;
   margin: 4px 0 6px; color: var(--ink-2); font-size: 12px;
 }
-.context-meta span { color: var(--ink); font-weight: 600; }
+.context-meta span { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .context-link { font-size: 12px; }
 .context-empty {
   margin: 0 0 16px;
-  padding: 10px 11px;
+  padding: 14px 20px;
   border: 1px dashed var(--line);
   border-radius: var(--radius-md);
   color: var(--ink-3);
@@ -250,7 +273,7 @@ function toggleTickets() {
 .ticket-list { display: grid; gap: 10px; }
 .ticket-card {
   box-sizing: border-box;
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 13px 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 16px 20px;
   border-left: 3px solid var(--line);
 }
 .ticket-card.clickable { cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
@@ -258,8 +281,15 @@ function toggleTickets() {
 .ticket-card.clickable:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .ticket-open { margin-left: auto; color: var(--teal); white-space: nowrap; }
 .ticket-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.ticket-top strong { font-size: 13px; overflow-wrap: anywhere; }
-.ticket-number { letter-spacing: .01em; }
+.ticket-top strong { font-size: 13px; flex: 1; min-width: 0; }
+.ticket-top .pill { flex: none; }
+.ticket-number {
+  letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ticket-query { margin: 6px 0 8px; color: var(--ink); overflow-wrap: anywhere; }
 .ticket-timeline { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 8px; color: var(--ink-3); font-size: 12px; }
 .step { position: relative; padding-left: 10px; }
@@ -267,8 +297,8 @@ function toggleTickets() {
 .step.done::before { background: var(--teal); }
 .step.warn { color: var(--amber-ink); }
 .step.warn::before { background: var(--amber); }
-.step time { margin-left: 4px; }
-.ticket-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; }
+.step time { margin-left: 4px; font-variant-numeric: tabular-nums; }
+.ticket-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .session-info {
   margin-top: 16px;
   padding-top: 12px;
@@ -281,11 +311,17 @@ function toggleTickets() {
 .session-info dd {
   margin: 0; color: var(--ink-2); font-size: 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 触屏目标 ≥40px（round47 票 196）；桌面密度不变。 */
 @media (max-width: 640px) {
   .side-tab { min-height: 40px; }
+  .ticket-card { padding: 20px; }
+  .tab-refresh {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 40px; min-width: 44px; padding: 0 8px;
+  }
   .section-head .link {
     display: inline-flex; align-items: center; justify-content: center;
     min-height: 40px; min-width: 44px; padding: 0 8px;

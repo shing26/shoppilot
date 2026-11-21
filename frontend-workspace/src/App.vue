@@ -1389,11 +1389,11 @@ function clearStoredSession() {
 @media (max-width: 960px) {
   .shell { height: auto; min-height: 100dvh; overflow: visible; }
   .console { grid-template-columns: 1fr; }
-  .work-area { overflow: visible; padding: 16px; }
+  .work-area { overflow: visible; padding: 20px; }
   .access-denied { margin: 24px auto; }
 }
 
 @media (max-width: 640px) {
-  .work-area { padding: 12px; }
+  .work-area { padding: 24px; }
 }
 </style>

@@ -1002,7 +1002,7 @@ function clearStoredChat() {
     width: min(390px, 94vw);
     box-sizing: border-box;
     max-height: none;
-    padding: 16px;
+    padding: 24px;
     background: var(--bg);
     border-left: 1px solid var(--line);
     box-shadow: var(--shadow-3);
@@ -1047,12 +1047,12 @@ function clearStoredChat() {
 }
 
 @media (max-width: 640px) {
-  .wrap { padding: 0 12px 24px; }
-  .welcome { padding: 24px 16px; }
+  .wrap { padding: 0 24px 24px; }
+  .welcome { padding: 24px; }
   .welcome h1 { font-size: 26px; }
   .welcome-head { margin-bottom: 20px; }
   .help-grid { grid-template-columns: 1fr; }
-  .buyer-layout { gap: 14px; }
+  .buyer-layout { gap: 20px; }
   .buyer-side { width: 100%; border-left: none; }
 }
 </style>

@@ -5,7 +5,8 @@
  * <p>`queue` / `statusFilter` / `selectedId` 都用**显式 prop + 事件**而不是 `v-model`：
  * 换队列要先更新值再拉数据，依赖同一事件上两个处理器的先后顺序太脆。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { copyToClipboard } from 'frontend-shared'
 import { PRIORITY_LABEL, QUEUE_LABEL, QUEUES, SOURCE_LABEL, STATUS_LABEL, type Ticket } from '../types'
 import { formatTime, isOverdue, payloadField, shortTicketId, slaText } from '../lib/format'
 import type { StatusFilter } from '../lib/ui'
@@ -41,7 +42,14 @@ const emit = defineEmits<{
 
 const mobileDetail = ref(false)
 const copyNote = ref('')
+const copyFailed = ref(false)
 let copyTimer = 0
+
+watch(() => props.selectedId, () => {
+  window.clearTimeout(copyTimer)
+  copyNote.value = ''
+  copyFailed.value = false
+})
 
 /**
  * 复核单指回的那条反馈（round46 票 194）：`payload.feedbackId` 由 biz-mock 开单时写入。
@@ -109,16 +117,19 @@ function backToList() {
 
 async function copySelectedId() {
   if (!props.selected) return
-  try {
-    await navigator.clipboard.writeText(props.selected.id)
-    copyNote.value = '已复制'
-  } catch {
-    copyNote.value = '复制失败'
-  }
   window.clearTimeout(copyTimer)
-  copyTimer = window.setTimeout(() => {
-    copyNote.value = ''
-  }, 1600)
+  const copied = await copyToClipboard(props.selected.id)
+  if (copied) {
+    copyNote.value = '已复制'
+    copyFailed.value = false
+    copyTimer = window.setTimeout(() => {
+      copyNote.value = ''
+    }, 1600)
+  } else {
+    // 失败时保留完整单号，直到下一次复制或切换工单；自动收口会让人来不及选中。
+    copyNote.value = '复制失败，请手动选择完整单号'
+    copyFailed.value = true
+  }
 }
 </script>
 
@@ -242,6 +253,7 @@ async function copySelectedId() {
         <button class="copy-id" type="button" @click="copySelectedId">
           {{ copyNote || '复制完整工单号' }}
         </button>
+        <code v-if="copyFailed" class="copy-fallback">{{ selected.id }}</code>
 
         <section class="detail-query quote">
           <p class="quote-label">买家原始诉求</p>
@@ -466,7 +478,7 @@ async function copySelectedId() {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-panel);
-  padding: 16px 18px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -539,13 +551,25 @@ async function copySelectedId() {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.copy-fallback {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font: 12px/1.5 var(--mono);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
 .detail-query.quote {
   margin: 14px 0;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-left: 3px solid var(--teal-line-2);
   border-radius: var(--radius-lg);
-  padding: 14px 16px;
+  padding: 16px 20px;
 }
 .quote-label {
   margin: 0 0 5px; color: var(--ink-3); font-size: 12px;
@@ -614,7 +638,7 @@ async function copySelectedId() {
 }
 .bubble.system { justify-self: start; background: var(--bg); border: 1px solid var(--line); color: var(--ink-2); }
 .side-block {
-  padding: 14px;
+  padding: 16px;
   background: var(--panel-2);
   border: 1px solid var(--line-2);
   border-radius: var(--radius-xl);
@@ -661,7 +685,8 @@ async function copySelectedId() {
   .detail-head { flex-direction: column; gap: 10px; }
   .detail-head-right { width: 100%; justify-content: space-between; }
   .detail-side { grid-template-columns: 1fr; }
-  .queue-pane, .detail-pane { padding: 14px; }
+  .queue-pane, .detail-pane { padding: 20px; }
+  .ticket-card { padding: 14px 16px; }
   .toolbar-count { display: none; }
 }
 </style>

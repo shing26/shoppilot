@@ -179,18 +179,6 @@ export function formatTime(value: string | null | undefined): string {
   return formatStamp(value) ?? ''
 }
 
-/**
- * 工单号在卡片里的短显：保留首字母与末 8 位。
- *
- * <p>工单号形如 `T<epochMillis>-<seq>`，长度落在 16 位左右，共享层的 `shortId`
- * 在 18 位阈值下不会截断。完整值仍放在 `title` 与复制按钮里，列表只负责可扫读。
- */
-export function shortTicketId(id: string): string {
-  if (id.length <= 14) return id
-  const tail = id.slice(-8)
-  return /^[A-Za-z]$/.test(id[0]) ? `${id[0]}…${tail}` : `…${tail}`
-}
-
 /** 一组同文档的依据。`doc` 为空时归到空串组，渲染层给一句兜底文案。 */
 export interface CitationGroup {
   doc: string

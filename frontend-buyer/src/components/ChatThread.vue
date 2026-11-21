@@ -231,7 +231,8 @@ onMounted(() => {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 12px; color: var(--teal-ink);
   background: var(--teal-soft); border: 1px solid var(--teal-line);
-  border-radius: var(--radius-full); padding: 2px 9px; white-space: nowrap;
+  border-radius: var(--radius-sm); padding: 2px 9px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .order-chip b { font-weight: 600; }
 .conv {

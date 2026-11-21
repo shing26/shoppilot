@@ -183,6 +183,61 @@ export function shortId(id: string): string {
   return id.length > 18 ? `…${id.slice(-12)}` : id
 }
 
+/**
+ * 工单号的短显：保留首字母与末 8 位。
+ *
+ * <p>工单号形如 `T<epochMillis>-<seq>`，长度落在 16 位左右；完整值仍由调用方放进
+ * `title` 或复制动作里。这个规则两端必须同源，否则同一张单在两个入口会有两种短号。
+ */
+export function shortTicketId(id: string): string {
+  if (id.length <= 14) return id
+  const tail = id.slice(-8)
+  return /^[A-Za-z]$/.test(id[0]) ? `${id[0]}…${tail}` : `…${tail}`
+}
+
+/**
+ * 复制文本，带非安全上下文降级。
+ *
+ * <p>`navigator.clipboard` 只在 secure context 可用；LAN HTTP、容器 IP 和一部分
+ * WebView 会直接拒绝。坐席在工单详情里复制完整单号是高频动作，不能因为部署协议
+ * 不同就只剩一句「复制失败」。
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  if (
+    typeof navigator !== 'undefined'
+    && navigator.clipboard
+    && typeof window !== 'undefined'
+    && window.isSecureContext
+  ) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // 权限被拒或浏览器实现异常时继续走 textarea 兜底。
+    }
+  }
+  if (typeof document === 'undefined' || !document.body) return false
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.setAttribute('aria-hidden', 'true')
+  area.style.position = 'fixed'
+  area.style.top = '0'
+  area.style.left = '-9999px'
+  area.style.opacity = '0'
+  try {
+    document.body.appendChild(area)
+    area.focus({ preventScroll: true })
+    area.select()
+    area.setSelectionRange(0, area.value.length)
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    area.remove()
+  }
+}
+
 /** 计数字面量：超过 99 一律显示 `99+`。 */
 export function countLabel(value: number): string {
   return value > 99 ? '99+' : String(value)

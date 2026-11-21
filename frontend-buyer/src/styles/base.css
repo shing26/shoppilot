@@ -89,7 +89,7 @@ h2 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: 16px;
+  padding: 20px;
   box-sizing: border-box;
 }
 

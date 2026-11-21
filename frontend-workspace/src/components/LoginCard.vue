@@ -32,11 +32,6 @@ function toggleLogin() {
         队列、会话接管、退款审核与结单意见在同一个工作台完成。
         所有动作记审计，署名取自登录账号。
       </p>
-      <ol class="brand-chain" aria-label="工单处理链路">
-        <li><b>接单</b><span>队列按优先级排序，SLA 只标记超时</span></li>
-        <li><b>处理</b><span>订单、会话与上下文在同一条工单里</span></li>
-        <li><b>结单</b><span>结论回到买家，责任落在登录账号</span></li>
-      </ol>
     </div>
 
     <div class="login-card">
@@ -111,40 +106,6 @@ function toggleLogin() {
   line-height: 1.75;
   max-width: 400px;
 }
-.brand-chain {
-  list-style: none;
-  margin: 0;
-  padding: 4px 0 4px 22px;
-  position: relative;
-  display: grid;
-  gap: 14px;
-  border-top: 1px solid var(--chrome-line);
-  border-bottom: 1px solid var(--chrome-line);
-}
-.brand-chain::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 16px;
-  bottom: 16px;
-  width: 1px;
-  background: var(--chrome-line);
-}
-.brand-chain li { position: relative; display: grid; gap: 2px; padding: 8px 0; }
-.brand-chain li::before {
-  content: "";
-  position: absolute;
-  left: -22px;
-  top: 14px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--chrome);
-  border: 1px solid var(--teal-line);
-}
-.brand-chain b { color: var(--chrome-ink); font-size: 14px; font-weight: 500; }
-.brand-chain span { color: var(--chrome-muted); font-size: 12px; line-height: 1.55; }
-
 .login-card {
   box-sizing: border-box;
   padding: 44px;
@@ -174,7 +135,7 @@ function toggleLogin() {
   .login-wrap { grid-template-columns: 1fr; max-height: none; margin: 16px; }
   .login-brand { padding: 24px 20px; }
   .login-brand h1 { font-size: 25px; }
-  .brand-chain, .brand-lede { display: none; }
+  .brand-lede { display: none; }
   .login-card { padding: 24px 20px; }
 }
 </style>

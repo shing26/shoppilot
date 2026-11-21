@@ -32,14 +32,9 @@ function toggleLogin() {
       <p class="eyebrow">买家服务</p>
       <h1>订单、政策与售后，<br>在同一条对话里说清楚</h1>
       <p class="lede">
-        政策咨询、订单核验与售后办理在同一条对话里完成。需要人工时直接转，
+        政策咨询、订单核验与售后办理在同一条对话里完成。需要转人工时直接转，
         并留下一个可追踪的工单号。
       </p>
-      <ol class="gate-chain" aria-label="一次售后如何完成">
-        <li><b>带订单提问</b><span>订单、物流与售后上下文一次带入</span></li>
-        <li><b>按政策核验</b><span>回答附命中条款，办理前核验归属</span></li>
-        <li><b>需要时转人工</b><span>生成工单，坐席接单并留下结论</span></li>
-      </ol>
       <p class="gate-foot">本店客服在线 · 办理类问题先核验归属</p>
     </div>
 
@@ -121,52 +116,6 @@ function toggleLogin() {
   line-height: 1.75;
   max-width: 400px;
 }
-.gate-chain {
-  list-style: none;
-  margin: 0;
-  padding: 4px 0 4px 22px;
-  display: grid;
-  gap: 14px;
-  position: relative;
-  border-top: 1px solid var(--chrome-line);
-  border-bottom: 1px solid var(--chrome-line);
-}
-.gate-chain::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 16px;
-  bottom: 16px;
-  width: 1px;
-  background: var(--chrome-line);
-}
-.gate-chain li {
-  position: relative;
-  display: grid;
-  gap: 2px;
-  padding: 8px 0;
-}
-.gate-chain li::before {
-  content: "";
-  position: absolute;
-  left: -22px;
-  top: 14px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--chrome);
-  border: 1px solid var(--teal-line);
-}
-.gate-chain b {
-  color: var(--chrome-ink);
-  font-size: 14px;
-  font-weight: 500;
-}
-.gate-chain span {
-  color: var(--chrome-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
 .gate-foot {
   margin: 24px 0 0;
   color: var(--chrome-muted);
@@ -201,7 +150,7 @@ function toggleLogin() {
   .gate { grid-template-columns: 1fr; margin: 16px 0 0; }
   .gate-brand { padding: 24px 20px; }
   .gate-brand h1 { font-size: 25px; }
-  .gate-chain, .gate-foot { display: none; }
+  .gate-foot { display: none; }
   .gate-form { padding: 24px 20px; }
   .gate-actions { flex-direction: column; align-items: stretch; }
   .gate-actions .link { align-self: center; margin-top: 10px; }

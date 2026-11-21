@@ -91,12 +91,13 @@ const identityLabel = computed(() => {
 .activity-trigger em {
   min-width: 18px;
   padding: 0 5px;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-xs);
   background: var(--teal-soft);
   color: var(--teal-ink);
   font-size: 12px;
   font-style: normal;
   line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 960px) {

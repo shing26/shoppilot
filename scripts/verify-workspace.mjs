@@ -67,12 +67,19 @@ await page.locator('.login-card button:has-text("用账号口令登录")').click
 await page.fill('input[placeholder="例如 T001"]', TENANT);
 await page.fill('input[placeholder="例如 agent"]', USERNAME);
 await page.fill('input[placeholder="演示口令见 .env"]', PASSWORD);
+const loginResponse = page.waitForResponse(
+  (response) => response.url().endsWith('/auth/login') && response.request().method() === 'POST',
+);
 await page.locator('.login-form button[type="submit"]').click();
+const loginBody = await loginResponse.then((response) => response.json()).catch(() => null);
 await page.waitForTimeout(600);
+const identityText = await page.locator('.identity').innerText().catch(() => '');
 check(
-  '登录后页面显示当前身份（署名取自令牌，页面上不能改）',
-  (await page.locator('.identity').innerText().catch(() => '')).includes(USERNAME),
-  await page.locator('.identity').innerText().catch(() => '(没有 .identity)'),
+  '登录后页面显示令牌里的展示名，内部账号名不上屏',
+  Boolean(loginBody?.displayName)
+    && identityText === loginBody.displayName
+    && identityText !== USERNAME,
+  `displayName=${loginBody?.displayName ?? '(无)'} identity=${identityText || '(没有 .identity)'}`,
 );
 await page.locator('button:has-text("刷新队列")').click();
 await page.waitForLoadState('networkidle');
@@ -125,37 +132,14 @@ if (new Set(ranks).size >= 2) {
   console.log(`WARN  队列只有一种优先级（${labels.join(',') || '空'}），本轮未覆盖排序断言`);
 }
 
-// 处理完成是不可逆的一步，必须有人点一次确认（票 61 在退款面板上踩过这个坑）。
-// round36 / 票 151：确认从原生 confirm 换成带意见文本框的对话框——原来那条 confirm 只证明
-// 「有人拦了一下」，而意见框证明的是「结论真的会被填进去」（ADR 0059 的结果回流正文）。
-await page.locator('button:has-text("处理完成")').first().click({ noWaitAfter: true }).catch(() => {});
-await page.waitForTimeout(300);
-const dialogShown = await page.locator('.dialog').isVisible().catch(() => false);
-check('处理完成先打开确认对话框，不是一键生效', dialogShown);
-
-let emptyNoteBlocked = false;
-if (dialogShown) {
-  await page.locator('.dialog button:has-text("确认结单")').click({ noWaitAfter: true }).catch(() => {});
-  await page.waitForTimeout(200);
-  emptyNoteBlocked = await page.locator('.dialog .err').isVisible().catch(() => false);
-}
-check('结单意见为空时提交被拦（意见是结果回流的正文）', emptyNoteBlocked);
-
-let dialogClosed = false;
-if (dialogShown) {
-  await page.locator('.dialog button:has-text("取消")').click().catch(() => {});
-  await page.waitForTimeout(200);
-  dialogClosed = !(await page.locator('.dialog').isVisible().catch(() => false));
-}
-check('取消后对话框关闭，不留下半截操作', dialogClosed);
-
-// 防连点：一次只允许一个动作在飞。
 // 领取：真点一次，并看它是否进了「已领取」那一档（领取人的名字出现在详情里）。
 // round44 票 188：动作按钮在**详情栏**，不在每一行上——所以先记下当前选中的是哪张单，
 // 再去认领取人。早先直接读「第一张卡片」会判错：刷新会保留上一次的选中行，
 // 而门禁刚造了一张更新的单，那张新单排在第一行却不是被领取的那张（本轮实测）。
 const claimTargetId = (await page.locator('.detail-head h2').innerText().catch(() => '')).trim();
-const claimButtons = page.locator('button:has-text("领取")');
+// 票 222 的 KPI 文案含「未领取 / 已领取」，不能用全页 `button:has-text("领取")`：
+// 那会先点到 KPI 筛选。动作按钮限定在详情栏内。
+const claimButtons = page.locator('.detail-actions button:has-text("领取")');
 check('队列里有可领取的按钮', (await claimButtons.count()) > 0);
 const firstClaim = claimButtons.first();
 await firstClaim.click({ noWaitAfter: true }).catch(() => {});
@@ -175,6 +159,31 @@ check(
   detailText.includes(`坐席 ${USERNAME} 已领取`),
   detailText.replace(/\s+/g, ' ').slice(0, 80),
 );
+
+// 处理完成是不可逆的一步，必须有人点一次确认（票 61 在退款面板上踩过这个坑）。
+// 产品规则（round47 票 197）是先领取再结单，所以对话框断言放在领取成功之后。
+// round36 / 票 151：确认从原生 confirm 换成带意见文本框的对话框——原来那条 confirm 只证明
+// 「有人拦了一下」，而意见框证明的是「结论真的会被填进去」（ADR 0059 的结果回流正文）。
+await page.locator('.detail-actions button:has-text("处理完成")').first().click({ noWaitAfter: true }).catch(() => {});
+await page.waitForTimeout(300);
+const dialogShown = await page.locator('.dialog').isVisible().catch(() => false);
+check('处理完成先打开确认对话框，不是一键生效', dialogShown);
+
+let emptyNoteBlocked = false;
+if (dialogShown) {
+  await page.locator('.dialog button:has-text("确认结单")').click({ noWaitAfter: true }).catch(() => {});
+  await page.waitForTimeout(200);
+  emptyNoteBlocked = await page.locator('.dialog .err').isVisible().catch(() => false);
+}
+check('结单意见为空时提交被拦（意见是结果回流的正文）', emptyNoteBlocked);
+
+let dialogClosed = false;
+if (dialogShown) {
+  await page.locator('.dialog button:has-text("取消")').click().catch(() => {});
+  await page.waitForTimeout(200);
+  dialogClosed = !(await page.locator('.dialog').isVisible().catch(() => false));
+}
+check('取消后对话框关闭，不留下半截操作', dialogClosed);
 
 // --- 知识飞轮（round44 票 190）：五个状态在同一视图里走通 -----------------------------
 // 门禁自己先造一条 PENDING 反馈，不去依赖别处留下的行——清过库之后那种断言恒真。

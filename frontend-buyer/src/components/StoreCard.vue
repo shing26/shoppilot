@@ -17,8 +17,8 @@ const initial = computed(() => props.label.slice(0, 1))
     <div class="store-main">
       <div class="store-title">
         <strong>{{ label }}</strong>
-        <span class="verified">平台认证</span>
-        <span class="online">在线</span>
+        <span class="verified">平台认证商家</span>
+        <span class="online">服务中</span>
       </div>
       <p>{{ business || '在线客服 · 查订单 / 退换 / 生鲜理赔' }}</p>
     </div>

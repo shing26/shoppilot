@@ -205,12 +205,6 @@
     background: var(--panel);
     border: 1px solid var(--ink-3);
   }
-  .trace li.done::before { background: var(--accent); border-color: var(--accent); }
-  .trace li.current::before {
-    background: var(--panel);
-    border: 2px solid var(--accent);
-    box-shadow: 0 0 0 4px var(--accent-soft);
-  }
   .trace b { color: var(--ink); font-size: 14px; font-weight: 550; }
   .trace span { color: var(--ink-3); font-size: 13px; line-height: 1.55; }
   .trace-foot {
@@ -339,12 +333,12 @@
     .fact:last-child { border-bottom: none; }
   }
   @media (max-width: 560px) {
-    .topbar-inner, .shell, footer { padding-left: 16px; padding-right: 16px; }
+    .topbar-inner, .shell, footer { padding-left: 24px; padding-right: 24px; }
     .shell { padding-bottom: 28px; }
     .hero { padding-top: 30px; }
     .hero h1 { font-size: 34px; }
     .hero .lede { font-size: 15px; }
-    .trace-card, .entry { padding: 19px; }
+    .trace-card, .entry { padding: 20px; }
     .stores { grid-template-columns: 1fr; }
     .entry-head { display: block; }
     .entry-kicker { display: inline-block; margin-top: 7px; }
@@ -393,24 +387,28 @@
         <span class="trace-tag">链路示例</span>
       </header>
       <ol class="trace">
-        <li class="done">
+        <li>
+          <b>下单</b>
+          <span>订单成为后续提问、核验与售后办理的共同上下文</span>
+        </li>
+        <li>
           <b>买家带订单提问</b>
           <span>问题、订单上下文与店铺政策一起进入会话</span>
         </li>
-        <li class="done">
-          <b>在线客服核验</b>
-          <span>先核订单归属，再按命中条款回答；办理类动作不替用户猜</span>
-        </li>
-        <li class="current">
+        <li>
           <b>转人工，落一张工单</b>
-          <span>进入坐席队列，优先级、来源与 SLA 都可筛选</span>
+          <span>先核订单归属与政策依据；需要人工时进入坐席队列</span>
+        </li>
+        <li>
+          <b>坐席领取，进入处理中</b>
+          <span>优先级、来源与 SLA 都可筛选，领取后责任落到登录账号</span>
         </li>
         <li>
           <b>坐席结单，结论回到买家</b>
-          <span>领取与结单署名取自账号，处理记录可追踪</span>
+          <span>结单署名取自账号，处理记录与结论都可追踪</span>
         </li>
       </ol>
-      <p class="trace-foot">这是流程示例，不展示虚构的处理时长或在线人数。</p>
+      <p class="trace-foot">这是流程示例，不代表实时状态；节点状态以工单详情为准。</p>
     </aside>
   </section>
 
