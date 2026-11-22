@@ -95,7 +95,8 @@ class ConfigValidationTest {
             // round56 票 224 / ADR 0086：access / refresh 生命周期与 Cookie Secure 开关。
             "SHOPPILOT_IDENTITY_ACCESS_TTL",
             "SHOPPILOT_IDENTITY_REFRESH_TTL",
-            "SHOPPILOT_IDENTITY_SECURE_COOKIE");
+            "SHOPPILOT_IDENTITY_SECURE_COOKIE",
+            "SHOPPILOT_IDENTITY_LOGIN_IP_PER_MINUTE");
 
     private ApplicationContextRunner runner() {
         return new ApplicationContextRunner()

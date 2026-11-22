@@ -44,6 +44,9 @@ public class AccountController {
     private final ApiErrorWriter errors;
     private final RefreshCookie refreshCookie;
 
+    @Autowired(required = false)
+    private LoginIpRateLimiter loginRateLimiter;
+
     @Autowired
     public AccountController(IdentityClient identityClient, JwtService jwtService, ApiErrorWriter errors,
                              @Value("${shoppilot.identity.refresh-ttl:14d}") java.time.Duration refreshTtl,
@@ -66,9 +69,19 @@ public class AccountController {
      * 不确认账号是否存在。
      */
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletRequest http) {
+        String remote = http.getRemoteAddr();
+        if (loginRateLimiter != null && loginRateLimiter.blocked(remote)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .header("Retry-After", "60")
+                    .body(Map.of("code", "login_rate_limited",
+                            "message", "尝试次数过多，请稍后再试"));
+        }
         IdentityClient.Attempt attempt =
                 identityClient.authenticate(request.tenantId(), request.username(), request.password());
+        if (loginRateLimiter != null && attempt.account() == null) {
+            loginRateLimiter.recordFailure(remote);
+        }
         if (attempt.account() == null) {
             return rejected(attempt);
         }
@@ -164,10 +177,16 @@ public class AccountController {
             }
             HttpStatus status = attempt.status() == 401 ? HttpStatus.UNAUTHORIZED
                     : HttpStatus.valueOf(attempt.status());
-            return ResponseEntity.status(status)
-                    .header(HttpHeaders.SET_COOKIE, refreshCookie.clear().toString())
-                    .body(Map.of("code", ApiError.UNAUTHORIZED,
-                            "message", attempt.message() == null ? "当前口令不对" : attempt.message()));
+            ResponseEntity.BodyBuilder builder = ResponseEntity.status(status);
+            // 只有「会话本身失效」才清 Cookie。当前口令填错（403）是已登录用户的输入错误，
+            // 清掉 refresh 会让他在 access 过期后被迫登出——这正是首轮 Verifier 抓到的第二条症状。
+            if (status == HttpStatus.UNAUTHORIZED) {
+                builder = builder.header(HttpHeaders.SET_COOKIE, refreshCookie.clear().toString());
+            }
+            return builder.body(Map.of(
+                    // 403 用独立 code，避免前端把「口令不对」当成「未登录」。
+                    "code", status == HttpStatus.FORBIDDEN ? "current_password_invalid" : ApiError.UNAUTHORIZED,
+                    "message", attempt.message() == null ? "当前口令不对" : attempt.message()));
         }
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, refreshCookie.clear().toString())
@@ -264,6 +283,10 @@ public class AccountController {
                                     "账号已停用或不存在");
                         }
                         AccountView account = current.account();
+                        if (!account.active()) {
+                            return errors.entity(HttpStatus.UNAUTHORIZED.value(), ApiError.UNAUTHORIZED,
+                                    "账号已停用或不存在");
+                        }
                         identity = new TenantContext.Identity(account.tenantId(), account.subjectRef(),
                                 identity.conversationId(), account.role(), account.accountId(), account.username());
                     }

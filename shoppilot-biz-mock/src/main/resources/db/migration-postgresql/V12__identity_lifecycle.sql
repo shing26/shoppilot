@@ -17,6 +17,8 @@ create table refresh_tokens (
     used_at timestamp(6) with time zone,
     revoked_at timestamp(6) with time zone,
     replaced_by varchar(40),
+    password_version integer not null default 0,
+    role varchar(16) not null default 'BUYER',
     primary key (id),
     constraint uk_refresh_token_hash unique (token_hash)
 );

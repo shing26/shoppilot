@@ -204,16 +204,18 @@ public class IdentityService {
      * （调用方会撤族）；账号停用或口令版本变化 → {@link InvalidRefresh} 但内部撤族。
      * 分开是为了让网关能决定「要不要清 Cookie」，而不是把泄露信号也翻成一句「请重新登录」。
      */
-    @Transactional
+    @Transactional(noRollbackFor = {RefreshReuse.class, InvalidRefresh.class})
     public RefreshSession refresh(String plainToken) {
         Instant now = Instant.now();
-        RefreshToken stored = refreshTokens.findByTokenHash(hash(plainToken))
+        // 行级排他锁：同一个 refresh 的并发请求必须串行，否则两个都读到未使用。
+        RefreshToken stored = refreshTokens.findByTokenHashForUpdate(hash(plainToken))
                 .orElseThrow(InvalidRefresh::new);
         if (stored.getRevokedAt() != null) {
             throw new InvalidRefresh();
         }
         if (stored.getUsedAt() != null) {
-            revokeFamily(stored.getFamilyId(), now);
+            // 外层事务持有行锁，撤族必须加入本事务；noRollbackFor 保证抛出后仍提交。
+            state.revokeFamilyInCurrentTransaction(stored.getFamilyId(), now);
             audit.publish("identity.refresh.reused", "REFRESH_TOKEN", stored.getId(),
                     Actor.SYSTEM, "family=" + stored.getFamilyId());
             throw new RefreshReuse();
@@ -223,7 +225,13 @@ public class IdentityService {
         }
         UserAccount account = requireAccount(stored.getAccountId());
         if (!account.active()) {
-            revokeFamily(stored.getFamilyId(), now);
+            state.revokeFamilyInCurrentTransaction(stored.getFamilyId(), now);
+            throw new InvalidRefresh();
+        }
+        // ADR 0086 §2：改密/换角色后，旧 refresh 必须立即失效，而不是等 TTL。
+        if (stored.getPasswordVersion() != account.getPasswordVersion()
+                || !account.getRole().name().equals(stored.getRole())) {
+            state.revokeFamilyInCurrentTransaction(stored.getFamilyId(), now);
             throw new InvalidRefresh();
         }
         IssuedRefresh next = issueRefresh(account, stored.getFamilyId());
@@ -289,7 +297,8 @@ public class IdentityService {
     /** 对外一律是这一份形状：没有哈希，没有状态字面量。 */
     private static AccountView view(UserAccount account) {
         return new AccountView(account.getId(), account.getTenantId(), account.getUsername(), account.getRole(),
-                account.getSubjectRef(), account.getDisplayName(), account.getPasswordVersion());
+                account.getSubjectRef(), account.getDisplayName(), account.getPasswordVersion(),
+                account.active());
     }
 
     private UserAccount requireAccount(String accountId) {
@@ -316,7 +325,7 @@ public class IdentityService {
         String plain = RefreshTokenFormat.encode(account.getTenantId(), newPlainToken());
         Instant now = Instant.now();
         RefreshToken token = new RefreshToken(newId("R"), account.getTenantId(), familyId, account.getId(),
-                hash(plain), now, now.plus(refreshTtl));
+                hash(plain), now, now.plus(refreshTtl), account.getPasswordVersion(), account.getRole().name());
         refreshTokens.save(token);
         return new IssuedRefresh(token, plain);
     }

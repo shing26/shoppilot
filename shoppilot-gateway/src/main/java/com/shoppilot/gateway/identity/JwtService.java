@@ -101,9 +101,9 @@ public class JwtService {
         if (username != null && !username.isBlank()) {
             builder.claim("usr", username);
         }
-        if (passwordVersion > 0) {
-            builder.claim("pv", passwordVersion);
-        }
+        // ADR 0086：pv 是固定的 access claim，0 也要写——「缺 claim」与「版本 0」
+        // 必须可区分，否则将来有消费方时两种令牌会读成同一种。
+        builder.claim("pv", passwordVersion);
         return builder.compact();
     }
 

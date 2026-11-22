@@ -110,7 +110,9 @@ public class IdentityController {
             return ResponseEntity.ok(identity.changePassword(accountId, request.currentPassword(),
                     request.newPassword()));
         } catch (IdentityService.BadCredentials wrong) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+            // 403 而不是 401：这是「已登录，但当前口令不对」，不是会话失效。
+            // 若回 401，前端统一刷新钩子会把它当成 access 过期，刷新后再失败就登出。
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("message", "当前口令不对"));
         } catch (IllegalArgumentException invalid) {
             return badRequest(invalid.getMessage());

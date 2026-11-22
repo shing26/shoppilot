@@ -1,4 +1,10 @@
-import { messageOf, request, type ApiResult } from 'frontend-shared'
+import {
+  messageOf,
+  notifyUnauthorizedOnce,
+  refreshAccessToken,
+  request,
+  type ApiResult,
+} from 'frontend-shared'
 import type { Ticket } from './types'
 
 /**
@@ -283,10 +289,23 @@ export async function streamChannelConversations(
   onConversation: (conversation: ChannelConversation) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`${BASE}/channel-conversations/stream`, {
-    headers: { Authorization: `Bearer ${session.token}`, Accept: 'text/event-stream' },
+  const send = (token: string) => fetch(`${BASE}/channel-conversations/stream`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
     signal,
   })
+  let response = await send(session.token)
+  if (response.status === 401) {
+    const renewed = await refreshAccessToken()
+    if (!renewed) {
+      notifyUnauthorizedOnce()
+      throw new Error('channel stream HTTP 401')
+    }
+    response = await send(renewed)
+    if (response.status === 401) {
+      notifyUnauthorizedOnce()
+      throw new Error('channel stream HTTP 401')
+    }
+  }
   if (!response.ok || !response.body) {
     throw new Error(`channel stream HTTP ${response.status}`)
   }

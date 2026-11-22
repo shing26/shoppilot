@@ -100,6 +100,45 @@ git status --short
 - 宿主机内存告警：本轮多次遇到 45 GB 提交上限被其他项目占满导致原生分配失败；
   用 `-Dsurefire.forkCount=1` 后全绿，未停止或修改其他项目进程。
 
+**独立 Verifier 首轮 FAIL 与整改（2026-11-23）**
+
+Verifier 在 `9563780` 上逐条核对 AC，发现 5 个 P1；以下为整改后的复验落点：
+
+- **AC1/AC2 refresh 并发双用**：原实现是「读 used_at → 写 used_at」非原子，Verifier
+  8/8 次双 200。整改：`RefreshTokenRepository.findByTokenHashForUpdate` 行级排他锁；
+  刷新事务 `noRollbackFor`，复用撤族改走同事务的 `revokeFamilyInCurrentTransaction`，
+  避免 `REQUIRES_NEW` 与行锁自锁。新增 JVM 并发用例（两个独立 HttpClient 同时刷新）
+  与活体断言：恰好一个 200、一个 401，赢家新 refresh 也被整族撤销。
+- **AC6 停用后 `/auth/me` 仍 200**：`AccountView` 增加派生 `active` 布尔（不暴露状态字面量），
+  `AccountController.me` 对 `active=false` 返回 401；测试从「桩 404」改成真实的
+  「账号存在但 active=false」。活体新增「停用后旧 access 的 /auth/me 立即 401」。
+- **AC7 SSE 不刷新/401 循环**：`frontend-shared` 导出 `refreshAccessToken()` 与
+  `notifyUnauthorizedOnce()`；买家 `streamAnswer` 与坐席 `streamChannelConversations`
+  在建立流之前收到 401 时刷新一次并用新令牌重发；仍 401 才登出。买家新增两条
+  SSE 刷新测试（成功重发 / 失败只登出一次）。
+- **AC8 错误当前口令导致登出**：改密失败从 `401` 改为 `403`（语义是「已登录但当前口令不对」，
+  不是会话失效），前端 `describePasswordChange` 识别 403；新增「403 不刷新、不登出」测试。
+  活体同断言已改为 403。
+- **AC10 窗口恢复无活体**：锁定阈值/窗口/时长改为 biz-mock 配置
+  （`shoppilot.identity.failure-window|max-failures|lock-duration|refresh-ttl`）。
+  活体以 `SHOPPILOT_IDENTITY_LOCK_DURATION=5s` 启动 biz-mock，并设
+  `SHOPPILOT_IDENTITY_LOCK_WAIT_SECONDS=6`，真实等待后断言 200；默认 15 分钟窗口下仍打印 INFO，
+  不把等待伪装成 PASS。
+
+**整改后读数（2026-11-23）**
+
+- 全仓 `mvnw verify`：`12 + 98 + 684 + 50 = 844 tests / 139 suites`，0 failures；
+  覆盖率 biz-mock 83.71% / gateway 70.20% / ticket 78.62% / tool-api 40.93%，四模块 OK。
+- 活体 `verify-identity-lifecycle.mjs`：**27/27 PASS**（新增并发双用、赢家轮换 Cookie 也被撤族、
+  停用 `/auth/me`、5 秒窗口恢复、错误当前口令不清 Cookie；含 Refreshed Cookie 只走 HttpOnly）。
+- 前端买家 5 files / 44 tests、坐席 3 files / 15 tests；两端 typecheck/build 绿。
+- Verifier 的其余 P2 也已处理：refresh 行新增 `password_version` / `role` 快照并在刷新时比对；
+  `pv` 固定写入 access token（0 也写）；每 IP 每分钟 10 次**失败**登录限流
+  （`SHOPPILOT_IDENTITY_LOGIN_IP_PER_MINUTE`，成功登录不计数）。
+- 复验前又补一处整改：改密 403（当前口令错）不再下发 `Set-Cookie: Max-Age=0`，只
+  401（会话失效）才清 refresh；否则用户输错一次当前口令，15 分钟后会被迫重新登录。
+  活体新增「403 不清 Cookie」断言。
+
 **三个现场追问**
 
 1. 锁定阈值已做成 biz-mock 全局配置；是否还要按租户策略分别配置（需要租户级配置表）？

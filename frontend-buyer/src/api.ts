@@ -1,4 +1,10 @@
-import { messageOf, notifyUnauthorized, request, type ApiResult } from 'frontend-shared'
+import {
+  messageOf,
+  notifyUnauthorizedOnce,
+  refreshAccessToken,
+  request,
+  type ApiResult,
+} from 'frontend-shared'
 import { SseFrameReader } from './lib/sse'
 import type { Citation, CitationDetail, Session, Ticket } from './types'
 
@@ -231,18 +237,29 @@ export async function streamAnswer(
   onTrace?: (step: AgentRunStep) => void,
   signal?: AbortSignal,
 ): Promise<ApiResult<{ ticketId: string | null; citations: Citation[]; citationDetails: CitationDetail[]; fallbackReason: string | null }>> {
+  const send = (accessToken: string) => fetch('/api/v1/support/chat/stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      Authorization: `Bearer ${accessToken.trim()}`,
+      'X-Conversation-Id': conversationId,
+    },
+    body: JSON.stringify({ query, idempotencyToken: `buyer-${conversationId}-${Date.now()}` }),
+    signal,
+  })
   let res: Response
   try {
-    res = await fetch('/api/v1/support/chat/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        Authorization: `Bearer ${token.trim()}`,
-        'X-Conversation-Id': conversationId,
-      },
-      body: JSON.stringify({ query, idempotencyToken: `buyer-${conversationId}-${Date.now()}` }),
-      signal,
-    })
+    res = await send(token)
+    if (res.status === 401) {
+      // 裸 fetch 也要走单飞刷新：SSE 在建立前收到 401，刷新后重发一次是安全的。
+      const renewed = await refreshAccessToken()
+      if (!renewed) {
+        notifyUnauthorizedOnce()
+        return { status: 401, body: { message: await res.text() } }
+      }
+      res = await send(renewed)
+      if (res.status === 401) notifyUnauthorizedOnce()
+    }
   } catch (unreachable) {
     if (signal?.aborted) {
       return { status: 499, body: { message: '已停止生成' } }
@@ -251,8 +268,6 @@ export async function streamAnswer(
     return { status: 0, body: { message: `网关不可达（${reason}）` } }
   }
   if (res.status / 100 !== 2) {
-    // 裸 fetch 也要接 401 钩子（round47 票 195）：否则轮询请求会登出、流式问答不会。
-    if (res.status === 401) notifyUnauthorized()
     return { status: res.status, body: { message: await res.text() } }
   }
 

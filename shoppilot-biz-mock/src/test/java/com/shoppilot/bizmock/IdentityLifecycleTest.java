@@ -87,6 +87,42 @@ class IdentityLifecycleTest {
     }
 
     @Test
+    @DisplayName("并发双用同一个 refresh：只允许一个 200，另一个按复用拒绝并撤族")
+    void concurrentRefreshUsesTokenAtMostOnce() throws Exception {
+        register("race-agent", "{{SECRET_9yq2v6wp}}");
+        String refresh = login("race-agent", "{{SECRET_9yq2v6wp}}").path("refreshToken").asText();
+        assertThat(refresh).isNotBlank();
+
+        String body = JSON.writeValueAsString(Map.of("refreshToken", refresh));
+        HttpResponse<String> first = sendWithNewClient(body);
+        HttpResponse<String> second = sendWithNewClient(body);
+
+        long ok = java.util.stream.Stream.of(first, second)
+                .filter((r) -> r.statusCode() == 200).count();
+        long reused = java.util.stream.Stream.of(first, second)
+                .filter((r) -> r.statusCode() == 401).count();
+        assertThat(ok).as("同一个 refresh 只能成功一次").isEqualTo(1);
+        assertThat(reused).as("并发复用必须被拒").isEqualTo(1);
+
+        HttpResponse<String> winner = first.statusCode() == 200 ? first : second;
+        String rotated = JSON.readTree(winner.body()).path("refreshToken").asText();
+        // 复用检测撤销整族：赢家刚拿到的新令牌也应立即失效，不能留下一个可用会话。
+        HttpResponse<String> afterFamilyRevoke = post("/api/identity/refresh",
+                JSON.writeValueAsString(Map.of("refreshToken", rotated)), headers("T001"));
+        assertThat(afterFamilyRevoke.statusCode()).isEqualTo(401);
+    }
+
+    private HttpResponse<String> sendWithNewClient(String body) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/identity/refresh"))
+                .timeout(Duration.ofSeconds(30))
+                .header("Content-Type", "application/json;charset=UTF-8")
+                .headers("X-Internal-Token", TOKEN, "X-Tenant-Id", "T001")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
     @DisplayName("改密：错误当前口令拒绝；成功后旧 refresh 失效、旧口令登录失败、新口令成功")
     void changePasswordRevokesOldCredentials() throws Exception {
         register("passwd-agent", "{{SECRET_8cgs7l0b}}");
@@ -97,7 +133,8 @@ class IdentityLifecycleTest {
         HttpResponse<String> wrong = post("/api/identity/accounts/" + accountId + "/password",
                 JSON.writeValueAsString(Map.of("currentPassword", "not-the-password",
                         "newPassword", "lifecycle-pass-2")), headers("T001"));
-        assertThat(wrong.statusCode()).isEqualTo(401);
+        // 403 = 已登录但当前口令不对；401 会被前端当成会话失效而登出。
+        assertThat(wrong.statusCode()).isEqualTo(403);
 
         HttpResponse<String> changed = post("/api/identity/accounts/" + accountId + "/password",
                 JSON.writeValueAsString(Map.of("currentPassword", "{{SECRET_8cgs7l0b}}",

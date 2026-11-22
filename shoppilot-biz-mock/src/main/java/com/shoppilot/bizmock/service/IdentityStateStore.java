@@ -53,6 +53,18 @@ public class IdentityStateStore {
         refreshTokens.saveAllAndFlush(family);
     }
 
+    /**
+     * 刷新路径内的撤族：复用检测已经持有该令牌的行锁，不能再开独立事务——
+     * 内层事务会等外层释放同一行，形成自锁。调用方的 refresh 事务标了
+     * {@code noRollbackFor}，所以抛出 401 时撤销仍会提交。
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void revokeFamilyInCurrentTransaction(String familyId, Instant now) {
+        List<RefreshToken> family = refreshTokens.findByFamilyId(familyId);
+        family.forEach(token -> token.revoke(now));
+        refreshTokens.saveAllAndFlush(family);
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void revokeAllForAccount(String accountId, Instant now) {
         List<RefreshToken> tokens = refreshTokens.findByAccountId(accountId);

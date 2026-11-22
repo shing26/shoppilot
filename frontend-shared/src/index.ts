@@ -76,6 +76,16 @@ async function refreshOnce(): Promise<string | null> {
 }
 
 /**
+ * 给裸 `fetch`（SSE）复用的刷新入口：与 `request()` 共用同一个单飞 Promise。
+ *
+ * <p>SSE 不能把已经消费的流「重放」，但 401 发生在流建立之前，所以调用方可以在
+ * 拿到 401 后刷新一次、用新令牌重发同一个请求。
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  return refreshOnce()
+}
+
+/**
  * 给不走 `request()` 的入口复用同一钩子（买家 SSE 是裸 `fetch`）。
  *
  * <p>导出是为了同一个包内的 `api.ts` 能用；它不是产品面 API，入口不要直接调用。
@@ -101,7 +111,7 @@ export async function request<T>(url: string, opts: RequestOptions = {}): Promis
   return second
 }
 
-function notifyUnauthorizedOnce(): void {
+export function notifyUnauthorizedOnce(): void {
   if (unauthorizedNotified) return
   unauthorizedNotified = true
   notifyUnauthorized()
@@ -208,7 +218,7 @@ async function postAuth<T>(path: string): Promise<ApiResult<T>> {
 /** 改密失败的统一人话：401 是当前口令不对，400 是格式问题，其余透出下游那句话。 */
 export function describePasswordChange(result: ApiResult<unknown>): string {
   if (result.status === 0) return messageOf(result.body) ?? '网关不可达'
-  if (result.status === 401) return messageOf(result.body) ?? '当前口令不对'
+  if (result.status === 401 || result.status === 403) return messageOf(result.body) ?? '当前口令不对'
   if (result.status === 400) return messageOf(result.body) ?? '新口令不合法'
   if (result.status >= 200 && result.status < 300) return '口令已更新，请用新口令重新登录'
   return messageOf(result.body) ?? `修改失败（HTTP ${result.status}）`

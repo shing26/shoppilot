@@ -8,7 +8,8 @@
  * 放在这里才会进入 `npm test` 与 CI；被测代码仍从共享入口导入。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { request, setRefreshHandler, setUnauthorizedHandler } from 'frontend-shared'
+import { changePassword, request, setRefreshHandler, setUnauthorizedHandler } from 'frontend-shared'
+import { streamAnswer } from '../api'
 
 describe('request 401 refresh', () => {
   const responses: Array<{ status: number; body: string }> = []
@@ -92,5 +93,54 @@ describe('request 401 refresh', () => {
 
     expect(result.status).toBe(401)
     expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('SSE 401 先刷新一次，再用新令牌重发同一个请求', async () => {
+    const seen: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const auth = new Headers(init?.headers).get('Authorization') ?? ''
+      seen.push(auth)
+      if (seen.length === 1) return new Response('{"message":"expired"}', { status: 401 })
+      return new Response('event: token\ndata: "好的"\n\nevent: done\ndata: {}\n\n', { status: 200 })
+    }))
+    const refresh = vi.fn(async () => 'new-token')
+    setRefreshHandler(refresh)
+    const signOut = vi.fn()
+    setUnauthorizedHandler(signOut)
+    let answer = ''
+
+    const result = await streamAnswer('old-token', '在吗', 'conv-1', (chunk) => { answer += chunk })
+
+    expect(result.status).toBe(200)
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(seen).toEqual(['Bearer old-token', 'Bearer new-token'])
+    expect(answer).toBe('好的')
+    expect(signOut).not.toHaveBeenCalled()
+  })
+
+  it('SSE 刷新失败只登出一次，不形成 401 循环', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"message":"expired"}', { status: 401 })))
+    setRefreshHandler(async () => null)
+    const signOut = vi.fn()
+    setUnauthorizedHandler(signOut)
+
+    const result = await streamAnswer('old-token', '在吗', 'conv-1', () => undefined)
+
+    expect(result.status).toBe(401)
+    expect(signOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('改密当前口令错误返回 403：不刷新、不登出，保留弹窗错误', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"message":"当前口令不对"}', { status: 403 })))
+    const refresh = vi.fn(async () => 'new-token')
+    setRefreshHandler(refresh)
+    const signOut = vi.fn()
+    setUnauthorizedHandler(signOut)
+
+    const result = await changePassword('token', 'wrong', 'new-password')
+
+    expect(result.status).toBe(403)
+    expect(refresh).not.toHaveBeenCalled()
+    expect(signOut).not.toHaveBeenCalled()
   })
 })

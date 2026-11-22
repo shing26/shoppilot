@@ -133,8 +133,12 @@ class IdentityLifecycleHttpTest {
     @DisplayName("/auth/me 对已停用账号返回 401，不让旧 access 继续当通行证")
     void meRejectsDisabledAccount() throws Exception {
         String token = jwtService.issueAccess("T001", "C001", UserRole.AGENT, "U1002", "gone", 0);
+        // 账号仍然存在、角色也还是 AGENT，只是 active=false：这正是 Verifier 抓到的原场景。
+        // 若只桩 404，测的就不是「停用态」而是「账号被删」。
         when(identity.account("T001", "U1002"))
-                .thenReturn(new IdentityClient.Attempt(404, null, "账号不存在", null));
+                .thenReturn(new IdentityClient.Attempt(200,
+                        new AccountView("U1002", "T001", "gone", UserRole.AGENT, null, "已停用", 0, false),
+                        null));
 
         MvcResult result = mvc().perform(get("/auth/me").header("Authorization", "Bearer " + token)).andReturn();
 

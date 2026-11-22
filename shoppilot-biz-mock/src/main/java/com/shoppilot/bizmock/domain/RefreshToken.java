@@ -53,11 +53,19 @@ public class RefreshToken {
     @Column(name = "replaced_by", length = 40)
     private String replacedBy;
 
+    /** 签发时的口令版本：刷新时与账号当前值比对，改密后旧 family 立即失效。 */
+    @Column(name = "password_version", nullable = false)
+    private int passwordVersion;
+
+    /** 签发时的角色：角色变更后旧 family 立即失效。 */
+    @Column(name = "role", nullable = false, length = 16)
+    private String role;
+
     protected RefreshToken() {
     }
 
     public RefreshToken(String id, String tenantId, String familyId, String accountId, String tokenHash,
-                        Instant issuedAt, Instant expiresAt) {
+                        Instant issuedAt, Instant expiresAt, int passwordVersion, String role) {
         this.id = id;
         this.tenantId = tenantId;
         this.familyId = familyId;
@@ -65,6 +73,8 @@ public class RefreshToken {
         this.tokenHash = tokenHash;
         this.issuedAt = issuedAt;
         this.expiresAt = expiresAt;
+        this.passwordVersion = passwordVersion;
+        this.role = role;
     }
 
     public boolean usable(Instant now) {
@@ -116,5 +126,13 @@ public class RefreshToken {
 
     public Instant getRevokedAt() {
         return revokedAt;
+    }
+
+    public int getPasswordVersion() {
+        return passwordVersion;
+    }
+
+    public String getRole() {
+        return role;
     }
 }

@@ -219,6 +219,8 @@ shoppilot:
     refresh-ttl: ${SHOPPILOT_IDENTITY_REFRESH_TTL:14d}
     # HTTPS 部署时置 true；本机回环默认 false，否则浏览器不会回传 Cookie。
     secure-cookie: ${SHOPPILOT_IDENTITY_SECURE_COOKIE:false}
+    # 每 IP 每分钟的失败登录上限（成功登录不计数，避免误伤正常用户）。
+    login-ip-per-minute: ${SHOPPILOT_IDENTITY_LOGIN_IP_PER_MINUTE:10}
   channels:
     # 票 173：渠道连接配置；没有文件时回退 feishu 的环境变量。
     file: ${SHOPPILOT_CHANNELS_FILE:config/channels.json}

@@ -42,6 +42,31 @@ function cookieHeader() {
   return [...COOKIE_JAR.entries()].map(([name, value]) => `${name}=${value}`).join('; ')
 }
 
+/** 不经全局 Cookie jar 的刷新请求，用于并发双用同一张 refresh。 */
+async function rawRefresh(cookieValue) {
+  const response = await fetch(BASE + '/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: `sp_rt=${cookieValue}` },
+    body: '{}',
+  })
+  const text = await response.text()
+  let parsed = {}
+  try { parsed = text ? JSON.parse(text) : {} } catch { parsed = { message: text } }
+  return { status: response.status, body: parsed, rotated: cookieValueOf(response, 'sp_rt') }
+}
+
+/** 从响应的 Set-Cookie 里取一枚值（refresh 只走 HttpOnly Cookie，不进 JSON）。 */
+function cookieValueOf(response, name) {
+  const lines = typeof response.headers.getSetCookie === 'function'
+    ? response.headers.getSetCookie()
+    : [response.headers.get('set-cookie') || '']
+  for (const line of lines) {
+    const match = line.match(new RegExp(`(?:^|,\\s*)${name}=([^;]+)`))
+    if (match && match[1]) return match[1]
+  }
+  return null
+}
+
 async function call(path, { method = 'POST', body, token, cookie = false, headers: extra = {} } = {}) {
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers.Authorization = `Bearer ${token}`
@@ -67,6 +92,26 @@ const stamp = Date.now().toString(36)
 const username = `lifecycle-${stamp}`
 const originalPassword = `Orig-${stamp}-pass`
 const newPassword = `Next-${stamp}-pass`
+
+// ── 0. 并发双用同一 refresh：只允许一个成功 ───────────────────────────
+const raceUser = `race-${stamp}`
+await call('/auth/register', {
+  body: { tenantId: TENANT, username: raceUser, password: originalPassword },
+})
+await call('/auth/login', { body: { tenantId: TENANT, username: raceUser, password: originalPassword } })
+const raceRefresh = COOKIE_JAR.get('sp_rt')
+const [raceA, raceB] = await Promise.all([rawRefresh(raceRefresh), rawRefresh(raceRefresh)])
+const raceStatuses = [raceA.status, raceB.status].sort((a, b) => a - b)
+check(
+  '并发双用同一 refresh：只允许一个 200，另一个 401',
+  raceStatuses[0] === 200 && raceStatuses[1] === 401,
+  `HTTP ${raceStatuses.join(' / ')}`,
+)
+const raceWinner = raceA.status === 200 ? raceA : raceB
+check('并发双用的赢家拿到了轮换后的 Cookie', Boolean(raceWinner.rotated), String(raceWinner.rotated))
+const afterFamilyRevoke = await rawRefresh(raceWinner.rotated)
+check('并发复用后整族失效：赢家新 refresh 也立即拒绝', afterFamilyRevoke.status === 401,
+  `HTTP ${afterFamilyRevoke.status}`)
 
 // ── 0. 造一个独立买家账号 ───────────────────────────────────────────────
 const registered = await call('/auth/register', {
@@ -151,7 +196,12 @@ const wrongCurrent = await call('/auth/password', {
   token: access,
   body: { currentPassword: 'definitely-wrong', newPassword },
 })
-check('错误当前口令被拒', wrongCurrent.status === 401, `HTTP ${wrongCurrent.status}`)
+check('错误当前口令被拒（403，语义是已登录但口令不对）', wrongCurrent.status === 403,
+  `HTTP ${wrongCurrent.status}`)
+const wrongClearedCookie = (wrongCurrent.headers.getSetCookie?.() ?? [])
+  .some((line) => /(?:^|,\s*)sp_rt=/i.test(line) && /Max-Age=0/i.test(line))
+check('错误当前口令不清 refresh Cookie（不是会话失效）', !wrongClearedCookie,
+  wrongClearedCookie ? '响应仍下发 Max-Age=0' : 'no Set-Cookie clear')
 
 const changed = await call('/auth/password', {
   token: access,
@@ -177,8 +227,17 @@ const disabled = await call(`/auth/accounts/${encodeURIComponent(accountId)}/sta
 check('管理员可停用账号', disabled.status === 200, `HTTP ${disabled.status}`)
 const disabledRefresh = await call('/auth/refresh', { headers: { Cookie: `sp_rt=${disableRefresh}` } })
 check('停用后 refresh 立即拒绝', disabledRefresh.status === 401, `HTTP ${disabledRefresh.status}`)
+const disabledMe = await call('/auth/me', { method: 'GET', token: newPasswordLogin.body.token })
+check('停用后旧 access 的 /auth/me 立即 401，不再返回旧能力',
+  disabledMe.status === 401, `HTTP ${disabledMe.status}`)
 const disabledLogin = await call('/auth/login', { body: { tenantId: TENANT, username, password: newPassword } })
 check('停用后登录被拒', disabledLogin.status === 401, `HTTP ${disabledLogin.status}`)
+
+const reenabled = await call(`/auth/accounts/${encodeURIComponent(accountId)}/status`, {
+  token: adminToken,
+  body: { active: true },
+})
+check('管理员可重新启用账号', reenabled.status === 200, `HTTP ${reenabled.status}`)
 
 // ── 4. 连续失败锁定 → 窗口恢复 ─────────────────────────────────────────
 for (let i = 0; i < 5; i++) {
@@ -196,8 +255,20 @@ check(
   JSON.stringify(locked.body).slice(0, 80),
 )
 
-console.log('INFO  锁定窗口恢复需要等待 15 分钟；本轮不把等待写成 PASS。')
-console.log('INFO  窗口恢复的机器验证在 IdentityLifecycleTest.lockoutBlocksCorrectPasswordUntilWindowEnds（拨动 locked_until）。')
+const lockWait = Number(process.env.SHOPPILOT_IDENTITY_LOCK_WAIT_SECONDS || 0)
+if (lockWait > 0) {
+  // 活体验收专用：biz-mock 以短锁定窗口启动时，真等窗口过去再登录。
+  // 默认 15 分钟窗口下不等待，避免把一条常规门禁拖成 15 分钟。
+  await new Promise((resolve) => setTimeout(resolve, lockWait * 1000))
+  const recovered = await call('/auth/login', {
+    body: { tenantId: TENANT, username, password: newPassword },
+  })
+  check('锁定窗口结束后正确口令恢复登录', recovered.status === 200 && Boolean(recovered.body.token),
+    `waited=${lockWait}s HTTP ${recovered.status}`)
+} else {
+  console.log('INFO  锁定窗口恢复未等待（默认 15 分钟）；设置 SHOPPILOT_IDENTITY_LOCK_WAIT_SECONDS 并用短窗口启动 biz-mock 可活体验证。')
+  console.log('INFO  窗口恢复的机器验证在 IdentityLifecycleTest.lockoutBlocksCorrectPasswordUntilWindowEnds（拨动 locked_until）。')
+}
 
 const failed = results.filter((r) => !r.ok)
 console.log(`\n身份生命周期断言 ${results.length - failed.length}/${results.length} 通过`)
