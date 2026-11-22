@@ -18,10 +18,16 @@
 - `docs/**`（只改文档、图片索引与 ADR 列表；不移动历史证据）
 - `.scratch/shoppilot-mvp/README.md`
 - `.scratch/shoppilot-mvp/issues/226-docs-and-repo-hygiene.md`
+- `.scratch/shoppilot-mvp/issues/219-*.md` … `225-*.md`（仅 Status/签收记录校正，不改历史结论）
 - `plans/226-docs-and-repo-hygiene.md`
 - `.gitignore`
 - `scripts/check_doc_links.py`（新增）
 - `docs/STATUS.md`（仅机械同步）
+
+> **2026-11-23 契约补记（Verifier P1-2 路径缺口，不改 AC，待所有者追认）**：AC1 要求
+> 票面状态一致，但首次冻结漏列 219–225 票面。现补入，只允许 `Status` 与签收/提交
+> 记录校正，不允许改写历史结论、证据或验收判据。这是冻结后补记，与票 225 的补记
+> 一样，所有者书面追认前只能记为已披露的流程偏差。
 
 ## Acceptance criteria
 

@@ -2,7 +2,7 @@
 
 Round: 56（所有者 2026-11-22 指令；按 224 → 225 → 226 顺序）
 ADR: 无（文档与仓库卫生，不改业务能力）
-Status: implemented（待独立 Verifier）　Claimed by: implementer-226　Blocked by: 票 224、票 225（均已独立 Verifier PASS）
+Status: implemented（首轮 Verifier FAIL 已整改，待复验）　Claimed by: implementer-226　Blocked by: 票 224、票 225（均已独立 Verifier PASS）
 契约：[plans/226-docs-and-repo-hygiene.md](../../../plans/226-docs-and-repo-hygiene.md)（2026-11-22 冻结）
 
 ## What to build
@@ -66,6 +66,12 @@ git status --short
 - 状态对齐：root README 增加 Round 51–56 状态行，221 改为「2026-11-21 已书面签收」；
   tracker 221 去掉过期的「未提交」，226 转 implemented；219/220 done、222/223
   待验收、224/225 PASS 待签收保持原样。未改任何 AC、证据结论或历史路径。
+- **首轮 Verifier FAIL 整改（2026-11-23）**：221 票面本身仍有「工作树未提交/未 commit」
+  字样，与 tracker 和实际提交 `4fc0309` 冲突；现校正 `Status` 与两处现场描述为
+  「已随 round51–53 统一提交于 `4fc0309`」，历史段落保留但标注为当时现场。
+  `docs/design-samples/README.md` 两处「219 未提交」同步改为 done/已提交。
+  契约 Allowed paths 补入 `.scratch/shoppilot-mvp/issues/219-*.md … 225-*.md`
+  （只允许 Status/签收记录校正），并注明冻结后补记、待所有者追认。
 
 **验证落点**
 
