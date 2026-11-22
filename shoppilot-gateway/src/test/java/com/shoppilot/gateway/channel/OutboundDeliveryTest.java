@@ -26,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,6 +36,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -74,6 +76,8 @@ class OutboundDeliveryTest {
         echo.start();
         echoUrl = "http://127.0.0.1:" + echo.getAddress().getPort() + "/hook";
         TenantContext.set(new TenantContext.Identity("T001", "C001", "conv-outbound"));
+        doReturn(Optional.of("T-RECEIPT")).when(receiptWriter)
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
     }
 
     @AfterEach
@@ -177,11 +181,10 @@ class OutboundDeliveryTest {
     }
 
     @Test
-    @DisplayName("回执工单写入失败：不 ack，事件留在 pending 等下一轮重投")
-    void receiptFailureKeepsEventPending() {
+    @DisplayName("回执工单返回 empty（真实失败路径）：不 ack，事件留在 pending")
+    void receiptEmptyKeepsEventPending() {
         status.set(500);
-        org.mockito.Mockito.doThrow(new RuntimeException("ticket service down"))
-                .when(receiptWriter)
+        doReturn(Optional.empty()).when(receiptWriter)
                 .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
 
         StreamOperations<String, Object, Object> streams =
@@ -191,6 +194,39 @@ class OutboundDeliveryTest {
                 .acknowledge(anyString(), anyString(), any(RecordId[].class));
         assertThat(registry.get("shoppilot_outbound_failed_total").tag("channel", "webhook").counter().count())
                 .isEqualTo(1.0d);
+    }
+
+    @Test
+    @DisplayName("回执工单抛异常：同样不 ack，事件留在 pending")
+    void receiptExceptionKeepsEventPending() {
+        status.set(500);
+        org.mockito.Mockito.doThrow(new RuntimeException("ticket service down"))
+                .when(receiptWriter)
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+
+        StreamOperations<String, Object, Object> streams =
+                drainWith(outboundEvent("ev-receipt-throw", "webhook", echoUrl, "T-96", "已处理"));
+
+        org.mockito.Mockito.verify(streams, org.mockito.Mockito.never())
+                .acknowledge(anyString(), anyString(), any(RecordId[].class));
+    }
+
+    @Test
+    @DisplayName("每轮先读本消费者 PEL（0），再读新消息（>）：未 ack 的事件会重投")
+    void pendingEntriesAreReadBeforeNewOnes() {
+        StreamOperations<String, Object, Object> streams =
+                drainWith(outboundEvent("ev-pending", "webhook", echoUrl, "T-97", "已处理"));
+
+        org.mockito.ArgumentCaptor<StreamOffset[]> offsets =
+                org.mockito.ArgumentCaptor.forClass(StreamOffset[].class);
+        verify(streams, times(2)).read(any(Consumer.class), any(StreamReadOptions.class),
+                offsets.capture());
+
+        assertThat(offsets.getAllValues().get(0)[0].getOffset().getOffset())
+                .as("第一读必须从 PEL 起点 0 开始，否则未 ack 事件永久卡住").isEqualTo("0");
+        assertThat(offsets.getAllValues().get(1)[0].getOffset().getOffset())
+                .as("第二读才是新消息 >").isEqualTo(">");
+        assertThat(received).as("同一条事件在一轮里只投递一次").hasSize(1);
     }
 
     // --- harness ---------------------------------------------------------------------------
@@ -221,8 +257,8 @@ class OutboundDeliveryTest {
         MapRecord<String, Object, Object> record = mock(MapRecord.class);
         doReturn(fields).when(record).getValue();
         doReturn(RecordId.of("1-0")).when(record).getId();
-        doReturn(List.of(record)).when(streams).read(any(Consumer.class), any(StreamReadOptions.class),
-                any(StreamOffset[].class));
+        doReturn(List.of(record), List.of()).when(streams).read(
+                any(Consumer.class), any(StreamReadOptions.class), any(StreamOffset[].class));
         service.drain();
         return streams;
     }

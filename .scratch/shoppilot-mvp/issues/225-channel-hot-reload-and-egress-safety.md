@@ -2,7 +2,7 @@
 
 Round: 56（所有者 2026-11-22 指令；按 224 → 225 → 226 顺序）
 ADR: 0087（实现前新增并 Accepted；开票依据 = 所有者政策覆盖）
-Status: implemented（首轮 Verifier FAIL 已整改，待复验）　Claimed by: implementer-225　Blocked by: 无（按所有者指定顺序排在 224 后）
+Status: implemented（两轮 Verifier FAIL 已整改，待第三轮复验）　Claimed by: implementer-225　Blocked by: 无（按所有者指定顺序排在 224 后）
 契约：[plans/225-channel-hot-reload-and-egress-safety.md](../../../plans/225-channel-hot-reload-and-egress-safety.md)（2026-11-22 冻结）
 
 ## What to build
@@ -79,8 +79,8 @@ git status --short
   独立 Verifier 首轮 **FAIL**（报告 `.scratch/shoppilot-mvp/issues/verifier-225-report.md`），
   整改后待复验。
 - 全仓 `mvnw -B -ntp verify -Dsurefire.forkCount=1 -Dspring-boot.repackage.skip=true`：
-  863 tests / 143 suites（首轮）；整改后 `mvnw -B -ntp verify -Dsurefire.forkCount=1`
-  **868 tests / 143 suites**（tool-api 12 + biz-mock 98 + gateway 708 + ticket 50），
+  863 tests / 143 suites（首轮）；两轮整改后 `mvnw -B -ntp verify -Dsurefire.forkCount=1`
+  **870 tests / 143 suites**（tool-api 12 + biz-mock 98 + gateway 710 + ticket 50），
   0 失败，且**不再需要** `repackage.skip`（先停网关再 verify，repackage 成功）。
 - 前端 `npm run typecheck`、`npm test`（15/15）、`npm run build` 全绿；产物
   `index-DMktD0q7.js` / `index-Cuhbh1n7.css` 已入库。
@@ -89,7 +89,7 @@ git status --short
   307 跳私网拒绝、非法配置 409 `ROLLED_BACK`、合法配置 `APPLIED` 且旧连接停止/
   新连接启动有日志、`activeAppId` 与实际配置一致、Redis 幂等键、重启后同 eventId
   只投递一次、重试 3 次间隔递增、耗尽落 `CHANNEL_RECEIPT`。本机日志
-  `logs/verify-225-live-r3.log`（不入库）。
+  `logs/verify-225-live-r4.log`（不入库）。
 - `python scripts/gen_status.py --check`、`verify_doc_truth.py`、`check_coverage.py`、
   `pwsh scripts/check-ps-syntax.ps1`、`git diff --check` 全绿；活体临时写入的
   `config/channels.json` 已还原删除，`.env` 临时 `OUTBOUND_ALLOWLIST/POLL_INTERVAL`
@@ -113,8 +113,21 @@ git status --short
 - P1：`EgressPolicy` 补齐 RFC 5737 三个 IPv4 TEST-NET 与 RFC 3849
   `2001:db8::/32` 默认拒绝，单元与活体各加断言。
 - P1（路径）：在冻结契约追加「2026-11-23 契约补记」，把 `docs/TUNING_PLAN.md`、
-  `frontend-workspace/src/App.vue` 与 `static/workspace/**` 补入 Allowed paths；
-  AC 与阈值零改动。
+  `frontend-workspace/src/App.vue`、`static/workspace/**` 与 `src/test/**` 补入
+  Allowed paths；AC 与阈值零改动。**这是冻结后补记，待所有者书面追认**；追认前
+  只能记为已披露的流程偏差，不能声称路径合规已闭环。
+
+**第二轮 Verifier FAIL 的整改（2026-11-23）**
+
+- P0：`EmailReceiptWriter.writeReceipt` 的失败形态是 `Optional.empty()`，不是异常；
+  `landReceipt` 现在把 `null/empty` 都当失败，不 ack、不写 delivered 键。
+  `OutboundDeliveryTest` 改为覆盖真实 `Optional.empty()` 路径，并保留异常路径。
+- P0：`drain()` 原先只读 `ReadOffset.lastConsumed()`（`>`），上一轮未 ack 的事件会
+  永久卡在 PEL。现在每轮先读 `ReadOffset.from("0")`（本消费者 PEL），再按剩余额度读
+  `>`；新增 `pendingEntriesAreReadBeforeNewOnes` 断言读取顺序。
+- 独立活体补证：停网关 → 用 Redis 把一条 email 事件以 consumer `gateway` 读成
+  pending（`XPENDING=1`）→ 启动网关等 20s → `XPENDING=0` 且
+  `shoppilot:outbound:delivered:ev-pel-1795384607849=1`，证明重启后 PEL 会重投。
 
 **三个现场追问**
 

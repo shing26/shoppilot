@@ -19,6 +19,7 @@
 - `shoppilot-gateway/src/main/java/com/shoppilot/gateway/channel/**`
 - `shoppilot-gateway/src/main/java/com/shoppilot/gateway/web/ChannelAdminController.java`
 - `shoppilot-gateway/src/main/java/com/shoppilot/gateway/config/**`（出站/重试配置）
+- `shoppilot-gateway/src/test/java/com/shoppilot/gateway/channel/**`、`.../config/**`（本票新增/修改的测试）
 - `shoppilot-gateway/src/main/resources/application*.yml`
 - `shoppilot-biz-mock/src/main/java/**`（仅出站幂等所需持久化；若选 Redis 则不改库）
 - `shoppilot-ticket/src/main/java/**`（仅接收 `CHANNEL_RECEIPT` 所需，不改变工单规则）
@@ -32,11 +33,13 @@
 - `.scratch/shoppilot-mvp/issues/225-channel-hot-reload-and-egress-safety.md`
 - `.scratch/shoppilot-mvp/README.md`
 
-> **2026-11-23 契约补记（Verifier P1-5 路径缺口，不改 AC）**：首次冻结时漏列了
-> `docs/TUNING_PLAN.md`（`verify_doc_truth.py` 强制要求的测试数同步）、
-> `frontend-workspace/src/App.vue`（webhook 测试接线）与
-> `static/workspace/**`（前端构建产物）。三处均为 AC10 与既有「产物入库」惯例的
-> 必要条件，现补入 Allowed paths；验收判据、阈值与文件清单不变。
+> **2026-11-23 契约补记（Verifier P1-5 路径缺口，不改 AC，待所有者追认）**：首次冻结时
+> 漏列了 `docs/TUNING_PLAN.md`（`verify_doc_truth.py` 强制要求的测试数同步）、
+> `frontend-workspace/src/App.vue`（webhook 测试接线）、`static/workspace/**`
+> （前端构建产物）与 `src/test/**`（本票新增测试）。四处均为 AC10 与既有「产物入库」
+> 惯例的必要条件，现补入 Allowed paths；验收判据、阈值与文件清单不变。
+> **流程事实**：这是冻结后补记，不是冻结前约定；所有者书面追认前，P1-5 只能记为
+> 「已披露的流程偏差」，不能声称路径合规已经闭环。
 
 ## Acceptance criteria
 

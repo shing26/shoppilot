@@ -121,12 +121,15 @@ public class OutboundDeliveryService {
     /** 本轮成功处理的条数（失败也算处理完——它已经落成回执工单了，不重投才有那一格）。 */
     public int drain() {
         ensureGroup();
-        List<MapRecord<String, Object, Object>> records;
+        List<MapRecord<String, Object, Object>> records = new ArrayList<>();
         try {
-            records = redis.opsForStream().read(
-                    Consumer.from(GROUP, CONSUMER),
-                    StreamReadOptions.empty().count(BATCH),
-                    StreamOffset.create(AuditTopics.CHANNEL_OUTBOUND, ReadOffset.lastConsumed()));
+            // 先读本消费者 PEL（ID 0），再读新消息（>）。只读 ">" 会让上一轮未 ack 的
+            // 事件永久卡在 pending：回执服务短暂不可用后即使恢复，也不会再被处理。
+            records.addAll(read(ReadOffset.from("0"), BATCH));
+            int remaining = BATCH - records.size();
+            if (remaining > 0) {
+                records.addAll(read(ReadOffset.lastConsumed(), remaining));
+            }
         } catch (RuntimeException nothingYet) {
             if (isNoGroup(nothingYet)) {
                 // **第一张工单结单之前这就是正常状态**：流不存在、消费组也不存在，
@@ -172,6 +175,14 @@ public class OutboundDeliveryService {
             }
         }
         return acked.size();
+    }
+
+    private List<MapRecord<String, Object, Object>> read(ReadOffset offset, int count) {
+        List<MapRecord<String, Object, Object>> batch = redis.opsForStream().read(
+                Consumer.from(GROUP, CONSUMER),
+                StreamReadOptions.empty().count(count),
+                StreamOffset.create(AuditTopics.CHANNEL_OUTBOUND, offset));
+        return batch == null ? List.of() : batch;
     }
 
     /** @return true 表示可以 ack；false 表示回执写入失败，必须保留 pending 重投。 */
@@ -255,10 +266,16 @@ public class OutboundDeliveryService {
     /** @return true 表示回执工单真的落库；false 必须让事件保持 pending。 */
     private boolean landReceipt(Event event, String why) {
         try {
-            receiptWriter.writeReceipt(event.tenantId(), event.customerId(),
+            java.util.Optional<String> written = receiptWriter.writeReceipt(
+                    event.tenantId(), event.customerId(),
                     "工单 " + (event.ticketId() == null ? "(未知)" : event.ticketId()),
                     event.body() == null ? "" : event.body(), event.target());
-            log.info("出站改落回执工单 ticket={} 原因：{}", event.ticketId(), why);
+            if (written == null || written.isEmpty()) {
+                log.error("出站未送达且回执工单未落库 ticket={} 原因：{}", event.ticketId(), why);
+                return false;
+            }
+            log.info("出站改落回执工单 ticket={} receiptId={} 原因：{}",
+                    event.ticketId(), written.get(), why);
             return true;
         } catch (RuntimeException failure) {
             log.error("出站未送达且回执工单也落不下去 ticket={} 原因：{} 异常：{}", event.ticketId(), why,
