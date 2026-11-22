@@ -80,8 +80,8 @@ git status --short
 
 **验证落点**
 
-- 实现 HEAD：`ccf7ea6` 起独立分支 `codex/224-identity-lifecycle`；提交后 SHA 见本票提交记录。
-  证据命令均在 `D:\ShopPilot` 工作树执行。
+- 实现提交：`efc80f9`（独立分支 `codex/224-identity-lifecycle`，基线 `ccf7ea6`）；
+  本行之后的票面更新只追加验证记录，不再改业务代码。证据命令均在 `D:\ShopPilot` 执行。
 - 全仓：`.\mvnw.cmd -B -ntp verify "-Dsurefire.forkCount=1"` → BUILD SUCCESS，
   `12 + 97 + 683 + 50 = 842 tests / 138 suites`，0 failures / 0 errors / 0 skipped。
   日志 `logs/verify-round56-224-final.log`（本机证据，未入库）。
