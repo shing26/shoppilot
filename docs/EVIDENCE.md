@@ -333,4 +333,27 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   未验证 refresh token、改密、失败锁定、会话吊销、登录审计或渠道热生效。实现仍在工作树，
   未 commit，等待独立 Verifier 与所有者书面签收。
 
+- **票 225 渠道热生效与出站安全（2026-11-23，round56 / ADR 0087）**：独立 Verifier
+  三轮复验后 **PASS**，绑定 HEAD `a85496d`（实现起点 `72a4cd5`）。第三轮亲跑：
+  窄测 58/58、全仓 **870 tests / 143 suites**（gateway 710）、前端 typecheck +
+  vitest 15/15 + build、活体 `verify-channel-hot-reload.mjs` **27/27**、文档真值 /
+  覆盖率 / PowerShell 语法 / `git diff --check` 全绿；先在旧 jar 网关上停服再
+  `mvnw verify`，未使用 `repackage.skip`，并核对 fat jar 内
+  `OutboundDeliveryService.class` 与 `target/classes` 的 SHA256 一致。
+  **关键活体**：合法配置热切换 `APPLIED` 且旧连接停止/新连接启动；非法配置
+  `409 ROLLED_BACK` 且 last-known-good 不变；loopback/RFC1918/link-local/元数据/
+  IPv6 loopback/RFC 5737 TEST-NET/RFC 3849 `2001:db8::/32`/非 http(s)/307 跳私网
+  全拒，allowlist 内放行；同一 eventId 跨进程重启只投一次；重试 3 次间隔递增；
+  64 条 pending 重启后全部清空，70 条（>BATCH 64）分两轮清空且每条只投一次；
+  停 ticket 服务时回执为 `Optional.empty()`，日志为 ERROR「未落库」，`XPENDING=64`
+  且无 delivered 键，ticket 恢复后 `XPENDING=0`、delivered 键出现、结论落库。
+  **两轮 FAIL 的教训已固化**：①旧/新连接同时关不掉时必须 `UNSAFE`→`RESTART_REQUIRED`，
+  不得假回滚；②回执失败形态是 `Optional.empty()`，不能只看异常；③只读 `>` 会让 PEL
+  永久卡住，必须每轮先读 `0`。**已登记 P1（不阻塞，待后续票）**：跨轮重投无退避
+  （ticket 长时间不可用时每条约每 6 秒重试，2 分钟约 18 次）；PEL 恰好占满 BATCH=64
+  时新消息要等下一轮；`activeAppId` 活体断言仍是掩码对掩码，区分力弱；未注入真实
+  飞书事件观察切换窗口。**流程偏差**：`plans/225` 在冻结后补记了
+  `docs/TUNING_PLAN.md`、`App.vue`、`static/workspace/**` 与 `src/test/**` 四处路径，
+  文件自述待所有者书面追认；不构成本票 AC 通过条件，但签收时需一并确认。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。

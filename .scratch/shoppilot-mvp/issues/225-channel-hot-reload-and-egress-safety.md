@@ -2,7 +2,7 @@
 
 Round: 56（所有者 2026-11-22 指令；按 224 → 225 → 226 顺序）
 ADR: 0087（实现前新增并 Accepted；开票依据 = 所有者政策覆盖）
-Status: implemented（两轮 Verifier FAIL 已整改，待第三轮复验）　Claimed by: implementer-225　Blocked by: 无（按所有者指定顺序排在 224 后）
+Status: implemented（独立 Verifier PASS，待所有者签收）　Claimed by: implementer-225　Blocked by: 无（按所有者指定顺序排在 224 后）
 契约：[plans/225-channel-hot-reload-and-egress-safety.md](../../../plans/225-channel-hot-reload-and-egress-safety.md)（2026-11-22 冻结）
 
 ## What to build
@@ -128,6 +128,25 @@ git status --short
 - 独立活体补证：停网关 → 用 Redis 把一条 email 事件以 consumer `gateway` 读成
   pending（`XPENDING=1`）→ 启动网关等 20s → `XPENDING=0` 且
   `shoppilot:outbound:delivered:ev-pel-1795384607849=1`，证明重启后 PEL 会重投。
+
+**第三轮 Verifier PASS（2026-11-23，HEAD `a85496d`）**
+
+- 窄测 58/58；全仓 **870 tests / 143 suites**（gateway 710 + biz-mock 98 +
+  ticket 50 + tool-api 12）；前端 typecheck + vitest 15/15 + build；活体
+  `verify-channel-hot-reload.mjs` **27/27**；文档四项与 `git diff --check` 全绿。
+  Verifier 先停旧 jar 网关再 `verify`，确认 repackage 可过且活体跑新构建。
+- P0-A 独立攻击：停 8092 后注入 email 事件 → 日志 ERROR「回执工单未落库」、
+  `XPENDING=64`、delivered 键不存在；ticket 恢复后 `XPENDING=0`、delivered 键出现、
+  结论落库。P0-B：64 条 pending 启动后清空；70 条（>BATCH 64）分两轮清空且每条
+  只投一次；3 条 PEL + 3 条新消息同轮各一次，无重复无死循环。
+- AC1–AC10 全 PASS；`72a4cd5..a85496d` 共 35 个路径全部落在补记后的 Allowed 内。
+- **新登记 P1（不阻塞，另票处理）**：①跨轮重投无退避，ticket 长期不可用时每条约
+  每 6 秒重跑一轮（2 分钟约 18 次、1088 条 ERROR），失败指标同步放大；②PEL 恰好
+  占满 BATCH=64 时新消息要等下一轮，存在队头阻塞；③`activeAppId` 活体断言仍是
+  掩码对掩码，区分力弱；未注入真实飞书事件观察切换窗口。触发条件：渠道出站进入
+  真实流量或 ticket 服务出现分钟级不可用。
+- **流程偏差（需签收时确认）**：`plans/225` 为补路径在冻结后追加补记，文件自述
+  「待所有者书面追认」；AC/阈值未改，但不应把补记本身说成已追认。
 
 **三个现场追问**
 
