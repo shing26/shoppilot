@@ -224,6 +224,17 @@ shoppilot:
   channels:
     # 票 173：渠道连接配置；没有文件时回退 feishu 的环境变量。
     file: ${SHOPPILOT_CHANNELS_FILE:config/channels.json}
+  outbound:
+    # round56 票 225 / ADR 0087：出站 SSRF、跨重启幂等与指数退避。
+    poll-interval: ${SHOPPILOT_OUTBOUND_POLL_INTERVAL:5s}
+    attempts: ${SHOPPILOT_OUTBOUND_ATTEMPTS:3}
+    retry-base: ${SHOPPILOT_OUTBOUND_RETRY_BASE:500ms}
+    retry-factor: ${SHOPPILOT_OUTBOUND_RETRY_FACTOR:2.0}
+    retry-max: ${SHOPPILOT_OUTBOUND_RETRY_MAX:5s}
+    retry-jitter: ${SHOPPILOT_OUTBOUND_RETRY_JITTER:0.2}
+    dedupe-ttl: ${SHOPPILOT_OUTBOUND_DEDUPE_TTL:7d}
+    # 显式运维覆盖：逗号分隔 host 或 host:port；默认空 = 私网/回环一律拒绝。
+    allowlist: ${SHOPPILOT_OUTBOUND_ALLOWLIST:}
   feishu:
     # 飞书长连接（round31 票 113/114 / ADR 0065）。
     # 凭据走 .env，不入库；非回环绑定 + 空凭据 → 拒启（PostureGuard 家法）。

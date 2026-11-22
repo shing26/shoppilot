@@ -50,6 +50,7 @@ class ChannelConnectionStoreTest {
         assertThat(saved.appSecret()).isEmpty();
         assertThat(store.fromFile()).isTrue();
         assertThat(store.restartRequired()).isTrue();
+        assertThat(store.state()).isEqualTo(ChannelConnectionStore.State.RESTART_REQUIRED);
         assertThat(store.current().appId()).isEqualTo("cli_new_app");
         assertThat(store.current().tenant()).isEqualTo("T004");
         assertThat(file).exists();
@@ -59,6 +60,21 @@ class ChannelConnectionStoreTest {
         assertThat(reloaded.current().appId()).isEqualTo("cli_new_app");
         assertThat(reloaded.current().appSecret()).isEqualTo("new-secret");
         assertThat(reloaded.current().tenant()).isEqualTo("T004");
+    }
+
+    @Test
+    @DisplayName("persist + markApplied：状态是 APPLIED，restartRequired 是派生 false")
+    void appliedStateIsExplicit() {
+        ChannelConnectionStore store = new ChannelConnectionStore(
+                properties(), tempDir.resolve("channels.json").toString());
+
+        store.persist(new com.shoppilot.gateway.config.GatewayProperties.Feishu(
+                true, "cli_live", "secret", "T001", "C001", ""));
+        store.markApplied();
+
+        assertThat(store.state()).isEqualTo(ChannelConnectionStore.State.APPLIED);
+        assertThat(store.restartRequired()).isFalse();
+        assertThat(store.message()).contains("已生效");
     }
 
     @Test

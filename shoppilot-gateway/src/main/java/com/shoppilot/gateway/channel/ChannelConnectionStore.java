@@ -40,11 +40,18 @@ public class ChannelConnectionStore {
     public record Probe(boolean ok, String message) {
     }
 
+    /** 管理面唯一状态（ADR 0087）：布尔 restartRequired 是它的派生。 */
+    public enum State {
+        APPLIED, RESTART_REQUIRED, ROLLED_BACK, DISABLED
+    }
+
     private final Path file;
     private final GatewayProperties.Feishu env;
     private volatile GatewayProperties.Feishu current;
     private volatile boolean fromFile;
     private volatile boolean restartRequired;
+    private volatile State state;
+    private volatile String message = "";
 
     public ChannelConnectionStore(GatewayProperties properties,
                                   @Value("${shoppilot.channels.file:config/channels.json}") String path) {
@@ -53,6 +60,7 @@ public class ChannelConnectionStore {
                 ? new GatewayProperties.Feishu(false, "", "", "T001", "C001", "")
                 : properties.feishu();
         this.current = load();
+        this.state = this.current.enabled() ? State.APPLIED : State.DISABLED;
     }
 
     public GatewayProperties.Feishu current() {
@@ -67,6 +75,14 @@ public class ChannelConnectionStore {
         return restartRequired;
     }
 
+    public State state() {
+        return state;
+    }
+
+    public String message() {
+        return message;
+    }
+
     public String maskedAppId() {
         String appId = current.appId();
         if (appId == null || appId.isBlank()) {
@@ -76,6 +92,15 @@ public class ChannelConnectionStore {
     }
 
     public synchronized FeishuConnection save(FeishuConnection update) {
+        GatewayProperties.Feishu next = resolve(update);
+        persist(next);
+        markRestartRequired("配置已保存，需重启网关后生效。");
+        return new FeishuConnection(next.enabled(), next.appId(), "", next.tenant(),
+                next.customer(), next.identityFile());
+    }
+
+    /** 合并「留空沿用当前值」并校验；不写盘、不切换。 */
+    public synchronized GatewayProperties.Feishu resolve(FeishuConnection update) {
         if (update == null) {
             throw new IllegalArgumentException("连接配置不能为空");
         }
@@ -93,14 +118,53 @@ public class ChannelConnectionStore {
         GatewayProperties.Feishu next = new GatewayProperties.Feishu(
                 update.enabled(), appId, secret,
                 update.tenant(), update.customer(), update.identityFile());
+        return next;
+    }
+
+    /** 写盘并切到「候选配置」；真正的生效状态由生命周期管理器标记。 */
+    public synchronized void persist(GatewayProperties.Feishu next) {
         write(next);
         this.current = next;
         this.fromFile = true;
-        this.restartRequired = true;
-        log.info("飞书连接配置已保存，需重启网关生效：enabled={} tenant={} customer={}",
+        this.restartRequired = false;
+        log.info("飞书连接配置已写盘：enabled={} tenant={} customer={}",
                 next.enabled(), next.tenant(), next.customer());
-        return new FeishuConnection(next.enabled(), next.appId(), "", next.tenant(),
-                next.customer(), next.identityFile());
+    }
+
+    /** 切换失败时恢复到 last-known-good：原来没有文件就删掉候选文件，回到 env。 */
+    public synchronized void restore(GatewayProperties.Feishu previous, boolean previousFromFile) {
+        this.current = previous;
+        this.fromFile = previousFromFile;
+        this.restartRequired = false;
+        if (previousFromFile) {
+            write(previous);
+        } else {
+            try {
+                Files.deleteIfExists(file.toAbsolutePath());
+            } catch (Exception failure) {
+                log.warn("回滚渠道配置文件失败：{}", failure.getMessage());
+            }
+        }
+    }
+
+    public synchronized void markApplied() {
+        this.restartRequired = false;
+        this.state = current.enabled() ? State.APPLIED : State.DISABLED;
+        this.message = current.enabled() ? "配置已生效，长连接已切换。" : "长连接已停用。";
+    }
+
+    public synchronized void markRestartRequired(String why) {
+        this.restartRequired = true;
+        this.state = State.RESTART_REQUIRED;
+        this.message = why;
+        log.warn("飞书连接配置需重启生效：{}", why);
+    }
+
+    public synchronized void markRolledBack(String why) {
+        this.restartRequired = false;
+        this.state = State.ROLLED_BACK;
+        this.message = why;
+        log.warn("飞书连接配置回滚：{}", why);
     }
 
     public Probe probe(String appId, String secret) {

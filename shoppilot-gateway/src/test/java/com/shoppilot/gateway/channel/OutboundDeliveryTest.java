@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -93,7 +94,7 @@ class OutboundDeliveryTest {
         assertThat(registry.get("shoppilot_outbound_delivered_total").tag("channel", "webhook").counter().count())
                 .isEqualTo(1.0d);
         verify(receiptWriter, org.mockito.Mockito.never())
-                .writeReceipt(anyString(), anyString(), anyString());
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -113,7 +114,7 @@ class OutboundDeliveryTest {
         drainWith(outboundEvent("ev-2", "webhook", echoUrl, "T-90", "已为您退款"));
 
         assertThat(received).as("试满 3 次").hasSize(3);
-        verify(receiptWriter).writeReceipt(anyString(), anyString(), anyString());
+        verify(receiptWriter).writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
         assertThat(registry.get("shoppilot_outbound_failed_total").tag("channel", "webhook").counter().count())
                 .isEqualTo(1.0d);
     }
@@ -124,7 +125,7 @@ class OutboundDeliveryTest {
         // 指向一个没有进程在听的端口
         drainWith(outboundEvent("ev-3", "webhook", "http://127.0.0.1:1/hook", "T-91", "已处理"));
 
-        verify(receiptWriter).writeReceipt(anyString(), anyString(), anyString());
+        verify(receiptWriter).writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
         assertThat(registry.get("shoppilot_outbound_failed_total").tag("channel", "webhook").counter().count())
                 .isEqualTo(1.0d);
     }
@@ -135,7 +136,7 @@ class OutboundDeliveryTest {
         drainWith(outboundEvent("ev-4", "email", "buyer@example.com", "T-92", "已处理完成"));
 
         assertThat(received).as("没有 SMTP，就不该有任何 HTTP 出站").isEmpty();
-        verify(receiptWriter).writeReceipt(anyString(), anyString(), anyString());
+        verify(receiptWriter).writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
         assertThat(registry.get("shoppilot_outbound_delivered_total").tag("channel", "email").counter().count())
                 .isEqualTo(1.0d);
     }
@@ -147,8 +148,32 @@ class OutboundDeliveryTest {
 
         assertThat(received).isEmpty();
         verify(receiptWriter, org.mockito.Mockito.never())
-                .writeReceipt(anyString(), anyString(), anyString());
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
         verify(redis.opsForStream()).acknowledge(anyString(), anyString(), any(RecordId[].class));
+    }
+
+    @Test
+    @DisplayName("重试耗尽落回执时带上事件里的 tenant/customer，不依赖消费线程的 ThreadLocal")
+    void receiptUsesIdentityCarriedByTheEvent() {
+        status.set(500);
+        Map<String, String> event = new java.util.HashMap<>(outboundEvent(
+                "ev-receipt", "webhook", echoUrl, "T-93", "已处理"));
+        event.put("customerId", "C001");
+
+        drainWith(event);
+
+        verify(receiptWriter).writeReceipt(org.mockito.ArgumentMatchers.eq("T001"),
+                org.mockito.ArgumentMatchers.eq("C001"), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("默认 SSRF 策略拒绝元数据地址：不发请求，直接落回执")
+    void metadataTargetIsDeniedAndLandsAReceipt() {
+        drainWith(outboundEvent("ev-ssrf", "webhook", "http://169.254.169.254/latest/meta-data",
+                "T-94", "已处理"));
+
+        assertThat(received).isEmpty();
+        verify(receiptWriter).writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
     }
 
     // --- harness ---------------------------------------------------------------------------

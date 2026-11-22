@@ -38,6 +38,7 @@ import {
   login,
   saveFeishu,
   testFeishu,
+  testWebhook,
   messageOf,
   qualityReport,
   releaseTicket,
@@ -46,6 +47,8 @@ import {
   type ChannelConnection,
   type ChannelConversation,
   type ChannelProbe,
+  type ChannelSaveResult,
+  type WebhookProbeResult,
   type FeedbackItem,
   type KnowledgeRevision,
   type QualityReport,
@@ -132,6 +135,8 @@ const channelNote = ref('')
 const channelSaving = ref(false)
 const channelTesting = ref(false)
 const channelProbe = ref<ChannelProbe | null>(null)
+const webhookTesting = ref(false)
+const webhookProbe = ref<WebhookProbeResult | null>(null)
 const channelForm = ref<ChannelForm>({
   enabled: true,
   appId: '',
@@ -346,6 +351,7 @@ function signOut() {
   channelError.value = ''
   channelNote.value = ''
   channelProbe.value = null
+  webhookProbe.value = null
   quality.value = null
   qualityError.value = ''
   feedback.value = []
@@ -1042,6 +1048,17 @@ async function testChannel() {
   channelProbe.value = result.body as ChannelProbe
 }
 
+async function testWebhookUrl(url: string) {
+  if (!session.value || webhookTesting.value) return
+  webhookTesting.value = true
+  webhookProbe.value = null
+  const result = await testWebhook(session.value, url.trim())
+  webhookTesting.value = false
+  webhookProbe.value = result.status >= 200 && result.status < 300
+    ? (result.body as WebhookProbeResult)
+    : { ok: false, message: describe(result, '目标地址不允许') }
+}
+
 async function saveChannel() {
   if (!session.value || channelSaving.value) return
   channelSaving.value = true
@@ -1057,13 +1074,15 @@ async function saveChannel() {
   })
   channelSaving.value = false
   if (result.status >= 200 && result.status < 300) {
+    const saved = result.body as ChannelSaveResult
     channelForm.value.appSecret = ''
     channelForm.value.appId = ''
-    channelNote.value = '已保存。重启网关后生效。'
+    channelNote.value = saved.message || (saved.applied ? '配置已生效。' : '配置已保存。')
     await refreshChannels()
     return
   }
-  channelError.value = describe(result, '')
+  const failed = result.body as Partial<ChannelSaveResult>
+  channelError.value = failed.message || describe(result, '')
 }
 
 async function refreshRefunds() {
@@ -1338,9 +1357,12 @@ function clearStoredSession() {
             :channel-saving="channelSaving"
             :channel-testing="channelTesting"
             :channel-probe="channelProbe"
+            :webhook-testing="webhookTesting"
+            :webhook-probe="webhookProbe"
             @refresh="refreshChannels"
             @save="saveChannel"
             @test="testChannel"
+            @test-webhook="testWebhookUrl"
           />
 
           <QualityView

@@ -19,6 +19,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.concurrent.ExecutorService;
 
 /**
  * 飞书长连接客户端（round31 票 113 / ADR 0065）。
@@ -77,10 +80,39 @@ public class FeishuLongConnectionClient {
     /** SDK 长连接客户端，未启用时为 null。 */
     private volatile Client wsClient;
 
+    /** 可替换的连接工厂：生产走飞书 SDK，测试注入 fake。 */
+    interface FeishuConnectionFactory {
+        ManagedFeishuConnection create(GatewayProperties.Feishu config);
+    }
+
+    /** 一条可启动/可安全停止的长连接。stop 返回 false 表示「无法确认已关闭」。 */
+    interface ManagedFeishuConnection {
+        void start();
+
+        boolean stop();
+    }
+
+    private final FeishuConnectionFactory connectionFactory;
+    private volatile ManagedFeishuConnection activeConnection;
+
+    /** 手动切换结果：APPLIED / NOT_SUPPORTED（诚实降级为需重启）/ FAILED。 */
+    enum SwitchResult {
+        APPLIED, NOT_SUPPORTED, FAILED
+    }
+
+    @Autowired
     public FeishuLongConnectionClient(FeishuAdapter adapter, AgentStateMachine agentStateMachine,
                                        FeishuReplySender replySender, GatewayProperties properties,
                                        @Value("${server.address:}") String bindAddress,
                                        ObjectMapper objectMapper) {
+        this(adapter, agentStateMachine, replySender, properties, bindAddress, objectMapper,
+                null);
+    }
+
+    FeishuLongConnectionClient(FeishuAdapter adapter, AgentStateMachine agentStateMachine,
+                               FeishuReplySender replySender, GatewayProperties properties,
+                               String bindAddress, ObjectMapper objectMapper,
+                               FeishuConnectionFactory connectionFactory) {
         this.adapter = adapter;
         this.agentStateMachine = agentStateMachine;
         this.replySender = replySender;
@@ -88,6 +120,7 @@ public class FeishuLongConnectionClient {
         this.identityResolver = new FeishuIdentityResolver(this::currentFeishu);
         this.bindAddress = bindAddress;
         this.objectMapper = objectMapper;
+        this.connectionFactory = connectionFactory == null ? this::sdkConnection : connectionFactory;
     }
 
     /**
@@ -128,37 +161,59 @@ public class FeishuLongConnectionClient {
         }
 
         try {
-            EventDispatcher eventDispatcher = EventDispatcher.newBuilder(feishu.appId(), feishu.appSecret())
-                    .onP2MessageReceiveV1(new com.lark.oapi.service.im.ImService.P2MessageReceiveV1Handler() {
-                        @Override
-                        public void handle(com.lark.oapi.service.im.v1.model.P2MessageReceiveV1 event) {
-                            Map<String, Object> payload = SNAKE_MAPPER.convertValue(event, Map.class);
-                            FeishuLongConnectionClient.this.handleEvent(payload);
-                        }
-                    })
-                    .onP2ChatAccessEventBotP2pChatEnteredV1(new com.lark.oapi.service.im.ImService.P2ChatAccessEventBotP2pChatEnteredV1Handler() {
-                        @Override
-                        public void handle(com.lark.oapi.service.im.v1.model.P2ChatAccessEventBotP2pChatEnteredV1 event) {
-                            log.debug("用户进入飞书单聊，无需处理");
-                        }
-                    })
-                    .onP2MessageReadV1(new com.lark.oapi.service.im.ImService.P2MessageReadV1Handler() {
-                        @Override
-                        public void handle(com.lark.oapi.service.im.v1.model.P2MessageReadV1 event) {
-                            log.debug("消息已读回执，无需处理");
-                        }
-                    })
-                    .build();
-            Client client = new Client.Builder(feishu.appId(), feishu.appSecret())
-                    .eventHandler(eventDispatcher)
-                    .autoReconnect(true)
-                    .build();
-            client.start();
-            this.wsClient = client;
+            ManagedFeishuConnection connection = connectionFactory.create(feishu);
+            connection.start();
+            this.activeConnection = connection;
             log.info("飞书长连接已启动");
+            if (channelConnectionStore != null) {
+                channelConnectionStore.markApplied();
+            }
         } catch (Exception e) {
             log.error("飞书长连接启动失败", e);
         }
+    }
+
+    /**
+     * 热切换（票 225 / ADR 0087）：先起新连接，再停旧连接；旧连接停不掉就回滚新连接。
+     *
+     * <p>返回 {@code NOT_SUPPORTED} 时**当前 active 连接保持原样**，调用方应把配置
+     * 留在磁盘并标记 {@code RESTART_REQUIRED}——这是「不假装热生效」的那一格。
+     */
+    synchronized SwitchResult restart(GatewayProperties.Feishu next) {
+        if (next == null || !next.enabled()) {
+            if (activeConnection == null) {
+                return SwitchResult.APPLIED;
+            }
+            if (activeConnection.stop()) {
+                activeConnection = null;
+                wsClient = null;
+                log.info("飞书长连接已停止");
+                return SwitchResult.APPLIED;
+            }
+            return SwitchResult.NOT_SUPPORTED;
+        }
+        ManagedFeishuConnection candidate;
+        try {
+            candidate = connectionFactory.create(next);
+            candidate.start();
+        } catch (Exception failed) {
+            log.error("新飞书长连接启动失败，保留旧连接", failed);
+            return SwitchResult.FAILED;
+        }
+        if (activeConnection == null) {
+            activeConnection = candidate;
+            log.info("飞书长连接已启动（热切换）");
+            return SwitchResult.APPLIED;
+        }
+        if (activeConnection.stop()) {
+            activeConnection = candidate;
+            log.info("飞书长连接已启动（热切换），旧连接已停止");
+            return SwitchResult.APPLIED;
+        }
+        // 旧连接停不掉：必须回滚新连接，否则两个连接同时收事件。
+        boolean candidateStopped = candidate.stop();
+        log.error("旧飞书长连接无法安全关闭；新连接已{}", candidateStopped ? "回滚" : "启动且无法回滚");
+        return candidateStopped ? SwitchResult.NOT_SUPPORTED : SwitchResult.FAILED;
     }
 
     /**
@@ -169,8 +224,78 @@ public class FeishuLongConnectionClient {
      */
     @PreDestroy
     void stop() {
+        if (activeConnection != null) {
+            activeConnection.stop();
+        }
+        this.activeConnection = null;
         this.wsClient = null;
         log.info("飞书长连接已清理");
+    }
+
+    /** 生产连接：飞书 SDK + 反射关闭三个成员（ADR 0087 §1）。 */
+    private ManagedFeishuConnection sdkConnection(GatewayProperties.Feishu feishu) {
+        EventDispatcher eventDispatcher = EventDispatcher.newBuilder(feishu.appId(), feishu.appSecret())
+                .onP2MessageReceiveV1(new com.lark.oapi.service.im.ImService.P2MessageReceiveV1Handler() {
+                    @Override
+                    public void handle(com.lark.oapi.service.im.v1.model.P2MessageReceiveV1 event) {
+                        Map<String, Object> payload = SNAKE_MAPPER.convertValue(event, Map.class);
+                        FeishuLongConnectionClient.this.handleEvent(payload);
+                    }
+                })
+                .onP2ChatAccessEventBotP2pChatEnteredV1(new com.lark.oapi.service.im.ImService.P2ChatAccessEventBotP2pChatEnteredV1Handler() {
+                    @Override
+                    public void handle(com.lark.oapi.service.im.v1.model.P2ChatAccessEventBotP2pChatEnteredV1 event) {
+                        log.debug("用户进入飞书单聊，无需处理");
+                    }
+                })
+                .onP2MessageReadV1(new com.lark.oapi.service.im.ImService.P2MessageReadV1Handler() {
+                    @Override
+                    public void handle(com.lark.oapi.service.im.v1.model.P2MessageReadV1 event) {
+                        log.debug("消息已读回执，无需处理");
+                    }
+                })
+                .build();
+        Client client = new Client.Builder(feishu.appId(), feishu.appSecret())
+                .eventHandler(eventDispatcher)
+                .autoReconnect(true)
+                .build();
+        return new ManagedFeishuConnection() {
+            @Override
+            public void start() {
+                client.start();
+            }
+
+            @Override
+            public boolean stop() {
+                return closeSdkClient(client);
+            }
+        };
+    }
+
+    static boolean closeSdkClient(Client client) {
+        if (client == null) {
+            return true;
+        }
+        try {
+            Field autoReconnect = Client.class.getDeclaredField("autoReconnect");
+            autoReconnect.setAccessible(true);
+            autoReconnect.set(client, Boolean.FALSE);
+
+            Method disconnect = Client.class.getDeclaredMethod("disconnect");
+            disconnect.setAccessible(true);
+            disconnect.invoke(client);
+
+            Field executor = Client.class.getDeclaredField("executor");
+            executor.setAccessible(true);
+            Object pool = executor.get(client);
+            if (pool instanceof ExecutorService service) {
+                service.shutdownNow();
+            }
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException unsupported) {
+            log.warn("无法安全关闭飞书 SDK 连接，将降级为需重启：{}", unsupported.getMessage());
+            return false;
+        }
     }
 
     /**

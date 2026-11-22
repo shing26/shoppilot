@@ -7,8 +7,8 @@
 [![Java](https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/projects/loom/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
-[![ADR](https://img.shields.io/badge/Architecture-85%20ADRs-blueviolet)](docs/adr/)
-[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-844-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
+[![ADR](https://img.shields.io/badge/Architecture-86%20ADRs-blueviolet)](docs/adr/)
+[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-863-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
 [![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
 
 **10** 态有界状态机 · **4** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
@@ -58,7 +58,7 @@
 
 | 评估维度 | 依据路径 | 关键设计考量与实测读数 |
 | :--- | :--- | :--- |
-| **架构决策演进** | [`docs/adr/`](docs/adr/) | 85 个编号位 / 84 篇成文（ADR-0022 有意预留未占用；篇数 11-21 实点），包含完整选型权衡、备选方案与后果推演。 |
+| **架构决策演进** | [`docs/adr/`](docs/adr/) | 87 个编号位 / 86 篇成文（ADR-0022 有意预留未占用；篇数 11-21 实点），包含完整选型权衡、备选方案与后果推演。 |
 | **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求实打 bge-m3 为 24–65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平。 |
 | **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0-token 判据抓出三个静默缺陷。 |
 | **全套技术栈本地运行** | [快速开始](#-快速开始一条命令) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |
@@ -324,7 +324,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 
 **持久化档验收边界**：票 220 的 Postgres 档容器验收（重启存活、灾难恢复 14/14、业务读回，合计 20/20）使用的是 2026-11-10 / 11-01 构建的镜像、非 HEAD 重编，且只验 `-DockerExec` 分支；默认宿主模式未实跑（`.scratch/shoppilot-mvp/issues/220`）。
 
-**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **844 条** JVM 测试（tool-api 12 + biz-mock 98 + ticket 50 + gateway 684）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
+**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **863 条** JVM 测试（tool-api 12 + biz-mock 98 + ticket 50 + gateway 703）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
 
 ---
 
@@ -607,7 +607,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 <summary>🔁 复现：压测、评测与验收命令</summary>
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（四模块 12 + 98 + 684 + 50 = 844 项；当前值以 docs/STATUS.md 为准）
+# 单元、架构与主链路 JVM 集成测试（四模块 12 + 98 + 703 + 50 = 863 项；当前值以 docs/STATUS.md 为准）
 mvn -o test
 # LLM 录放门禁（0 token）：cassette / key / 基线 / 既有 judge() 逐条比对；缺卡即红
 python scripts/verify_llm_replay.py

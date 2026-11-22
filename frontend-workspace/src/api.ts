@@ -171,6 +171,9 @@ export interface ChannelConnection {
   customer: string
   source: string
   restartRequired: boolean
+  /** round56 票 225 / ADR 0087：APPLIED / RESTART_REQUIRED / ROLLED_BACK / DISABLED */
+  state: string
+  message: string
 }
 
 export interface ChannelList {
@@ -180,6 +183,15 @@ export interface ChannelList {
 export interface ChannelProbe {
   ok: boolean
   message: string
+}
+
+export interface ChannelSaveResult {
+  saved: boolean
+  applied: boolean
+  state: string
+  restartRequired: boolean
+  message: string
+  enabled: boolean
 }
 
 export function listChannels(session: Session): Promise<ApiResult<ChannelList>> {
@@ -206,8 +218,22 @@ export interface FeishuUpdate {
   identityFile: string
 }
 
-export function saveFeishu(session: Session, update: FeishuUpdate): Promise<ApiResult<unknown>> {
-  return api<unknown>('PUT', '/channels/feishu', { token: session.token, body: update })
+export function saveFeishu(session: Session, update: FeishuUpdate): Promise<ApiResult<ChannelSaveResult>> {
+  return api<ChannelSaveResult>('PUT', '/channels/feishu', { token: session.token, body: update })
+}
+
+export interface WebhookProbeResult {
+  ok: boolean
+  status?: number
+  message: string
+}
+
+/** 管理面「测试 webhook」：与真实投递共用 SSRF 策略，只发固定探测负载。 */
+export function testWebhook(session: Session, url: string): Promise<ApiResult<WebhookProbeResult>> {
+  return api<WebhookProbeResult>('POST', '/channels/webhook/test', {
+    token: session.token,
+    body: { url },
+  })
 }
 
 // ── 渠道会话收件箱（票 175）────────────────────────────────────────────────

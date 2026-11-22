@@ -5,8 +5,9 @@
  * <p>`channelForm` 按引用传入并就地编辑：它是根组件里的一棵小树，六个字段各自
  * 定义 model 只会让模板更难读；这里没有跨组件共享，改的是同一对象。
  */
-import type { ChannelConnection, ChannelProbe } from '../api'
+import type { ChannelConnection, ChannelProbe, WebhookProbeResult } from '../api'
 import type { ChannelForm } from '../lib/ui'
+import { ref } from 'vue'
 
 defineProps<{
   channel: ChannelConnection | null
@@ -17,9 +18,23 @@ defineProps<{
   channelSaving: boolean
   channelTesting: boolean
   channelProbe: ChannelProbe | null
+  webhookTesting: boolean
+  webhookProbe: WebhookProbeResult | null
 }>()
 
-const emit = defineEmits<{ refresh: []; save: []; test: [] }>()
+const emit = defineEmits<{ refresh: []; save: []; test: []; 'test-webhook': [url: string] }>()
+const webhookUrl = ref('')
+
+const STATE_LABEL: Record<string, string> = {
+  APPLIED: '已生效',
+  RESTART_REQUIRED: '需重启',
+  ROLLED_BACK: '已回滚',
+  DISABLED: '已停用',
+}
+
+function stateLabel(state: string | undefined): string {
+  return STATE_LABEL[state ?? ''] ?? '未知'
+}
 </script>
 
 <template>
@@ -30,7 +45,7 @@ const emit = defineEmits<{ refresh: []; save: []; test: [] }>()
         {{ channelLoading ? '读取中…' : '刷新状态' }}
       </button>
     </div>
-    <p class="hint">飞书单连接。保存只写配置并标记重启，不会在进程内热切长连接；密钥只存本机文件，页面不回显。</p>
+    <p class="hint">飞书单连接。保存先探测凭据，再原子切换长连接；切换不了会明确显示「需重启」并保留上一份可用配置。密钥只存本机文件，页面不回显。</p>
 
     <p v-if="channelError" class="err">{{ channelError }}</p>
     <p v-if="channelNote" class="note">{{ channelNote }}</p>
@@ -41,8 +56,8 @@ const emit = defineEmits<{ refresh: []; save: []; test: [] }>()
           <p class="eyebrow">飞书 Long Connection</p>
           <h3>{{ channel.enabled ? '长连接已启用' : '长连接已停用' }}</h3>
         </div>
-        <span class="status-pill" :class="{ off: !channel.enabled }">
-          {{ channel.enabled ? 'ENABLED' : 'DISABLED' }}
+        <span class="status-pill" :class="{ off: !channel.enabled, warn: channel.state === 'RESTART_REQUIRED' }">
+          {{ stateLabel(channel.state) }}
         </span>
       </header>
       <div class="channel-grid">
@@ -51,7 +66,9 @@ const emit = defineEmits<{ refresh: []; save: []; test: [] }>()
         <div><span>默认买家</span><strong>{{ channel.customer }}</strong></div>
         <div><span>配置来源</span><strong>{{ channel.source === 'file' ? '文件' : '环境变量' }}</strong></div>
       </div>
-      <p v-if="channel.restartRequired" class="channel-warn">配置已保存，需重启网关后生效。</p>
+      <p v-if="channel.message" class="channel-warn" :class="{ ok: channel.state === 'APPLIED' }">
+        {{ channel.message }}
+      </p>
     </article>
 
     <form class="channel-form" @submit.prevent="emit('save')">
@@ -70,13 +87,27 @@ const emit = defineEmits<{ refresh: []; save: []; test: [] }>()
       </div>
       <div class="channel-actions">
         <button class="primary" type="submit" :disabled="channelSaving">
-          {{ channelSaving ? '保存中…' : '保存并标记重启' }}
+          {{ channelSaving ? '保存并生效中…' : '保存并生效' }}
         </button>
         <button class="ghost" type="button" :disabled="channelTesting" @click="emit('test')">
           {{ channelTesting ? '测试中…' : '测试凭据' }}
         </button>
       </div>
       <p v-if="channelProbe" class="note" :class="{ err: !channelProbe.ok }">{{ channelProbe.message }}</p>
+    </form>
+
+    <form class="channel-form" @submit.prevent="emit('test-webhook', webhookUrl)">
+      <div class="pane-head"><h2>Webhook 出站测试</h2><span class="count">SSRF 复检</span></div>
+      <p class="fine">只发一条固定探测负载，不保存。回环、私网、云元数据与跳转到私网的地址会被拒绝。</p>
+      <div class="channel-form-grid">
+        <label class="wide">目标地址<input data-testid="webhook-url" v-model="webhookUrl" type="url" placeholder="https://example.com/hook" /></label>
+      </div>
+      <div class="channel-actions">
+        <button class="ghost" type="submit" :disabled="webhookTesting">
+          {{ webhookTesting ? '测试中…' : '测试 webhook' }}
+        </button>
+      </div>
+      <p v-if="webhookProbe" class="note" :class="{ err: !webhookProbe.ok }">{{ webhookProbe.message }}</p>
     </form>
   </section>
 </template>
@@ -91,6 +122,8 @@ const emit = defineEmits<{ refresh: []; save: []; test: [] }>()
 .channel-grid strong { font-size: 13px; overflow-wrap: anywhere; }
 .channel-warn { margin: 12px 0 0; padding: 7px 10px; border: 1px solid var(--amber-line); border-radius: 8px;
   background: var(--amber-soft); color: var(--amber-ink); font-size: 12px; }
+.channel-warn.ok { border-color: var(--line); background: var(--panel-2); color: var(--ink-2); }
+.status-pill.warn { border-color: var(--amber-line); color: var(--amber-ink); background: var(--amber-soft); }
 .channel-form { margin-top: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px; background: var(--panel); }
 .channel-form .pane-head { margin-bottom: 6px; }
 .channel-check { display: flex; align-items: center; gap: 8px; margin: 10px 0 12px; color: var(--ink-2); font-size: 13px; }

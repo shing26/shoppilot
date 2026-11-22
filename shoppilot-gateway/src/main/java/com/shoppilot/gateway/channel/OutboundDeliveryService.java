@@ -6,6 +6,7 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
@@ -68,24 +69,14 @@ public class OutboundDeliveryService {
     private static final String GROUP = "shoppilot-outbound";
     private static final String CONSUMER = "gateway";
 
-    /** 去重集合的容量上限。它是缓存不是账本——超出就丢最旧的。 */
-    private static final int DEDUPE_CAPACITY = 1000;
-
-    /** 投递几次（ADR 0059 第 6 条：重试 3 次后落回执工单）。**刻意不做成配置**：见 ADR 0059 的取舍。 */
-    private static final int ATTEMPTS = 3;
-
     private final StringRedisTemplate redis;
     private final HttpClient http;
     private final ObjectMapper mapper;
     private final EmailReceiptWriter receiptWriter;
     private final io.micrometer.core.instrument.MeterRegistry registry;
-
-    private final Map<String, Boolean> delivered = new LinkedHashMap<>(16, 0.75f, false) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
-            return size() > DEDUPE_CAPACITY;
-        }
-    };
+    private final EgressPolicy egress;
+    private final DeliveredEventStore deliveredStore;
+    private final RetryPolicy retry;
 
     private final ScheduledExecutorService loop;
 
@@ -93,11 +84,29 @@ public class OutboundDeliveryService {
                                    EmailReceiptWriter receiptWriter,
                                    io.micrometer.core.instrument.MeterRegistry registry,
                                    @Value("${shoppilot.outbound.poll-interval:5s}") Duration pollInterval) {
+        this(redis, http, mapper, receiptWriter, registry, pollInterval,
+                new EgressPolicy("127.0.0.1,localhost", HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .build()),
+                DeliveredEventStore.inMemory(Duration.ZERO), RetryPolicy.fast());
+    }
+
+    @Autowired
+    public OutboundDeliveryService(StringRedisTemplate redis, HttpClient http, ObjectMapper mapper,
+                                   EmailReceiptWriter receiptWriter,
+                                   io.micrometer.core.instrument.MeterRegistry registry,
+                                   @Value("${shoppilot.outbound.poll-interval:5s}") Duration pollInterval,
+                                   EgressPolicy egress, DeliveredEventStore deliveredStore,
+                                   RetryPolicy retry) {
         this.redis = redis;
         this.http = http;
         this.mapper = mapper;
         this.receiptWriter = receiptWriter;
         this.registry = registry;
+        this.egress = egress;
+        this.deliveredStore = deliveredStore;
+        this.retry = retry;
         // 单线程 + 固定延迟。审计那条流选了惰性消费（要有人读审计才收），但出站不行——
         // 「要有人点一下才投递」是 ADR 0059 明确否掉的形态：一个从后台自己走的定时任务就够。
         this.loop = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -162,7 +171,7 @@ public class OutboundDeliveryService {
     }
 
     private void handle(Event event) {
-        if (event.eventId() != null && delivered.putIfAbsent(event.eventId(), Boolean.TRUE) != null) {
+        if (event.eventId() != null && deliveredStore.isDelivered(event.eventId())) {
             log.info("出站事件 {} 投递过了，跳过（至少一次投递的幂等）", event.eventId());
             return;
         }
@@ -174,6 +183,9 @@ public class OutboundDeliveryService {
             default -> landReceipt(event, "渠道 " + event.channel() + " 没有投递方式", false);
         };
         if (sent) {
+            if (event.eventId() != null) {
+                deliveredStore.markDelivered(event.eventId());
+            }
             registry.counter("shoppilot_outbound_delivered_total", "channel", channelLabel(event)).increment();
         } else {
             registry.counter("shoppilot_outbound_failed_total", "channel", channelLabel(event)).increment();
@@ -182,27 +194,43 @@ public class OutboundDeliveryService {
 
     /** @return 目标是否回了 2xx。**只有 2xx 算送达**。 */
     private boolean postToWebhook(Event event) {
-        for (int attempt = 1; attempt <= ATTEMPTS; attempt++) {
+        URI target;
+        try {
+            target = URI.create(event.target());
+        } catch (RuntimeException malformed) {
+            log.warn("出站目标地址不合法 ticket={}，落回执工单", event.ticketId());
+            landReceipt(event, "目标地址不合法", false);
+            return false;
+        }
+        for (int attempt = 1; attempt <= retry.attempts(); attempt++) {
             try {
-                HttpRequest request = HttpRequest.newBuilder(URI.create(event.target()))
-                        .timeout(Duration.ofSeconds(5))
-                        .header("Content-Type", "application/json")
-                        .header("X-Shoppilot-Ticket", event.ticketId() == null ? "" : event.ticketId())
-                        .POST(HttpRequest.BodyPublishers.ofString(payload(event)))
-                        .build();
-                HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> response = egress.post(target, payload(event), Map.of(
+                        "Content-Type", "application/json",
+                        "X-Shoppilot-Ticket", event.ticketId() == null ? "" : event.ticketId()));
                 if (response.statusCode() / 100 == 2) {
                     return true;
                 }
                 log.warn("出站投递被拒 ticket={} status={} 第 {}/{} 次", event.ticketId(), response.statusCode(),
-                        attempt, ATTEMPTS);
+                        attempt, retry.attempts());
+            } catch (EgressPolicy.DeniedException denied) {
+                // SSRF 拒绝是永久失败，重试没有意义。
+                log.warn("出站目标被 SSRF 策略拒绝 ticket={} 原因：{}", event.ticketId(), denied.getMessage());
+                break;
             } catch (Exception unreachable) {
-                log.warn("出站投递异常 ticket={} 第 {}/{} 次: {}", event.ticketId(), attempt, ATTEMPTS,
+                log.warn("出站投递异常 ticket={} 第 {}/{} 次: {}", event.ticketId(), attempt, retry.attempts(),
                         unreachable.getMessage());
             }
+            if (attempt < retry.attempts()) {
+                try {
+                    Thread.sleep(retry.delay(attempt).toMillis());
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
         }
-        log.warn("重试 {} 次仍送不到，改落回执工单 ticket={}", ATTEMPTS, event.ticketId());
-        landReceipt(event, "重试 " + ATTEMPTS + " 次仍送不到", false);
+        log.warn("重试 {} 次仍送不到，改落回执工单 ticket={}", retry.attempts(), event.ticketId());
+        landReceipt(event, "重试 " + retry.attempts() + " 次仍送不到", false);
         return false;
     }
 
@@ -214,7 +242,8 @@ public class OutboundDeliveryService {
      */
     private boolean landReceipt(Event event, String why, boolean countsAsDelivered) {
         try {
-            receiptWriter.writeReceipt("工单 " + (event.ticketId() == null ? "(未知)" : event.ticketId()),
+            receiptWriter.writeReceipt(event.tenantId(), event.customerId(),
+                    "工单 " + (event.ticketId() == null ? "(未知)" : event.ticketId()),
                     event.body() == null ? "" : event.body(), event.target());
             log.info("出站改落回执工单 ticket={} 算送达={} 原因：{}", event.ticketId(), countsAsDelivered, why);
             return countsAsDelivered;
@@ -297,7 +326,8 @@ public class OutboundDeliveryService {
     }
 
     /** 一条出站事件的流字段；坏消息在这里被判空，不让它进业务分支。 */
-    record Event(String eventId, String tenantId, String channel, String target, String ticketId, String body) {
+    record Event(String eventId, String tenantId, String customerId, String channel, String target,
+                 String ticketId, String body) {
 
         /**
          * 从流字段还原；**判空在这里做**，不让坏消息进业务分支。
@@ -315,7 +345,8 @@ public class OutboundDeliveryService {
             if (isBlank(eventId) || isBlank(channel)) {
                 return null;
             }
-            return new Event(eventId, string(fields, "tenantId"), channel, string(fields, "target"),
+            return new Event(eventId, string(fields, "tenantId"), string(fields, "customerId"), channel,
+                    string(fields, "target"),
                     string(fields, "ticketId"), string(fields, "body"));
         }
 

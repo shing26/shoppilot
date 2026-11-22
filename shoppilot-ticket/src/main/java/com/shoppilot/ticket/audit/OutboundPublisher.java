@@ -64,6 +64,8 @@ public class OutboundPublisher {
         fields.put("eventId", event.eventId());
         fields.put("schemaVersion", String.valueOf(event.schemaVersion()));
         fields.put("tenantId", event.tenantId());
+        // 回执工单需要 customerId；消费端在独立线程里没有 TenantContext，必须随事件带过去。
+        fields.put("customerId", TenantContextHolder.customerId() == null ? "" : TenantContextHolder.customerId());
         fields.put("channel", event.channel());
         fields.put("target", event.target());
         fields.put("ticketId", event.ticketId() == null ? "" : event.ticketId());

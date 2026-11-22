@@ -96,7 +96,16 @@ class ConfigValidationTest {
             "SHOPPILOT_IDENTITY_ACCESS_TTL",
             "SHOPPILOT_IDENTITY_REFRESH_TTL",
             "SHOPPILOT_IDENTITY_SECURE_COOKIE",
-            "SHOPPILOT_IDENTITY_LOGIN_IP_PER_MINUTE");
+            "SHOPPILOT_IDENTITY_LOGIN_IP_PER_MINUTE",
+            // round56 票 225 / ADR 0087：出站退避、幂等 TTL 与 SSRF allowlist。
+            "SHOPPILOT_OUTBOUND_POLL_INTERVAL",
+            "SHOPPILOT_OUTBOUND_ATTEMPTS",
+            "SHOPPILOT_OUTBOUND_RETRY_BASE",
+            "SHOPPILOT_OUTBOUND_RETRY_FACTOR",
+            "SHOPPILOT_OUTBOUND_RETRY_MAX",
+            "SHOPPILOT_OUTBOUND_RETRY_JITTER",
+            "SHOPPILOT_OUTBOUND_DEDUPE_TTL",
+            "SHOPPILOT_OUTBOUND_ALLOWLIST");
 
     private ApplicationContextRunner runner() {
         return new ApplicationContextRunner()

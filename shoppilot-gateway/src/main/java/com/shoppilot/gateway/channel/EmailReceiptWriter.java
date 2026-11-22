@@ -39,8 +39,19 @@ public class EmailReceiptWriter {
     /** @return 回执工单号；下游不可达时 empty（如实返回，不静默假装落单成功）。 */
     public Optional<String> writeReceipt(String query, String answer, String contact) {
         TenantContext.Identity identity = TenantContext.current();
+        return writeReceipt(identity.tenantId(), identity.customerId(), query, answer, contact);
+    }
+
+    /**
+     * 显式身份版本：出站消费线程没有 TenantContext，必须由事件把 tenant/customer 带进来。
+     * customer 缺失时用 {@code UNKNOWN} 占位——工单表该列非空，丢单比缺一格更糟。
+     */
+    public Optional<String> writeReceipt(String tenantId, String customerId, String query, String answer,
+                                         String contact) {
+        String resolvedTenant = tenantId == null || tenantId.isBlank() ? "PLATFORM" : tenantId;
+        String resolvedCustomer = customerId == null || customerId.isBlank() ? "UNKNOWN" : customerId;
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("customerId", identity.customerId());
+        payload.put("customerId", resolvedCustomer);
         payload.put("reason", RECEIPT_REASON);
         payload.put("userQuery", query);
         payload.put("transcript", answer + (contact == null ? "" : "\n【回执渠道】" + contact));
@@ -55,8 +66,8 @@ public class EmailReceiptWriter {
                     .timeout(config.readTimeout())
                     .header("Content-Type", "application/json")
                     .header("X-Internal-Token", config.internalToken())
-                    .header("X-Tenant-Id", identity.tenantId())
-                    .header("X-Customer-Id", identity.customerId() == null ? "" : identity.customerId())
+                    .header("X-Tenant-Id", resolvedTenant)
+                    .header("X-Customer-Id", resolvedCustomer)
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload)))
                     .build();
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
