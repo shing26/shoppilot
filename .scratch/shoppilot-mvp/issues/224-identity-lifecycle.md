@@ -2,7 +2,7 @@
 
 Round: 56（所有者 2026-11-22 指令「按 224 身份生命周期 → 225 → 226 开票」）
 ADR: 0086（实现前新增并 Accepted；开票依据 = 所有者政策覆盖）
-Status: implemented（待独立 Verifier）　Claimed by: root　Blocked by: 无
+Status: implemented（独立 Verifier PASS，待所有者签收）　Claimed by: root　Blocked by: 无
 契约：[plans/224-identity-lifecycle.md](../../../plans/224-identity-lifecycle.md)（2026-11-22 冻结）
 
 ## What to build
@@ -145,3 +145,14 @@ Verifier 在 `9563780` 上逐条核对 AC，发现 5 个 P1；以下为整改后
 2. 改密后当前 access 继续用到 TTL 是 ADR 的显式取舍；若要求“立即全端登出”，
    需要每请求校验 `pv` 或引入吊销表，成本会回到热路径。
 3. 本期只做持口令改密；“忘记口令”需要邮箱/短信通道与一次性令牌，未做，也未假装入口可用。
+
+**独立 Verifier 复验（2026-11-23，PASS）**
+
+- 绑定 HEAD `15d112a`；`git status --short --untracked-files=no` 为空。
+- 逐条复跑：全仓 `844 tests / 139 suites`、两端 `44 + 15` vitest、活体 `27/27`
+  （含真实 6 秒锁定窗口）、买家/坐席 SSE 真实 401 → 刷新 → 重发 2/2、文档真值、
+  覆盖率、PowerShell 语法、`git diff --check` 全部退出码 0。
+- AC 1–11 全部 PASS；P0/P1 无。唯一 P2 是 `docs/TUNING_PLAN.md` 仅做测试数机械同步、
+  不在契约 Allowed paths 字面列表内，Verifier 判为文档路径口径瑕疵、非运行时越界。
+- 环境限定：网关聚合 `/actuator/health` 因外部 Qdrant/Ollama 未起返回 503，
+  `readinessState=UP`；身份、SSE、221 权限路径不受影响。
