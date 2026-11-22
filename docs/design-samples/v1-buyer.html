@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>V1 · 店铺客服中心（买家）</title>
+<style>
+:root{
+  --bg:#f4f5f7;--panel:#fff;--panel-2:#f9fafb;--ink:#101828;--ink-2:#475467;--ink-3:#667085;
+  --line:#e4e7ec;--line-2:#f0f1f3;--chrome:#101828;--chrome-2:#1d2939;--chrome-ink:#f9fafb;--chrome-muted:#98a2b3;--chrome-line:#344054;
+  --teal:#0e7a5f;--teal-ink:#0a5c47;--teal-soft:#eef8f4;--teal-line:#c3e3d6;--teal-line-2:#d4ebe1;--teal-wash:#f4faf7;--teal-wash-deep:#eaf5f0;
+  --amber:#b54708;--amber-ink:#93370d;--amber-soft:#fff7ed;--amber-line:#f5d5b0;
+  --rose:#b42318;--rose-soft:#fef3f2;--rose-line:#f4c7c3;
+  --green:#067647;--green-soft:#ecfdf3;--green-line:#b7e4c7;
+  --text-xs:12px;--text-sm:13px;--text-base:14px;--text-lg:16px;--text-xl:20px;
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px;
+  --radius-sm:6px;--radius-md:8px;--radius-lg:10px;--radius-full:999px;
+  --shadow-1:0 1px 2px rgba(16,24,40,.05);--shadow-2:0 4px 12px rgba(16,24,40,.08);
+  --ring:0 0 0 3px rgba(14,122,95,.24);
+  --font:14px/1.55 "Segoe UI",system-ui,-apple-system,"Noto Sans SC",sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:var(--font)}
+button{font:inherit;cursor:pointer}
+.mono{font-family:var(--mono)}
+:focus-visible{outline:none;box-shadow:var(--ring)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* 顶部：真实店铺身份，无演示徽标、无一键体验 */
+.top{height:56px;background:var(--chrome);color:var(--chrome-ink);display:flex;align-items:center;gap:14px;padding:0 22px}
+.logo{width:30px;height:30px;border-radius:8px;background:var(--teal);display:grid;place-items:center;font-weight:700;color:#fff;font-size:15px}
+.shop{display:flex;flex-direction:column;line-height:1.2}
+.shop b{font-size:14px;font-weight:600}
+.shop span{font-size:11px;color:var(--chrome-muted)}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--chrome-muted)}
+.who{display:flex;align-items:center;gap:8px;color:var(--chrome-ink)}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--chrome-2);border:1px solid var(--chrome-line);display:grid;place-items:center;font-size:11px;color:var(--chrome-ink)}
+.tier{font-size:11px;color:var(--amber);border:1px solid rgba(245,213,176,.35);background:rgba(181,71,8,.16);padding:3px 8px;border-radius:var(--radius-full)}
+.linkbtn{background:none;border:none;color:var(--chrome-muted);font-size:12px}
+.linkbtn:hover{color:#fff}
+
+/* 状态切换条：仅样张演示用，说明本页覆盖的真实业务态 */
+.demo-bar{background:#fff;border-bottom:1px solid var(--line);padding:8px 22px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.demo-bar .lbl{font-size:11px;color:var(--ink-3);margin-right:4px}
+.state-btn{border:1px solid var(--line);background:var(--panel);color:var(--ink-2);border-radius:var(--radius-full);padding:4px 11px;font-size:12px}
+.state-btn[aria-pressed="true"]{background:var(--teal-soft);border-color:var(--teal-line);color:var(--teal-ink)}
+.demo-note{font-size:11px;color:var(--ink-3);margin-left:auto}
+
+.wrap{max-width:1180px;margin:0 auto;padding:18px 20px 40px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:18px;align-items:start}
+
+/* 主区：会话 */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-1)}
+.chat-head{padding:14px 18px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:10px}
+.chat-head h1{font-size:15px;font-weight:600;margin:0}
+.chat-head .sub{font-size:12px;color:var(--ink-3)}
+.ctx-chip{margin-left:auto;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--teal-line);background:var(--teal-wash);color:var(--teal-ink);border-radius:var(--radius-full);padding:4px 10px;font-size:12px}
+.ctx-chip .x{color:var(--teal);font-size:14px;line-height:1}
+
+.thread{padding:20px;display:flex;flex-direction:column;gap:18px;min-height:430px;max-height:560px;overflow-y:auto}
+.msg{max-width:88%}
+.msg.user{align-self:flex-end;text-align:right}
+.who2{font-size:11px;color:var(--ink-3);margin-bottom:4px}
+.bubble{border:1px solid var(--line);border-radius:var(--radius-lg);padding:10px 14px;background:var(--panel-2);text-align:left;line-height:1.65;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.user .bubble{background:var(--ink);border-color:var(--ink);color:#fff}
+.order-ref{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:var(--radius-sm);padding:3px 8px;font-size:11px;font-family:var(--mono);margin-bottom:8px}
+
+/* Agent 执行三段：复用真实文案 理解需求 / 调用系统 / 生成回复 */
+.agent{margin-top:10px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);font-size:12px;overflow:hidden;text-align:left}
+.agent>summary{cursor:pointer;list-style:none;padding:10px 12px;display:flex;align-items:center;gap:8px;color:var(--ink-2)}
+.agent>summary::-webkit-details-marker{display:none}
+.agent[open]>summary{border-bottom:1px solid var(--line)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);flex:none}
+.agent .meta{margin-left:auto;color:var(--ink-3);font-size:11px}
+.chev{color:var(--ink-3);transition:transform .15s}
+.agent[open] .chev{transform:rotate(90deg)}
+.agent-body{padding:12px;display:grid;gap:12px}
+.plan{list-style:none;margin:0;padding:8px 10px;background:var(--teal-wash);border:1px solid var(--teal-line-2);border-radius:var(--radius-sm);display:grid;gap:5px}
+.plan li{display:flex;gap:7px;color:var(--ink-2);line-height:1.45}
+.plan li::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--teal);flex:none;margin-top:6px}
+.phase header{display:flex;gap:8px;align-items:baseline;margin-bottom:5px}
+.phase .pt{font-weight:600;color:var(--ink);font-size:12px}
+.phase .ph{color:var(--ink-3);font-size:11px}
+.phase ol{list-style:none;margin:0;padding:0 0 0 3px;display:grid;gap:4px}
+.phase li{display:flex;gap:8px;color:var(--ink-2);line-height:1.45}
+.phase li::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);flex:none;margin-top:6px}
+.phase li.warn::before{background:var(--amber)}
+.raw{border-top:1px dashed var(--line);padding-top:8px}
+.raw summary{cursor:pointer;color:var(--ink-3);font-size:11px}
+
+/* 引用溯源 */
+.cites{margin-top:9px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);font-size:13px;overflow:hidden;text-align:left}
+.cites summary{cursor:pointer;list-style:none;padding:9px 12px;display:flex;gap:8px;align-items:baseline;color:var(--ink-2)}
+.cites summary::-webkit-details-marker{display:none}
+.cites .ct{font-weight:600;color:var(--ink)}
+.cites .cm{color:var(--ink-3);font-size:12px;margin-left:auto}
+.cites .cb{padding:10px 12px;display:grid;gap:9px;border-top:1px solid var(--teal-line-2)}
+.cite h4{margin:0 0 4px;font-size:12px;color:var(--ink-3);font-family:var(--mono);font-weight:500}
+.cite ul{margin:0;padding-left:16px;display:grid;gap:3px;color:var(--ink-2)}
+.cite .rid{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-left:6px}
+.cite-foot{margin:0;font-size:11px;color:var(--ink-3)}
+
+.rate{margin-top:8px;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--ink-3);text-align:left}
+.rate button{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius-full);padding:2px 10px;font-size:12px;color:var(--ink-2)}
+.rate button:hover{border-color:var(--teal-line);color:var(--teal);background:var(--teal-wash)}
+
+.fallback{margin:8px 0 0;color:var(--amber-ink);background:var(--amber-soft);border:1px solid var(--amber-line);border-radius:var(--radius-md);padding:8px 10px;font-size:13px;text-align:left}
+
+/* 输入框 */
+.composer{padding:14px 18px;border-top:1px solid var(--line-2)}
+.composer .box{border:1px solid var(--line);border-radius:var(--radius-lg);padding:10px 12px;background:var(--panel)}
+.composer textarea{width:100%;border:none;outline:none;resize:none;font:inherit;font-size:14px;min-height:44px;background:transparent;color:var(--ink)}
+.composer .tools{display:flex;align-items:center;gap:8px;margin-top:6px}
+.att{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-3);border:1px dashed var(--line);border-radius:var(--radius-full);padding:3px 9px}
+.send{margin-left:auto;background:var(--teal);color:#fff;border:none;border-radius:var(--radius-md);padding:8px 16px;font-size:13px;font-weight:500}
+.send:disabled{opacity:.55;cursor:not-allowed}
+.hint{font-size:11px;color:var(--ink-3);margin:6px 2px 0}
+
+/* 侧栏：上下文感知 */
+.side{display:grid;gap:14px}
+.scard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);overflow:hidden}
+.scard>h3{font-size:13px;font-weight:600;margin:0;padding:12px 14px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:8px}
+.scard>h3 .tag{margin-left:auto;font-size:11px;font-weight:400;color:var(--ink-3)}
+.sbody{padding:14px}
+.orow{display:flex;align-items:center;gap:10px}
+.othumb{width:42px;height:42px;border-radius:var(--radius-sm);background:linear-gradient(135deg,#dfeae4,#cfe0d7);display:grid;place-items:center;font-size:18px}
+.oname{font-size:13px;font-weight:600;line-height:1.3}
+.ono{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:2px}
+.ostate{margin-top:10px;display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--green);background:var(--green-soft);border:1px solid var(--green-line);padding:3px 8px;border-radius:var(--radius-full)}
+.sacts{display:flex;gap:8px;margin-top:12px}
+.sacts button{flex:1;border:1px solid var(--line);background:var(--panel);border-radius:var(--radius-md);padding:7px 4px;font-size:12px;color:var(--ink-2)}
+.sacts button:hover{border-color:var(--teal-line);color:var(--teal);background:var(--teal-wash)}
+
+/* 退款进度条 */
+.steps{list-style:none;margin:0;padding:0}
+.steps li{display:flex;gap:10px;position:relative;padding-bottom:14px;color:var(--ink-3);font-size:12px}
+.steps li:not(:last-child)::before{content:'';position:absolute;left:8px;top:18px;bottom:0;width:1px;background:var(--line)}
+.steps .sn{width:17px;height:17px;border-radius:50%;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;font-size:10px;flex:none;z-index:1}
+.steps li.done .sn{background:var(--teal);border-color:var(--teal);color:#fff}
+.steps li.done{color:var(--ink)}
+.steps li.current .sn{border:2px solid var(--teal);color:var(--teal)}
+.steps li.current{color:var(--ink);font-weight:600}
+.steps .st{display:block;font-size:11px;color:var(--ink-3);font-weight:400;margin-top:2px}
+.notice{margin-top:4px;font-size:11px;color:var(--ink-3);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--radius-sm);padding:8px 10px;line-height:1.5}
+
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12px}
+.kv dt{color:var(--ink-3)}
+.kv dd{margin:0;text-align:right;font-family:var(--mono);color:var(--ink-2)}
+
+/* 空 / 权限态 */
+.empty{padding:48px 24px;text-align:center;color:var(--ink-3)}
+.empty .ic{width:46px;height:46px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:grid;place-items:center;margin:0 auto 12px;font-size:20px;color:var(--ink-3)}
+.empty h2{font-size:15px;color:var(--ink);margin:0 0 6px;font-weight:600}
+.empty p{font-size:13px;margin:0 0 16px;line-height:1.6}
+.empty .primary{background:var(--teal);color:#fff;border:none;border-radius:var(--radius-md);padding:9px 18px;font-size:13px}
+.gate{max-width:420px;margin:60px auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:28px;box-shadow:var(--shadow-2)}
+.gate h2{margin:0 0 6px;font-size:17px}
+.gate p{margin:0 0 18px;color:var(--ink-3);font-size:13px;line-height:1.6}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--ink-2);margin-bottom:5px}
+.field input{width:100%;border:1px solid var(--line);border-radius:var(--radius-md);padding:9px 11px;font:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+.gate .primary{width:100%;background:var(--teal);color:#fff;border:none;border-radius:var(--radius-md);padding:10px;font-size:14px;margin-top:4px}
+.err{color:var(--rose);font-size:12px;margin-top:10px}
+.errline{margin:0 0 14px;background:var(--rose-soft);border:1px solid var(--rose-line);color:var(--rose);border-radius:var(--radius-md);padding:10px 12px;font-size:13px}
+
+.foot{max-width:1180px;margin:0 auto;padding:0 20px 30px;font-size:11px;color:var(--ink-3);line-height:1.7}
+.foot b{color:var(--ink-2)}
+
+@media(max-width:900px){
+  .layout{grid-template-columns:1fr}
+  .side{grid-template-columns:1fr 1fr}
+  .thread{max-height:none}
+}
+@media(max-width:600px){
+  .wrap{padding:12px}
+  .side{grid-template-columns:1fr}
+  .top{padding:0 14px}
+  .tier{display:none}
+  .msg{max-width:96%}
+  .ctx-chip{font-size:11px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="logo">星</div>
+  <div class="shop"><b>星选生活旗舰店</b><span>店铺编号 T001 · 平台认证商家</span></div>
+  <div class="top-right">
+    <span class="tier" id="tierBadge">体验环境 · 数据不跨会话保留</span>
+    <span class="who"><span class="avatar">陈</span>陈女士</span>
+    <button class="linkbtn" type="button">退出</button>
+  </div>
+</header>
+
+<div class="demo-bar" role="group" aria-label="业务态切换（仅样张演示）">
+  <span class="lbl">样张业务态</span>
+  <button class="state-btn" data-state="normal" aria-pressed="true">正常回答</button>
+  <button class="state-btn" data-state="loading" aria-pressed="false">加载中</button>
+  <button class="state-btn" data-state="fallback" aria-pressed="false">降级转人工</button>
+  <button class="state-btn" data-state="empty" aria-pressed="false">空状态</button>
+  <button class="state-btn" data-state="gate" aria-pressed="false">未登录 / 权限</button>
+  <span class="demo-note">切换查看同一页面在真实业务下的不同状态</span>
+</div>
+
+<div class="wrap" id="mainView">
+  <div class="layout">
+    <!-- 会话主区 -->
+    <section class="card" aria-label="客服会话">
+      <div class="chat-head">
+        <h1>在线客服</h1>
+        <span class="sub">通常几分钟内回复</span>
+        <span class="ctx-chip" id="ctxChip">关联订单 <span class="mono">ORD-20261108-4821</span> <span class="x" title="移除上下文">×</span></span>
+      </div>
+
+      <div class="thread" id="thread">
+        <div class="msg user">
+          <div class="who2">我 · 14:02</div>
+          <span class="order-ref">关联订单 · ORD-20261108-4821 · 鲜活梭子蟹</span>
+          <div class="bubble">这只蟹签收的时候就死了，我拍了开箱视频。这种情况能赔吗？</div>
+        </div>
+
+        <div class="msg" id="answerMsg">
+          <div class="who2">客服 · 14:02</div>
+          <div class="bubble" id="answerBubble">可以申请的。鲜活类商品需要在签收后 6 小时内提交理赔，你的订单今天 10:24 签收，目前仍在受理时限内。
+
+请提供一段能看到面单订单号的连续开箱视频（15 秒左右即可），以及问题部位的单独照片。材料齐全后一般可以一次通过审核；如果缺重，还需要带包装称重并拍到电子秤读数。
+
+你已经在对话里带了这笔订单，我可以直接为它发起理赔——需要我现在提交吗？</div>
+
+          <details class="agent" open>
+            <summary><span class="dot"></span><span>处理过程</span><span class="meta">6 步 · 1.2 秒</span><span class="chev">›</span></summary>
+            <div class="agent-body">
+              <ol class="plan"><li>识别为生鲜理赔咨询，核对受理时限</li><li>读取该订单签收时间，判断是否在窗口内</li></ol>
+              <section class="phase"><header><span class="pt">理解需求</span><span class="ph">识别意图与政策</span></header>
+                <ol><li>判定意图：生鲜理赔（POLICY_FRESH）</li><li>命中规则：《生鲜理赔受理时限与举证要求》</li></ol></section>
+              <section class="phase"><header><span class="pt">调用系统</span><span class="ph">查订单 / 物流 / 办理</span></header>
+                <ol><li>查询订单 ORD-20261108-4821 签收时间</li><li>业务系统返回成功</li></ol></section>
+              <section class="phase"><header><span class="pt">生成回复</span><span class="ph">汇总结果与引用</span></header>
+                <ol><li>汇总结论并附政策依据 2 条</li></ol></section>
+              <details class="raw"><summary>查看原始步骤（工程信息）</summary></details>
+            </div>
+          </details>
+
+          <details class="cites" open>
+            <summary><span class="ct">依据 2 条规则</span><span class="cm">2 份文档 · 展开</span></summary>
+            <div class="cb">
+              <div class="cite"><h4>生鲜理赔受理时限与举证要求 · 平台级</h4>
+                <ul><li>受理时限的起算点 <span class="rid">fresh-01-claim-window#起算点</span></li>
+                    <li>举证材料的具体要求 <span class="rid">fresh-01-claim-window#举证材料</span></li></ul></div>
+              <div class="cite"><h4>活鲜死亡理赔的适用范围 · 平台级</h4>
+                <ul><li>活鲜死亡的判定与举证 <span class="rid">fresh-06-seafood-dead#判定</span></li></ul></div>
+              <p class="cite-foot">只列本次回答引用到的条款，不代表整份文档都已生效。</p>
+            </div>
+          </details>
+
+          <div class="rate"><span>这条回答有用吗？</span><button type="button">有用</button><button type="button">没用</button></div>
+
+          <p class="fallback" id="fallbackNote" hidden>已为你转接人工客服，工单号 <span class="mono">TKT-20261120-0137</span>。工单可在「我的工单」里查询进度。</p>
+        </div>
+      </div>
+
+      <div class="composer" id="composer">
+        <div class="box">
+          <label class="sr-only" for="q">输入你的问题</label>
+          <textarea id="q" rows="2" placeholder="描述你的问题，例如：这笔订单的理赔需要什么材料？"></textarea>
+          <div class="tools">
+            <span class="att">＋ 添加订单 / 图片</span>
+            <span class="att">关联当前订单</span>
+            <button class="send" type="button" id="sendBtn">发送</button>
+          </div>
+        </div>
+        <p class="hint">答案由店铺规则生成并附依据条款 · 涉及资金的操作需人工审核后生效</p>
+      </div>
+    </section>
+
+    <!-- 上下文感知侧栏 -->
+    <aside class="side" id="side">
+      <section class="scard">
+        <h3>本次涉及的订单 <span class="tag">来自对话上下文</span></h3>
+        <div class="sbody">
+          <div class="orow"><div class="othumb">🦀</div>
+            <div><div class="oname">鲜活梭子蟹 500g×2</div><div class="ono">ORD-20261108-4821</div></div></div>
+          <span class="ostate">订单已签收 · 11-20 10:24</span>
+          <div class="sacts"><button type="button">查物流</button><button type="button">申请售后</button><button type="button">看订单详情</button></div>
+        </div>
+      </section>
+
+      <section class="scard">
+        <h3>售后进度 <span class="tag">工单 TKT-20261120-0137</span></h3>
+        <div class="sbody">
+          <ol class="steps">
+            <li class="done"><span class="sn">✓</span><span>已受理<span class="st">今天 14:02 · 材料已提交</span></span></li>
+            <li class="current"><span class="sn">2</span><span>人工复核中<span class="st">预计 1 个工作日内处理</span></span></li>
+            <li><span class="sn">3</span><span>放行 / 驳回<span class="st">资金动作由人工确认后生效</span></span></li>
+          </ol>
+          <p class="notice">受理不等于已退款：订单已标记为退款中，资金尚未转出。放行后由支付渠道处理到账，本店无法承诺具体到账时间。</p>
+        </div>
+      </section>
+
+      <section class="scard">
+        <h3>会话信息</h3>
+        <div class="sbody">
+          <dl class="kv">
+            <dt>会话编号</dt><dd>cv-8f2a…e91c</dd>
+            <dt>买家</dt><dd>C001 · 陈女士</dd>
+            <dt>所属店铺</dt><dd>T001</dd>
+            <dt>知识版本</dt><dd>纪元 12</dd>
+          </dl>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<!-- 空状态 / 权限门 / 加载态，由切换条控制 -->
+<div class="wrap" id="emptyView" hidden>
+  <section class="card"><div class="empty">
+    <div class="ic">＋</div><h2>还没有进行中的售后</h2>
+    <p>你可以直接提问，或从订单详情里选择一笔订单发起售后。<br>发起后，进度会显示在这里。</p>
+    <button class="primary" type="button">从订单发起</button>
+  </div></section>
+</div>
+
+<div id="gateView" hidden>
+  <div class="gate">
+    <h2>登录后可查看你的订单与售后</h2>
+    <p>账号由店铺发放，与你的买家身份绑定。登录后可查看本店内的订单、工单与理赔进度。</p>
+    <div class="errline">你没有权限查看该买家的数据（403）。请用本人账号登录，或联系店铺客服核对身份。</div>
+    <div class="field"><label for="u">手机号或账号</label><input id="u" placeholder="138****4821"></div>
+    <div class="field"><label for="p">密码</label><input id="p" type="password" placeholder="请输入密码"></div>
+    <button class="primary" type="button">登录</button>
+    <p style="font-size:11px;margin-top:12px">体验环境不开放找回密码与注册；正式环境由店铺统一发放账号。</p>
+  </div>
+</div>
+
+<div class="foot" id="footNote">
+  <b>样张说明</b> · 工单号 / 订单号 / 会话号为界面示意值；规则 ID 取自仓库 <span class="mono">knowledge/fresh-01-claim-window.md</span> 的真实文件名与小节。
+  V1 相对现有买家页的改动：身份从登录令牌而非 URL 取得 · 侧栏改为上下文感知 · 演示入口下线 · 政策意图变成可见分类 · 数据留存按档位诚实标注。
+</div>
+
+<script>
+(function(){
+  var btns=[].slice.call(document.querySelectorAll('.state-btn'));
+  var views={main:document.getElementById('mainView'),empty:document.getElementById('emptyView'),gate:document.getElementById('gateView'),foot:document.getElementById('footNote')};
+  var thread=document.getElementById('thread');
+  var bubble=document.getElementById('answerBubble');
+  var agent=document.querySelector('.agent');
+  var cites=document.querySelector('.cites');
+  var rate=document.querySelector('.rate');
+  var fb=document.getElementById('fallbackNote');
+  var send=document.getElementById('sendBtn');
+  var q=document.getElementById('q');
+  var side=document.getElementById('side');
+  var full=bubble.textContent;
+  function reset(){
+    views.main.hidden=false;views.empty.hidden=true;views.gate.hidden=true;views.foot.hidden=false;
+    bubble.textContent=full;bubble.hidden=false;
+    agent.hidden=false;cites.hidden=false;rate.hidden=false;fb.hidden=true;
+    send.disabled=false;q.disabled=false;side.style.opacity='1';
+    document.getElementById('tierBadge').hidden=false;
+  }
+  btns.forEach(function(b){b.addEventListener('click',function(){
+    btns.forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});
+    var s=b.dataset.state;reset();
+    if(s==='loading'){
+      bubble.textContent='';bubble.hidden=false;
+      var i=0,txt='可以申请的。鲜活类商品需要在签收后 6 小时内提交理赔…';
+      agent.hidden=true;cites.hidden=true;rate.hidden=true;send.disabled=true;q.disabled=true;
+      var timer=setInterval(function(){bubble.textContent=txt.slice(0,++i)+'▍';if(i>=txt.length){clearInterval(timer);bubble.textContent=txt;send.disabled=false;q.disabled=false;}},45);
+    }else if(s==='fallback'){
+      agent.querySelector('.meta').textContent='4 步 · 0.8 秒';
+      fb.hidden=false;rate.hidden=true;
+    }else if(s==='empty'){
+      views.main.hidden=true;views.empty.hidden=false;
+    }else if(s==='gate'){
+      views.main.hidden=true;views.gate.hidden=false;views.foot.hidden=true;
+    }
+  })});
+})();
+</script>
+</body>
+</html>

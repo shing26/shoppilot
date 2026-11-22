@@ -2,7 +2,7 @@
 
 日期：2026-10-06
 状态：已接受
-关联：[ADR 0058](../adr/0058-self-reported-identity-retired.md)（自报身份退役，ops token 保留）、[ADR 0047](../adr/0047-refund-review-gate.md)（退款审核闸门）、[program-a-to-b-upgrade.md](../../.scratch/shoppilot-mvp/program-a-to-b-upgrade.md)（B3 入口）
+关联：[ADR 0058](0058-identity-hosting-role-guard-and-self-report-retirement.md)（自报身份退役，ops token 保留）、[ADR 0047](0047-refund-review-is-a-state-transition-gate.md)（退款审核闸门）、[program-a-to-b-upgrade.md](../../.scratch/shoppilot-mvp/program-a-to-b-upgrade.md)（B3 入口）
 
 ## 背景与触发
 

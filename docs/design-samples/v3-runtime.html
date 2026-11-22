@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>V3 · 可信运行时控制台（工程评审）</title>
+<style>
+:root{
+  --bg:#f4f5f7;--panel:#fff;--panel-2:#f9fafb;--ink:#101828;--ink-2:#475467;--ink-3:#667085;
+  --line:#e4e7ec;--line-2:#f0f1f3;--chrome:#101828;--chrome-2:#1d2939;--chrome-ink:#f9fafb;--chrome-muted:#98a2b3;--chrome-line:#344054;
+  --teal:#0e7a5f;--teal-ink:#0a5c47;--teal-soft:#eef8f4;--teal-line:#c3e3d6;--teal-line-2:#d4ebe1;--teal-wash:#f4faf7;--teal-wash-deep:#eaf5f0;
+  --amber:#b54708;--amber-ink:#93370d;--amber-soft:#fff7ed;--amber-line:#f5d5b0;
+  --rose:#b42318;--rose-soft:#fef3f2;--rose-line:#f4c7c3;
+  --green:#067647;--green-soft:#ecfdf3;--green-line:#b7e4c7;
+  --blue:#175cd3;--blue-soft:#eff8ff;--blue-line:#b2ddff;
+  --violet:#6941c6;--violet-soft:#f4f3ff;--violet-line:#e4d9ff;
+  --text-xs:12px;--text-sm:13px;--text-base:14px;--text-lg:16px;--text-xl:20px;
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;
+  --radius-sm:6px;--radius-md:8px;--radius-lg:10px;--radius-full:999px;
+  --shadow-1:0 1px 2px rgba(16,24,40,.05);--shadow-2:0 4px 12px rgba(16,24,40,.08);
+  --ring:0 0 0 3px rgba(14,122,95,.24);
+  --font:14px/1.55 "Segoe UI",system-ui,-apple-system,"Noto Sans SC",sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:var(--font)}
+button{font:inherit;cursor:pointer}
+.mono{font-family:var(--mono)}
+:focus-visible{outline:none;box-shadow:var(--ring)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+.app{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100vh}
+.side{background:var(--chrome);color:var(--chrome-ink);padding:18px 12px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:9px;padding:0 8px 16px;border-bottom:1px solid var(--chrome-line)}
+.brand .lg{width:28px;height:28px;border-radius:7px;background:var(--teal);display:grid;place-items:center;font-weight:700;color:#fff}
+.brand b{font-size:14px;font-weight:600}.brand small{display:block;font-size:10px;color:var(--chrome-muted);font-weight:400}
+.nav{display:grid;gap:2px;margin-top:14px}
+.nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-md);color:var(--chrome-muted);text-decoration:none;font-size:13px}
+.nav a:hover{background:var(--chrome-2);color:#fff}
+.nav a.on{background:var(--chrom-2,#1d2939);color:#fff;box-shadow:inset 3px 0 0 var(--teal)}
+.nav .sep{height:1px;background:var(--chrome-line);margin:12px 8px}
+.nav .cap{font-size:10px;color:var(--chrome-muted);padding:0 10px;margin:4px 0 2px;letter-spacing:.06em}
+.eng{margin-top:auto;border:1px solid var(--amber-line);background:rgba(181,71,8,.1);border-radius:var(--radius-md);padding:10px;font-size:11px;color:#f5d5b0;line-height:1.5}
+.eng b{color:#fff;font-size:12px;display:block;margin-bottom:3px}
+.eng a{color:#f5c98a;text-decoration:none}
+
+.main{min-width:0}
+.top{height:54px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 22px}
+.top h1{font-size:15px;font-weight:600;margin:0}
+.top .read{font-size:11px;color:var(--teal);border:1px solid var(--teal-line);background:var(--teal-soft);padding:3px 8px;border-radius:var(--radius-full)}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-2)}
+.iconbtn{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius-md);padding:5px 11px;font-size:12px;color:var(--ink-2)}
+
+.demo-bar{background:#fff;border-bottom:1px solid var(--line);padding:8px 22px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.demo-bar .lbl{font-size:11px;color:var(--ink-3);margin-right:4px}
+.state-btn{border:1px solid var(--line);background:var(--panel);color:var(--ink-2);border-radius:var(--radius-full);padding:4px 11px;font-size:12px}
+.state-btn[aria-pressed="true"]{background:var(--teal-soft);border-color:var(--teal-line);color:var(--teal-ink)}
+.demo-note{font-size:11px;color:var(--ink-3);margin-left:auto}
+
+.content{padding:18px 22px 36px}
+.scope{margin-bottom:16px;background:var(--blue-soft);border:1px solid var(--blue-line);border-radius:var(--radius-lg);padding:12px 14px;display:flex;gap:12px;align-items:flex-start}
+.scope .k{font-size:11px;color:var(--blue);border:1px solid var(--blue-line);background:#fff;border-radius:var(--radius-full);padding:2px 9px;white-space:nowrap;font-weight:600}
+.scope p{margin:0;font-size:12px;color:var(--ink-2);line-height:1.65}
+.scope b{color:var(--ink)}
+
+/* 口径标签：本版核心 */
+.cal{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--amber);border:1px solid var(--amber-line);background:var(--amber-soft);border-radius:var(--radius-full);padding:1px 7px;cursor:help;vertical-align:middle;position:relative}
+.cal:hover .cal-pop,.cal:focus-within .cal-pop{display:block}
+.cal-pop{display:none;position:absolute;left:0;top:calc(100% + 6px);width:260px;background:var(--chrome);color:var(--chrome-ink);border-radius:var(--radius-md);padding:10px 12px;font-size:11px;line-height:1.6;z-index:20;box-shadow:var(--shadow-2);font-weight:400;white-space:normal}
+.cal-pop b{color:#fff}
+
+/* 回放三栏 */
+.replay{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);overflow:hidden}
+.col>.h{padding:12px 14px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:8px}
+.col>.h h3{font-size:13px;font-weight:600;margin:0}
+.col>.h .m{margin-left:auto;font-size:11px;color:var(--ink-3)}
+.qbox{margin:14px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel-2);padding:12px 14px}
+.qbox .lbl{font-size:11px;color:var(--ink-3);margin-bottom:5px}
+.qbox .qt{font-size:14px;line-height:1.55}
+.meta-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px 16px;margin:0 14px 14px;font-size:12px}
+.meta-grid div{border-bottom:1px solid var(--line-2);padding-bottom:6px;display:flex;justify-content:space-between;gap:10px}
+.meta-grid dt{color:var(--ink-3)}
+.meta-grid dd{margin:0;font-family:var(--mono);color:var(--ink-2);text-align:right}
+.ans{margin:0 14px 14px;border:1px solid var(--line);border-radius:var(--radius-md);padding:12px 14px;font-size:14px;line-height:1.7;background:var(--panel)}
+.ans .lbl{font-size:11px;color:var(--ink-3);margin-bottom:6px}
+details.fold{margin:0 14px 12px;border:1px solid var(--line);border-radius:var(--radius-md);font-size:12px;background:var(--panel);overflow:hidden}
+details.fold summary{cursor:pointer;list-style:none;padding:9px 12px;display:flex;gap:8px;color:var(--ink-2)}
+details.fold summary::-webkit-details-marker{display:none}
+details.fold[open] summary{border-bottom:1px solid var(--line-2)}
+details.fold .fold-body{padding:11px 12px;display:grid;gap:9px}
+.cite h4{margin:0 0 4px;font-size:12px;color:var(--ink-3);font-family:var(--mono);font-weight:500}
+.cite ul{margin:0;padding-left:16px;color:var(--ink-2);display:grid;gap:3px}
+.cite .rid{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-left:6px}
+.cite-foot{margin:0;font-size:11px;color:var(--ink-3)}
+.cmds{display:grid;gap:7px}
+.cmd{display:flex;align-items:center;gap:8px;background:var(--chrome);color:#d0d5dd;border-radius:var(--radius-sm);padding:8px 10px;font-family:var(--mono);font-size:11px;overflow-x:auto;white-space:nowrap}
+.cmd .cp{margin-left:auto;border:1px solid var(--chrome-line);background:var(--chrome-2);color:#fff;border-radius:5px;padding:3px 8px;font-family:var(--font);font-size:10px;flex:none}
+
+/* 右栏：执行证据时间线 */
+.timeline{list-style:none;margin:0;padding:12px 14px;display:grid}
+.ev{display:grid;grid-template-columns:18px 1fr;gap:9px;padding-bottom:14px;position:relative}
+.ev:last-child{padding-bottom:0}
+.ev:not(:last-child)::before{content:'';position:absolute;left:8px;top:18px;bottom:0;width:1px;background:var(--line)}
+.ev .n{width:18px;height:18px;border-radius:50%;background:var(--teal-soft);border:1px solid var(--teal-line);color:var(--teal-ink);font-size:10px;display:grid;place-items:center;z-index:1;font-family:var(--mono)}
+.ev.warn .n{background:var(--amber-soft);border-color:var(--amber-line);color:var(--amber)}
+.ev.ok .n{background:var(--teal);border-color:var(--teal);color:#fff}
+.ev .et{font-size:12px;color:var(--ink);line-height:1.45}
+.ev .ed{font-size:11px;color:var(--ink-3);margin-top:2px;line-height:1.5}
+.ev code{font-family:var(--mono);font-size:10px;background:var(--panel-2);border:1px solid var(--line-2);border-radius:4px;padding:1px 4px;color:var(--ink-2)}
+.ev .link{color:var(--teal);text-decoration:none;font-size:11px;cursor:pointer}
+
+.pager{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--ink-3)}
+.pager .pg{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius-md);padding:5px 11px;font-size:12px;color:var(--ink-2)}
+.pager .play{background:var(--teal);color:#fff;border:none;border-radius:var(--radius-md);padding:6px 13px;font-size:12px}
+
+/* 证据卡 / 隔离反证 */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.evc{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);overflow:hidden}
+.evc .h{padding:12px 14px;border-bottom:1px solid var(--line-2);display:flex;gap:8px;align-items:center}
+.evc .h b{font-size:13px;font-weight:600}
+.verdict{margin-left:auto;font-size:10px;border-radius:var(--radius-full);padding:2px 8px;border:1px solid var(--green-line);background:var(--green-soft);color:var(--green)}
+.verdict.unmet{border-color:var(--amber-line);background:var(--amber-soft);color:var(--amber)}
+.evc .b{padding:13px 14px;font-size:12px;color:var(--ink-2);line-height:1.6}
+.evc .b .claim{color:var(--ink);font-weight:500;margin-bottom:7px}
+.evc .b .src{font-size:11px;color:var(--ink-3);margin-top:9px;padding-top:9px;border-top:1px dashed var(--line)}
+.evc .b .src code{font-family:var(--mono);font-size:10px}
+
+.audit{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.audit li{display:flex;gap:9px;font-size:12px;color:var(--ink-2);align-items:baseline}
+.audit .a-t{font-family:var(--mono);font-size:11px;color:var(--ink-3);white-space:nowrap}
+.verified{color:var(--green)}
+.selfreport{color:var(--amber)}
+
+.empty{padding:46px 20px;text-align:center;color:var(--ink-3)}
+.empty .ic{width:44px;height:44px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:grid;place-items:center;margin:0 auto 11px;font-size:19px}
+.empty h2{font-size:14px;color:var(--ink);margin:0 0 6px;font-weight:600}
+.empty p{font-size:13px;margin:0;line-height:1.7}
+.empty code{font-family:var(--mono);background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:11px}
+.gate{max-width:430px;margin:64px auto;background:var(--panel);border:1px solid var(--amber-line);border-radius:var(--radius-lg);padding:26px;box-shadow:var(--shadow-2)}
+.gate h2{margin:0 0 8px;font-size:16px}.gate p{margin:0 0 14px;font-size:13px;color:var(--ink-2);line-height:1.65}
+.gate .field{margin-bottom:10px}.gate label{display:block;font-size:12px;color:var(--ink-3);margin-bottom:4px}
+.gate input{width:100%;border:1px solid var(--line);border-radius:var(--radius-md);padding:8px 10px;font:inherit;font-size:13px}
+.gate .primary{background:var(--teal);color:#fff;border:none;border-radius:var(--radius-md);padding:9px 15px;font-size:13px}
+.gate .readnote{font-size:11px;color:var(--ink-3);margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+
+.foot{max-width:1200px;margin:0 auto;padding:0 22px 30px;font-size:11px;color:var(--ink-3);line-height:1.75}
+.foot b{color:var(--ink-2)}
+@media(max-width:1080px){.replay{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+@media(max-width:680px){.app{grid-template-columns:1fr}.side{height:auto;position:static}.nav{grid-template-columns:repeat(3,1fr)}.nav .sep,.nav .cap,.eng{display:none}.content{padding:14px}.meta-grid{grid-template-columns:1fr}.top-right .iconbtn{display:none}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="lg">S</div><div><b>ShopPilot</b><small>可信运行时控制台</small></div></div>
+    <nav class="nav" aria-label="主导航">
+      <a href="#">概览 · 一次回答的生命周期</a>
+      <a href="#" class="on">运行记录 / 回放</a>
+      <a href="#">证据中心</a>
+      <a href="#">质量观测</a>
+      <a href="#">知识纪元</a>
+      <div class="sep"></div>
+      <div class="cap">受控入口</div>
+      <a href="#">审计事件</a>
+      <a href="#">隔离反证</a>
+    </nav>
+    <div class="eng"><b>工程师模式 · 物理隔离</b>故障注入、缓存清理、纪元推进、演示复位在此独立入口，需运维凭证；不混入证据与概览。<a href="#">进入 →</a></div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <h1>单轮回答回放</h1>
+      <span class="read">只读观测面 · 无需身份</span>
+      <div class="top-right">
+        <button class="iconbtn" type="button">复制复现命令</button>
+        <button class="iconbtn" type="button">导出证据包</button>
+      </div>
+    </header>
+
+    <div class="demo-bar" role="group" aria-label="业务态切换（仅样张演示）">
+      <span class="lbl">样张业务态</span>
+      <button class="state-btn" data-state="normal" aria-pressed="true">完整回放</button>
+      <button class="state-btn" data-state="unmet" aria-pressed="false">含未达成分辨</button>
+      <button class="state-btn" data-state="empty" aria-pressed="false">空状态</button>
+      <button class="state-btn" data-state="gate" aria-pressed="false">工程师模式权限</button>
+      <span class="demo-note">悬停任意「口径」标签查看数据来源与边界</span>
+    </div>
+
+    <div class="content" id="content">
+      <div class="scope">
+        <span class="k">数据口径</span>
+        <p>本页所有指标来自<b>本机活体 + JVM 测试 + 合成压测</b>，不是真实用户或生产流量。模型侧为本地 3B / 模板演示档；工具准确率仍有 1 条未达标样本。点击各处 <span class="cal">口径<span class="cal-pop"><b>口径说明：</b>数值可复跑，但生成侧是固定延迟 MockLLM / 意图模板，不等于真实模型质量。禁语：不说"生产级 SaaS 开箱即用"、不说"比大厂更智能"。</span></span> 标签查看具体来源。</p>
+      </div>
+
+      <div class="replay">
+        <div class="col">
+          <div class="h"><h3>问题与回答</h3><span class="m">轮次 3 / 会话 cv-8f2a…e91c</span></div>
+          <div class="qbox"><div class="lbl">买家输入 · 14:02:11 · 网页渠道 · 租户 T001 / 买家 C001</div>
+            <div class="qt">这只蟹签收的时候就死了，我拍了开箱视频，这种情况能赔吗？</div></div>
+          <div class="meta-grid">
+            <div><dt>判定意图</dt><dd>POLICY_FRESH</dd></div>
+            <div><dt>缓存</dt><dd>L1 未命中 · L2 命中</dd></div>
+            <div><dt>计划步数</dt><dd>2 / 上限 2</dd></div>
+            <div><dt>知识纪元</dt><dd>12</dd></div>
+            <div><dt>首字 / 总耗时</dt><dd>416 ms / 1.2 s <span class="cal">口径<span class="cal-pop"><b>sidecar 口径：</b>未命中 TTFT 416.9ms 为本机压测达成值（round 记录）；此处为演示轮次示意。不是线上 P99。</span></span></dd></div>
+            <div><dt>降级</dt><dd>无</dd></div>
+          </div>
+          <div class="ans"><div class="lbl">回答正文</div>
+可以申请的。鲜活类商品需在签收后 6 小时内提交理赔，你的订单今天 10:24 签收，仍在受理时限内。请提供能看到面单订单号的连续开箱视频（约 15 秒）及问题部位单独照片。材料齐全后一般可一次通过审核。</div>
+
+          <details class="fold" open><summary><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--teal)"></span><b>依据条款 · 2 条</b><span class="m" style="margin-left:auto;color:var(--ink-3);font-size:11px">可展开至规则块</span></summary>
+            <div class="fold-body">
+              <div class="cite"><h4>fresh-01-claim-window.md · 平台级 · 生效 2026-01-01</h4>
+                <ul><li>受理时限的起算点 <span class="rid">#受理时限的起算点</span></li>
+                    <li>举证材料的具体要求 <span class="rid">#举证材料的具体要求</span></li></ul></div>
+              <div class="cite"><h4>fresh-06-seafood-dead.md · 平台级</h4>
+                <ul><li>活鲜死亡的判定与举证 <span class="rid">fresh-06-seafood-dead</span></li></ul></div>
+              <p class="cite-foot">引用随缓存条目保存；政策变更推进纪元后，旧纪元答案整体作废。</p>
+            </div>
+          </details>
+
+          <details class="fold"><summary><b>复现命令</b><span class="m" style="margin-left:auto;color:var(--ink-3);font-size:11px">3 条</span></summary>
+            <div class="fold-body cmds">
+              <div class="cmd">bash ./mvnw -B -ntp verify <button class="cp" type="button">复制</button></div>
+              <div class="cmd">pwsh -File scripts/verify-eval.ps1 <button class="cp" type="button">复制</button></div>
+              <div class="cmd">pwsh -File scripts/verify-emotion.ps1 <button class="cp" type="button">复制</button></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="col">
+          <div class="h"><h3>执行证据</h3><span class="m">8 帧 · 可逐步</span></div>
+          <ol class="timeline" id="evList">
+            <li class="ev ok"><span class="n">1</span><div><div class="et">意图判定</div><div class="ed"><code>status</code> POLICY_FRESH · 动作优先规则未触发 <a class="link">看规则</a></div></div></li>
+            <li class="ev"><span class="n">2</span><div><div class="et">缓存准入</div><div class="ed"><code>meta</code> L1 未命中 → L2 相似度命中 <a class="link">看键构造</a></div></div></li>
+            <li class="ev"><span class="n">3</span><div><div class="et">检索规则块</div><div class="ed"><code>retrieval</code> 命中 2 条 <code class="mono">fresh-01/06</code> <a class="link">看语料</a></div></div></li>
+            <li class="ev"><span class="n">4</span><div><div class="et">工具执行</div><div class="ed"><code>tool_result</code> 订单签收时间查询 · 成功 <a class="link">看 schema</a></div></div></li>
+            <li class="ev"><span class="n">5</span><div><div class="et">生成与引用</div><div class="ed"><code>token</code> 流式下发 · 附引用 2 条</div></div></li>
+            <li class="ev ok"><span class="n">6</span><div><div class="et">收口</div><div class="ed"><code>done</code> 无降级 · 写回资格通过 <a class="link">看七条否决</a></div></div></li>
+          </ol>
+          <div class="pager"><button class="play" type="button" id="playBtn">逐步回放</button><button class="pg" type="button">上一步</button><button class="pg" type="button">下一步</button><span>帧 <b id="frameNo">6</b>/6</span></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <section class="evc">
+          <div class="h"><b>隔离反证 · 跨租户读取</b><span class="verdict">已验证</span></div>
+          <div class="b">
+            <div class="claim">命题：买家身份只从已验签令牌取得；客户端传入的租户头被忽略并告警。</div>
+            <div>用 C001（T001）的令牌请求 C014（T002）的订单详情 → 返回 <span class="mono">404</span>，不返回对方数据。归属谓词由 Hibernate resolver 自动拼接。</div>
+            <div class="src">证据：<code>AuthFilter.java:71-100</code> · <code>docs/EVIDENCE.md</code> · <code class="cal">本机活体<span class="cal-pop"><b>边界：</b>干净克隆可复现，异机未验；单实例环境验证过 singleflight，跨实例未验。</span></code></div>
+          </div>
+        </section>
+        <section class="evc">
+          <div class="h"><b>资金动作 · 不可抵赖</b><span class="verdict">已验证</span></div>
+          <div class="b">
+            <div class="claim">命题：退款放行/驳回的责任人必须是已验签账号，运维凭证不可用于资金动作。</div>
+            <ul class="audit">
+              <li><span class="a-t">13:47:02</span><span>林敏 <span class="verified">✓ 已验签</span> 放行退款 <span class="mono">ORD-20261108-4821</span></span></li>
+              <li><span class="a-t">13:41:19</span><span>系统 受理退款，订单冻结，资金未动</span></li>
+            </ul>
+            <div class="src">证据：<code>RefundReviewController.java:62-64</code> · 审计事件 <code>event_id</code> 幂等 <span class="cal">口径<span class="cal-pop"><b>边界：</b>"放行"止于 PROCESSING；无真实支付出账，到账由支付渠道处理。</span></span></div>
+          </div>
+        </section>
+        <section class="evc">
+          <div class="h"><b>评测 · 任务级判据</b><span class="verdict" id="evalVerdict">179 / 180</span></div>
+          <div class="b">
+            <div class="claim">命题：工具调用准确率按任务级判据评定，失分须引对偶矛盾才算真错。</div>
+            <div id="evalBody">180 条 gold 中 179 条通过；失败样本 <span class="mono">ACT-ORD-14</span> 无对偶矛盾可引，认定为真错——<b>唯一未达成项</b>，不隐藏。</div>
+            <div class="src">证据：<code>eval/results/</code> · <code>scripts/verify_eval_judge.py</code> <span class="cal">口径<span class="cal-pop"><b>口径：</b>gold 与语料为 LLM 生成后人工校对的合成数据；判据固化在脚本，非口头手感。</span></span></div>
+          </div>
+        </section>
+        <section class="evc">
+          <div class="h"><b>质量观测 · 降级与 Handoff</b><span class="verdict">已验证</span></div>
+          <div class="b">
+            <div class="claim">命题：降级出口是枚举的集合，主动转人工不算降级；Handoff 拒绝有原因分布。</div>
+            <div>降级率、Handoff allowed/blocked、决策耗时、摩擦模式、工具风险均为真实采集。<span class="cal">口径<span class="cal-pop"><b>关键边界：</b><code>scope=process-local-cumulative</code> —— 网关重启即归零，不是持久化历史，也不是生产 SLA。不得当真实流量数据对外承诺。</span></span></div>
+            <div class="src">证据：<code>QualitySidecarService.java:54-90</code> · <code>/quality/report</code></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="empty" id="emptyView" hidden>
+        <div class="ic">▤</div><h2>尚无运行记录</h2>
+        <p>运行一次验收脚本或复现命令后，这里会出现可回放的轮次。<br>
+        例如：<code>pwsh -File scripts/verify-eval.ps1</code></p>
+      </div>
+
+      <div class="gate" id="gateView" hidden>
+        <h2>此区域需运维凭证</h2>
+        <p>工程师模式用于验证运行时行为（故障注入、缓存清理、纪元推进、演示复位），不属于产品能力，也不计入坐席功能。</p>
+        <div class="field"><label>运维凭证</label><input type="password" placeholder="运维令牌"></div>
+        <button class="primary" type="button">进入工程师模式</button>
+        <p class="readnote">只读观测面（本页其余部分）不需要身份；只有改变运行时状态的动作才需要凭证。</p>
+      </div>
+    </div>
+
+    <div class="foot">
+      <b>样张说明</b> · 轮次 ID / 订单号为界面示意值；规则块 ID、类名与行号、179/180、416ms、<span class="mono">process-local-cumulative</span> 等均取自仓库 <span class="mono">docs/EVIDENCE.md</span>、<span class="mono">docs/STATUS.md</span> 与源码。
+      V3 相对现有调试台的改动：SSE 执行帧从"运维回执"升级为可跳证据的回放时间线 · 口径标签前移（数据来源/边界可见） · 未达成项显式露出 · 隔离反证与不可抵赖成为一等页面 · 工程师模式物理隔离。措辞遵守路线 A 禁语。
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var btns=[].slice.call(document.querySelectorAll('.state-btn'));
+  var content=document.getElementById('content'),empty=document.getElementById('emptyView'),gate=document.getElementById('gateView');
+  var evc=document.querySelectorAll('.evc');
+  function reset(){content.hidden=false;empty.hidden=true;gate.hidden=true;
+    evc[2].querySelector('.verdict').textContent='179 / 180';
+    evc[2].querySelector('.verdict').className='verdict';
+    document.getElementById('evalBody').innerHTML='180 条 gold 中 179 条通过；失败样本 <span class="mono">ACT-ORD-14</span> 无对偶矛盾可引，认定为真错——<b>唯一未达成项</b>，不隐藏。';}
+  btns.forEach(function(b){b.addEventListener('click',function(){
+    btns.forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});
+    var s=b.dataset.state;reset();
+    if(s==='unmet'){
+      var v=evc[2].querySelector('.verdict');v.textContent='179 / 180 · 未达成';
+      v.className='verdict unmet';
+      document.getElementById('evalBody').innerHTML='<b>未达成项（红点）：</b>ACT-ORD-14，工具调用准确率 99.4%。本页不把未达成项抹成绿——可复跑失败样本与判据。';
+    }else if(s==='empty'){content.hidden=true;empty.hidden=false;}
+    else if(s==='gate'){content.hidden=true;gate.hidden=false;}
+  })});
+  document.getElementById('playBtn').addEventListener('click',function(){
+    var items=[].slice.call(document.querySelectorAll('#evList .ev'));
+    var no=document.getElementById('frameNo');var i=0;no.textContent='1';
+    items.forEach(function(x){x.style.opacity='.35'});items[0].style.opacity='1';
+    var t=setInterval(function(){i++;if(i>=items.length){clearInterval(t);return;}
+      items.forEach(function(x){x.style.opacity='.35'});items[i].style.opacity='1';no.textContent=String(i+1);},400);
+  });
+  [].slice.call(document.querySelectorAll('.cp')).forEach(function(b){
+    b.addEventListener('click',function(){var old=b.textContent;b.textContent='已复制';setTimeout(function(){b.textContent=old;},900);});
+  });
+})();
+</script>
+</body>
+</html>

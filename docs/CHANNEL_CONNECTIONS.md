@@ -12,7 +12,7 @@
     SHOPPILOT_IM_FEISHU_TENANT=T001
     SHOPPILOT_IM_FEISHU_CUSTOMER=C001
 
-文件格式参考 [channels.example.json](config/channels.example.json)：
+文件格式参考 [channels.example.json](../config/channels.example.json)：
 
     {
       "feishu": {

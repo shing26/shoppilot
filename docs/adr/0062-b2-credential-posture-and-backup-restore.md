@@ -2,7 +2,7 @@
 
 日期：2026-10-06
 状态：已接受
-关联：[ADR 0029](0029-bind-address-gated-credential-fail-fast.md)（绑定地址门控）、[ADR 0061](0061-b1-persistence-postgres-profile.md)（B1，§3 留给 B2 的两笔）、[program-a-to-b-upgrade.md](../../.scratch/shoppilot-mvp/program-a-to-b-upgrade.md)（B2 入口）
+关联：[ADR 0029](0029-dev-defaults-legality-decided-by-bind-address.md)（绑定地址门控）、[ADR 0061](0061-b1-persistence-postgres-profile.md)（B1，§3 留给 B2 的两笔）、[program-a-to-b-upgrade.md](../../.scratch/shoppilot-mvp/program-a-to-b-upgrade.md)（B2 入口）
 
 ## 背景与触发
 

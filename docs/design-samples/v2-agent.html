@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>V2 · 售后服务台（坐席 / 运营）</title>
+<style>
+:root{
+  --bg:#f4f5f7;--panel:#fff;--panel-2:#f9fafb;--ink:#101828;--ink-2:#475467;--ink-3:#667085;
+  --line:#e4e7ec;--line-2:#f0f1f3;--chrome:#101828;--chrome-2:#1d2939;--chrome-ink:#f9fafb;--chrome-muted:#98a2b3;--chrome-line:#344054;
+  --teal:#0e7a5f;--teal-ink:#0a5c47;--teal-soft:#eef8f4;--teal-line:#c3e3d6;--teal-line-2:#d4ebe1;--teal-wash:#f4faf7;--teal-wash-deep:#eaf5f0;
+  --amber:#b54708;--amber-ink:#93370d;--amber-soft:#fff7ed;--amber-line:#f5d5b0;
+  --rose:#b42318;--rose-soft:#fef3f2;--rose-line:#f4c7c3;
+  --green:#067647;--green-soft:#ecfdf3;--green-line:#b7e4c7;
+  --violet:#6941c6;--violet-soft:#f4f3ff;--violet-line:#e4d9ff;
+  --text-xs:12px;--text-sm:13px;--text-base:14px;--text-lg:16px;--text-xl:20px;
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;
+  --radius-sm:6px;--radius-md:8px;--radius-lg:10px;--radius-full:999px;
+  --shadow-1:0 1px 2px rgba(16,24,40,.05);--shadow-2:0 4px 12px rgba(16,24,40,.08);
+  --ring:0 0 0 3px rgba(14,122,95,.24);
+  --font:14px/1.55 "Segoe UI",system-ui,-apple-system,"Noto Sans SC",sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:var(--font)}
+button{font:inherit;cursor:pointer}
+.mono{font-family:var(--mono)}
+:focus-visible{outline:none;box-shadow:var(--ring)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+.app{display:grid;grid-template-columns:224px minmax(0,1fr);min-height:100vh}
+/* 角色化侧栏：员工只见与自己相关的模块，管理员多两格；工程师模式物理隔离 */
+.side{background:var(--chrome);color:var(--chrome-ink);padding:18px 12px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:9px;padding:0 8px 18px;border-bottom:1px solid var(--chrome-line)}
+.brand .lg{width:28px;height:28px;border-radius:7px;background:var(--teal);display:grid;place-items:center;font-weight:700;color:#fff}
+.brand b{font-size:14px;font-weight:600}
+.brand small{display:block;font-size:10px;color:var(--chrome-muted);font-weight:400}
+.nav{display:grid;gap:2px;margin-top:14px}
+.nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-md);color:var(--chrome-muted);text-decoration:none;font-size:13px}
+.nav a:hover{background:var(--chrome-2);color:#fff}
+.nav a.on{background:var(--teal);color:#fff}
+.nav a .badge{margin-left:auto;background:var(--rose);color:#fff;border-radius:var(--radius-full);font-size:10px;min-width:18px;text-align:center;padding:1px 5px}
+.nav a.on .badge{background:rgba(255,255,255,.28)}
+.nav .sep{height:1px;background:var(--chrome-line);margin:12px 8px}
+.nav .cap{font-size:10px;color:var(--chrome-muted);padding:0 10px;margin:6px 0 2px;text-transform:uppercase;letter-spacing:.06em}
+.eng{margin-top:auto;border:1px dashed var(--chrome-line);border-radius:var(--radius-md);padding:10px;font-size:11px;color:var(--chrome-muted);line-height:1.5}
+.eng b{color:var(--chrome-ink);font-size:12px;display:block;margin-bottom:3px}
+.eng a{color:var(--amber);text-decoration:none}
+
+.main{min-width:0}
+.top{height:54px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 22px}
+.top h1{font-size:15px;font-weight:600;margin:0}
+.top .crumbs{font-size:12px;color:var(--ink-3)}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--ink-2)}
+.who{display:flex;align-items:center;gap:7px}
+.av{width:26px;height:26px;border-radius:50%;background:var(--chrome);color:#fff;display:grid;place-items:center;font-size:11px}
+.role{font-size:11px;border:1px solid var(--violet-line);background:var(--violet-soft);color:var(--violet);padding:2px 8px;border-radius:var(--radius-full)}
+.iconbtn{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius-md);padding:5px 10px;font-size:12px;color:var(--ink-2)}
+
+.demo-bar{background:#fff;border-bottom:1px solid var(--line);padding:8px 22px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.demo-bar .lbl{font-size:11px;color:var(--ink-3);margin-right:4px}
+.state-btn{border:1px solid var(--line);background:var(--panel);color:var(--ink-2);border-radius:var(--radius-full);padding:4px 11px;font-size:12px}
+.state-btn[aria-pressed="true"]{background:var(--teal-soft);border-color:var(--teal-line);color:var(--teal-ink)}
+.demo-note{font-size:11px;color:var(--ink-3);margin-left:auto}
+
+.content{padding:18px 22px 36px}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:13px 15px;box-shadow:var(--shadow-1)}
+.kpi .n{font-size:var(--text-xl);font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:11px;color:var(--ink-3);margin-top:4px}
+.kpi.hot .n{color:var(--rose)}
+.kpi.money .n{color:var(--amber)}
+
+.workbar{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:12px 14px;margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;box-shadow:var(--shadow-1)}
+.workbar .f{border:1px solid var(--line);border-radius:var(--radius-md);padding:6px 9px;font-size:12px;color:var(--ink-2);background:var(--panel);min-width:96px}
+.workbar .search{flex:1;min-width:180px;border:1px solid var(--line);border-radius:var(--radius-md);padding:7px 10px;font:inherit;font-size:13px;background:var(--panel);color:var(--ink)}
+.workbar .primary{margin-left:auto;background:var(--teal);color:#fff;border:none;border-radius:var(--radius-md);padding:7px 14px;font-size:13px}
+.workbar .meta{font-size:11px;color:var(--ink-3);width:100%}
+
+.board{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:14px;align-items:start}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-1)}
+.list .hd{padding:10px 13px;border-bottom:1px solid var(--line-2);font-size:12px;color:var(--ink-3);display:flex;justify-content:space-between}
+.tk{padding:12px 13px;border-bottom:1px solid var(--line-2);cursor:pointer;display:grid;gap:6px}
+.tk:last-child{border-bottom:none}
+.tk:hover{background:var(--panel-2)}
+.tk.on{background:var(--teal-wash);box-shadow:inset 3px 0 0 var(--teal)}
+.tk .r1{display:flex;align-items:center;gap:7px}
+.pri{width:7px;height:7px;border-radius:50%;flex:none}
+.pri.urgent{background:var(--rose)}.pri.money{background:var(--amber)}.pri.normal{background:var(--ink-3)}
+.chip{font-size:10px;border:1px solid var(--line);border-radius:var(--radius-full);padding:1px 7px;color:var(--ink-2);background:var(--panel)}
+.chip.src{color:var(--violet);border-color:var(--violet-line);background:var(--violet-soft)}
+.chip.sla{color:var(--rose);border-color:var(--rose-line);background:var(--rose-soft)}
+.tk .id{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-left:auto}
+.tk .q{font-size:13px;color:var(--ink);line-height:1.45;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk .r2{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-3)}
+.tk .r2 .who{margin-left:auto}
+
+.detail{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);overflow:hidden}
+.detail .dh{padding:14px 16px;border-bottom:1px solid var(--line-2);display:flex;align-items:flex-start;gap:10px}
+.detail .dh h2{font-size:15px;margin:0 0 4px;font-weight:600}
+.detail .dh .sub{font-size:11px;color:var(--ink-3);font-family:var(--mono)}
+.detail .dh .status{margin-left:auto;font-size:11px;border-radius:var(--radius-full);padding:3px 9px;border:1px solid var(--amber-line);background:var(--amber-soft);color:var(--amber-ink)}
+.detail .body{padding:16px;display:grid;gap:16px}
+.blk h3{font-size:12px;color:var(--ink-3);margin:0 0 8px;text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.quote{background:var(--panel-2);border:1px solid var(--line-2);border-left:3px solid var(--teal);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 18px;font-size:12px}
+.kv div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line-2);padding-bottom:6px}
+.kv dt{color:var(--ink-3)}.kv dd{margin:0;font-family:var(--mono);color:var(--ink-2)}
+.tl{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.tl li{display:flex;gap:10px;font-size:12px;color:var(--ink-2);padding-bottom:12px;position:relative}
+.tl li:not(:last-child)::before{content:'';position:absolute;left:5px;top:13px;bottom:0;width:1px;background:var(--line)}
+.tl .d{width:11px;height:11px;border-radius:50%;border:2px solid var(--teal);background:var(--panel);flex:none;margin-top:2px;z-index:1}
+.tl li.now .d{background:var(--teal)}
+.tl .t{color:var(--ink-3);font-family:var(--mono);font-size:11px;margin-left:auto;white-space:nowrap}
+.actor{margin-top:2px;font-size:11px;color:var(--ink-3)}
+.actor b{color:var(--ink-2);font-family:var(--mono)}
+.actor .verified{color:var(--green)}
+.acts{border-top:1px solid var(--line-2);padding:14px 16px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.acts .primary{background:var(--teal);color:#fff;border:none;border-radius:var(--radius-md);padding:8px 16px;font-size:13px}
+.acts .ghost{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius-md);padding:8px 14px;font-size:13px;color:var(--ink-2)}
+.acts .warnbtn{border:1px solid var(--rose-line);background:var(--rose-soft);color:var(--rose);border-radius:var(--radius-md);padding:8px 14px;font-size:13px}
+.acts .tip{font-size:11px;color:var(--ink-3);margin-left:auto}
+
+.empty{padding:52px 20px;text-align:center;color:var(--ink-3)}
+.empty .ic{width:44px;height:44px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:grid;place-items:center;margin:0 auto 12px;font-size:19px}
+.empty h2{font-size:14px;color:var(--ink);margin:0 0 6px;font-weight:600}
+.empty p{font-size:13px;margin:0;line-height:1.6}
+.errline{margin:0 0 14px;background:var(--rose-soft);border:1px solid var(--rose-line);color:var(--rose);border-radius:var(--radius-md);padding:10px 12px;font-size:13px}
+.loading{padding:40px;text-align:center;color:var(--ink-3);font-size:13px}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--teal-line);border-top-color:var(--teal);border-radius:50%;vertical-align:-2px;margin-right:7px;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+.gate{max-width:400px;margin:70px auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:28px;box-shadow:var(--shadow-2)}
+.gate h2{margin:0 0 6px;font-size:17px}.gate p{margin:0 0 18px;color:var(--ink-3);font-size:13px;line-height:1.6}
+.field{margin-bottom:12px}.field label{display:block;font-size:12px;color:var(--ink-2);margin-bottom:5px}
+.field input{width:100%;border:1px solid var(--line);border-radius:var(--radius-md);padding:9px 11px;font:inherit;font-size:14px;background:var(--panel);color:var(--ink)}
+.gate .primary{width:100%;background:var(--teal);color:#fff;border:none;border-radius:var(--radius-md);padding:10px;font-size:14px;margin-top:4px}
+
+.foot{max-width:1200px;margin:0 auto;padding:0 22px 30px;font-size:11px;color:var(--ink-3);line-height:1.7}
+.foot b{color:var(--ink-2)}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}.board{grid-template-columns:1fr}}
+@media(max-width:700px){.app{grid-template-columns:1fr}.side{height:auto;position:static}.nav{grid-template-columns:repeat(3,1fr)}.nav .sep,.nav .cap,.eng{display:none}.kpis{grid-template-columns:repeat(2,1fr)}.content{padding:14px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="lg">S</div><div><b>ShopPilot</b><small>售后服务台</small></div></div>
+    <nav class="nav" aria-label="主导航">
+      <a href="#">工作台首页</a>
+      <a href="#" class="on">工单队列 <span class="badge">7</span></a>
+      <a href="#">退款审核 <span class="badge">2</span></a>
+      <a href="#">渠道会话</a>
+      <a href="#">知识飞轮 <span class="badge">3</span></a>
+      <a href="#">质量看板</a>
+      <div class="sep"></div>
+      <div class="cap">管理 · 仅管理员可见</div>
+      <a href="#">租户与账号</a>
+      <a href="#">渠道配置</a>
+    </nav>
+    <div class="eng"><b>工程师模式</b>故障注入、缓存、知识纪元等运行时操作已移出日常界面，需运维凭证进入，且不计入坐席功能。<a href="#">单独入口 →</a></div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <h1>工单队列</h1><span class="crumbs">售后 / 工单</span>
+      <div class="top-right">
+        <button class="iconbtn" type="button" id="refreshBtn">刷新队列</button>
+        <span class="who"><span class="av">林</span>林敏</span>
+        <span class="role">坐席 · AGENT</span>
+      </div>
+    </header>
+
+    <div class="demo-bar" role="group" aria-label="业务态切换（仅样张演示）">
+      <span class="lbl">样张业务态</span>
+      <button class="state-btn" data-state="normal" aria-pressed="true">正常处理</button>
+      <button class="state-btn" data-state="conflict" aria-pressed="false">领取冲突 409</button>
+      <button class="state-btn" data-state="empty" aria-pressed="false">空队列</button>
+      <button class="state-btn" data-state="loading" aria-pressed="false">加载中</button>
+      <button class="state-btn" data-state="gate" aria-pressed="false">权限不足 403</button>
+      <span class="demo-note">角色切换：管理员可见侧栏「管理」两项，坐席不可见</span>
+    </div>
+
+    <div class="content" id="content">
+      <div class="kpis">
+        <div class="kpi"><div class="n">7</div><div class="l">当前队列</div></div>
+        <div class="kpi hot"><div class="n">2</div><div class="l">待处理（含情绪升级）</div></div>
+        <div class="kpi"><div class="n">3</div><div class="l">处理中</div></div>
+        <div class="kpi"><div class="n">1</div><div class="l">已超时标记</div></div>
+        <div class="kpi money"><div class="n">2</div><div class="l">待审退款</div></div>
+      </div>
+
+      <div class="workbar">
+        <select class="f" aria-label="队列"><option>默认队列</option><option>资金审核</option><option>生鲜专线</option></select>
+        <select class="f" aria-label="来源"><option>全部来源</option><option>降级转人工</option><option>点踩复核</option></select>
+        <select class="f" aria-label="优先级"><option>全部优先级</option><option>紧急·情绪</option><option>资金</option></select>
+        <input class="search" placeholder="搜索工单号、买家或问题关键词">
+        <button class="primary" type="button">筛选</button>
+        <span class="meta">共 7 张 · 按优先级排序（紧急情绪 › 资金 › 普通）· SLA 只做超时标记，不承诺解决时限</span>
+      </div>
+
+      <p class="errline" id="conflictMsg" hidden>这张工单刚被同事领取了（409）。列表已刷新，请选择其他工单。</p>
+
+      <div class="board" id="board">
+        <div class="list">
+          <div class="hd"><span>工单列表</span><span>7 张</span></div>
+          <div class="tk on" data-ticket="1">
+            <div class="r1"><span class="pri urgent"></span><span class="chip src">降级·情绪</span><span class="chip sla">已超时标记</span><span class="id">TKT-20261120-0137</span></div>
+            <div class="q">等了三天还没处理，我要投诉</div>
+            <div class="r2"><span>星选生活旗舰店</span><span>·</span><span>C001 陈女士</span><span class="who">14:02</span></div>
+          </div>
+          <div class="tk" data-ticket="2">
+            <div class="r1"><span class="pri money"></span><span class="chip src">退款审核</span><span class="id">TKT-20261120-0136</span></div>
+            <div class="q">鲜活梭子蟹签收即死亡，申请退款</div>
+            <div class="r2"><span>星选生活旗舰店</span><span>·</span><span>C001 陈女士</span><span class="who">13:48</span></div>
+          </div>
+          <div class="tk" data-ticket="3">
+            <div class="r1"><span class="pri normal"></span><span class="chip src">点踩复核</span><span class="id">TKT-20261120-0135</span></div>
+            <div class="q">回答里说的理赔时限和我看到的不一样</div>
+            <div class="r2"><span>鲜果驿站</span><span>·</span><span>C014 王先生</span><span class="who">13:21</span></div>
+          </div>
+          <div class="tk" data-ticket="4">
+            <div class="r1"><span class="pri normal"></span><span class="chip src">降级转人工</span><span class="id">TKT-20261120-0134</span></div>
+            <div class="q">改地址时一直提示状态不允许</div>
+            <div class="r2"><span>云裳服饰旗舰店</span><span>·</span><span>C027 赵女士</span><span class="who">12:57</span></div>
+          </div>
+        </div>
+
+        <section class="detail" id="detail">
+          <div class="dh">
+            <div><h2 id="dTitle">等了三天还没处理，我要投诉</h2><div class="sub" id="dId">TKT-20261120-0137 · 来源：降级转人工（情绪升级）</div></div>
+            <span class="status" id="dStatus">待领取 · OPEN</span>
+          </div>
+          <div class="body">
+            <div class="blk"><h3>买家原始诉求</h3>
+              <div class="quote">"订单 11-08 下的，水产死了三天了没人管，我要投诉，赶紧给我退款。" · 网页渠道 · 买家 C001</div>
+            </div>
+            <div class="blk"><h3>工单信息</h3>
+              <dl class="kv">
+                <div><dt>优先级</dt><dd>high · 紧急情绪</dd></div>
+                <div><dt>队列</dt><dd>DEFAULT</dd></div>
+                <div><dt>SLA 截止</dt><dd>14:32（已标记）</dd></div>
+                <div><dt>关联订单</dt><dd>ORD-20261108-4821</dd></div>
+              </dl>
+            </div>
+            <div class="blk"><h3>生命周期</h3>
+              <ul class="tl">
+                <li class="now"><span class="d"></span><span>工单创建（降级：情绪升级）</span><span class="t">14:02</span></li>
+                <li><span class="d"></span><span>尚未领取，等待坐席接手</span><span class="t">—</span></li>
+              </ul>
+              <div class="actor">领取后，本单责任人将记录为已验签账号 · 当前无自报操作人</div>
+            </div>
+          </div>
+          <div class="acts">
+            <button class="primary" type="button" id="claimBtn">领取工单</button>
+            <button class="ghost" type="button" disabled>释放</button>
+            <button class="ghost" type="button" disabled>处理完成</button>
+            <button class="ghost" type="button" disabled>去复核这条反馈</button>
+            <span class="tip">需先领取才能处理 · 领取采用 pull 模型，不做自动派单</span>
+          </div>
+        </section>
+      </div>
+
+      <div class="empty" id="emptyView" hidden>
+        <div class="ic">✓</div><h2>这一档队列里没有待处理工单</h2>
+        <p>切换筛选条件或队列再看；有新工单时列表会自动更新。</p>
+      </div>
+      <div class="loading" id="loadingView" hidden><span class="spin"></span>正在读取队列…</div>
+    </div>
+
+    <div class="gate" id="gateView" hidden>
+      <h2>这个账号没有坐席权限（403）</h2>
+      <p>工单队列仅对坐席与管理员开放。请用店铺发放的坐席账号登录；买家账号无法进入工作台。</p>
+      <div class="field"><label>店铺编号</label><input value="T001"></div>
+      <div class="field"><label>坐席账号</label><input placeholder="员工工号"></div>
+      <div class="field"><label>密码</label><input type="password" placeholder="请输入密码"></div>
+      <button class="primary" type="button">登录工作台</button>
+    </div>
+
+    <div class="foot">
+      <b>样张说明</b> · 工单号 / 订单号 / 时间为界面示意值；优先级枚举（high/money/normal）、来源四分类、SLA「只标记不承诺」、领取 pull 模型、责任人须为已验签账号，均取自仓库 ADR 0055 / 0063 与 <span class="mono">CONTEXT.md</span>。
+      V2 相对现有坐席台的改动：故障注入/令牌/复位移入独立工程师模式 · 角色塑造侧栏 · 领取冲突与权限态显式设计 · 责任人不可抵赖可见化 · 知识飞轮的「发布≠生效」在各页贯彻。
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var btns=[].slice.call(document.querySelectorAll('.state-btn'));
+  var content=document.getElementById('content'),gate=document.getElementById('gateView');
+  var board=document.getElementById('board'),empty=document.getElementById('emptyView'),loading=document.getElementById('loadingView');
+  var conflict=document.getElementById('conflictMsg'),claim=document.getElementById('claimBtn');
+  var title=document.getElementById('dTitle'),idEl=document.getElementById('dId'),status=document.getElementById('dStatus');
+  var data={'1':['等了三天还没处理，我要投诉','TKT-20261120-0137 · 来源：降级转人工（情绪升级）'],
+    '2':['鲜活梭子蟹签收即死亡，申请退款','TKT-20261120-0136 · 来源：退款受理（待人工放行）'],
+    '3':['回答里说的理赔时限和我看到的不一样','TKT-20261120-0135 · 来源：点踩反馈复核'],
+    '4':['改地址时一直提示状态不允许','TKT-20261120-0134 · 来源：降级转人工']};
+  function reset(){
+    content.hidden=false;gate.hidden=true;board.hidden=false;empty.hidden=true;loading.hidden=true;
+    conflict.hidden=true;claim.textContent='领取工单';claim.disabled=false;
+    status.textContent='待领取 · OPEN';
+  }
+  [].slice.call(document.querySelectorAll('.tk')).forEach(function(t){
+    t.addEventListener('click',function(){
+      [].slice.call(document.querySelectorAll('.tk')).forEach(function(x){x.classList.remove('on')});
+      t.classList.add('on');
+      var d=data[t.dataset.ticket];
+      if(d){title.textContent=d[0];idEl.textContent=d[1];}
+    });
+  });
+  claim.addEventListener('click',function(){
+    claim.textContent='已领取 · 处理中';claim.disabled=true;
+    status.textContent='处理中 · ASSIGNED';
+    document.querySelectorAll('.acts .ghost')[0].disabled=false;
+    document.querySelectorAll('.acts .ghost')[1].disabled=false;
+  });
+  document.getElementById('refreshBtn').addEventListener('click',function(){
+    loading.hidden=false;board.hidden=true;
+    setTimeout(function(){loading.hidden=true;board.hidden=false;},700);
+  });
+  btns.forEach(function(b){b.addEventListener('click',function(){
+    btns.forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});
+    var s=b.dataset.state;reset();
+    if(s==='conflict'){conflict.hidden=false;board.hidden=true;empty.hidden=false;
+      empty.querySelector('h2').textContent='列表已刷新，请重新选择';
+      empty.querySelector('p').textContent='你要领取的工单已被同事接手。';}
+    else if(s==='empty'){board.hidden=true;empty.hidden=false;
+      empty.querySelector('h2').textContent='这一档队列里没有待处理工单';
+      empty.querySelector('p').textContent='切换筛选条件或队列再看；有新工单时列表会自动更新。';}
+    else if(s==='loading'){board.hidden=true;loading.hidden=false;}
+    else if(s==='gate'){content.hidden=true;gate.hidden=false;}
+  })});
+})();
+</script>
+</body>
+</html>

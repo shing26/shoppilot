@@ -50,7 +50,7 @@ Spec: [round44-spec-product-surface.md](../../.scratch/shoppilot-mvp/round44-spe
      只是渲染得太浅。
 3. **知识飞轮可视化复用 round43 已开的代理口，不新增后端**。工作台新增「知识」视图，
    呈现 复核完成 → 附稿 → 发布 → 「需重跑 ingest 才生效」的完整链路。
-   这使 [round43 spec](../.scratch/shoppilot-mvp/round43-spec-knowledge-backflow.md) §4 登记项 1
+   这使 [round43 spec](../../.scratch/shoppilot-mvp/round43-spec-knowledge-backflow.md) §4 登记项 1
    「工作台修订编辑器」的触发条件（"修订面进入产品演示清单"）**成立并转执行**——登记项不是
    永久豁免，触发到了就要在 spec 与 ADR 里各写一句，不能让它悬空。
 4. **产物入库纪律收紧**。前端构建产物提交在 `static/buyer|workspace`，CI 用

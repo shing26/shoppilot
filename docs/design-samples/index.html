@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShopPilot 前端重新设计 · 三版样张对比</title>
+<style>
+:root{
+  --bg:#f4f5f7;--panel:#fff;--panel-2:#f9fafb;--ink:#101828;--ink-2:#475467;--ink-3:#667085;
+  --line:#e4e7ec;--line-2:#f0f1f3;--teal:#0e7a5f;--teal-ink:#0a5c47;--teal-soft:#eef8f4;--teal-line:#c3e3d6;--teal-wash:#f4faf7;
+  --amber:#b54708;--amber-ink:#93370d;--amber-soft:#fff7ed;--amber-line:#f5d5b0;
+  --rose:#b42318;--rose-soft:#fef3f2;--rose-line:#f4c7c3;
+  --radius-md:8px;--radius-lg:10px;--radius-full:999px;--shadow-1:0 1px 2px rgba(16,24,40,.05);--shadow-2:0 8px 24px rgba(16,24,40,.1);
+  --font:14px/1.6 "Segoe UI",system-ui,-apple-system,"Noto Sans SC",sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:var(--font)}
+a{color:inherit}
+.hero{background:#101828;color:#f9fafb;padding:30px 28px 26px}
+.hero .tag{font-size:11px;color:var(--teal-line);border:1px solid #344054;border-radius:var(--radius-full);padding:3px 10px}
+.hero h1{font-size:22px;margin:12px 0 8px;font-weight:600}
+.hero p{margin:0;color:#98a2b3;font-size:13px;max-width:720px;line-height:1.7}
+.hero .warn{margin-top:14px;border-left:2px solid var(--amber);padding-left:12px;color:#f5d5b0;font-size:12px;line-height:1.7}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 22px 60px}
+.intro{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:22px;box-shadow:var(--shadow-1)}
+.intro h2{font-size:14px;margin:0 0 8px;font-weight:600}
+.intro ol{margin:0;padding-left:20px;color:var(--ink-2);font-size:13px;line-height:1.8}
+.intro code{font-family:var(--mono);font-size:11px;background:var(--panel-2);border:1px solid var(--line-2);padding:1px 5px;border-radius:4px}
+
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);overflow:hidden;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s}
+.card:hover{transform:translateY(-2px);box-shadow:var(--shadow-2)}
+.card .top{padding:18px 18px 16px;border-bottom:1px solid var(--line-2)}
+.card .num{font-family:var(--mono);font-size:11px;color:var(--ink-3);letter-spacing:.08em}
+.card h3{font-size:16px;margin:6px 0 8px;font-weight:600}
+.card .who{font-size:12px;color:var(--ink-3)}
+.card .who b{color:var(--ink-2);font-weight:600}
+.card.v3 .num{color:var(--teal)}
+.rec{display:inline-block;margin-top:10px;font-size:11px;color:var(--teal-ink);background:var(--teal-soft);border:1px solid var(--teal-line);border-radius:var(--radius-full);padding:3px 10px}
+.card .body{padding:16px 18px;flex:1}
+.row{display:flex;gap:10px;font-size:12px;margin-bottom:10px;line-height:1.55}
+.row .k{color:var(--ink-3);flex:none;width:64px}
+.row .v{color:var(--ink-2)}
+.row .v b{color:var(--ink);font-weight:600}
+.loop{margin:12px 0;padding:9px 11px;background:var(--teal-wash);border:1px solid var(--teal-line);border-radius:var(--radius-md);font-family:var(--mono);font-size:12px;color:var(--teal-ink);text-align:center}
+.states{display:flex;gap:5px;flex-wrap:wrap}
+.states span{font-size:10px;color:var(--ink-2);border:1px solid var(--line);border-radius:var(--radius-full);padding:2px 8px}
+.card .foot{padding:14px 18px;border-top:1px solid var(--line-2);display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.open{background:var(--ink);color:#fff;border:none;border-radius:var(--radius-md);padding:9px 15px;font-size:13px;text-decoration:none}
+.open:hover{background:#1d2939}
+.v3 .open{background:var(--teal)}
+.v3 .open:hover{background:var(--teal-ink)}
+.footnote{font-size:11px;color:var(--ink-3)}
+
+.matrix{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;margin-top:28px;box-shadow:var(--shadow-1)}
+.matrix th,.matrix td{border-bottom:1px solid var(--line-2);padding:11px 14px;text-align:left;font-size:12px;vertical-align:top}
+.matrix th{color:var(--ink-3);font-weight:600;background:var(--panel-2);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.matrix td:first-child{color:var(--ink);font-weight:600;width:150px}
+.matrix .yes{color:var(--teal);font-weight:600}
+.matrix .no{color:var(--rose)}
+.matrix .mid{color:var(--amber)}
+.matrix h2{font-size:15px;margin:0 0 12px}
+.section-t{margin:30px 0 12px;font-size:15px;font-weight:600}
+@media(max-width:900px){.cards{grid-template-columns:1fr}.hero{padding:24px 18px}.hero h1{font-size:19px}}
+</style>
+</head>
+<body>
+<div class="hero">
+  <span class="tag">前端重设计 · 三版高保真样张</span>
+  <h1>ShopPilot：从演示台到真实产品，三条不同的路</h1>
+  <p>三版不是配色差异，而是<b>为谁做、解决什么问题</b>的差异。每版只做 1 页核心界面，均带业务态切换（正常 / 加载 / 空 / 错误 / 权限），可直接点击体验。样张为纯静态文件，不连后端，所有 ID 为示意值。</p>
+  <div class="warn">重要前提 ①：项目已在 <code>docs/PRODUCT_POSITIONING_DECISION.md</code> 锁定路线 A（可信 Agent 运行时），并明令停止"为看起来像产品而加视觉话术"。V3 与该定位一致、零后端改动；V1/V2 若要真落地，需先解决数据留存与真实身份两个后端前置条件。<br>重要前提 ②：当前工作树里 <code>round 51 / 票 219</code> 已完成一次 UI-only 的产品化改造（买家端 + 坐席台，未提交），V1/V2 样张是在那次改造之上的<b>方向探索</b>，不是"从零重设计"；三版是设计取舍对比，落地时须与 219 的既有改动合并考虑，不要直接覆盖。</div>
+</div>
+
+<div class="wrap">
+  <div class="intro">
+    <h2>怎么看这三份样张</h2>
+    <ol>
+      <li>每页顶部有一条<b>业务态切换条</b>，点不同状态看同一页面在真实业务下的表现——这是判断"是否只是 demo"的关键。</li>
+      <li>样张内容尽量取仓库真实资产：规则块 ID 来自 <code>knowledge/</code>，Agent 三段文案来自 <code>format.ts</code>，指标与未达成项来自 <code>docs/EVIDENCE.md</code> / <code>STATUS.md</code>。</li>
+      <li>三版共用 <code>frontend-shared/src/tokens.css</code> 的设计令牌，不引入新配色，差异在信息架构与内容组织。</li>
+    </ol>
+  </div>
+
+  <div class="cards">
+    <article class="card">
+      <div class="top"><div class="num">V1</div><h3>店铺客服中心</h3><div class="who">面向 <b>买家</b> · 真实售后</div></div>
+      <div class="body">
+        <div class="row"><span class="k">核心</span><span class="v">带订单上下文提问、引用溯源、退款进度、工单可查</span></div>
+        <div class="row"><span class="k">主页面</span><span class="v">客服会话（对话 + 上下文感知侧栏）</span></div>
+        <div class="row"><span class="k">可信度</span><span class="v"><b>依据条款</b> + 受理≠退款的诚实提示</span></div>
+        <div class="row"><span class="k">效率</span><span class="v">订单预置、少填槽位、就地发起售后</span></div>
+        <div class="loop">问 → 办 → 查 → 评</div>
+        <div class="states"><span>正常回答</span><span>加载中</span><span>降级转人工</span><span>空状态</span><span>未登录/权限</span></div>
+      </div>
+      <div class="foot"><a class="open" href="v1-buyer.html" target="_blank">打开样张</a><span class="footnote">前置：真身份 + 数据留存</span></div>
+    </article>
+
+    <article class="card">
+      <div class="top"><div class="num">V2</div><h3>售后服务台</h3><div class="who">面向 <b>坐席 / 运营</b> · 工作台</div></div>
+      <div class="body">
+        <div class="row"><span class="k">核心</span><span class="v">优先级队列、pull 领取、资金动作留责、知识飞轮</span></div>
+        <div class="row"><span class="k">主页面</span><span class="v">工单队列（筛选 + 列表 + 详情三段）</span></div>
+        <div class="row"><span class="k">可信度</span><span class="v"><b>责任人已验签</b> + 审计事件 + SLA 只标记</span></div>
+        <div class="row"><span class="k">效率</span><span class="v">优先级排序、冲突 409 提示、一键筛选</span></div>
+        <div class="loop">领 → 办 → 审 → 结</div>
+        <div class="states"><span>正常处理</span><span>领取冲突 409</span><span>空队列</span><span>加载中</span><span>权限 403</span></div>
+      </div>
+      <div class="foot"><a class="open" href="v2-agent.html" target="_blank">打开样张</a><span class="footnote">前置：角色菜单 + 工程师模式隔离</span></div>
+    </article>
+
+    <article class="card v3">
+      <div class="top"><div class="num">V3 · 推荐</div><h3>可信运行时控制台</h3><div class="who">面向 <b>工程评审 / 技术决策者</b></div><span class="rec">与路线 A 一致</span></div>
+      <div class="body">
+        <div class="row"><span class="k">核心</span><span class="v">单轮回答回放、证据中心、隔离反证、口径标签</span></div>
+        <div class="row"><span class="k">主页面</span><span class="v">回放（问题/回答 + 执行证据时间线）</span></div>
+        <div class="row"><span class="k">可信度</span><span class="v"><b>可复跑命令</b> + 数据来源/边界明示 + 未达成项不隐藏</span></div>
+        <div class="row"><span class="k">效率</span><span class="v">逐步回放、一键跳证据、复制复现命令</span></div>
+        <div class="loop">问 → 证 → 复跑</div>
+        <div class="states"><span>完整回放</span><span>未达成分辨</span><span>空状态</span><span>工程师模式权限</span></div>
+      </div>
+      <div class="foot"><a class="open" href="v3-runtime.html" target="_blank">打开样张</a><span class="footnote">零后端改动 · 遵守禁语</span></div>
+    </article>
+  </div>
+
+  <h2 class="section-t">三版对比矩阵</h2>
+  <table class="matrix">
+    <thead><tr><th>维度</th><th>V1 店铺客服中心</th><th>V2 售后服务台</th><th>V3 可信运行时控制台</th></tr></thead>
+    <tbody>
+      <tr><td>目标用户</td><td>买家</td><td>坐席 / 运营</td><td>工程评审 / 技术决策者</td></tr>
+      <tr><td>业务闭环</td><td>问 → 办 → 查 → 评</td><td>领 → 办 → 审 → 结</td><td>问 → 证 → 复跑</td></tr>
+      <tr><td>去 demo 关键动作</td><td>身份从 URL 迁到令牌；演示入口下线</td><td>故障注入隔离；角色塑造菜单</td><td>明示口径而非隐藏演示态</td></tr>
+      <tr><td>数据留存</td><td class="no">默认档不跨会话，需 postgres 档</td><td class="mid">工单跨重启可查不承诺</td><td class="yes">证据以文件落盘，可复跑</td></tr>
+      <tr><td>后端/部署配合</td><td class="no">高（真身份 + 持久档）</td><td class="mid">中（角色菜单 + 独立路由）</td><td class="yes">低（纯前端重组现有资产）</td></tr>
+      <tr><td>与路线 A 关系</td><td class="no">违反停止清单（继续加客服功能）</td><td class="no">违反（继续扩视图）</td><td class="yes">完全一致（把证据做成产品）</td></tr>
+      <tr><td>当前阶段推荐</td><td>暂缓，等共创伙伴</td><td>暂缓，等真实团队</td><td class="yes">首选</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="section-t">共同诊断：当前页面的 demo 感来自哪里</h2>
+  <table class="matrix">
+    <thead><tr><th>问题</th><th>证据</th><th>三版如何处理</th></tr></thead>
+    <tbody>
+      <tr><td>入口自白</td><td>index.html "本机演示栈" / "它是工程师的工具，不是产品首页"</td><td>V1/V2 下线演示入口；V3 把"给工程师"变成正面定位</td></tr>
+      <tr><td>演示身份并列为真入口</td><td>一键体验坐席/买家、mock-token、预填问题</td><td>V1/V2 走真登录；V3 只读免登录但动作需凭证</td></tr>
+      <tr><td>工程内核铺在面上</td><td>运维令牌、JWT 明文、故障注入、复位演示单</td><td>三版一致：移入独立工程师模式，物理隔离</td></tr>
+      <tr><td>身份从 URL 来</td><td>买家端 ?store=T00x + 固定游客 C001</td><td>V1 改为令牌决定；V2/V3 本就不依赖</td></tr>
+      <tr><td>数据在会话内蒸发</td><td>默认档 H2 内存、报表 process-local-cumulative</td><td>V1/V2 按档位诚实标注；V3 证据落文件可复跑</td></tr>
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

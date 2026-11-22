@@ -51,3 +51,24 @@ config/channels.json
 # 票 212（ADR 0085）：embedding sidecar 的本机模型权重目录，568 MB 绝不进 git；
 # 镜像构建期经 hf-mirror 下载进镜像层，或挂卷 .scratch/spike-sidecar/model
 shoppilot-embedding-sidecar/models/
+
+# 票 226：本机临时证据与一次性探针。正式证据仍写入 docs/、eval/results/、loadtest/results/。
+# 历史 tracker（.scratch/shoppilot-mvp/**）是受控目录，不在忽略范围内。
+.claude/
+.dsh/
+.venv-spike/
+.scratch/*.png
+.scratch/*.py
+.scratch/*.ps1
+.scratch/*.sh
+.scratch/*.mjs
+.scratch/*.txt
+.scratch/repro-tenant-bleed-result/
+.scratch/spike-sidecar/
+.scratch/unslop-221/
+.scratch/unslop-223/
+.scratch/ux-probe/shots/
+.scratch/shoppilot-mvp/issues/verifier-*.md
+
+# 票 226：未采用的本机 hero 设计稿；README 不引用它，避免克隆后图片缺失
+docs/readme-hero.svg
