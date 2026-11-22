@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shoppilot.gateway.web.ApiErrorWriter;
 import com.shoppilot.tool.identity.AccountView;
+import com.shoppilot.tool.identity.RefreshSession;
 import com.shoppilot.tool.identity.UserRole;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,12 +44,20 @@ class AccountControllerTest {
         return MockMvcBuilders.standaloneSetup(new AccountController(identity, jwtService, errors)).build();
     }
 
+    /** 登录面现在会开 refresh 族；桩成「一张可用的刷新令牌」，否则登录响应没有 Cookie 可发。 */
+    private void stubSession(AccountView account) {
+        when(identity.openSession(eq(account.tenantId()), any(AccountView.class)))
+                .thenAnswer(call -> new IdentityClient.RefreshAttempt(200,
+                        new RefreshSession("v1." + account.tenantId() + ".fixture", account), null, null));
+    }
+
     @Test
     @DisplayName("登录成功：令牌里带角色与账号 id，回读得到")
     void loginIssuesRoleBearingToken() throws Exception {
         when(identity.authenticate(eq("T001"), eq("agent1"), eq("agent-pass-1")))
                 .thenReturn(new IdentityClient.Attempt(200,
                         new AccountView("U0001", "T001", "agent1", UserRole.AGENT, null, "坐席小林"), null));
+        stubSession(new AccountView("U0001", "T001", "agent1", UserRole.AGENT, null, "坐席小林"));
 
         JsonNode body = login("{\"tenantId\":\"T001\",\"username\":\"agent1\",\"password\":\"agent-pass-1\"}");
 
@@ -70,6 +79,7 @@ class AccountControllerTest {
         when(identity.authenticate(eq("T001"), eq("bob"), anyString()))
                 .thenReturn(new IdentityClient.Attempt(200,
                         new AccountView("U0002", "T002", "bob", UserRole.BUYER, "C001", "鲍勃"), null));
+        stubSession(new AccountView("U0002", "T002", "bob", UserRole.BUYER, "C001", "鲍勃"));
 
         JsonNode body = login("{\"tenantId\":\"T001\",\"username\":\"bob\",\"password\":\"whatever-1\"}");
 
@@ -121,6 +131,8 @@ class AccountControllerTest {
     @DisplayName("/auth/me 回读出角色与账号")
     void meEchoesTheTokenSubject() throws Exception {
         String token = jwtService.issue("T001", "C001", UserRole.AGENT, "U0001");
+        when(identity.account(eq("T001"), eq("U0001"))).thenReturn(new IdentityClient.Attempt(200,
+                new AccountView("U0001", "T001", "agent1", UserRole.AGENT, "C001", "坐席小林"), null));
 
         MvcResult result = mvc().perform(get("/auth/me").header("Authorization", "Bearer " + token)).andReturn();
 
@@ -139,9 +151,11 @@ class AccountControllerTest {
         when(identity.authenticate(eq("T001"), eq("admin1"), anyString()))
                 .thenReturn(new IdentityClient.Attempt(200,
                         new AccountView("U0009", "T001", "admin1", UserRole.ADMIN, null, "管理员"), null));
+        stubSession(new AccountView("U0009", "T001", "admin1", UserRole.ADMIN, null, "管理员"));
         when(identity.authenticate(eq("T001"), eq("buyer1"), anyString()))
                 .thenReturn(new IdentityClient.Attempt(200,
                         new AccountView("U0010", "T001", "buyer1", UserRole.BUYER, "C001", "买家"), null));
+        stubSession(new AccountView("U0010", "T001", "buyer1", UserRole.BUYER, "C001", "买家"));
 
         JsonNode admin = login("{\"tenantId\":\"T001\",\"username\":\"admin1\",\"password\":\"x\"}");
         assertThat(admin.path("capabilities").toString()).isEqualTo(

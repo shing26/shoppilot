@@ -33,6 +33,8 @@ export type Capability =
 /** 登录态。票据 83 起它只有一件东西：登录换来的令牌。 */
 export interface Session {
   token: string
+  /** 账号主键；改密端点用它从令牌取账号，页面不传。旧存档可能没有。 */
+  accountId?: string | null
   username: string
   role: string
   tenantId: string

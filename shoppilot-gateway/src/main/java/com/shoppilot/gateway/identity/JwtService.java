@@ -5,6 +5,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -24,25 +25,32 @@ import java.util.Optional;
 @Component
 public class JwtService {
 
-    private static final Duration TTL = Duration.ofMinutes(30);
-
     private final SecretKey key;
+    private final Duration ttl;
 
-    public JwtService(@Value("${shoppilot.jwt-secret}") String secret) {
+    @Autowired
+    public JwtService(@Value("${shoppilot.jwt-secret}") String secret,
+                      @Value("${shoppilot.identity.access-ttl:15m}") Duration ttl) {
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < 32) {
             throw new IllegalStateException("SHOPPILOT_JWT_SECRET 至少需要 32 字节");
         }
         this.key = Keys.hmacShaKeyFor(bytes);
+        this.ttl = ttl;
+    }
+
+    /** 测试缝：与生产默认 TTL 同值；生产装配仍走两参构造，TTL 由配置决定。 */
+    public JwtService(String secret) {
+        this(secret, Duration.ofMinutes(15));
     }
 
     public String issue(String tenantId, String customerId) {
-        return issue(tenantId, customerId, TTL);
+        return issue(tenantId, customerId, ttl);
     }
 
     /** 测试缝：签发一个指定有效期的 token，用于验证过期即拒。生产路径只用无参版本。 */
     public String issue(String tenantId, String customerId, Duration ttl) {
-        return build(tenantId, customerId, null, null, null, ttl);
+        return build(tenantId, customerId, null, null, null, 0, ttl);
     }
 
     /**
@@ -52,23 +60,35 @@ public class JwtService {
      * 「一个没有角色的买家」，那正好是 mock 令牌的老形状，于是调试台与那批验收脚本一行都不用改。
      */
     public String issue(String tenantId, String customerId, UserRole role, String accountId) {
-        return build(tenantId, customerId, role, accountId, null, TTL);
+        return build(tenantId, customerId, role, accountId, null, 0, ttl);
     }
 
     /** 真登录用这一支：额外带上用户名，供工单 assignee 与审计 actor 署名（票 83）。 */
     public String issue(String tenantId, String customerId, UserRole role, String accountId, String username) {
-        return build(tenantId, customerId, role, accountId, username, TTL);
+        return build(tenantId, customerId, role, accountId, username, 0, ttl);
+    }
+
+    /**
+     * 账号登录的完整签发（round56 票 224 / ADR 0086）：额外带口令版本 {@code pv}。
+     *
+     * <p>版本不参与本服务的验签判定，它是「改密后旧令牌最迟在 TTL 内失效」的记账依据；
+     * 真正即时生效的是 refresh 撤销。
+     */
+    public String issueAccess(String tenantId, String customerId, UserRole role, String accountId,
+                              String username, int passwordVersion) {
+        return build(tenantId, customerId, role, accountId, username, passwordVersion, ttl);
     }
 
     private String build(String tenantId, String customerId, UserRole role, String accountId, String username,
-                         Duration ttl) {
+                         int passwordVersion, Duration lifetime) {
         Instant now = Instant.now();
         var builder = Jwts.builder()
                 .subject(customerId)
                 .claim("tid", tenantId)
                 .claim("cid", customerId)
+                .claim("typ", "access")
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plus(ttl)))
+                .expiration(Date.from(now.plus(lifetime)))
                 .signWith(key);
         // 角色与账号只在真登录时写进去：mock 令牌与历史令牌没有这两个 claim，
         // verify() 那侧按「没有就是 BUYER」解释，两边都必须这么处理，否则老令牌会验不过。
@@ -81,12 +101,21 @@ public class JwtService {
         if (username != null && !username.isBlank()) {
             builder.claim("usr", username);
         }
+        if (passwordVersion > 0) {
+            builder.claim("pv", passwordVersion);
+        }
         return builder.compact();
     }
 
     public Optional<TenantContext.Identity> verify(String token, String conversationId) {
         try {
             Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+            // refresh 令牌不是 JWT，这里防的是「将来有人把别的类型塞进来」：
+            // 带 typ 且不是 access 的一律不认，缺 typ 的旧令牌照旧放行（兼容 mock 令牌）。
+            String type = claims.get("typ", String.class);
+            if (type != null && !"access".equals(type)) {
+                return Optional.empty();
+            }
             String tenantId = claims.get("tid", String.class);
             String customerId = claims.get("cid", String.class);
             if (tenantId == null || tenantId.isBlank()) {
@@ -120,6 +149,6 @@ public class JwtService {
     }
 
     public Duration ttl() {
-        return TTL;
+        return ttl;
     }
 }

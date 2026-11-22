@@ -18,6 +18,8 @@ export interface RequestOptions {
   body?: unknown
   /** 原样发送的请求体（目前只有 SSE 之外的少数调用用得上）。 */
   raw?: string
+  /** 是否允许 401 时尝试刷新（登录/刷新端点自身必须传 false，否则会递归）。 */
+  allowRefresh?: boolean
 }
 
 /**
@@ -27,9 +29,50 @@ export interface RequestOptions {
  * 那不是「会话失效」，不该把用户留在登录页却提示登录已失效。
  */
 let unauthorizedHandler: (() => void) | null = null
+let refreshHandler: (() => Promise<string | null>) | null = null
+let refreshing: Promise<string | null> | null = null
+/**
+ * 同一轮刷新失败只登出一次。
+ *
+ * <p>并发 401 共用同一个刷新 Promise，刷新失败时每个调用点都会走到「登出」这一步；
+ * 不去重就会调用两次 `onUnauthorized`，两端各自再清一次会话、再弹一次登录门。
+ * 下一次刷新成功时复位，让真正的新一轮失效还能登出。
+ */
+let unauthorizedNotified = false
 
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler
+}
+
+/**
+ * 注册 401 单飞刷新（round56 票 224 / ADR 0086）。
+ *
+ * <p>返回新的 access token；失败返回 null。**全局只允许一个刷新在飞**：
+ * 两个并发 401 共用同一个 Promise，避免同一张 refresh 被用两次而触发复用撤销。
+ * 刷新失败时只调用一次 `unauthorizedHandler`，不形成 401 循环。
+ */
+export function setRefreshHandler(handler: (() => Promise<string | null>) | null): void {
+  refreshHandler = handler
+  unauthorizedNotified = false
+}
+
+/** 当前是否有刷新在飞；测试与调试用。 */
+export function isRefreshing(): boolean {
+  return refreshing !== null
+}
+
+async function refreshOnce(): Promise<string | null> {
+  if (!refreshHandler) return null
+  refreshing ??= refreshHandler()
+    .then((token) => {
+      if (token) unauthorizedNotified = false
+      return token
+    })
+    .catch(() => null)
+    .finally(() => {
+      refreshing = null
+    })
+  return refreshing
 }
 
 /**
@@ -42,6 +85,29 @@ export function notifyUnauthorized(): void {
 }
 
 export async function request<T>(url: string, opts: RequestOptions = {}): Promise<ApiResult<T>> {
+  const first = await send<T>(url, opts)
+  if (first.status !== 401 || !opts.token?.trim() || opts.allowRefresh === false) {
+    if (first.status === 401 && opts.token?.trim()) notifyUnauthorized()
+    return first
+  }
+  const renewed = await refreshOnce()
+  if (!renewed) {
+    notifyUnauthorizedOnce()
+    return first
+  }
+  // 只重试原请求一次；第二次 401 直接登出，不再次刷新。
+  const second = await send<T>(url, { ...opts, token: renewed, allowRefresh: false })
+  if (second.status === 401) notifyUnauthorized()
+  return second
+}
+
+function notifyUnauthorizedOnce(): void {
+  if (unauthorizedNotified) return
+  unauthorizedNotified = true
+  notifyUnauthorized()
+}
+
+async function send<T>(url: string, opts: RequestOptions): Promise<ApiResult<T>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const authenticated = Boolean(opts.token?.trim())
   if (authenticated) headers.Authorization = `Bearer ${opts.token!.trim()}`
@@ -57,7 +123,6 @@ export async function request<T>(url: string, opts: RequestOptions = {}): Promis
     return { status: 0, body: { message: `网关不可达（${reason}）` } }
   }
   const text = await res.text()
-  if (res.status === 401 && authenticated) notifyUnauthorized()
   try {
     return { status: res.status, body: (text ? JSON.parse(text) : {}) as T }
   } catch (badJson) {
@@ -71,6 +136,82 @@ export function messageOf(body: unknown): string | null {
     return typeof message === 'string' && message ? message : null
   }
   return null
+}
+
+/**
+ * 身份生命周期调用（round56 票 224 / ADR 0086）。
+ *
+ * <p>refresh token 只在 HttpOnly Cookie 里，前端拿不到也不该拿；这里所有请求都带
+ * `credentials: 'include'`，但只有 `/auth/refresh`、`/auth/logout` 两个端点会收到它
+ * （Cookie 的 `Path=/auth`）。access token 仍走 `Authorization` 头。
+ *
+ * <p>放在本文件而不是单独入口：`frontend-shared` 只有一个导出面，加子路径导出会
+ * 把「两端同源」拆成两套打包边界，也让 224 的契约多出一个不该有的改动点。
+ */
+export interface LoginBody {
+  token: string
+  accountId: string | null
+  username: string
+  tenantId: string
+  customerId: string | null
+  role: string
+  displayName?: string | null
+  capabilities?: string[]
+  expiresInSeconds?: number
+}
+
+/** 刷新：不依赖 access token，只靠 Cookie；成功回新的 access token 与账号视图。 */
+export async function refreshSession(): Promise<ApiResult<LoginBody>> {
+  return postAuth<LoginBody>('/auth/refresh')
+}
+
+/** 登出：撤销 refresh 族并清 Cookie；失败也当成功（本地会话必须清掉）。 */
+export async function logoutSession(): Promise<void> {
+  await postAuth<unknown>('/auth/logout').catch(() => undefined)
+}
+
+/** 改密：必须带有效 access token；成功后服务端会撤销全部 refresh。 */
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<ApiResult<{ changed: boolean; message?: string }>> {
+  return request<{ changed: boolean; message?: string }>('/auth/password', {
+    method: 'POST',
+    token,
+    body: { currentPassword, newPassword },
+    allowRefresh: true,
+  })
+}
+
+async function postAuth<T>(path: string): Promise<ApiResult<T>> {
+  let response: Response
+  try {
+    response = await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+  } catch (unreachable) {
+    const reason = unreachable instanceof Error ? unreachable.message : 'network error'
+    return { status: 0, body: { message: `网关不可达（${reason}）` } }
+  }
+  const text = await response.text()
+  try {
+    return { status: response.status, body: (text ? JSON.parse(text) : {}) as T }
+  } catch (badJson) {
+    return { status: response.status, body: { message: text || '响应不是 JSON' } }
+  }
+}
+
+/** 改密失败的统一人话：401 是当前口令不对，400 是格式问题，其余透出下游那句话。 */
+export function describePasswordChange(result: ApiResult<unknown>): string {
+  if (result.status === 0) return messageOf(result.body) ?? '网关不可达'
+  if (result.status === 401) return messageOf(result.body) ?? '当前口令不对'
+  if (result.status === 400) return messageOf(result.body) ?? '新口令不合法'
+  if (result.status >= 200 && result.status < 300) return '口令已更新，请用新口令重新登录'
+  return messageOf(result.body) ?? `修改失败（HTTP ${result.status}）`
 }
 
 /**

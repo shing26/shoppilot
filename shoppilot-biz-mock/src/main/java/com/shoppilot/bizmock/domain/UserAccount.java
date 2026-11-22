@@ -11,6 +11,7 @@ import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.TenantId;
 
 import java.time.Instant;
+import java.time.Duration;
 
 /**
  * 账号（round25 票 80 / ADR 0056、0058）。
@@ -61,6 +62,27 @@ public class UserAccount {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /**
+     * 口令版本（round56 票 224 / ADR 0086）：改密后 +1，进 access token 的 {@code pv}。
+     *
+     * <p>它让「改密前签发的令牌最迟在 TTL 内失效」有一个可判定的依据；默认 0 让既有账号
+     * 无需回填数据。
+     */
+    @Column(name = "password_version", nullable = false)
+    private int passwordVersion;
+
+    /** 窗口内连续失败次数；成功登录或窗口过期后清零。 */
+    @Column(name = "failed_attempts", nullable = false)
+    private int failedAttempts;
+
+    /** 锁定截止时间；为 null 表示未锁定。锁定期间正确口令也不放行。 */
+    @Column(name = "locked_until")
+    private Instant lockedUntil;
+
+    /** 最近一次失败时间，用来判「窗口是否已过」。 */
+    @Column(name = "last_failed_at")
+    private Instant lastFailedAt;
+
     protected UserAccount() {
     }
 
@@ -83,6 +105,42 @@ public class UserAccount {
 
     public void disable() {
         this.status = STATUS_DISABLED;
+    }
+
+    public void enable() {
+        this.status = STATUS_ACTIVE;
+    }
+
+    /** 改密：更新哈希并推进版本，旧令牌的 {@code pv} 随即落后。 */
+    public void changePassword(String newHash) {
+        this.passwordHash = newHash;
+        this.passwordVersion += 1;
+    }
+
+    public void changeRole(UserRole newRole) {
+        this.role = newRole;
+    }
+
+    public boolean lockedAt(Instant now) {
+        return lockedUntil != null && lockedUntil.isAfter(now);
+    }
+
+    /** 记一次失败；窗口已过则从 1 重新计。返回本次失败后的连续次数。 */
+    public int recordFailure(Instant now, Duration window) {
+        boolean windowExpired = lastFailedAt == null || lastFailedAt.plus(window).isBefore(now);
+        this.failedAttempts = windowExpired ? 1 : this.failedAttempts + 1;
+        this.lastFailedAt = now;
+        return this.failedAttempts;
+    }
+
+    public void lockUntil(Instant until) {
+        this.lockedUntil = until;
+    }
+
+    public void clearFailures() {
+        this.failedAttempts = 0;
+        this.lastFailedAt = null;
+        this.lockedUntil = null;
     }
 
     public String getId() {
@@ -119,5 +177,21 @@ public class UserAccount {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public int getPasswordVersion() {
+        return passwordVersion;
+    }
+
+    public int getFailedAttempts() {
+        return failedAttempts;
+    }
+
+    public Instant getLockedUntil() {
+        return lockedUntil;
+    }
+
+    public Instant getLastFailedAt() {
+        return lastFailedAt;
     }
 }

@@ -10,7 +10,7 @@ const props = defineProps<{
   tenantId: string
 }>()
 
-const emit = defineEmits<{ refresh: []; signOut: [] }>()
+const emit = defineEmits<{ refresh: []; signOut: []; openPassword: [] }>()
 
 const roleLabel = computed(() => {
   if (props.role === 'ADMIN') return '管理员'
@@ -32,6 +32,7 @@ const roleLabel = computed(() => {
       <span v-if="who" class="identity">{{ who }}</span>
       <span class="role">{{ roleLabel }}<template v-if="tenantId"> · 店铺 {{ tenantId }}</template></span>
       <button class="ghost" type="button" @click="emit('refresh')">刷新队列</button>
+      <button class="link" type="button" @click="emit('openPassword')">修改口令</button>
       <button class="link" type="button" @click="emit('signOut')">退出</button>
     </div>
   </header>

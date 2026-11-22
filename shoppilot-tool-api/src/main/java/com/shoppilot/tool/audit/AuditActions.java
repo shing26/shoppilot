@@ -28,6 +28,9 @@ public final class AuditActions {
     public static final String TICKET_RELEASED = "TICKET_RELEASED";
     public static final String TICKET_RESOLVED = "TICKET_RESOLVED";
 
+    /** 身份生命周期（round56 票 224 / ADR 0086）：锁定是安全事件，必须可查。 */
+    public static final String ACCOUNT_LOCKED = "IDENTITY_ACCOUNT_LOCKED";
+
     /** 没有真人操作时的操作人占位值。与「匿名」区别开：它说明是系统动作，不是缺了操作人。 */
     public static final String SYSTEM_ACTOR = "system";
 }

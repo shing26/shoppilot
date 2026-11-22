@@ -213,6 +213,12 @@ shoppilot:
     # 演示账号口令（与 biz-mock 播种用的是同一个键）。只供回环上的一键体验登录使用；
     # 为空时该端点直接 503，不创建也不猜测任何口令（ADR 0056）。
     demo-password: ${SHOPPILOT_IDENTITY_DEMO_PASSWORD:}
+    # round56 票 224 / ADR 0086：access 短 TTL + refresh 长 TTL。
+    # 撤销窗口 = access TTL；refresh 只走 HttpOnly Cookie，不进前端存储。
+    access-ttl: ${SHOPPILOT_IDENTITY_ACCESS_TTL:15m}
+    refresh-ttl: ${SHOPPILOT_IDENTITY_REFRESH_TTL:14d}
+    # HTTPS 部署时置 true；本机回环默认 false，否则浏览器不会回传 Cookie。
+    secure-cookie: ${SHOPPILOT_IDENTITY_SECURE_COOKIE:false}
   channels:
     # 票 173：渠道连接配置；没有文件时回退 feishu 的环境变量。
     file: ${SHOPPILOT_CHANNELS_FILE:config/channels.json}

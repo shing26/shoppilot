@@ -53,7 +53,7 @@ import {
   type RevisionDraft,
   type Session,
 } from './api'
-import { setUnauthorizedHandler } from 'frontend-shared'
+import { logoutSession, refreshSession, setRefreshHandler, setUnauthorizedHandler } from 'frontend-shared'
 import { type Ticket } from './types'
 import { entriesOf } from './lib/format'
 import { countTickets, filterTickets } from './lib/queue'
@@ -70,6 +70,7 @@ import QualityView from './components/QualityView.vue'
 import KnowledgeView from './components/KnowledgeView.vue'
 import ResolveDialog from './components/ResolveDialog.vue'
 import RefundDialog from './components/RefundDialog.vue'
+import PasswordDialog from './components/PasswordDialog.vue'
 
 const STORAGE_KEY = 'shoppilot.session'
 
@@ -77,6 +78,7 @@ const tenant = ref('T001')
 const username = ref('agent')
 const password = ref('')
 const showLogin = ref(false)
+const showPassword = ref(false)
 const demoLoading = ref(false)
 const session = ref<Session | null>(readStoredSession())
 const loginError = ref('')
@@ -291,8 +293,37 @@ function onUnauthorized() {
   loginError.value = '登录已失效，请重新登录'
 }
 
+/**
+ * 401 单飞刷新（round56 票 224 / ADR 0086）：refresh 只走 HttpOnly Cookie。
+ * 成功后把新 access 写回会话；能力（capabilities）按服务端最新角色重算。
+ */
+async function renewSession(): Promise<string | null> {
+  const result = await refreshSession()
+  if (result.status !== 200 || !('token' in result.body) || !result.body.token || !session.value) return null
+  const renewed = result.body
+  const normalized: Session = {
+    ...session.value,
+    token: renewed.token,
+    accountId: renewed.accountId ?? session.value.accountId,
+    role: renewed.role ?? session.value.role,
+    tenantId: renewed.tenantId ?? session.value.tenantId,
+    displayName: renewed.displayName ?? session.value.displayName,
+    capabilities: normalizeCapabilities(renewed.capabilities ?? session.value.capabilities, renewed.role),
+  }
+  session.value = normalized
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+  return renewed.token
+}
+
+function onPasswordChanged() {
+  showPassword.value = false
+  signOut()
+  loginError.value = '口令已更新，请用新口令重新登录'
+}
+
 function signOut() {
   stopConversationStream()
+  void logoutSession()
   session.value = null
   view.value = 'queue'
   loginError.value = ''
@@ -1099,6 +1130,7 @@ async function confirmRefund() {
 
 onMounted(() => {
   setUnauthorizedHandler(onUnauthorized)
+  setRefreshHandler(renewSession)
   void registerServiceWorker().then(() => {
     if (notificationsEnabled.value) void restorePush()
   })
@@ -1124,6 +1156,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   setUnauthorizedHandler(null)
+  setRefreshHandler(null)
   window.clearInterval(timer)
   stopConversationStream()
   if ('serviceWorker' in navigator) {
@@ -1159,7 +1192,15 @@ function clearStoredSession() {
       :role="session?.role ?? ''"
       :tenant-id="session?.tenantId ?? ''"
       @refresh="refresh"
+      @open-password="showPassword = true"
       @sign-out="signOut"
+    />
+
+    <PasswordDialog
+      v-if="showPassword && session?.accountId"
+      :token="session.token"
+      @close="showPassword = false"
+      @changed="onPasswordChanged"
     />
 
     <LoginCard

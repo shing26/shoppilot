@@ -14,7 +14,7 @@ const props = defineProps<{
   activityCount: number
 }>()
 
-const emit = defineEmits<{ signOut: []; openActivity: [] }>()
+const emit = defineEmits<{ signOut: []; openActivity: []; openPassword: [] }>()
 
 const identityLabel = computed(() => {
   if (props.demoMode) return '体验买家'
@@ -44,6 +44,7 @@ const identityLabel = computed(() => {
         <span>订单与进度</span>
         <em v-if="activityCount">{{ activityCount }}</em>
       </button>
+      <button v-if="hasSession" class="link" type="button" @click="emit('openPassword')">修改口令</button>
       <button v-if="hasSession" class="link" type="button" @click="emit('signOut')">退出</button>
     </div>
   </header>

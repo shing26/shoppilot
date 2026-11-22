@@ -26,7 +26,7 @@ import {
   storeProfile,
   streamAnswer,
 } from './api'
-import { setUnauthorizedHandler } from 'frontend-shared'
+import { logoutSession, refreshSession, setRefreshHandler, setUnauthorizedHandler } from 'frontend-shared'
 import { STATUS_LABEL, type CitationDetail, type Session, type Ticket } from './types'
 import type { MyOrder, OrderDetail, OrderLogistics } from './api'
 import { appendAgentStep, type ChatMessage } from './lib/format'
@@ -40,6 +40,7 @@ import Composer from './components/Composer.vue'
 import SideActivity from './components/SideActivity.vue'
 import ServiceCard from './components/ServiceCard.vue'
 import TicketDrawer from './components/TicketDrawer.vue'
+import PasswordDialog from './components/PasswordDialog.vue'
 
 const STORAGE_KEY = 'shoppilot.buyer.session'
 /** 对话按标签页存档（round46 票 192）：刷新不丢消息与会话 ID，关标签页即散。 */
@@ -60,6 +61,7 @@ const guestError = ref('')
 const username = ref('')
 const password = ref('')
 const showLogin = ref(false)
+const showPassword = ref(false)
 const demoLoading = ref(false)
 const session = ref<Session | null>(readStoredSession())
 const loginError = ref('')
@@ -298,6 +300,28 @@ function onUnauthorized() {
   ordersLoading.value = false
 }
 
+/**
+ * 401 单飞刷新（round56 票 224 / ADR 0086）：刷新只走 HttpOnly Cookie，
+ * 成功后把新 access token 写回会话并重试原请求一次；失败才走 `onUnauthorized`。
+ */
+async function renewSession(): Promise<string | null> {
+  const result = await refreshSession()
+  if (result.status !== 200 || !('token' in result.body) || !result.body.token) return null
+  const renewed = result.body
+  if (!session.value) return null
+  session.value = {
+    ...session.value,
+    token: renewed.token,
+    accountId: renewed.accountId ?? session.value.accountId,
+    role: renewed.role ?? session.value.role,
+    tenantId: renewed.tenantId ?? session.value.tenantId,
+    customerId: renewed.customerId ?? session.value.customerId,
+    displayName: renewed.displayName ?? session.value.displayName,
+  }
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session.value))
+  return renewed.token
+}
+
 function signOut() {
   // 先中止还在跑的 SSE（round46 票 192）：否则退出后回答仍会继续写进已清空的页面。
   stopAnswer()
@@ -318,11 +342,27 @@ function signOut() {
   orderDetailError.value = ''
   messages.value = []
   conversation = ''
+  // 撤销 refresh 族；即使网关不可达也继续清本地会话（登出必须本地先行）。
+  void logoutSession()
   asking.value = false
   feedbackDraft.value = null
   feedbackReason.value = ''
   feedbackInFlight.value = false
   closeTicket()
+}
+
+/**
+ * 改密成功（ADR 0086）：服务端已撤销全部 refresh，当前 access 只到 TTL。
+ * 产品上直接回登录门，避免用户以为「还在会话里」。
+ */
+function onPasswordChanged() {
+  showPassword.value = false
+  session.value = null
+  demoMode.value = false
+  guestMode.value = false
+  clearStoredSession()
+  loginError.value = '口令已更新，请用新口令重新登录'
+  showLogin.value = true
 }
 
 async function askQuick(question: string) {
@@ -496,6 +536,7 @@ watch(mobileSideOpen, async (open) => {
 
 onUnmounted(() => {
   setUnauthorizedHandler(null)
+  setRefreshHandler(null)
   window.removeEventListener('keydown', onEscape)
   document.body.style.overflow = ''
   if (detailTimer) window.clearInterval(detailTimer)
@@ -634,6 +675,7 @@ async function retry(index: number) {
 
 onMounted(() => {
   setUnauthorizedHandler(onUnauthorized)
+  setRefreshHandler(renewSession)
   window.addEventListener('keydown', onEscape)
   if (session.value) {
     void refreshTickets()
@@ -716,7 +758,15 @@ function clearStoredChat() {
       :store-label="storeLabel"
       :activity-count="orders.length + tickets.length"
       @sign-out="signOut"
+      @open-password="showPassword = true"
       @open-activity="mobileSideOpen = true"
+    />
+
+    <PasswordDialog
+      v-if="showPassword && session?.accountId"
+      :token="session.token"
+      @close="showPassword = false"
+      @changed="onPasswordChanged"
     />
 
     <StoreCard v-if="session" :label="storeLabel" :business="storeBusiness" :guarantees="storeGuarantees" />

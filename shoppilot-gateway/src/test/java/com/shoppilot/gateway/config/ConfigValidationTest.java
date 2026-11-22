@@ -91,7 +91,11 @@ class ConfigValidationTest {
             // L2：可选身份映射文件。
             "SHOPPILOT_IM_FEISHU_IDENTITY_FILE",
             // round37：演示账号口令只供回环一键体验登录；不配置时该端点 503。
-            "SHOPPILOT_IDENTITY_DEMO_PASSWORD");
+            "SHOPPILOT_IDENTITY_DEMO_PASSWORD",
+            // round56 票 224 / ADR 0086：access / refresh 生命周期与 Cookie Secure 开关。
+            "SHOPPILOT_IDENTITY_ACCESS_TTL",
+            "SHOPPILOT_IDENTITY_REFRESH_TTL",
+            "SHOPPILOT_IDENTITY_SECURE_COOKIE");
 
     private ApplicationContextRunner runner() {
         return new ApplicationContextRunner()
