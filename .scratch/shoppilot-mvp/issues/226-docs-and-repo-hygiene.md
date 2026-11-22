@@ -2,7 +2,7 @@
 
 Round: 56（所有者 2026-11-22 指令；按 224 → 225 → 226 顺序）
 ADR: 无（文档与仓库卫生，不改业务能力）
-Status: implemented（首轮 Verifier FAIL 已整改，待复验）　Claimed by: implementer-226　Blocked by: 票 224、票 225（均已独立 Verifier PASS）
+Status: implemented（独立 Verifier PASS，待所有者签收）　Claimed by: implementer-226　Blocked by: 票 224、票 225（均已独立 Verifier PASS）
 契约：[plans/226-docs-and-repo-hygiene.md](../../../plans/226-docs-and-repo-hygiene.md)（2026-11-22 冻结）
 
 ## What to build
@@ -75,14 +75,28 @@ git status --short
 
 **验证落点**
 
-- HEAD `e66ce88`，分支 `codex/226-docs-and-repo-hygiene`（从票 225 HEAD `68afa16`
-  切出；224/225 尚未合并 main，本票为堆叠分支）。
+- 实现 HEAD `e66ce88`，首轮整改 `be91b76`；分支 `codex/226-docs-and-repo-hygiene`
+  （从票 225 HEAD `68afa16` 切出；224/225 尚未合并 main，本票为堆叠分支）。
 - `python scripts/check_doc_links.py` → `DOC LINKS OK files=119 local_links=234`。
 - `python scripts/gen_status.py --check` → `STATUS ok`；
   `python scripts/verify_doc_truth.py` → 870/143 一致；
   `git diff --check` 无输出；`git status --short` **为空**（本机产物已按类别 ignore）。
 - 未跑 JVM / 前端测试：本票只改文档、ignore 与新增检查脚本，无业务代码变更；
   既有 870/143 读数由票 225 第三轮 Verifier 在本分支祖先 `a85496d` 上亲跑。
+
+**第二轮 Verifier PASS（2026-11-23，HEAD `be91b76`）**
+
+- 独立复验：221 票面全文无「未提交/未 commit/签收待确认」；tracker、root README、
+  design-samples README 与票面状态一致；README 5 张图片全部存在且已跟踪；
+  design-samples 9 个文件入库；负向链接测试 exit 1 后还原；diff 21 个路径全部落在
+  补记后的 Allowed 内；无历史路径删除/改名。
+- 命令全绿：`STATUS ok`、`870 tests / 143 suites` 文档真值一致、
+  `DOC LINKS OK files=119 local_links=234`、`git diff --check` 无输出、
+  `check-ps-syntax files=37 errors=0`；`git status --short` 为空。
+- 限制：未跑 JVM/前端测试（契约未要求，diff 无业务代码/测试/gold/阈值/构建配置）；
+  Verifier 报告作为本地审计物被 ignore，结论已汇总到 `docs/EVIDENCE.md`。
+- **待所有者事项**：`plans/225` 与 `plans/226` 的冻结后路径补记均需书面追认；
+  Verifier 未代 owner 宣称追认完成。
 
 **三个现场追问**
 

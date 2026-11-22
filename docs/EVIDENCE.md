@@ -356,4 +356,22 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   `docs/TUNING_PLAN.md`、`App.vue`、`static/workspace/**` 与 `src/test/**` 四处路径，
   文件自述待所有者书面追认；不构成本票 AC 通过条件，但签收时需一并确认。
 
+- **票 226 文档与仓库卫生（2026-11-23，round56）**：独立 Verifier 两轮后 **PASS**，
+  绑定 HEAD `be91b76`（实现 `e66ce88`）。亲跑：`STATUS ok`、
+  `verify_doc_truth` 870/143 一致、`check_doc_links.py` **119 个 Markdown /
+  234 条本地链接全存在**、`git diff --check` 无输出、`check-ps-syntax` 37 文件 0 错、
+  `git status --short` 为空；负向注入缺失链接时脚本 exit 1，还原后 status 干净。
+  **处置**：`docs/design-samples/` 9 个文件（设计提案 + 4 张 previews）入库，README
+  写明用途/来源/非产品截图；`docs/readme-hero.svg`（未被 README 引用）与
+  `.scratch` 本机探针/截图/Verifier 报告按类别 ignore，受控 tracker 不受影响。
+  **修掉 6 条既有失效本地链接**：ADR 0062→0029、0063→0058/0047、0079→round43 spec、
+  `CHANNEL_CONNECTIONS`→`../config/channels.example.json`、
+  `EVIDENCE`→`../eval/results/prometheus-scrape-20261112-t218.txt`。
+  **状态对齐**：root README 增加 Round 51–56 状态块；221 票面从「未提交」校正为
+  「已随 round51–53 统一提交于 `4fc0309`」；tracker 221 去掉过期「未提交」；
+  219/220 done、222/223 待验收、224/225/226 Verifier PASS 待签收。
+  **边界**：本票无业务代码/测试/gold/阈值改动，未重跑 JVM 与前端；既有 870/143
+  由票 225 第三轮 Verifier 在祖先 `a85496d` 亲跑。**流程偏差**：`plans/226` 冻结后
+  补记了 219–225 票面路径（只允许 Status/签收校正），待所有者书面追认。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。
