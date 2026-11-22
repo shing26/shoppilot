@@ -52,6 +52,13 @@ public class ChannelLifecycleService {
                 store.markRestartRequired("配置已保存；当前运行环境无法安全关闭旧长连接，需重启网关生效。");
                 yield new Result(true, false, store.state().name(), true, store.message());
             }
+            case UNSAFE -> {
+                // 旧、新连接都关不掉：不谎称已回滚。配置保留新值，重启后只会起新连接。
+                store.markRestartRequired(
+                        "配置已保存，但旧连接无法关闭且新连接无法回滚；可能仍有两条长连接在收事件，请立即重启网关。");
+                log.error("渠道配置切换进入不安全状态：{}", store.message());
+                yield new Result(true, false, store.state().name(), true, store.message());
+            }
             case FAILED -> {
                 store.restore(previous, previousFromFile);
                 // 启动失败时旧连接从未被动过；不再 restart(previous)，否则会多起一条连接。
@@ -60,5 +67,11 @@ public class ChannelLifecycleService {
                 yield new Result(false, false, store.state().name(), false, store.message());
             }
         };
+    }
+
+    /** 实际仍在运行的飞书 appId；没有活动连接时返回 null。 */
+    public String activeAppId() {
+        GatewayProperties.Feishu active = client.activeFeishu();
+        return active == null ? null : active.appId();
     }
 }

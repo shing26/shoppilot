@@ -70,6 +70,10 @@ class EgressPolicyTest {
         assertThat(policy.check(URI.create("http://169.254.169.254/latest/meta-data")).allowed()).isFalse();
         assertThat(policy.check(URI.create("http://[::1]/hook")).allowed()).isFalse();
         assertThat(policy.check(URI.create("http://100.64.0.1/hook")).allowed()).isFalse();
+        assertThat(policy.check(URI.create("http://192.0.2.1/hook")).allowed()).isFalse();
+        assertThat(policy.check(URI.create("http://198.51.100.1/hook")).allowed()).isFalse();
+        assertThat(policy.check(URI.create("http://203.0.113.1/hook")).allowed()).isFalse();
+        assertThat(policy.check(URI.create("http://[2001:db8::1]/hook")).allowed()).isFalse();
         assertThat(policy.check(URI.create("ftp://example.com/hook")).allowed()).isFalse();
         assertThat(policy.check(URI.create("http://user:pass@example.com/hook")).allowed()).isFalse();
     }

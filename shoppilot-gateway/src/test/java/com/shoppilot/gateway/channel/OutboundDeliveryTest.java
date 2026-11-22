@@ -176,6 +176,23 @@ class OutboundDeliveryTest {
         verify(receiptWriter).writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
     }
 
+    @Test
+    @DisplayName("回执工单写入失败：不 ack，事件留在 pending 等下一轮重投")
+    void receiptFailureKeepsEventPending() {
+        status.set(500);
+        org.mockito.Mockito.doThrow(new RuntimeException("ticket service down"))
+                .when(receiptWriter)
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+
+        StreamOperations<String, Object, Object> streams =
+                drainWith(outboundEvent("ev-receipt-fail", "webhook", echoUrl, "T-95", "已处理"));
+
+        org.mockito.Mockito.verify(streams, org.mockito.Mockito.never())
+                .acknowledge(anyString(), anyString(), any(RecordId[].class));
+        assertThat(registry.get("shoppilot_outbound_failed_total").tag("channel", "webhook").counter().count())
+                .isEqualTo(1.0d);
+    }
+
     // --- harness ---------------------------------------------------------------------------
 
     private void record(HttpExchange exchange) throws IOException {
@@ -193,11 +210,12 @@ class OutboundDeliveryTest {
      * 而 {@code MapRecord} 的工厂 API 在不同 Spring Data 版本里签名变过好几轮——
      * 为一个只当数据载体的对象跟那套 API 较劲，是把力气花在错的地方。
      */
-    private void drainWith(Map<String, String> fields) {
-        drainWith(service(), fields);
+    private StreamOperations<String, Object, Object> drainWith(Map<String, String> fields) {
+        return drainWith(service(), fields);
     }
 
-    private void drainWith(OutboundDeliveryService service, Map<String, String> fields) {
+    private StreamOperations<String, Object, Object> drainWith(OutboundDeliveryService service,
+                                                               Map<String, String> fields) {
         StreamOperations<String, Object, Object> streams = mock(StreamOperations.class);
         doReturn(streams).when(redis).opsForStream();
         MapRecord<String, Object, Object> record = mock(MapRecord.class);
@@ -206,6 +224,7 @@ class OutboundDeliveryTest {
         doReturn(List.of(record)).when(streams).read(any(Consumer.class), any(StreamReadOptions.class),
                 any(StreamOffset[].class));
         service.drain();
+        return streams;
     }
 
     private static Map<String, String> outboundEvent(String eventId, String channel, String target, String ticketId,

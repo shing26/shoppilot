@@ -23,12 +23,20 @@
 - `shoppilot-biz-mock/src/main/java/**`（仅出站幂等所需持久化；若选 Redis 则不改库）
 - `shoppilot-ticket/src/main/java/**`（仅接收 `CHANNEL_RECEIPT` 所需，不改变工单规则）
 - `frontend-workspace/src/components/ChannelsView.vue` 与相关 API 类型
+- `frontend-workspace/src/App.vue`（webhook 测试接线）
+- `shoppilot-gateway/src/main/resources/static/workspace/**`（由上述前端源码生成并入库的产物）
 - `scripts/verify-channel-hot-reload.mjs`（新增）
 - `docs/adr/0087-*.md`（新增）
-- `docs/STATUS.md`、`README.md`、`docs/EVIDENCE.md`（只同步能力/测试口径）
+- `docs/STATUS.md`、`docs/TUNING_PLAN.md`、`README.md`、`docs/EVIDENCE.md`（只同步能力/测试口径）
 - `plans/225-channel-hot-reload-and-egress-safety.md`
 - `.scratch/shoppilot-mvp/issues/225-channel-hot-reload-and-egress-safety.md`
 - `.scratch/shoppilot-mvp/README.md`
+
+> **2026-11-23 契约补记（Verifier P1-5 路径缺口，不改 AC）**：首次冻结时漏列了
+> `docs/TUNING_PLAN.md`（`verify_doc_truth.py` 强制要求的测试数同步）、
+> `frontend-workspace/src/App.vue`（webhook 测试接线）与
+> `static/workspace/**`（前端构建产物）。三处均为 AC10 与既有「产物入库」惯例的
+> 必要条件，现补入 Allowed paths；验收判据、阈值与文件清单不变。
 
 ## Acceptance criteria
 

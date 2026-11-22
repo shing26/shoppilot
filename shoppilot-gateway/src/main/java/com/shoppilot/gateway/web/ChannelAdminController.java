@@ -84,7 +84,7 @@ public class ChannelAdminController {
             body.put("tenant", store.current().tenant());
             body.put("customer", store.current().customer());
             body.put("source", store.fromFile() ? "file" : "env");
-            body.put("activeAppId", store.maskedAppId());
+            body.put("activeAppId", activeAppId());
             return result.saved()
                     ? ResponseEntity.ok(body)
                     : ResponseEntity.status(HttpStatus.CONFLICT).body(body);
@@ -137,6 +137,16 @@ public class ChannelAdminController {
                 "source", store.fromFile() ? "file" : "env",
                 "restartRequired", store.restartRequired(),
                 "state", store.state().name(),
-                "message", store.message());
+                "message", store.message(),
+                "activeAppId", activeAppId());
+    }
+
+    /** 实际在跑的连接 appId；与「磁盘上最新配置」分开，避免 RESTART_REQUIRED 时误导。 */
+    private String activeAppId() {
+        String appId = lifecycle.activeAppId();
+        if (appId == null || appId.isBlank()) {
+            return "(无活动连接)";
+        }
+        return appId.length() <= 6 ? "****" : appId.substring(0, 6) + "****";
     }
 }

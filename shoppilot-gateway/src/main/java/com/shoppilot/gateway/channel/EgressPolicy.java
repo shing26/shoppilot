@@ -194,9 +194,20 @@ public class EgressPolicy {
             if (first == 192 && second == 0 && (bytes[2] & 0xff) == 0) {
                 return true;
             }
+            // IPv4 文档/基准测试网段（RFC 5737）
+            if ((first == 192 && second == 0 && (bytes[2] & 0xff) == 2)
+                    || (first == 198 && second == 51 && (bytes[2] & 0xff) == 100)
+                    || (first == 203 && second == 0 && (bytes[2] & 0xff) == 113)) {
+                return true;
+            }
             return first >= 224;
         }
         if (bytes.length == 16) {
+            // 2001:db8::/32 IPv6 文档前缀（RFC 3849）
+            if ((bytes[0] & 0xff) == 0x20 && (bytes[1] & 0xff) == 0x01
+                    && (bytes[2] & 0xff) == 0x0d && (bytes[3] & 0xff) == 0xb8) {
+                return true;
+            }
             // fc00::/7 唯一本地地址
             return (bytes[0] & 0xfe) == 0xfc;
         }

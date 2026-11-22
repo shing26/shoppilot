@@ -156,8 +156,12 @@ public class OutboundDeliveryService {
                 acked.add(record.getId());
                 continue;
             }
-            handle(event);
-            acked.add(record.getId());
+            if (handle(event)) {
+                acked.add(record.getId());
+            } else {
+                // 回执也没落下去：**不 ack**，留在 pending 等下一轮重投，否则结论静默丢失。
+                log.warn("出站事件 {} 未落定（回执写入失败），保留 pending 等下一轮重投", event.eventId());
+            }
         }
         if (!acked.isEmpty()) {
             try {
@@ -170,19 +174,25 @@ public class OutboundDeliveryService {
         return acked.size();
     }
 
-    private void handle(Event event) {
+    /** @return true 表示可以 ack；false 表示回执写入失败，必须保留 pending 重投。 */
+    private boolean handle(Event event) {
         if (event.eventId() != null && deliveredStore.isDelivered(event.eventId())) {
             log.info("出站事件 {} 投递过了，跳过（至少一次投递的幂等）", event.eventId());
-            return;
+            return true;
         }
-        boolean sent = switch (event.channel() == null ? "" : event.channel()) {
+        Outcome outcome = switch (event.channel() == null ? "" : event.channel()) {
             case "webhook" -> postToWebhook(event);
             // email 落回执工单**就是它的交付形态**（ADR 0035），所以这一条算送达；
             // 「没有投递方式」也落单，但那条不算送达——落单只是没让结论丢掉。
-            case "email" -> landReceipt(event, "email 渠道按 ADR 0035 以回执工单交付，本轮不真发邮件", true);
-            default -> landReceipt(event, "渠道 " + event.channel() + " 没有投递方式", false);
+            case "email" -> {
+                boolean written = landReceipt(
+                        event, "email 渠道按 ADR 0035 以回执工单交付，本轮不真发邮件");
+                yield new Outcome(written, written);
+            }
+            default -> new Outcome(false,
+                    landReceipt(event, "渠道 " + event.channel() + " 没有投递方式"));
         };
-        if (sent) {
+        if (outcome.sent()) {
             if (event.eventId() != null) {
                 deliveredStore.markDelivered(event.eventId());
             }
@@ -190,17 +200,20 @@ public class OutboundDeliveryService {
         } else {
             registry.counter("shoppilot_outbound_failed_total", "channel", channelLabel(event)).increment();
         }
+        return outcome.settled();
     }
 
-    /** @return 目标是否回了 2xx。**只有 2xx 算送达**。 */
-    private boolean postToWebhook(Event event) {
+    private record Outcome(boolean sent, boolean settled) {
+    }
+
+    /** 只有 2xx 算送达；回执写成功才算「落定」。 */
+    private Outcome postToWebhook(Event event) {
         URI target;
         try {
             target = URI.create(event.target());
         } catch (RuntimeException malformed) {
             log.warn("出站目标地址不合法 ticket={}，落回执工单", event.ticketId());
-            landReceipt(event, "目标地址不合法", false);
-            return false;
+            return new Outcome(false, landReceipt(event, "目标地址不合法"));
         }
         for (int attempt = 1; attempt <= retry.attempts(); attempt++) {
             try {
@@ -208,7 +221,7 @@ public class OutboundDeliveryService {
                         "Content-Type", "application/json",
                         "X-Shoppilot-Ticket", event.ticketId() == null ? "" : event.ticketId()));
                 if (response.statusCode() / 100 == 2) {
-                    return true;
+                    return new Outcome(true, true);
                 }
                 log.warn("出站投递被拒 ticket={} status={} 第 {}/{} 次", event.ticketId(), response.statusCode(),
                         attempt, retry.attempts());
@@ -230,8 +243,7 @@ public class OutboundDeliveryService {
             }
         }
         log.warn("重试 {} 次仍送不到，改落回执工单 ticket={}", retry.attempts(), event.ticketId());
-        landReceipt(event, "重试 " + retry.attempts() + " 次仍送不到", false);
-        return false;
+        return new Outcome(false, landReceipt(event, "重试 " + retry.attempts() + " 次仍送不到"));
     }
 
     /**
@@ -240,13 +252,14 @@ public class OutboundDeliveryService {
      * <p>走既有的 {@link EmailReceiptWriter}：它本来就是「把答案变成一张买家与坐席都看得到的单」，
      * 这里复用的是同一个机制，不是新造第二个出口。
      */
-    private boolean landReceipt(Event event, String why, boolean countsAsDelivered) {
+    /** @return true 表示回执工单真的落库；false 必须让事件保持 pending。 */
+    private boolean landReceipt(Event event, String why) {
         try {
             receiptWriter.writeReceipt(event.tenantId(), event.customerId(),
                     "工单 " + (event.ticketId() == null ? "(未知)" : event.ticketId()),
                     event.body() == null ? "" : event.body(), event.target());
-            log.info("出站改落回执工单 ticket={} 算送达={} 原因：{}", event.ticketId(), countsAsDelivered, why);
-            return countsAsDelivered;
+            log.info("出站改落回执工单 ticket={} 原因：{}", event.ticketId(), why);
+            return true;
         } catch (RuntimeException failure) {
             log.error("出站未送达且回执工单也落不下去 ticket={} 原因：{} 异常：{}", event.ticketId(), why,
                     failure.getMessage());

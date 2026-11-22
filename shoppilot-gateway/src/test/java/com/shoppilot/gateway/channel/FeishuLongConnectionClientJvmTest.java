@@ -14,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -413,6 +415,52 @@ class FeishuLongConnectionClientJvmTest {
         } catch (Exception e) {
             throw new RuntimeException("反射操作失败", e);
         }
+    }
+
+    @Test
+    @DisplayName("回环 + 启用 + 空凭据 → 管理面标记需重启，不冒充 APPLIED")
+    void startWithBlankCredentialsMarksRestartRequired() {
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(true, "", "", "T001", "C001", null);
+        when(properties.feishu()).thenReturn(feishu);
+        ChannelConnectionStore store = mock(ChannelConnectionStore.class);
+        when(store.current()).thenReturn(feishu);
+        FeishuLongConnectionClient loopbackClient = new FeishuLongConnectionClient(
+                adapter, agentStateMachine, replySender, properties, "127.0.0.1", MAPPER);
+        ReflectionTestUtils.setField(loopbackClient, "channelConnectionStore", store);
+
+        loopbackClient.start();
+
+        verify(store).markRestartRequired(contains("凭据为空"));
+        verify(store, never()).markApplied();
+    }
+
+    @Test
+    @DisplayName("长连接启动异常 → 管理面标记需重启，不冒充 APPLIED")
+    void startFailureMarksRestartRequired() {
+        GatewayProperties.Feishu feishu = new GatewayProperties.Feishu(
+                true, "test-app-id", "test-secret", "T001", "C001", null);
+        when(properties.feishu()).thenReturn(feishu);
+        ChannelConnectionStore store = mock(ChannelConnectionStore.class);
+        when(store.current()).thenReturn(feishu);
+        FeishuLongConnectionClient failing = new FeishuLongConnectionClient(
+                adapter, agentStateMachine, replySender, properties, "127.0.0.1", MAPPER,
+                config -> new FeishuLongConnectionClient.ManagedFeishuConnection() {
+                    @Override
+                    public void start() {
+                        throw new IllegalStateException("connect failed");
+                    }
+
+                    @Override
+                    public boolean stop() {
+                        return true;
+                    }
+                });
+        ReflectionTestUtils.setField(failing, "channelConnectionStore", store);
+
+        failing.start();
+
+        verify(store).markRestartRequired(contains("启动失败"));
+        verify(store, never()).markApplied();
     }
 
     @Test

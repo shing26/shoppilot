@@ -90,14 +90,24 @@ public class FeishuLongConnectionClient {
         void start();
 
         boolean stop();
+
+        /**
+         * 关闭能力预检：反射成员缺失时返回 false，调用方应**先不启动新连接**，
+         * 直接降级为需重启（ADR 0087 §1）。
+         */
+        default boolean canStopSafely() {
+            return true;
+        }
     }
 
     private final FeishuConnectionFactory connectionFactory;
     private volatile ManagedFeishuConnection activeConnection;
+    private volatile ManagedFeishuConnection leakedCandidate;
+    private volatile GatewayProperties.Feishu activeFeishu;
 
-    /** 手动切换结果：APPLIED / NOT_SUPPORTED（诚实降级为需重启）/ FAILED。 */
+    /** 手动切换结果：APPLIED / NOT_SUPPORTED（需重启）/ UNSAFE（双连接无法关闭）/ FAILED（新连接启动失败）。 */
     enum SwitchResult {
-        APPLIED, NOT_SUPPORTED, FAILED
+        APPLIED, NOT_SUPPORTED, UNSAFE, FAILED
     }
 
     @Autowired
@@ -155,6 +165,9 @@ public class FeishuLongConnectionClient {
             if (PostureGuard.isLoopback(bindAddress)) {
                 log.warn("飞书长连接启用但凭据为空，回环绑定下不注册长连接；"
                         + "请在 .env 中配置 SHOPPILOT_IM_FEISHU_APP_ID 和 SHOPPILOT_IM_FEISHU_APP_SECRET");
+                if (channelConnectionStore != null) {
+                    channelConnectionStore.markRestartRequired("飞书连接已启用但凭据为空，未启动；补齐凭据后重启网关。");
+                }
                 return;
             }
             throw new IllegalStateException(feishuStartupBlockerMessage(feishu, bindAddress));
@@ -164,12 +177,17 @@ public class FeishuLongConnectionClient {
             ManagedFeishuConnection connection = connectionFactory.create(feishu);
             connection.start();
             this.activeConnection = connection;
+            this.activeFeishu = feishu;
             log.info("飞书长连接已启动");
             if (channelConnectionStore != null) {
                 channelConnectionStore.markApplied();
             }
         } catch (Exception e) {
             log.error("飞书长连接启动失败", e);
+            if (channelConnectionStore != null) {
+                channelConnectionStore.markRestartRequired(
+                        "飞书长连接启动失败：" + e.getClass().getSimpleName() + "；请检查凭据/网络后重启网关。");
+            }
         }
     }
 
@@ -182,14 +200,21 @@ public class FeishuLongConnectionClient {
     synchronized SwitchResult restart(GatewayProperties.Feishu next) {
         if (next == null || !next.enabled()) {
             if (activeConnection == null) {
+                activeFeishu = null;
                 return SwitchResult.APPLIED;
             }
             if (activeConnection.stop()) {
                 activeConnection = null;
+                activeFeishu = null;
                 wsClient = null;
                 log.info("飞书长连接已停止");
                 return SwitchResult.APPLIED;
             }
+            return SwitchResult.NOT_SUPPORTED;
+        }
+        // 关闭能力预检：SDK 反射成员缺失时，**先不启动新连接**，否则会留下两条。
+        if (activeConnection != null && !activeConnection.canStopSafely()) {
+            log.warn("当前飞书长连接不支持安全关闭；不启动新连接，降级为需重启");
             return SwitchResult.NOT_SUPPORTED;
         }
         ManagedFeishuConnection candidate;
@@ -202,18 +227,25 @@ public class FeishuLongConnectionClient {
         }
         if (activeConnection == null) {
             activeConnection = candidate;
+            activeFeishu = next;
             log.info("飞书长连接已启动（热切换）");
             return SwitchResult.APPLIED;
         }
         if (activeConnection.stop()) {
             activeConnection = candidate;
+            activeFeishu = next;
             log.info("飞书长连接已启动（热切换），旧连接已停止");
             return SwitchResult.APPLIED;
         }
         // 旧连接停不掉：必须回滚新连接，否则两个连接同时收事件。
         boolean candidateStopped = candidate.stop();
         log.error("旧飞书长连接无法安全关闭；新连接已{}", candidateStopped ? "回滚" : "启动且无法回滚");
-        return candidateStopped ? SwitchResult.NOT_SUPPORTED : SwitchResult.FAILED;
+        if (candidateStopped) {
+            return SwitchResult.NOT_SUPPORTED;
+        }
+        // 两条都停不掉：保留候选引用，关停时再试一次；配置不回落，重启后只起新连接。
+        leakedCandidate = candidate;
+        return SwitchResult.UNSAFE;
     }
 
     /**
@@ -227,9 +259,19 @@ public class FeishuLongConnectionClient {
         if (activeConnection != null) {
             activeConnection.stop();
         }
+        if (leakedCandidate != null) {
+            leakedCandidate.stop();
+        }
         this.activeConnection = null;
+        this.leakedCandidate = null;
+        this.activeFeishu = null;
         this.wsClient = null;
         log.info("飞书长连接已清理");
+    }
+
+    /** 实际仍在运行的连接配置；没有活动连接时返回 null。 */
+    GatewayProperties.Feishu activeFeishu() {
+        return activeFeishu;
     }
 
     /** 生产连接：飞书 SDK + 反射关闭三个成员（ADR 0087 §1）。 */
@@ -269,7 +311,23 @@ public class FeishuLongConnectionClient {
             public boolean stop() {
                 return closeSdkClient(client);
             }
+
+            @Override
+            public boolean canStopSafely() {
+                return reflectiveCloseSupported();
+            }
         };
+    }
+
+    static boolean reflectiveCloseSupported() {
+        try {
+            Client.class.getDeclaredField("autoReconnect");
+            Client.class.getDeclaredMethod("disconnect");
+            Client.class.getDeclaredField("executor");
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException unsupported) {
+            return false;
+        }
     }
 
     static boolean closeSdkClient(Client client) {

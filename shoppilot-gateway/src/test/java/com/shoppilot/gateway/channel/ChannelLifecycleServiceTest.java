@@ -130,6 +130,51 @@ class ChannelLifecycleServiceTest {
     }
 
     @Test
+    @DisplayName("旧、新连接都停不掉：不谎称回滚，保留新配置并标记需重启")
+    void symmetricStopFailureIsNotReportedAsRolledBack() throws Exception {
+        doReturn(new ChannelConnectionStore.Probe(true, "ok")).when(store).probe(anyString(), anyString());
+        FakeConnection first = new FakeConnection(true);
+        factory.enqueue(first);
+        lifecycle.apply(update(true, "cli_first", "secret"));
+
+        FakeConnection second = new FakeConnection(true);
+        second.stopSucceeds = false;
+        factory.enqueue(second);
+        factory.connections().get(0).stopSucceeds = false;
+
+        ChannelLifecycleService.Result result = lifecycle.apply(update(true, "cli_second", "secret"));
+
+        assertThat(result.saved()).isTrue();
+        assertThat(result.applied()).isFalse();
+        assertThat(result.state()).isEqualTo("RESTART_REQUIRED");
+        assertThat(result.restartRequired()).isTrue();
+        assertThat(result.message()).contains("两条长连接").contains("立即重启");
+        assertThat(store.current().appId()).as("不能谎称已回滚到旧配置").isEqualTo("cli_second");
+        assertThat(Files.readString(file)).contains("cli_second");
+        assertThat(first.stopped).isFalse();
+        assertThat(second.stopped).isFalse();
+    }
+
+    @Test
+    @DisplayName("关闭能力预检失败：不启动新连接，直接标记需重启")
+    void unsafeStopCapabilitySkipsStartingCandidate() {
+        doReturn(new ChannelConnectionStore.Probe(true, "ok")).when(store).probe(anyString(), anyString());
+        FakeConnection first = new FakeConnection(true);
+        factory.enqueue(first);
+        lifecycle.apply(update(true, "cli_first", "secret"));
+        first.stopCapable = false;
+
+        int createdBefore = factory.created().size();
+        ChannelLifecycleService.Result result = lifecycle.apply(update(true, "cli_second", "secret"));
+
+        assertThat(result.saved()).isTrue();
+        assertThat(result.applied()).isFalse();
+        assertThat(result.state()).isEqualTo("RESTART_REQUIRED");
+        assertThat(factory.created()).as("预检失败时不得再起一条连接").hasSize(createdBefore);
+        assertThat(first.stopped).isFalse();
+    }
+
+    @Test
     @DisplayName("停用配置：不需要探测，直接停连接并置 DISABLED")
     void disableStopsConnectionWithoutProbe() {
         doReturn(new ChannelConnectionStore.Probe(true, "ok")).when(store).probe(anyString(), anyString());
@@ -181,6 +226,7 @@ class ChannelLifecycleServiceTest {
 
         private final boolean startSucceeds;
         private boolean stopSucceeds = true;
+        private boolean stopCapable = true;
         private boolean started;
         private boolean stopped;
 
@@ -203,6 +249,11 @@ class ChannelLifecycleServiceTest {
             }
             stopped = true;
             return true;
+        }
+
+        @Override
+        public boolean canStopSafely() {
+            return stopCapable;
         }
     }
 }

@@ -2,7 +2,7 @@
 
 Round: 56（所有者 2026-11-22 指令；按 224 → 225 → 226 顺序）
 ADR: 0087（实现前新增并 Accepted；开票依据 = 所有者政策覆盖）
-Status: implemented（待独立 Verifier）　Claimed by: implementer-225　Blocked by: 无（按所有者指定顺序排在 224 后）
+Status: implemented（首轮 Verifier FAIL 已整改，待复验）　Claimed by: implementer-225　Blocked by: 无（按所有者指定顺序排在 224 后）
 契约：[plans/225-channel-hot-reload-and-egress-safety.md](../../../plans/225-channel-hot-reload-and-egress-safety.md)（2026-11-22 冻结）
 
 ## What to build
@@ -75,24 +75,46 @@ git status --short
 
 **验证落点**
 
-- HEAD `db8540d`（本票实现提交），分支 `codex/225-channel-hot-reload-and-egress-safety`。
+- 首轮实现 HEAD `db8540d`，分支 `codex/225-channel-hot-reload-and-egress-safety`；
+  独立 Verifier 首轮 **FAIL**（报告 `.scratch/shoppilot-mvp/issues/verifier-225-report.md`），
+  整改后待复验。
 - 全仓 `mvnw -B -ntp verify -Dsurefire.forkCount=1 -Dspring-boot.repackage.skip=true`：
-  863 tests / 143 suites（tool-api 12 + biz-mock 98 + gateway 703 + ticket 50），0 失败。
-  `repackage.skip` 仅因本机运行中的网关占用 fat jar；`mvnw -pl shoppilot-gateway -am
-  package -DskipTests` 随后单独重打包成功。
+  863 tests / 143 suites（首轮）；整改后 `mvnw -B -ntp verify -Dsurefire.forkCount=1`
+  **868 tests / 143 suites**（tool-api 12 + biz-mock 98 + gateway 708 + ticket 50），
+  0 失败，且**不再需要** `repackage.skip`（先停网关再 verify，repackage 成功）。
 - 前端 `npm run typecheck`、`npm test`（15/15）、`npm run build` 全绿；产物
   `index-DMktD0q7.js` / `index-Cuhbh1n7.css` 已入库。
-- 活体 `node scripts/verify-channel-hot-reload.mjs` **22/22**：管理面状态/掩码、
-  五类 SSRF 拒绝 + allowlist 放行 + 307 跳私网拒绝、非法配置 409 `ROLLED_BACK`、
-  合法配置 `APPLIED` 且旧连接停止/新连接启动有日志、Redis 幂等键、重启后同 eventId
+- 活体 `node scripts/verify-channel-hot-reload.mjs` 整改后 **27/27**：管理面状态/掩码、
+  九类 SSRF 拒绝（含 IPv4 TEST-NET 与 IPv6 `2001:db8::/32`）+ allowlist 放行 +
+  307 跳私网拒绝、非法配置 409 `ROLLED_BACK`、合法配置 `APPLIED` 且旧连接停止/
+  新连接启动有日志、`activeAppId` 与实际配置一致、Redis 幂等键、重启后同 eventId
   只投递一次、重试 3 次间隔递增、耗尽落 `CHANNEL_RECEIPT`。本机日志
-  `logs/verify-225-live-final.log`（不入库）。
+  `logs/verify-225-live-r3.log`（不入库）。
 - `python scripts/gen_status.py --check`、`verify_doc_truth.py`、`check_coverage.py`、
   `pwsh scripts/check-ps-syntax.ps1`、`git diff --check` 全绿；活体临时写入的
   `config/channels.json` 已还原删除，`.env` 临时 `OUTBOUND_ALLOWLIST/POLL_INTERVAL`
   已恢复。
 - 既有 221 的 ADMIN 渠道权限未改：`ChannelAdminController` 仍要求 ADMIN，活体
   管理面请求全部走 ADMIN 令牌。
+
+**首轮 Verifier FAIL 的整改（2026-11-23）**
+
+- P0：旧连接与新连接同时关闭失败时，原实现返回 `FAILED`，上层按「新连接启动失败」
+  回滚并标记 `ROLLED_BACK`，可能留下两条长连接且隐藏回滚失败。现在新增
+  `ManagedFeishuConnection.canStopSafely()` 预检：反射成员缺失时**不启动新连接**，
+  直接 `RESTART_REQUIRED`；若运行期两边仍都停不掉，返回 `UNSAFE`，上层保留新配置、
+  标记 `RESTART_REQUIRED` 并明确提示「可能仍有两条长连接，立即重启」，不再谎称回滚。
+  新增对称失败与预检测试。
+- P1：启动失败或回环空凭据时，管理面回落 `RESTART_REQUIRED`，不再停在 `APPLIED`。
+- P1：回执工单写入失败时事件**不 ack**，保留 pending 等下一轮重投，结论不再丢；
+  新增 `receiptFailureKeepsEventPending` 断言 ack 从未发生。
+- P1：PUT/GET 的 `activeAppId` 改为实际活动连接（`activeFeishu`），
+  `RESTART_REQUIRED` 时不会把磁盘新配置冒充成正在运行。
+- P1：`EgressPolicy` 补齐 RFC 5737 三个 IPv4 TEST-NET 与 RFC 3849
+  `2001:db8::/32` 默认拒绝，单元与活体各加断言。
+- P1（路径）：在冻结契约追加「2026-11-23 契约补记」，把 `docs/TUNING_PLAN.md`、
+  `frontend-workspace/src/App.vue` 与 `static/workspace/**` 补入 Allowed paths；
+  AC 与阈值零改动。
 
 **三个现场追问**
 

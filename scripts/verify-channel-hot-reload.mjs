@@ -182,6 +182,10 @@ try {
     ['RFC1918', 'http://10.0.0.8/hook'],
     ['metadata', 'http://169.254.169.254/latest/meta-data/'],
     ['IPv6 loopback', 'http://[::1]/hook'],
+    ['TEST-NET-1 192.0.2.0/24', 'http://192.0.2.1/hook'],
+    ['TEST-NET-2 198.51.100.0/24', 'http://198.51.100.1/hook'],
+    ['TEST-NET-3 203.0.113.0/24', 'http://203.0.113.1/hook'],
+    ['IPv6 文档前缀 2001:db8::/32', 'http://[2001:db8::1]/hook'],
     ['非 http scheme', 'ftp://example.com/hook'],
   ]
   for (const [label, url] of blocked) {
@@ -226,6 +230,8 @@ try {
   })
   check('合法配置无需重启生效', applied.status === 200 && applied.body.state === 'APPLIED'
     && applied.body.restartRequired === false, `${applied.status} state=${applied.body.state}`)
+  check('生效后 activeAppId 与实际配置一致', applied.body.activeAppId === applied.body.appId,
+    `${applied.body.activeAppId} / ${applied.body.appId}`)
   const startedAfter = countLog('飞书长连接已启动')
   check('旧连接停止、新连接启动有日志证据', startedBefore < 0 || startedAfter > startedBefore,
     `启动日志 ${startedBefore} -> ${startedAfter}`)
