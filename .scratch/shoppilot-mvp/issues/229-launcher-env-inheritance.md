@@ -2,7 +2,7 @@
 
 Round: 59（缺陷修复；按 ADR 0031）　
 ADR: 0031（回归修复）、0029（凭证与默认值纪律）　
-Status: implemented（2026-11-24；待独立 Verifier）　Claimed by: root　Blocked by: 无
+Status: implemented（2026-11-24；首轮 Verifier P1 已整改，待独立 Verifier 复验）　Claimed by: root　Blocked by: 无
 
 契约：[plans/229-launcher-env-inheritance.md](../../plans/229-launcher-env-inheritance.md)（2026-11-24 冻结）
 
@@ -66,8 +66,15 @@ pwsh -NoProfile -File scripts/start-gateway.ps1
 **验证落点**
 
 - 静态：`pwsh -NoProfile -File scripts/check-ps-syntax.ps1` →
-  `files=38 errors=0`；新增 `scripts/verify-launcher-env.ps1` → **19/19 PASS**
-  （合并优先级、空串回落、sidecar 键、敏感变量不外泄、三服务接入、mvn 回退）。
+  `files=38 errors=0`；新增 `scripts/verify-launcher-env.ps1` → **24/24 PASS**
+  （合并优先级、空串回落、sidecar 键、敏感变量不外泄、三服务接入、mvn 回退
+  统一函数与“回退分支不再手写下标覆盖”）。
+- 首轮独立 Verifier 判 FAIL 的 P1：`start-ticket.ps1` 回退分支在 `$overrides`
+  未初始化时写索引，缺 jar 时以 `Cannot index into a null array.` 退出。
+  整改为 `Get-ShoppilotMvnFallbackEnvironment` 纯函数，三个启动脚本共用；
+  按 Verifier 原始复现路径（临时目录、空 `shoppilot-ticket/target`）实跑
+  `start-ticket.ps1` → **退出码 0**，生成 `run-ticket.cmd` 且含
+  `JAVA_HOME` / `MAVEN_OPTS` / `spring-boot:run`。
 - 全量：`.\mvnw.cmd -B -ntp verify` → **BUILD SUCCESS**（3:09），
   `878 tests / 144 suites` 未变（surefire 目录 145 XML / 879 条含非默认
   `LlmCassetteRecorder`，与票 227 同口径）；文档三检查与 `git diff --check` 全绿。
@@ -80,8 +87,10 @@ pwsh -NoProfile -File scripts/start-gateway.ps1
 - U2 判定：导出**过期** `SHOPPILOT_IDENTITY_DEMO_PASSWORD` 重启 biz-mock，
   直连 `/api/identity/authenticate`：过期口令 **200**、`.env` 口令 **401**。
   证明环境值已真实到达子进程（修复前会整键丢失 → 不播种 → 两者都 401）。
-  完整 `up.ps1` 链路未复跑（本机 Ollama/Docker 不可用），**U2 保留未达成**，
-  证据与触发条件写入 `registered-debt`。
+  完整 `up.ps1` 链路未复跑（本机 Docker 29.5.3 可用，但 Ollama 服务
+  `127.0.0.1:11434` 未监听；且 `up.ps1` 会经 `bootstrap_env.py --force`
+  改写 `.env`，与本次验证约束冲突），**U2 保留未达成**，证据与触发条件
+  写入 `registered-debt`。
 
 **三个现场追问**
 

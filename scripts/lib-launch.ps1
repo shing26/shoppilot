@@ -175,3 +175,22 @@ function Get-ShoppilotLaunchEnvironment {
     }
     return $merged
 }
+
+# `mvn spring-boot:run` 回退路径的环境：在常规合并结果上强制注入 JDK 两格。
+# 抽成函数而不是在三个脚本里各写一遍 `$overrides['JAVA_HOME'] = ...`：
+# 2026-11-24 票 229 首轮就栽在 start-ticket 漏初始化 $overrides 上（空引用，
+# 只有真缺 jar 时才炸）。规则只留一份，纯函数也能被回归脚本直接执行。
+function Get-ShoppilotMvnFallbackEnvironment {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$JdkHome,
+        [hashtable]$Overrides = @{}
+    )
+    $mvnOverrides = @{}
+    foreach ($pair in $Overrides.GetEnumerator()) {
+        $mvnOverrides[$pair.Key] = $pair.Value
+    }
+    $mvnOverrides['JAVA_HOME'] = $JdkHome
+    $mvnOverrides['MAVEN_OPTS'] = '-Duser.language=en -Duser.country=US'
+    return Get-ShoppilotLaunchEnvironment -Root $Root -Overrides $mvnOverrides
+}

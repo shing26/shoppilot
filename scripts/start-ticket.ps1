@@ -18,7 +18,8 @@ $errFile = Join-Path $logDir "ticket.err"
 $pidFile = Join-Path $logDir "ticket.pid"
 # .env 注入内部凭证；与另两个服务同一套传参口径。
 # WMI 子进程不继承调用方环境，合并结果必须显式写进 run-*.cmd（票 229）。
-$envVars = Get-ShoppilotLaunchEnvironment -Root $root
+$overrides = @{}
+$envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
 $jar = Get-ChildItem (Join-Path $root "shoppilot-ticket\target") -Filter "shoppilot-ticket-*.jar" `
     -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
 
@@ -31,10 +32,8 @@ if ($jar) {
     Write-Host "未找到 fat jar，退回 mvn spring-boot:run"
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
-    # mvn 回退路径同样走 WMI：这两格不写进合并环境，子进程就看不到 JDK 21。
-    $overrides['JAVA_HOME'] = $env:JAVA_HOME
-    $overrides['MAVEN_OPTS'] = $env:MAVEN_OPTS
-    $envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
+    # mvn 回退路径同样走 WMI：JDK 两格必须进合并环境（票 229）。
+    $envVars = Get-ShoppilotMvnFallbackEnvironment -Root $root -JdkHome $jdk
     $mvnArgs = @("-B", "-ntp", "-o", "-pl", "shoppilot-ticket",
         "-Dshoppilot.jvm.max-ram-percentage=$MaxRamPercentage", "spring-boot:run")
     $cmdPid = Start-ShoppilotService -Name "ticket" -WorkingDirectory $root `

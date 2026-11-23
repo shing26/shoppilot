@@ -59,10 +59,20 @@ try {
     $overridden = Get-ShoppilotLaunchEnvironment -Root $tempRoot -Overrides @{
         SHOPPILOT_INTERNAL_TOKEN = 'from-override'
         SHOPPILOT_LLM_MODE = 'perf'
+        JAVA_HOME = 'C:\probe-jdk'
+        MAVEN_OPTS = '-Dprobe=true'
     }
     Check '脚本显式覆盖压过调用方与 .env' `
         ($overridden['SHOPPILOT_INTERNAL_TOKEN'] -eq 'from-override' -and $overridden['SHOPPILOT_LLM_MODE'] -eq 'perf') `
         "token=$($overridden['SHOPPILOT_INTERNAL_TOKEN']) mode=$($overridden['SHOPPILOT_LLM_MODE'])"
+    $fallback = Get-ShoppilotMvnFallbackEnvironment -Root $tempRoot -JdkHome 'C:\probe-jdk' `
+        -Overrides @{ SHOPPILOT_BIZMOCK_POOL_SIZE = '10' }
+    Check 'mvn 回退强制注入 JDK 两格' `
+        ($fallback['JAVA_HOME'] -eq 'C:\probe-jdk' -and $fallback['MAVEN_OPTS'] -eq '-Duser.language=en -Duser.country=US') `
+        "JAVA_HOME=$($fallback['JAVA_HOME']) MAVEN_OPTS=$($fallback['MAVEN_OPTS'])"
+    Check 'mvn 回退保留业务覆盖与 .env 键' `
+        ($fallback['SHOPPILOT_BIZMOCK_POOL_SIZE'] -eq '10' -and $fallback['SHOPPILOT_OUTBOUND_ALLOWLIST'] -eq 'dotenv-allowlist') `
+        "pool=$($fallback['SHOPPILOT_BIZMOCK_POOL_SIZE']) allowlist=$($fallback['SHOPPILOT_OUTBOUND_ALLOWLIST'])"
 
     # run-*.cmd 的内容：合并结果逐条写 set，敏感键不外泄。
     $runnerLines = New-ShoppilotRunnerScript -WorkingDirectory $tempRoot -FilePath 'java.exe' `
@@ -83,8 +93,15 @@ try {
             ($text -match 'Get-ShoppilotLaunchEnvironment\s+-Root\s+\$root') ''
         Check "$script 不再自行逐键复制 .env" `
             ($text -notmatch 'Get-ShoppilotDotEnv\s+\$root') ''
-        Check "$script 的 mvn 回退也注入 JDK 环境" `
-            ($text -match "\`$overrides\['JAVA_HOME'\]\s*=\s*\`$env:JAVA_HOME") ''
+        Check "$script 的 mvn 回退走统一 JDK 环境函数" `
+            ($text -match 'Get-ShoppilotMvnFallbackEnvironment\s+-Root\s+\$root') ''
+        # 票 229 首轮 Verifier P1：回退分支直接写 $overrides[...] 但没初始化。
+        # 只看“退回 mvn”之后那一段：统一函数后回退分支不应再手写下标覆盖。
+        $fallbackAt = $text.IndexOf('未找到 fat jar，退回 mvn spring-boot:run')
+        if ($fallbackAt -ge 0) {
+            $fallbackText = $text.Substring($fallbackAt)
+            Check "$script 的回退分支不再手写下标覆盖" ($fallbackText -notmatch '\$overrides\[') ''
+        }
     }
 } finally {
     foreach ($key in @('SHOPPILOT_INTERNAL_TOKEN', 'SHOPPILOT_EMBEDDING_SIDECAR_URL',

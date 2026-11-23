@@ -48,10 +48,8 @@ if ($jar) {
     Write-Host "未找到 fat jar，退回 mvn spring-boot:run；先跑 mvnw -pl shoppilot-gateway package 可获得更稳的启动路径"
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
-    # mvn 回退路径同样走 WMI：这两格不写进合并环境，子进程就看不到 JDK 21。
-    $overrides['JAVA_HOME'] = $env:JAVA_HOME
-    $overrides['MAVEN_OPTS'] = $env:MAVEN_OPTS
-    $envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
+    # mvn 回退路径同样走 WMI：JDK 两格必须进合并环境（票 229）。
+    $envVars = Get-ShoppilotMvnFallbackEnvironment -Root $root -JdkHome $jdk -Overrides $overrides
     # 用户属性覆盖 POM 默认值；直接写 spring-boot.run.jvmArguments 会被 POM 配置压掉。
     $mvnArgs = @("-B", "-ntp", "-o", "-pl", "shoppilot-gateway",
         "-Dshoppilot.jvm.max-ram-percentage=$MaxRamPercentage", "spring-boot:run")
