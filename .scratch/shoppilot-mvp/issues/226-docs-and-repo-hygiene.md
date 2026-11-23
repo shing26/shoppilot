@@ -2,7 +2,7 @@
 
 Round: 56（所有者 2026-11-22 指令；按 224 → 225 → 226 顺序）
 ADR: 无（文档与仓库卫生，不改业务能力）
-Status: implemented（独立 Verifier PASS，待所有者签收）　Claimed by: implementer-226　Blocked by: 票 224、票 225（均已独立 Verifier PASS）
+Status: done（2026-11-23 所有者书面签收）　Claimed by: implementer-226　Blocked by: 票 224、票 225（均已独立 Verifier PASS）
 契约：[plans/226-docs-and-repo-hygiene.md](../../../plans/226-docs-and-repo-hygiene.md)（2026-11-22 冻结）
 
 ## What to build
@@ -106,3 +106,10 @@ git status --short
 3. 本机截图继续留在 `.scratch` 并 ignore，不迁入 `docs/` 作为正式证据；需要长期
    证据时仍按 AGENTS.md 写汇总/可复跑产物到 `docs/`、`eval/results/` 或
    `loadtest/results/`。
+
+**所有者签收（2026-11-23）**
+
+- 所有者对话内书面指令「签收」。签收范围：AC1–7、两轮独立 Verifier 复验 PASS、
+  `DOC LINKS OK files=119 local_links=234`、`git status --short` 为空。
+- 同时追认 `plans/226` 的冻结后路径补记（219–225 票面仅做 Status/签收校正）；
+  AC、历史证据与判据未改。

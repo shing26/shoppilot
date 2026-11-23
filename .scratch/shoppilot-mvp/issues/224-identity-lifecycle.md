@@ -2,7 +2,7 @@
 
 Round: 56（所有者 2026-11-22 指令「按 224 身份生命周期 → 225 → 226 开票」）
 ADR: 0086（实现前新增并 Accepted；开票依据 = 所有者政策覆盖）
-Status: implemented（独立 Verifier PASS，待所有者签收）　Claimed by: root　Blocked by: 无
+Status: done（2026-11-23 所有者书面签收）　Claimed by: root　Blocked by: 无
 契约：[plans/224-identity-lifecycle.md](../../../plans/224-identity-lifecycle.md)（2026-11-22 冻结）
 
 ## What to build
@@ -156,3 +156,10 @@ Verifier 在 `9563780` 上逐条核对 AC，发现 5 个 P1；以下为整改后
   不在契约 Allowed paths 字面列表内，Verifier 判为文档路径口径瑕疵、非运行时越界。
 - 环境限定：网关聚合 `/actuator/health` 因外部 Qdrant/Ollama 未起返回 503，
   `readinessState=UP`；身份、SSE、221 权限路径不受影响。
+
+**所有者签收（2026-11-23）**
+
+- 所有者对话内书面指令「签收」。签收范围：AC1–11、独立 Verifier 复验 PASS、
+  全仓 844/139、两端 44 + 15 vitest、活体 27/27。
+- 同时追认 Verifier 唯一 P2 的处置：`docs/TUNING_PLAN.md` 仅做测试数机械同步，
+  属文档路径口径瑕疵，不是运行时越界。

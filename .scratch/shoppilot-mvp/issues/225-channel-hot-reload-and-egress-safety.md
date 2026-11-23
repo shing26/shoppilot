@@ -2,7 +2,7 @@
 
 Round: 56（所有者 2026-11-22 指令；按 224 → 225 → 226 顺序）
 ADR: 0087（实现前新增并 Accepted；开票依据 = 所有者政策覆盖）
-Status: implemented（独立 Verifier PASS，待所有者签收）　Claimed by: implementer-225　Blocked by: 无（按所有者指定顺序排在 224 后）
+Status: done（2026-11-23 所有者书面签收）　Claimed by: implementer-225　Blocked by: 无（按所有者指定顺序排在 224 后）
 契约：[plans/225-channel-hot-reload-and-egress-safety.md](../../../plans/225-channel-hot-reload-and-egress-safety.md)（2026-11-22 冻结）
 
 ## What to build
@@ -157,3 +157,12 @@ git status --short
    管理面做带审计的增删？
 3. Redis 不可用时只有进程内 LRU 兜底，跨重启幂等会退化。是否接受这一降级窗口，
    还是要求 Redis 挂掉时暂停出站并告警？
+
+**所有者签收（2026-11-23）**
+
+- 所有者对话内书面指令「签收」。签收范围：AC1–10、三轮独立 Verifier 复验 PASS、
+  全仓 870/143、前端 15/15、活体 27/27、64/70 条 PEL 重启重投实测。
+- 同时追认 `plans/225` 的冻结后路径补记（TUNING_PLAN、App.vue、static/workspace、
+  src/test）；AC、阈值与证据结论未改。
+- 三项 P1（跨轮无退避、PEL 满 BATCH 队头阻塞、activeAppId 活体断言区分力弱）
+  按票面登记的触发条件留作后续票，不阻塞本次签收。

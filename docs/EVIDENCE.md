@@ -374,4 +374,13 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   由票 225 第三轮 Verifier 在祖先 `a85496d` 亲跑。**流程偏差**：`plans/226` 冻结后
   补记了 219–225 票面路径（只允许 Status/签收校正），待所有者书面追认。
 
+- **票 224/225/226 统一签收（2026-11-23，round56 收口）**：所有者对话内书面指令
+  「签收」，三票一并转为 `done`。签收依据：224 的 844/139、两端 44 + 15 vitest、
+  活体 27/27、AC1–11；225 的三轮 Verifier PASS、870/143、活体 27/27、64/70 条
+  PEL 重启重投；226 的两轮 Verifier PASS、`DOC LINKS OK` 119 文件/234 链接、
+  `git status --short` 为空。**签收同时追认** `plans/225` 与 `plans/226` 的冻结后
+  路径补记（AC、阈值、证据结论未改）。**保留项**：225 的三项 P1（跨轮无退避、
+  PEL 满 BATCH 队头阻塞、activeAppId 活体断言区分力弱）按票面触发条件留后续票；
+  本机 Ollama/Qdrant/ES 未起，网关以检索降级模式运行，全量 29 步活体矩阵未重跑。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。
