@@ -2,7 +2,7 @@
 
 Round: 57（回归修复；按 ADR 0031）　
 ADR: 0087 §4（跨轮补齐，不改结论）　
-Status: implemented（2026-11-23 独立 Verifier PASS；待所有者签收）　Claimed by: root　Blocked by: 无
+Status: done（2026-11-23 所有者书面签收；独立 Verifier PASS）　Claimed by: root　Blocked by: 无
 
 契约：[plans/227-outbound-backoff-fairness.md](../../plans/227-outbound-backoff-fairness.md)（2026-11-23 冻结）
 
@@ -94,6 +94,16 @@ node scripts/verify-channel-hot-reload.mjs
   较新条目仍退避；已投递跳过仍 ack；坏消息 ack 不投递；回执 empty/异常不 ack。
 - 边界：活体 `verify-channel-hot-reload.mjs` 未跑（8082/8091/8092 未监听、演示口令未设置），
   按环境边界登记，未声称 PASS；Redis 16379 在但不构成全栈。
+
+**所有者签收（2026-11-23）**
+
+- 所有者对话内书面指令「签收」。签收范围：AC1–AC8、独立 Verifier 在 HEAD
+  `3712c9ff00365b9728052f6884aa85b065dff45d` 的复验 PASS（窄测 19/19、
+  全量 878/144、P0/P1 无），以及首轮 5 个 P1 的整改记录。
+- 已知边界按原样保留：跨轮退避状态为进程内，网关重启后 pending 立即重试一次；
+  单轮仍先处理 PEL 再处理新消息，PEL 64 条都不在退避窗口时新消息存在队头延迟；
+  活体热切换/出站套件未跑（8082/8091/8092 未监听、演示口令未设置）。
+- 本次签收不修改冻结契约、AC、阈值或 Verifier 结论。
 
 ### 三个现场追问
 

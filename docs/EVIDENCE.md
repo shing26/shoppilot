@@ -413,4 +413,11 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   `verify-channel-hot-reload.mjs` 未跑（8082/8091/8092 未监听、演示口令未设置），
   未声称 PASS。待所有者书面签收后合并。
 
+- **票 227 所有者签收（2026-11-23，round57 收口）**：所有者对话内书面指令「签收」，
+  票 227 由 `implemented` 转为 `done`。签收依据：独立 Verifier 在 HEAD `3712c9f`
+  复验 PASS（窄测 19/19、全量 878/144、AC1–AC8 全过、P0/P1 无），首轮 5 个 P1 已整改。
+  **保留项**：跨轮退避状态为进程内、重启后 pending 立即重试一次；单轮先处理 PEL
+  再处理新消息，PEL 64 条都不在退避窗口时新消息仍有队头延迟；活体热切换/出站套件未跑。
+  **边界**：不改冻结契约、AC、阈值或 Verifier 结论。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。
