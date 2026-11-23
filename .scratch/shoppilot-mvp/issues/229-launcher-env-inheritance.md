@@ -2,7 +2,7 @@
 
 Round: 59（缺陷修复；按 ADR 0031）　
 ADR: 0031（回归修复）、0029（凭证与默认值纪律）　
-Status: implemented（2026-11-24；独立 Verifier 复验 PASS，待所有者签收）　Claimed by: root　Blocked by: 无
+Status: done（2026-11-24 所有者书面签收；独立 Verifier 复验 PASS）　Claimed by: root　Blocked by: 无
 
 契约：[plans/229-launcher-env-inheritance.md](../../plans/229-launcher-env-inheritance.md)（2026-11-24 冻结）
 
@@ -97,6 +97,16 @@ pwsh -NoProfile -File scripts/start-gateway.ps1
   `127.0.0.1:11434` 未监听；且 `up.ps1` 会经 `bootstrap_env.py --force`
   改写 `.env`，与本次验证约束冲突），**U2 保留未达成**，证据与触发条件
   写入 `registered-debt`。
+
+**所有者签收（2026-11-24）**
+
+- 所有者对话内书面指令「签收 229」。签收范围：AC1–AC8，以及独立 Verifier
+  在 HEAD `25c1393` 的复验 PASS（24/24、878 tests / 144 suites、AC7 两轮
+  登录 200、P0/P1 无）。
+- 已知边界按原样保留：完整 `up.ps1` 未复跑，U2 保留并带下一次触发条件；
+  `watchdog.ps1` 自启动未透传调用方环境；`.env` 源未做命名空间过滤；
+  调用方旧值优先于 `.env` 且不告警。
+- 本次签收不修改冻结契约、AC、阈值或 Verifier 结论。
 
 **三个现场追问**
 

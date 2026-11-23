@@ -490,6 +490,7 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   但调用方旧值优先；完整 `up.ps1` 未复跑（Docker 29.5.3 可用，Ollama 服务
   11434 未监听；且 `up.ps1` 的 `bootstrap_env.py --force` 会改写 `.env`），
   U2 保留并写明触发条件。首轮独立 Verifier 判 FAIL（上述 P1）；整改后独立
-  复验 **PASS**（HEAD `25c1393`：24/24、878/144、AC1–AC8、P0/P1 无）。
+  复验 **PASS**（HEAD `25c1393`：24/24、878/144、AC1–AC8、P0/P1 无）；
+  2026-11-24 所有者书面签收。
 
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。
