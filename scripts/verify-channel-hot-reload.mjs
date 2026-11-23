@@ -120,6 +120,12 @@ function envValue(key) {
   return line ? line.slice(key.length + 1).trim().replace(/^["']|["']$/g, '') : ''
 }
 
+// 与 ChannelAdminController.activeAppId() 的掩码规则保持一致：前 6 位 + ****。
+// 期望值来自脚本已知的候选 appId，而不是响应里的另一个掩码字段。
+function maskAppId(appId) {
+  return appId.length <= 6 ? '****' : appId.slice(0, 6) + '****'
+}
+
 function countLog(fragment) {
   const file = join(REPO, 'logs', 'gateway-default.out')
   if (!existsSync(file)) return -1
@@ -208,7 +214,9 @@ try {
 
   // ── 3. 非法配置回滚 + 合法配置热生效 ─────────────────────────────
   const before = await api('/api/v1/support/ops/channels', { token })
-  const beforeAppId = before.body.channels?.[0]?.appId
+  const beforeChannel = before.body.channels?.[0]
+  const beforeAppId = beforeChannel?.appId
+  const beforeActive = beforeChannel?.activeAppId
   const invalid = await api('/api/v1/support/ops/channels/feishu', {
     method: 'PUT', token,
     body: { enabled: true, appId: 'cli_invalid_probe', appSecret: 'invalid-secret',
@@ -224,17 +232,40 @@ try {
   const appSecret = envValue('SHOPPILOT_IM_FEISHU_APP_SECRET')
   if (!appId || !appSecret) throw new Error('缺 SHOPPILOT_IM_FEISHU_APP_ID/APP_SECRET')
   const startedBefore = countLog('飞书长连接已启动')
+  const stoppedBefore = countLog('飞书长连接已停止')
   const applied = await api('/api/v1/support/ops/channels/feishu', {
     method: 'PUT', token,
     body: { enabled: true, appId, appSecret, tenant: TENANT, customer: 'C001', identityFile: '' },
   })
   check('合法配置无需重启生效', applied.status === 200 && applied.body.state === 'APPLIED'
     && applied.body.restartRequired === false, `${applied.status} state=${applied.body.state}`)
-  check('生效后 activeAppId 与实际配置一致', applied.body.activeAppId === applied.body.appId,
-    `${applied.body.activeAppId} / ${applied.body.appId}`)
+  const expectedActive = maskAppId(appId)
+  check('生效后 activeAppId 等于本次候选 appId 的掩码', applied.body.activeAppId === expectedActive,
+    `${applied.body.activeAppId} / expected ${expectedActive}`)
+  check('生效后配置 appId 等于本次候选 appId 的掩码', applied.body.appId === expectedActive,
+    `${applied.body.appId} / expected ${expectedActive}`)
+  const afterApplied = await api('/api/v1/support/ops/channels', { token })
+  const appliedStatus = afterApplied.body.channels?.[0]
+  check('GET 状态里的 activeAppId 与本次候选一致', appliedStatus?.activeAppId === expectedActive,
+    `${appliedStatus?.activeAppId} / expected ${expectedActive}`)
+  if (beforeActive && beforeActive !== '(无活动连接)' && beforeActive !== expectedActive) {
+    check('热切换后 activeAppId 不再是旧活动连接', appliedStatus?.activeAppId !== beforeActive,
+      `${appliedStatus?.activeAppId} / old ${beforeActive}`)
+  } else if (beforeActive === expectedActive) {
+    console.log(`WARN  旧/新 appId 掩码相同（${expectedActive}），activeAppId 无法区分连接切换；以启动/停止日志为准`)
+  } else if (!beforeActive || beforeActive === '(无活动连接)') {
+    console.log('WARN  切换前没有活动连接，activeAppId 旧值断言不适用；以新连接启动日志为准')
+  }
   const startedAfter = countLog('飞书长连接已启动')
-  check('旧连接停止、新连接启动有日志证据', startedBefore < 0 || startedAfter > startedBefore,
-    `启动日志 ${startedBefore} -> ${startedAfter}`)
+  const stoppedAfter = countLog('飞书长连接已停止')
+  if (startedBefore < 0 || stoppedBefore < 0) {
+    console.log(`WARN  网关日志不可读（started=${startedBefore}, stopped=${stoppedBefore}），连接生命周期未判`)
+  } else {
+    check('新连接启动有日志证据', startedAfter > startedBefore,
+      `启动日志 ${startedBefore} -> ${startedAfter}`)
+    check('旧连接停止有日志证据', stoppedAfter > stoppedBefore,
+      `停止日志 ${stoppedBefore} -> ${stoppedAfter}`)
+  }
 
   // ── 4. 跨重启幂等 ─────────────────────────────────────────────────
   const event1 = `ev-hot-${Date.now()}`

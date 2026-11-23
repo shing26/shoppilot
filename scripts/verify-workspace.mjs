@@ -1,6 +1,8 @@
 // 坐席工作台验收（round23 票 73 / ADR 0057）。
 //
 // 用法: $env:NODE_PATH="<repo>\.tools\node_modules"; node scripts/verify-workspace.mjs
+// 高/资金优先级种子走工单服务直连，需要 SHOPPILOT_TICKET_BASE（默认 :8092）与
+// SHOPPILOT_INTERNAL_TOKEN（默认 dev-internal-token-change-me）；生产档必须显式给 token。
 // 用 createRequire 而不是静态 import：ESM 解析不吃 NODE_PATH，而 Playwright 装在 .tools 下，
 // 不为一个验收脚本给项目拉一份 package.json（同 verify-console.mjs 的理由）。
 //
@@ -11,6 +13,8 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 
 const BASE = process.env.SHOPPILOT_WORKSPACE_BASE || 'http://127.0.0.1:8082';
 const PAGE = `${BASE}/workspace/`;
+const TICKET_BASE = process.env.SHOPPILOT_TICKET_BASE || 'http://127.0.0.1:8092';
+const INTERNAL_TOKEN = process.env.SHOPPILOT_INTERNAL_TOKEN || 'dev-internal-token-change-me';
 
 // 票 83：工作台改成**坐席账号登录**，凭证形态从「ops token + 自报坐席名」换成真登录。
 // 口令来自环境变量而不是仓库默认值（ADR 0029 的同一条家法）；没给就明说别跑，别退回去
@@ -31,6 +35,23 @@ const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`);
 };
+
+// 工单服务的真实创建入口；种子必须走这条 API，不直接写库、不伪造 DOM。
+// 内部令牌与租户头是工单服务的既有契约（InternalAuthFilter），不是为门禁新开的口子。
+async function seedTicket(body) {
+  const response = await fetch(`${TICKET_BASE}/api/tickets`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Token': INTERNAL_TOKEN,
+      'X-Tenant-Id': TENANT,
+      'X-Customer-Id': 'C001',
+    },
+    body: JSON.stringify(body),
+  });
+  const parsed = await response.json().catch(() => ({}));
+  return { status: response.status, body: parsed };
+}
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -106,6 +127,38 @@ check(
   `HTTP ${seededResponse.status} ticketId=${seededTicketId || '(无)'}`,
 );
 
+// 票 223-1：队列里只有一种优先级时，排序断言无从证明。这里用真实工单服务
+// 造 high（情绪升级规则）与 money（退款审批来源基线）两张单，让排序断言有承重对象。
+const highSeed = await seedTicket({
+  source: 'DEGRADE',
+  customerId: 'C001',
+  reason: 'EMOTION_ESCALATION',
+  userQuery: '工作台门禁：高优先级种子',
+  transcript: '',
+  priority: 'high',
+});
+const highTicketId = highSeed.body?.id;
+check(
+  '高优先级种子落单成功（high）',
+  highSeed.status === 201 && highSeed.body?.priority === 'high' && Boolean(highTicketId),
+  `HTTP ${highSeed.status} priority=${highSeed.body?.priority ?? '(无)'} id=${highTicketId ?? '(无)'}`,
+);
+
+const moneySeed = await seedTicket({
+  source: 'REFUND_APPROVAL',
+  customerId: 'C001',
+  reason: 'REFUND_APPROVAL',
+  userQuery: '工作台门禁：资金优先级种子',
+  transcript: '',
+  priority: 'money',
+});
+const moneyTicketId = moneySeed.body?.id;
+check(
+  '资金优先级种子落单成功（money）',
+  moneySeed.status === 201 && moneySeed.body?.priority === 'money' && Boolean(moneyTicketId),
+  `HTTP ${moneySeed.status} priority=${moneySeed.body?.priority ?? '(无)'} id=${moneyTicketId ?? '(无)'}`,
+);
+
 await page.locator('button:has-text("刷新队列")').click();
 await page.waitForLoadState('networkidle');
 
@@ -133,10 +186,37 @@ if (new Set(ranks).size >= 2) {
     labels.join(','),
   );
 } else {
-  // 队列里只有一种优先级时排序无从证明。**打 WARN 而不是静默跳过**：
-  // 门禁自己跳过的断言和通过的断言，在读数里长得一样。
-  console.log(`WARN  队列只有一种优先级（${labels.join(',') || '空'}），本轮未覆盖排序断言`);
+  // 票 223-1：种子已落单后仍只有一种优先级，说明种子没进队列或视图没刷新；
+  // 这不能再是 WARN——跳过断言和通过断言在读数里长得一样。
+  check(
+    '列表覆盖多优先级排序（high/money/normal 种子已落单）',
+    false,
+    `只有一种优先级：${labels.join(',') || '空'}`,
+  );
 }
+
+const highRowCount = await rows.filter({
+  has: page.locator(`[title="工单号 ${highTicketId}"]`),
+}).count();
+const moneyRowCount = await rows.filter({
+  has: page.locator(`[title="工单号 ${moneyTicketId}"]`),
+}).count();
+check('队列里能找到高优先级种子', highRowCount === 1, `${highRowCount} 行匹配 ${highTicketId || '(无)'}`);
+check('队列里能找到资金优先级种子', moneyRowCount === 1, `${moneyRowCount} 行匹配 ${moneyTicketId || '(无)'}`);
+
+const seededCards = await rows.evaluateAll((nodes) => nodes.map((node) => ({
+  title: node.querySelector('[title^="工单号 "]')?.getAttribute('title') ?? '',
+  priority: node.querySelector('.priority')?.textContent?.trim() ?? '',
+})));
+const position = (id) => seededCards.findIndex((card) => card.title.includes(id));
+const highPos = position(highTicketId);
+const moneyPos = position(moneyTicketId);
+const normalPos = position(seededTicketId);
+check(
+  '三张种子单按 紧急 → 资金 → 普通 排序',
+  highPos >= 0 && moneyPos > highPos && normalPos > moneyPos,
+  `紧急=${highPos} 资金=${moneyPos} 普通=${normalPos}`,
+);
 
 // 队列可能同时装着历史复核工单（它们通常已结单）；必须按本次返回的 ticketId 精确选中，
 // 否则「第一行」会把领取/结单动作打到另一张已结单的票上，变成状态污染型假红。
