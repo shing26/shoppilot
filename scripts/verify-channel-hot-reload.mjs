@@ -80,9 +80,29 @@ const redirector = http.createServer((req, res) => {
 })
 
 function listen(server, port) {
-  return new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(port, resolve)
+  // 端口预检：Windows 上 IPv4/IPv6 双栈绑定可能让 listen 成功、但网关按 IPv4
+  // 访问时命中别的残留进程，表现为「跳转断言过了/挂了都说不清」。这里先探 127.0.0.1，
+  // 被占用就明确失败，不把环境残留读成产品行为。
+  return portFree(port).then((free) => {
+    if (!free) throw new Error(`端口 ${port} 已被占用；先停掉残留的验收接收端`)
+    return new Promise((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(port, resolve)
+    })
+  })
+}
+
+function portFree(port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port })
+    const done = (free) => {
+      socket.destroy()
+      resolve(free)
+    }
+    socket.setTimeout(500)
+    socket.once('connect', () => done(false))
+    socket.once('timeout', () => done(true))
+    socket.once('error', () => done(true))
   })
 }
 
@@ -232,7 +252,10 @@ try {
   const appSecret = envValue('SHOPPILOT_IM_FEISHU_APP_SECRET')
   if (!appId || !appSecret) throw new Error('缺 SHOPPILOT_IM_FEISHU_APP_ID/APP_SECRET')
   const startedBefore = countLog('飞书长连接已启动')
-  const stoppedBefore = countLog('飞书长连接已停止')
+  // 热切换成功打的是「飞书长连接已启动（热切换），旧连接已停止」；
+  // 「飞书长连接已停止」只在显式停用/停机路径出现。这里数热切换那条停止证据，
+  // 否则热切换永远 0→0，断言对错了日志行。
+  const stoppedBefore = countLog('旧连接已停止')
   const applied = await api('/api/v1/support/ops/channels/feishu', {
     method: 'PUT', token,
     body: { enabled: true, appId, appSecret, tenant: TENANT, customer: 'C001', identityFile: '' },
@@ -257,14 +280,19 @@ try {
     console.log('WARN  切换前没有活动连接，activeAppId 旧值断言不适用；以新连接启动日志为准')
   }
   const startedAfter = countLog('飞书长连接已启动')
-  const stoppedAfter = countLog('飞书长连接已停止')
+  const stoppedAfter = countLog('旧连接已停止')
   if (startedBefore < 0 || stoppedBefore < 0) {
     console.log(`WARN  网关日志不可读（started=${startedBefore}, stopped=${stoppedBefore}），连接生命周期未判`)
   } else {
     check('新连接启动有日志证据', startedAfter > startedBefore,
       `启动日志 ${startedBefore} -> ${startedAfter}`)
-    check('旧连接停止有日志证据', stoppedAfter > stoppedBefore,
-      `停止日志 ${stoppedBefore} -> ${stoppedAfter}`)
+    const hadActiveConnection = Boolean(beforeActive) && beforeActive !== '(无活动连接)'
+    if (hadActiveConnection) {
+      check('旧连接停止有日志证据', stoppedAfter > stoppedBefore,
+        `停止日志 ${stoppedBefore} -> ${stoppedAfter}`)
+    } else {
+      console.log('WARN  切换前没有活动连接，旧连接停止日志不适用；新连接启动已判')
+    }
   }
 
   // ── 4. 跨重启幂等 ─────────────────────────────────────────────────
