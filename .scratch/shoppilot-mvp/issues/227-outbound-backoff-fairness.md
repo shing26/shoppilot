@@ -2,7 +2,7 @@
 
 Round: 57（回归修复；按 ADR 0031）　
 ADR: 0087 §4（跨轮补齐，不改结论）　
-Status: implemented（2026-11-23；待独立 Verifier）　Claimed by: root　Blocked by: 无
+Status: implemented（2026-11-23 独立 Verifier PASS；待所有者签收）　Claimed by: root　Blocked by: 无
 
 契约：[plans/227-outbound-backoff-fairness.md](../../plans/227-outbound-backoff-fairness.md)（2026-11-23 冻结）
 
@@ -81,6 +81,19 @@ node scripts/verify-channel-hot-reload.mjs
 - P1-4 ack 断言：退避窗口内与失败轮均断言 `never().acknowledge`；已投递跳过断言 ack 一次。
 - P1-5 归一化测试：用正 base/max 重写，`factor<1` 断言不回落到 5s，`jitter>1` 断言
   10s 基数的抖动上限仍是 20s。
+
+**独立 Verifier 复验 PASS（2026-11-23，HEAD `3712c9f`）**
+
+- 绑定：分支 `codex/227-outbound-backoff-fairness`，HEAD
+  `3712c9ff00365b9728052f6884aa85b065dff45d`；复验前后 `git status --short` 为空。
+- 亲跑窄测 **19/19**（OutboundDeliveryTest 16 + RoundBackoffPolicyTest 3），
+  全量 **12 + 98 + 718 + 50 = 878 tests / 144 suites**、0 失败；`STATUS ok`、
+  `verify_doc_truth` 878/144、`check_doc_links` 119 文件/234 链接、`git diff --check` 全绿。
+- AC1–AC8 全 **PASS**；P0/P1 均为 **无**。复验特别确认：退避窗口内不 HTTP/不写回执/
+  不 ack，到期重试；PEL 64 条时新消息同轮处理；同 RecordId 只处理一次；最旧状态被淘汰、
+  较新条目仍退避；已投递跳过仍 ack；坏消息 ack 不投递；回执 empty/异常不 ack。
+- 边界：活体 `verify-channel-hot-reload.mjs` 未跑（8082/8091/8092 未监听、演示口令未设置），
+  按环境边界登记，未声称 PASS；Redis 16379 在但不构成全栈。
 
 ### 三个现场追问
 

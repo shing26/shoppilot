@@ -404,6 +404,13 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   独立 Verifier 结果待补。
   **首轮独立 Verifier FAIL（HEAD `f476af4`）**：5 个 P1——退避时钟以 drain 起点为准、
   抖动后可超过 max、无上限/淘汰测试、退避 skip 与已投递 skip 的 ack 无断言、
-  归一化测试鉴别力不足。整改后窄测 **19/19**、全量 **878/144**；待 Verifier 复验。
+  归一化测试鉴别力不足。整改后窄测 **19/19**、全量 **878/144**。
+  **独立 Verifier 复验 PASS（HEAD `3712c9f`）**：AC1–AC8 全过、P0/P1 无；
+  亲跑窄测 19/19、全量 878/144，`STATUS ok` / `verify_doc_truth` / `check_doc_links` /
+  `git diff --check` 全绿；特别确认退避窗口内不 HTTP/不写回执/不 ack、到期重试、
+  PEL 64 条时新消息同轮处理、同 RecordId 只处理一次、最旧状态淘汰且较新仍退避、
+  已投递跳过仍 ack、坏消息 ack 不投递、回执 empty/异常不 ack。**边界**：活体
+  `verify-channel-hot-reload.mjs` 未跑（8082/8091/8092 未监听、演示口令未设置），
+  未声称 PASS。待所有者书面签收后合并。
 
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。
