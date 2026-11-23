@@ -84,12 +84,8 @@ public class OutboundDeliveryService {
     private final RetryPolicy retry;
     private final RoundBackoffPolicy roundBackoff;
     private final LongSupplier clock;
-    private final Map<String, RoundState> roundStates = new LinkedHashMap<>(16, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, RoundState> eldest) {
-            return size() > MAX_ROUND_STATES;
-        }
-    };
+    private final int maxRoundStates;
+    private final Map<String, RoundState> roundStates;
 
     private final ScheduledExecutorService loop;
 
@@ -122,6 +118,16 @@ public class OutboundDeliveryService {
                             io.micrometer.core.instrument.MeterRegistry registry,
                             Duration pollInterval, EgressPolicy egress, DeliveredEventStore deliveredStore,
                             RetryPolicy retry, RoundBackoffPolicy roundBackoff, LongSupplier clock) {
+        this(redis, http, mapper, receiptWriter, registry, pollInterval, egress, deliveredStore, retry,
+                roundBackoff, clock, MAX_ROUND_STATES);
+    }
+
+    OutboundDeliveryService(StringRedisTemplate redis, HttpClient http, ObjectMapper mapper,
+                            EmailReceiptWriter receiptWriter,
+                            io.micrometer.core.instrument.MeterRegistry registry,
+                            Duration pollInterval, EgressPolicy egress, DeliveredEventStore deliveredStore,
+                            RetryPolicy retry, RoundBackoffPolicy roundBackoff, LongSupplier clock,
+                            int maxRoundStates) {
         this.redis = redis;
         this.http = http;
         this.mapper = mapper;
@@ -132,6 +138,13 @@ public class OutboundDeliveryService {
         this.retry = retry;
         this.roundBackoff = roundBackoff;
         this.clock = clock;
+        this.maxRoundStates = Math.max(1, maxRoundStates);
+        this.roundStates = new LinkedHashMap<>(16, 0.75f, false) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, RoundState> eldest) {
+                return size() > OutboundDeliveryService.this.maxRoundStates;
+            }
+        };
         // 单线程 + 固定延迟。审计那条流选了惰性消费（要有人读审计才收），但出站不行——
         // 「要有人点一下才投递」是 ADR 0059 明确否掉的形态：一个从后台自己走的定时任务就够。
         this.loop = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -177,7 +190,6 @@ public class OutboundDeliveryService {
             }
             return 0;
         }
-        long now = clock.getAsLong();
         Set<String> seenRecordIds = new HashSet<>();
         List<RecordId> acked = new ArrayList<>();
         for (MapRecord<String, Object, Object> record : records) {
@@ -194,6 +206,7 @@ public class OutboundDeliveryService {
                 continue;
             }
             String stateKey = event.eventId() == null ? recordId : event.eventId();
+            long now = clock.getAsLong();
             RoundState state = stateKey == null ? null : roundStates.get(stateKey);
             if (state != null && now < state.nextAttemptAtMillis()) {
                 log.debug("出站事件 {} 仍在跨轮退避，{}ms 后再试", stateKey,
@@ -213,7 +226,8 @@ public class OutboundDeliveryService {
                 int failedRounds = state == null ? 1 : state.failures() + 1;
                 long delayMillis = roundBackoff.delay(failedRounds).toMillis();
                 if (stateKey != null) {
-                    roundStates.put(stateKey, new RoundState(failedRounds, now + delayMillis));
+                    long failedAt = clock.getAsLong();
+                    roundStates.put(stateKey, new RoundState(failedRounds, failedAt + delayMillis));
                 }
                 log.info("出站事件 {} 未落定（回执写入失败），第 {} 轮后跨轮退避 {}ms，保留 pending",
                         stateKey, failedRounds, delayMillis);

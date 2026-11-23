@@ -59,9 +59,9 @@ node scripts/verify-channel-hot-reload.mjs
 ### 验证落点
 
 - 窄测：`.\mvnw.cmd -B -ntp -pl shoppilot-gateway -am "-Dtest=OutboundDeliveryTest,RoundBackoffPolicyTest" "-Dsurefire.failIfNoSpecifiedTests=false" test`
-  → **18/18 绿**（OutboundDeliveryTest 15、RoundBackoffPolicyTest 3）。
+  → 首轮 **18/18 绿**；Verifier P1 整改后 **19/19 绿**（OutboundDeliveryTest 16、RoundBackoffPolicyTest 3）。
 - 全量：`.\mvnw.cmd -B -ntp verify` → **BUILD SUCCESS**，四模块
-  `12 + 98 + 717 + 50 = 877 tests / 144 suites`，0 失败。
+  `12 + 98 + 718 + 50 = 878 tests / 144 suites`，0 失败。
   （首次全量被旧 biz-mock 进程占用 jar 挡住，`repackage` 无法重命名；停掉本项目旧进程后重跑成功。
   外部 OpsPilot `:8081` 未动。）
 - 文档真值：`gen_status.py --check` → `STATUS ok`；`verify_doc_truth.py` →
@@ -69,6 +69,18 @@ node scripts/verify-channel-hot-reload.mjs
   `git diff --check` 退出 0。
 - 活体：未跑 `verify-channel-hot-reload.mjs`（需要 gateway + Redis + 演示口令的本机栈）；
   按契约留待独立 Verifier 判断是否具备条件，不具备则登记边界，不声称 PASS。
+
+**首轮独立 Verifier FAIL 的整改（2026-11-23，HEAD `f476af4`）**
+
+- P1-1 退避时钟：`nextAttemptAt` 从 drain 开始时刻改为**失败时刻**（`failedAt`），
+  避免长轮次尾部事件窗口已过期。
+- P1-2 抖动封顶：先加抖动再 `min(..., max)`，实际延迟不再超过 `max`；
+  `jitterStaysWithinConfiguredBand` 断言改为 500–1000ms。
+- P1-3 状态有界：`LinkedHashMap` 改为插入序（最旧淘汰），新增可注入上限的测试构造器，
+  补 3 条事件、上限 2 的淘汰测试（最旧重试、较新仍退避）。
+- P1-4 ack 断言：退避窗口内与失败轮均断言 `never().acknowledge`；已投递跳过断言 ack 一次。
+- P1-5 归一化测试：用正 base/max 重写，`factor<1` 断言不回落到 5s，`jitter>1` 断言
+  10s 基数的抖动上限仍是 20s。
 
 ### 三个现场追问
 

@@ -110,9 +110,11 @@ class OutboundDeliveryTest {
     void redeliveryIsIdempotent() {
         OutboundDeliveryService service = service();
         drainWith(service, outboundEvent("ev-dup", "webhook", echoUrl, "T-89", "已处理"));
-        drainWith(service, outboundEvent("ev-dup", "webhook", echoUrl, "T-89", "已处理"));
+        StreamOperations<String, Object, Object> second =
+                drainWith(service, outboundEvent("ev-dup", "webhook", echoUrl, "T-89", "已处理"));
 
         assertThat(received).as("重投不产生第二次投递").hasSize(1);
+        verify(second).acknowledge(anyString(), anyString(), any(RecordId[].class));
     }
 
     @Test
@@ -245,23 +247,29 @@ class OutboundDeliveryTest {
         MapRecord<String, Object, Object> rec = record("1-0",
                 outboundEvent("ev-backoff", "webhook", echoUrl, "T-227", "已处理"));
 
-        drainWithRecords(service, List.of(rec), List.of());
+        StreamOperations<String, Object, Object> first = drainWithRecords(service, List.of(rec), List.of());
         assertThat(received).as("第一轮对下游试满 3 次").hasSize(3);
         assertThat(service.roundStateCount()).isEqualTo(1);
         verify(receiptWriter, times(1))
                 .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+        verify(first, org.mockito.Mockito.never())
+                .acknowledge(anyString(), anyString(), any(RecordId[].class));
 
         now.addAndGet(4_000);
-        drainWithRecords(service, List.of(rec), List.of());
+        StreamOperations<String, Object, Object> skipped = drainWithRecords(service, List.of(rec), List.of());
         assertThat(received).as("退避窗口内不再重打下游").hasSize(3);
         verify(receiptWriter, times(1))
                 .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+        verify(skipped, org.mockito.Mockito.never())
+                .acknowledge(anyString(), anyString(), any(RecordId[].class));
 
         now.addAndGet(2_000);
-        drainWithRecords(service, List.of(rec), List.of());
+        StreamOperations<String, Object, Object> retried = drainWithRecords(service, List.of(rec), List.of());
         assertThat(received).as("退避到期后重新尝试").hasSize(6);
         verify(receiptWriter, times(2))
                 .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+        verify(retried, org.mockito.Mockito.never())
+                .acknowledge(anyString(), anyString(), any(RecordId[].class));
     }
 
     @Test
@@ -322,6 +330,35 @@ class OutboundDeliveryTest {
         assertThat(acked.getValue()).hasSize(1);
     }
 
+    @Test
+    @DisplayName("跨轮退避表有界：超出上限淘汰最旧条目，新条目继续退避")
+    void roundStateTableIsBoundedAndEvictsOldest() {
+        status.set(500);
+        doReturn(Optional.empty()).when(receiptWriter)
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+        AtomicLong now = new AtomicLong(1_000_000L);
+        OutboundDeliveryService service = service(
+                RoundBackoffPolicy.of(Duration.ofHours(1), 2, Duration.ofHours(1), 0), now::get, 2);
+        MapRecord<String, Object, Object> oldest = record("1-0",
+                outboundEvent("ev-old", "webhook", echoUrl, "T-231", "已处理"));
+        MapRecord<String, Object, Object> middle = record("2-0",
+                outboundEvent("ev-mid", "webhook", echoUrl, "T-232", "已处理"));
+        MapRecord<String, Object, Object> newest = record("3-0",
+                outboundEvent("ev-new", "webhook", echoUrl, "T-233", "已处理"));
+
+        drainWithRecords(service, List.of(oldest, middle, newest), List.of());
+        assertThat(received).as("三条各试满 3 次").hasSize(9);
+        assertThat(service.roundStateCount()).as("上限 2").isEqualTo(2);
+
+        received.clear();
+        drainWithRecords(service, List.of(oldest), List.of());
+        assertThat(received).as("最旧的 ev-old 已被淘汰，立即重试").hasSize(3);
+
+        received.clear();
+        drainWithRecords(service, List.of(newest), List.of());
+        assertThat(received).as("较新的 ev-new 仍在 1 小时退避窗口内").isEmpty();
+    }
+
     // --- harness ---------------------------------------------------------------------------
 
     private void record(HttpExchange exchange) throws IOException {
@@ -364,6 +401,16 @@ class OutboundDeliveryTest {
                         .followRedirects(HttpClient.Redirect.NEVER)
                         .build()),
                 DeliveredEventStore.inMemory(Duration.ZERO), RetryPolicy.fast(), backoff, clock);
+    }
+
+    private OutboundDeliveryService service(RoundBackoffPolicy backoff, LongSupplier clock, int maxRoundStates) {
+        return new OutboundDeliveryService(redis, HttpClient.newHttpClient(), JSON, receiptWriter, registry,
+                Duration.ofHours(1),
+                new EgressPolicy("127.0.0.1,localhost", HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .build()),
+                DeliveredEventStore.inMemory(Duration.ZERO), RetryPolicy.fast(), backoff, clock, maxRoundStates);
     }
 
     private StreamOperations<String, Object, Object> drainWithRecords(

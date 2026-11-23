@@ -48,7 +48,9 @@ public class RoundBackoffPolicy {
         long spread = (long) (capped * jitter);
         long low = Math.max(0, capped - spread);
         long high = capped + spread;
-        return Duration.ofMillis(ThreadLocalRandom.current().nextLong(low, high + 1));
+        long jittered = ThreadLocalRandom.current().nextLong(low, high + 1);
+        // 抖动之后再封顶：契约写的是「受 max 封顶」，默认 5m 不能因为 ±20% 抖到 6m。
+        return Duration.ofMillis(Math.min(jittered, max.toMillis()));
     }
 
     /** 测试用确定性曲线：1ms、无抖动。 */
