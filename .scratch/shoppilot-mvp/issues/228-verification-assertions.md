@@ -2,7 +2,7 @@
 
 Round: 58（验收入口补强；按 ADR 0031）　
 ADR: 0087（activeAppId 运行态语义；不改结论）　
-Status: implemented（2026-11-23；独立 Verifier PASS，待所有者签收）　Claimed by: root　Blocked by: 无
+Status: done（2026-11-24 所有者书面签收；独立 Verifier PASS）　Claimed by: root　Blocked by: 无
 
 契约：[plans/228-verification-assertions.md](../../plans/228-verification-assertions.md)（2026-11-23 冻结）
 
@@ -110,3 +110,15 @@ node scripts/verify-channel-hot-reload.mjs
   未发现缺陷。
 - 票外 P1 经 Verifier 独立确认：`lib-launch.ps1` 的 WMI 环境继承缺陷成立，
   不影响本票 AC，建议另票。未合并、未签收。
+
+**所有者签收（2026-11-24）**
+
+- 所有者对话内书面指令「签收」。签收范围：AC1–AC8，以及独立 Verifier 在
+  HEAD `4b0ca71` 的复验 PASS（workspace 30/30、channel 30/30、878 tests / 144 suites、
+  P0 无），含首轮飞书 443 瞬时超时的 FAIL 记录与复跑证据。
+- 已知边界按原样保留：AC2 异掩码分支与 AC6 失败路径只有静态审查；工作台活体
+  队列含 11 张历史残留单，绝对下标不同于干净库，但 high→money→normal 相对顺序
+  与全局非降序成立；未注入真实飞书入站事件观察切换窗口。
+- 票外 P1 不在本次签收范围：`lib-launch.ps1` 经 WMI 脱离启动不继承调用方环境，
+  从已导出 `SHOPPILOT_*` 的进程重启网关会丢 `.env` 内部令牌；待另票修复。
+- 本次签收不修改冻结契约、AC、阈值或 Verifier 结论。

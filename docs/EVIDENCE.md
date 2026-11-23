@@ -454,4 +454,13 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   Verifier 独立确认票外 P1 `lib-launch.ps1` 环境继承缺陷成立，不影响本票 AC，
   建议另票。未合并、未签收，等待所有者书面签收。
 
+- **票 228 所有者签收（2026-11-24，round58 收口）**：所有者对话内书面指令「签收」，
+  票 228 由 `implemented` 转为 `done`。签收依据：独立 Verifier 在 HEAD `4b0ca71`
+  复验 PASS（AC1–AC8 全过、P0 无；`mvnw verify` 878/144；workspace **30/30**、
+  channel **30/30**），首轮飞书 443 瞬时超时导致的 27/30 FAIL 已保留并复跑通过。
+  **保留项**：AC2 异掩码分支与 AC6 失败路径只有静态审查；工作台活体队列含 11 张
+  历史残留单，绝对下标不同于干净库但相对顺序与全局非降序成立；未注入真实飞书入站
+  事件观察切换窗口。**票外 P1 不在签收范围**：`lib-launch.ps1` 的 WMI 环境继承缺陷
+  待另票修复。**边界**：不改冻结契约、AC、阈值或 Verifier 结论。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。
