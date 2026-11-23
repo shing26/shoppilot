@@ -2,7 +2,7 @@
 
 Round: 58（验收入口补强；按 ADR 0031）　
 ADR: 0087（activeAppId 运行态语义；不改结论）　
-Status: implemented（2026-11-23；待独立 Verifier）　Claimed by: root　Blocked by: 无
+Status: implemented（2026-11-23；独立 Verifier PASS，待所有者签收）　Claimed by: root　Blocked by: 无
 
 契约：[plans/228-verification-assertions.md](../../plans/228-verification-assertions.md)（2026-11-23 冻结）
 
@@ -92,3 +92,21 @@ node scripts/verify-channel-hot-reload.mjs
    SSRF allowlist 不生效），日志只留默认凭证 WARN。本票绕行是只导出脚本自身
    需要的 `SHOPPILOT_IDENTITY_DEMO_PASSWORD`；根因修复应在 `lib-launch.ps1`
    或启动器，不在本票 allowed paths。
+
+**独立 Verifier PASS（2026-11-23，HEAD `4b0ca71`）**
+
+- 静态：两条 `node --check` 退出 0；`.\mvnw.cmd -B -ntp verify` BUILD SUCCESS
+  （878 tests / 144 suites，0 skipped）；`gen_status --check`、`verify_doc_truth`、
+  `check_doc_links`（119 文件 / 234 链接）、`git diff --check` 全退出 0；
+  `git status --short` 为空。
+- 活体 workspace：**30/30 PASS**；high/money 种子均 HTTP 201 且 priority 正确，
+  三张种子单相对顺序 `紧急=0 资金=2 普通=4`（队列残留 11 张历史单，绝对下标不同于
+  干净库，但 high→money→normal 与全局非降序成立）。
+- 活体 channel：**30/30 PASS**（复跑）。首轮因飞书 443 瞬时 `HttpConnectTimeoutException`
+  未触发热切换（27/30，AC3 未覆盖）；网络恢复后同一请求 `200 APPLIED`，
+  启动日志 1→2、旧连接停止日志 0→1，307 逐跳拒绝、重启幂等、退避 579/1018ms、
+  `CHANNEL_RECEIPT` 回执工单全部 PASS。首轮 FAIL 与复跑证据均保留在 Verifier 报告。
+- AC1–AC8 全过；P0 无。AC2 异掩码分支与 AC6 失败路径仅静态审查（未活体触发），
+  未发现缺陷。
+- 票外 P1 经 Verifier 独立确认：`lib-launch.ps1` 的 WMI 环境继承缺陷成立，
+  不影响本票 AC，建议另票。未合并、未签收。

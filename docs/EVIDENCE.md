@@ -442,4 +442,16 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   的进程重启网关会丢 `.env` 内部令牌（实测登录 401、allowlist 不生效），
   建议单独开票修复，不在本票 allowed paths。待独立 Verifier 复验与所有者签收。
 
+- **票 228 独立 Verifier PASS（2026-11-23，HEAD `4b0ca71`）**：AC1–AC8 全过，
+  P0 无；亲跑 `mvnw verify` **878 tests / 144 suites**、文档三检查与
+  `git diff --check` 全绿。活体 `verify-workspace.mjs` **30/30**（high/money 种子
+  201，三张种子单 `紧急=0 资金=2 普通=4`，队列残留 11 张历史单但相对顺序与全局
+  非降序成立）；`verify-channel-hot-reload.mjs` **30/30**（首轮飞书 443 瞬时
+  `HttpConnectTimeoutException` 导致 27/30、AC3 未覆盖；网络恢复后同一 PUT
+  `200 APPLIED`，启动日志 1→2、旧连接停止 0→1，307 逐跳拒绝、重启幂等、
+  退避 579/1018ms、回执工单全 PASS）。**边界**：AC2 异掩码分支与 AC6 失败路径
+  仅静态审查；首轮 FAIL 与复跑证据均保留在 `verifier-228-report.md`（ignored）。
+  Verifier 独立确认票外 P1 `lib-launch.ps1` 环境继承缺陷成立，不影响本票 AC，
+  建议另票。未合并、未签收，等待所有者书面签收。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。
