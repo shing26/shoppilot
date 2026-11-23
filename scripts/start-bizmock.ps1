@@ -16,10 +16,11 @@ $logDir = Join-Path $root "logs"
 $out = Join-Path $logDir "bizmock.out"
 $errFile = Join-Path $logDir "bizmock.err"
 $pidFile = Join-Path $logDir "bizmock.pid"
-# .env 注入内部服务凭证等；显式参数（池大小）优先级更高
-$envVars = @{}
-foreach ($pair in (Get-ShoppilotDotEnv $root).GetEnumerator()) { $envVars[$pair.Key] = $pair.Value }
-if ($PoolSize) { $envVars['SHOPPILOT_BIZMOCK_POOL_SIZE'] = $PoolSize }
+# .env 注入内部服务凭证等；调用方已导出与显式参数（池大小）优先级更高。
+# WMI 子进程不继承调用方环境，所以合并结果必须显式写进 run-*.cmd（票 229）。
+$overrides = @{}
+if ($PoolSize) { $overrides['SHOPPILOT_BIZMOCK_POOL_SIZE'] = $PoolSize }
+$envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
 $jar = Get-ChildItem (Join-Path $root "shoppilot-biz-mock\target") -Filter "shoppilot-biz-mock-*.jar" `
     -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
 
@@ -33,6 +34,10 @@ if ($jar) {
     Write-Host "未找到 fat jar，退回 mvn spring-boot:run"
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
+    # mvn 回退路径同样走 WMI：这两格不写进合并环境，子进程就看不到 JDK 21。
+    $overrides['JAVA_HOME'] = $env:JAVA_HOME
+    $overrides['MAVEN_OPTS'] = $env:MAVEN_OPTS
+    $envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
     # 用户属性覆盖 POM 默认值；直接写 spring-boot.run.jvmArguments 会被 POM 配置压掉。
     $mvnArgs = @("-B", "-ntp", "-o", "-pl", "shoppilot-biz-mock",
         "-Dshoppilot.jvm.max-ram-percentage=$MaxRamPercentage", "spring-boot:run")

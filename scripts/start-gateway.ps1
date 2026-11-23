@@ -20,10 +20,10 @@ $fileSuffix = if ($Profile) { $Profile -replace '[^A-Za-z0-9._-]', '+' } else { 
 $out = Join-Path $logDir "gateway-$fileSuffix.out"
 $errFile = Join-Path $logDir "gateway-$fileSuffix.err"
 $pidFile = Join-Path $logDir "gateway-$fileSuffix.pid"
-# .env 里的键（API key、内部凭证）注入 launcher 环境；已在进程环境里的值不覆盖
-$envVars = @{}
-foreach ($pair in (Get-ShoppilotDotEnv $root).GetEnumerator()) { $envVars[$pair.Key] = $pair.Value }
-if ($Profile) { $envVars['SPRING_PROFILES_ACTIVE'] = $Profile }
+# 最终环境 = .env + 调用方已导出（非空）+ 本脚本的显式覆盖。
+# WMI 子进程不继承调用方环境，所以必须显式写进 run-*.cmd（票 229）。
+$overrides = @{}
+if ($Profile) { $overrides['SPRING_PROFILES_ACTIVE'] = $Profile }
 # profile 里的 LLM 模式必须压过 .env 的 SHOPPILOT_LLM_MODE。
 # Spring 的属性优先级是「环境变量 > profile 专属 application.yml」，而 .env 里一行
 # SHOPPILOT_LLM_MODE=dev 就会让 `-Profile perf` 静默跑真模型：2026-11-05 的压测因此
@@ -33,8 +33,9 @@ if ($Profile) {
     $profileMode = ($Profile -split ',') |
         Where-Object { $_ -in @('dev', 'local', 'perf', 'demo', 'replay') } |
         Select-Object -First 1
-    if ($profileMode) { $envVars['SHOPPILOT_LLM_MODE'] = $profileMode }
+    if ($profileMode) { $overrides['SHOPPILOT_LLM_MODE'] = $profileMode }
 }
+$envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
 $jar = Get-ChildItem (Join-Path $root "shoppilot-gateway\target") -Filter "shoppilot-gateway-*.jar" `
     -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
 
@@ -47,6 +48,10 @@ if ($jar) {
     Write-Host "未找到 fat jar，退回 mvn spring-boot:run；先跑 mvnw -pl shoppilot-gateway package 可获得更稳的启动路径"
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
+    # mvn 回退路径同样走 WMI：这两格不写进合并环境，子进程就看不到 JDK 21。
+    $overrides['JAVA_HOME'] = $env:JAVA_HOME
+    $overrides['MAVEN_OPTS'] = $env:MAVEN_OPTS
+    $envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
     # 用户属性覆盖 POM 默认值；直接写 spring-boot.run.jvmArguments 会被 POM 配置压掉。
     $mvnArgs = @("-B", "-ntp", "-o", "-pl", "shoppilot-gateway",
         "-Dshoppilot.jvm.max-ram-percentage=$MaxRamPercentage", "spring-boot:run")

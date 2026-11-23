@@ -25,14 +25,8 @@ function Start-ShoppilotService {
     $logDir = Split-Path -Parent $StandardOutput
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     $runner = Join-Path $logDir ("run-$Name.cmd")
-    $quoted = ($ArgumentList | ForEach-Object { '"' + $_ + '"' }) -join ' '
-    $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add('@echo off')
-    $lines.Add("cd /d `"$WorkingDirectory`"")
-    foreach ($key in ($Environment.Keys | Sort-Object)) {
-        $lines += "set `"$key=$($Environment[$key])`""
-    }
-    $lines += "`"$FilePath`" $quoted > `"$StandardOutput`" 2>&1"
+    $lines = New-ShoppilotRunnerScript -WorkingDirectory $WorkingDirectory -FilePath $FilePath `
+        -ArgumentList $ArgumentList -StandardOutput $StandardOutput -Environment $Environment
     Set-Content -Path $runner -Value $lines -Encoding ascii
     $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
         CommandLine = "cmd.exe /c `"$runner`""
@@ -42,6 +36,27 @@ function Start-ShoppilotService {
         throw "以 WMI 启动 $Name 失败，ReturnValue=$($result.ReturnValue)"
     }
     return [int]$result.ProcessId
+}
+
+# 生成 run-*.cmd 的内容。抽成纯函数是为了让 verify-launcher-env.ps1 能直接断言
+# 「最终环境确实写进了启动器」，而不必真的拉一个 WMI 进程。
+function New-ShoppilotRunnerScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$ArgumentList,
+        [Parameter(Mandatory = $true)][string]$StandardOutput,
+        [hashtable]$Environment = @{}
+    )
+    $quoted = ($ArgumentList | ForEach-Object { '"' + $_ + '"' }) -join ' '
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('@echo off')
+    $lines.Add("cd /d `"$WorkingDirectory`"")
+    foreach ($key in ($Environment.Keys | Sort-Object)) {
+        $lines.Add("set `"$key=$($Environment[$key])`"")
+    }
+    $lines.Add("`"$FilePath`" $quoted > `"$StandardOutput`" 2>&1")
+    return ,$lines.ToArray()
 }
 
 # 读仓库根的 .env（KEY=VALUE，# 开头为注释），返回要注入子进程的环境变量。
@@ -120,4 +135,43 @@ function Get-ShoppilotDotEnv {
         if ($key -and [string]::IsNullOrEmpty($existing)) { $values[$key] = $value }
     }
     return $values
+}
+
+# 启动器最终环境：`.env` 打底，调用方已导出的同名键覆盖，脚本参数最后压上。
+#
+# 为什么必须显式合并：Start-ShoppilotService 走 WMI 创建进程，父进程是 WmiPrvSE，
+# **不继承调用方环境**；而 Get-ShoppilotDotEnv 对调用方已存在的键会跳过。两者叠加，
+# 调用方导出的 SHOPPILOT_* 既不在 .env 注入表里，也进不了子进程，服务静默拿代码默认值。
+# 2026-11-23 票 228 实测：导出整份 .env 后重启网关，内部令牌退回
+# dev-internal-token-change-me，登录 401、出站 allowlist 失效。
+#
+# 只收服务真正会读的命名空间：SHOPPILOT_* 与少量白名单键。
+# 不把整个进程环境落盘——run-*.cmd 里已经有本仓密钥，再带上无关的
+# AWS_* / GITHUB_TOKEN / OPENAI_API_KEY，就是把泄露面从「本仓」扩到「整台机器」。
+function Get-ShoppilotLaunchEnvironment {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        # 显式覆盖：start-gateway.ps1 的 profile/模式、start-bizmock.ps1 的池大小等。
+        [hashtable]$Overrides = @{}
+    )
+    $merged = @{}
+    foreach ($pair in (Get-ShoppilotDotEnv -Root $Root).GetEnumerator()) {
+        $merged[$pair.Key] = $pair.Value
+    }
+    $passThrough = @('SPRING_PROFILES_ACTIVE', 'JAVA_HOME', 'MAVEN_OPTS', 'SHOPPILOT_PWSH')
+    foreach ($entry in [Environment]::GetEnvironmentVariables().GetEnumerator()) {
+        $key = [string]$entry.Key
+        if ([string]::IsNullOrWhiteSpace($key)) { continue }
+        $value = [string]$entry.Value
+        # 空串不算「已导出」——同 Get-ShoppilotDotEnv 的 2026-10-05 修正。
+        if ([string]::IsNullOrEmpty($value)) { continue }
+        if ($key -like 'SHOPPILOT_*' -or $passThrough -contains $key) {
+            $merged[$key] = $value
+        }
+    }
+    foreach ($pair in $Overrides.GetEnumerator()) {
+        if ([string]::IsNullOrEmpty([string]$pair.Value)) { continue }
+        $merged[$pair.Key] = [string]$pair.Value
+    }
+    return $merged
 }
