@@ -2,7 +2,7 @@
 
 Round: 59（缺陷修复；按 ADR 0031）　
 ADR: 0031（回归修复）、0029（凭证与默认值纪律）　
-Status: implemented（2026-11-24；首轮 Verifier P1 已整改，待独立 Verifier 复验）　Claimed by: root　Blocked by: 无
+Status: implemented（2026-11-24；独立 Verifier 复验 PASS，待所有者签收）　Claimed by: root　Blocked by: 无
 
 契约：[plans/229-launcher-env-inheritance.md](../../plans/229-launcher-env-inheritance.md)（2026-11-24 冻结）
 
@@ -75,6 +75,12 @@ pwsh -NoProfile -File scripts/start-gateway.ps1
   按 Verifier 原始复现路径（临时目录、空 `shoppilot-ticket/target`）实跑
   `start-ticket.ps1` → **退出码 0**，生成 `run-ticket.cmd` 且含
   `JAVA_HOME` / `MAVEN_OPTS` / `spring-boot:run`。
+- 独立 Verifier 复验（HEAD `25c1393`，工作区 0 行）：首轮 P1 按原路径
+  独立复跑通过；契约命令全过（语法 38/0、启动器断言 **24/24**、全量
+  **BUILD SUCCESS** 878/144 / 0 skipped、文档三检查与 `git diff --check`
+  全绿）；AC7 两轮活体登录均 **200**，探针/`.env` 回落正确，`.env`
+  SHA-256 未变；AC1–AC8 全 PASS，P0/P1 无。报告：
+  `issues/verifier-229-report.md`（本机证据，已 gitignore）。
 - 全量：`.\mvnw.cmd -B -ntp verify` → **BUILD SUCCESS**（3:09），
   `878 tests / 144 suites` 未变（surefire 目录 145 XML / 879 条含非默认
   `LlmCassetteRecorder`，与票 227 同口径）；文档三检查与 `git diff --check` 全绿。
