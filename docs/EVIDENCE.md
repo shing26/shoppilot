@@ -463,4 +463,26 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   事件观察切换窗口。**票外 P1 不在签收范围**：`lib-launch.ps1` 的 WMI 环境继承缺陷
   待另票修复。**边界**：不改冻结契约、AC、阈值或 Verifier 结论。
 
+- **票 229 启动器环境继承修复（2026-11-24，round59）**：根因是
+  `Start-ShoppilotService` 经 WMI 脱离启动、子进程不继承调用方环境，而
+  `Get-ShoppilotDotEnv` 又跳过调用方已存在的同名变量——两者叠加让已导出的
+  `SHOPPILOT_*` 静默丢失（票 228 实测内部令牌退回默认值、登录 401）。
+  **实现**：`lib-launch.ps1` 新增 `Get-ShoppilotLaunchEnvironment`
+  （显式覆盖 > 调用方非空 > `.env`）与 `New-ShoppilotRunnerScript`；
+  gateway / biz-mock / ticket 统一把合并环境写进 `run-*.cmd`，只传
+  `SHOPPILOT_*` 与 `SPRING_PROFILES_ACTIVE`/`JAVA_HOME`/`MAVEN_OPTS`；
+  `mvn spring-boot:run` 回退同样注入 JDK 环境；`up.ps1` 的
+  `SHOPPILOT_EMBEDDING_SIDECAR_URL` 因此真正到达网关。
+  **读数**：新增 `scripts/verify-launcher-env.ps1` **19/19 PASS**；
+  PowerShell 语法 **38 files / 0 errors**；全量 `mvnw verify` **BUILD SUCCESS**
+  （3:09，878 tests / 144 suites 未变）；文档三检查与 `git diff --check` 全绿。
+  **活体 AC7**：导出探针 `SHOPPILOT_INTERNAL_TOKEN` 重启三服务，三份
+  `run-*.cmd` 均含探针值且 `/auth/login` 200（首次 502 为 biz-mock 未就绪）；
+  干净 shell 重启后三份 launcher 回落到 `.env` 值且登录 200，`.env`
+  SHA-256 前后一致 `8E0AEB60…D233`。
+  **U2**：导出过期 `SHOPPILOT_IDENTITY_DEMO_PASSWORD` 重启 biz-mock 后，
+  `/api/identity/authenticate` 过期口令 200、`.env` 口令 401——值确实到达，
+  但调用方旧值优先；完整 `up.ps1` 未复跑（Ollama/Docker 不可用），U2 保留
+  并写明触发条件。待独立 Verifier。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。

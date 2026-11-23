@@ -2,7 +2,7 @@
 
 Round: 59（缺陷修复；按 ADR 0031）　
 ADR: 0031（回归修复）、0029（凭证与默认值纪律）　
-Status: ready-for-agent（2026-11-24 所有者指令开票；契约已冻结）　Claimed by: 待领取　Blocked by: 无
+Status: implemented（2026-11-24；待独立 Verifier）　Claimed by: root　Blocked by: 无
 
 契约：[plans/229-launcher-env-inheritance.md](../../plans/229-launcher-env-inheritance.md)（2026-11-24 冻结）
 
@@ -50,4 +50,45 @@ pwsh -NoProfile -File scripts/start-gateway.ps1
 
 ## Handoff notes
 
-（实现与独立 Verifier 完成后补：关键决策、验证落点、三个现场追问）
+**关键决策**
+
+- `scripts/lib-launch.ps1` 新增两个纯函数：`New-ShoppilotRunnerScript`（生成
+  `run-*.cmd` 内容）与 `Get-ShoppilotLaunchEnvironment`（合并最终环境）。
+  优先级固定为 **显式覆盖 > 调用方已导出（非空）> `.env`**，空串仍视为未设置。
+- 只收 `SHOPPILOT_*` 与白名单 `SPRING_PROFILES_ACTIVE` / `JAVA_HOME` /
+  `MAVEN_OPTS` / `SHOPPILOT_PWSH`；不把整台机器的进程环境写进启动脚本。
+- gateway / biz-mock / ticket 三个启动脚本统一改走合并函数；
+  `mvn spring-boot:run` 回退路径也把 `JAVA_HOME`/`MAVEN_OPTS` 写进合并环境
+  （原先 WMI 子进程同样拿不到，属于同源隐患）。
+- `up.ps1` 不需要改：它设置的 `SHOPPILOT_EMBEDDING_SIDECAR_URL` 现在会被合并函数
+  从调用方环境读走并写进 `run-gateway-default.cmd`。
+
+**验证落点**
+
+- 静态：`pwsh -NoProfile -File scripts/check-ps-syntax.ps1` →
+  `files=38 errors=0`；新增 `scripts/verify-launcher-env.ps1` → **19/19 PASS**
+  （合并优先级、空串回落、sidecar 键、敏感变量不外泄、三服务接入、mvn 回退）。
+- 全量：`.\mvnw.cmd -B -ntp verify` → **BUILD SUCCESS**（3:09），
+  `878 tests / 144 suites` 未变（surefire 目录 145 XML / 879 条含非默认
+  `LlmCassetteRecorder`，与票 227 同口径）；文档三检查与 `git diff --check` 全绿。
+- 活体 AC7（三服务）：调用方导出探针 `SHOPPILOT_INTERNAL_TOKEN` 后重启
+  ticket/biz-mock/gateway，三份 `logs/run-*.cmd` 均含探针值，`/auth/login` **200**
+  （首次 502 是 biz-mock 19.6s 尚未就绪，重试即 200，不是缺陷）。
+- 回落场景：干净 shell（未导出任何 `SHOPPILOT_*`）重启三服务，三份 launcher 均含
+  `.env` 值，`/auth/login` **200**；`.env` SHA-256 前后一致
+  `8E0AEB60…D233`，未改动。
+- U2 判定：导出**过期** `SHOPPILOT_IDENTITY_DEMO_PASSWORD` 重启 biz-mock，
+  直连 `/api/identity/authenticate`：过期口令 **200**、`.env` 口令 **401**。
+  证明环境值已真实到达子进程（修复前会整键丢失 → 不播种 → 两者都 401）。
+  完整 `up.ps1` 链路未复跑（本机 Ollama/Docker 不可用），**U2 保留未达成**，
+  证据与触发条件写入 `registered-debt`。
+
+**三个现场追问**
+
+1. 调用方旧值优先于 `.env`：同一 shell 残留过期口令时会以旧值播种且**不告警**
+   （本次实测 stale 200 / .env 401）。是否要加“与 `.env` 不一致”的 WARN 或拒绝启动？
+   建议另票，本轮只保证投放确定性。
+2. `run-*.cmd` 落盘密钥是既有形态（本次未扩大命名空间）；若要“密钥不落盘”，
+   需改成 stdin/pipe 注入，属独立安全票。
+3. 同机并行多实例目前只按 profile 后缀区分日志与 launcher，不隔离密钥；
+   要做实例级不同密钥，需要每实例一份 env 文件，另票。
