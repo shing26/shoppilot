@@ -420,4 +420,26 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   再处理新消息，PEL 64 条都不在退避窗口时新消息仍有队头延迟；活体热切换/出站套件未跑。
   **边界**：不改冻结契约、AC、阈值或 Verifier 结论。
 
+- **票 228 验收断言补强（2026-11-23，round58）**：`verify-channel-hot-reload.mjs`
+  的 activeAppId 期望改为脚本已知候选 appId 的掩码（PUT 响应、PUT `appId`、后续
+  GET 状态三处同源），旧/新掩码不同时断旧值不再活动；启动与旧连接停止日志双计数。
+  `verify-workspace.mjs` 经真实工单服务创建 high（`DEGRADE/EMOTION_ESCALATION`）与
+  money（`REFUND_APPROVAL`）种子，断言 201 + 字面量 + 队列可见 + 三张种子单
+  紧急 → 资金 → 普通；种子失败/单优先级不再降级为 WARN。**活体**：workspace
+  **30/30 PASS**（`紧急=0 资金=1 普通=2`），channel **30/30 PASS**
+  （activeAppId 三处期望一致、旧连接停止日志 0→1、重启幂等、指数退避
+  499/1076ms、回执工单落库）。**静态**：`node --check` 两脚本通过；
+  `.\mvnw.cmd -B -ntp verify` BUILD SUCCESS（脚本改动前，Java 未改）；
+  `STATUS ok`、`verify_doc_truth` 878/144、`check_doc_links` 119 文件/234 链接、
+  `git diff --check` 退出 0。**活体修正**：热切换成功日志实为
+  `飞书长连接已启动（热切换），旧连接已停止`，停止证据改数 `旧连接已停止`；
+  首轮 0→0 为断言对错日志行的假红，AC3 已留修正记录，判据强度不变。
+  **环境边界**：渠道套件需启动时注入 `SHOPPILOT_OUTBOUND_ALLOWLIST=localhost`
+  与 `SHOPPILOT_OUTBOUND_POLL_INTERVAL=1s`（本次临时写 `.env`，跑完已恢复）；
+  19091 曾被遗留 `r3-receiver.mjs` 占用，已清理并给脚本加端口预检。
+  **票外 P1**：`scripts/lib-launch.ps1` 的 WMI 脱离启动不继承调用方环境，
+  `Get-ShoppilotDotEnv` 又会跳过调用方已存在的同名变量；从已导出 `SHOPPILOT_*`
+  的进程重启网关会丢 `.env` 内部令牌（实测登录 401、allowlist 不生效），
+  建议单独开票修复，不在本票 allowed paths。待独立 Verifier 复验与所有者签收。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。

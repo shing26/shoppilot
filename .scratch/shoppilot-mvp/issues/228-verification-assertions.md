@@ -2,7 +2,7 @@
 
 Round: 58（验收入口补强；按 ADR 0031）　
 ADR: 0087（activeAppId 运行态语义；不改结论）　
-Status: in-progress（2026-11-23 所有者指令实现）　Claimed by: root　Blocked by: 无
+Status: implemented（2026-11-23；待独立 Verifier）　Claimed by: root　Blocked by: 无
 
 契约：[plans/228-verification-assertions.md](../../plans/228-verification-assertions.md)（2026-11-23 冻结）
 
@@ -47,4 +47,48 @@ node scripts/verify-channel-hot-reload.mjs
 
 ## Handoff notes
 
-（实现与独立 Verifier 完成后补：关键决策、验证落点、三个现场追问）
+**关键决策**
+
+- activeAppId 期望值来自脚本已知候选 appId 的 `maskAppId()`（前 6 位 + `****`）：
+  PUT 响应的 `activeAppId`、PUT 响应的 `appId`、后续 GET 状态的 `activeAppId`
+  三处共用同一期望，不再拿响应里的另一个掩码字段自比。
+- 热切换成功的真实日志是 `飞书长连接已启动（热切换），旧连接已停止`；
+  `飞书长连接已停止` 只在显式停用/停机路径出现。停止证据改数 `旧连接已停止`，
+  且仅在切换前存在活动连接时判，无旧连接打 WARN。首轮活体用错片段得到 0→0 假红，
+  已在契约 AC3 留下修正记录；判据强度不变（启动/停止两条证据都增加）。
+- 工单种子走真实 `POST /api/tickets`（`X-Internal-Token` + `X-Tenant-Id`）：
+  high 用 `DEGRADE/EMOTION_ESCALATION`，money 用 `REFUND_APPROVAL`；排序读前端
+  渲染出的 `.priority` 与种子工单号，不按队列名反推优先级。
+- 队列默认 `ALL` 时后端按创建时间倒序，实际呈现顺序由前端 `filterTickets`
+  按 `priorityRank` 排序；断言覆盖的是产品实际呈现顺序（契约现场追问 3）。
+- 热切换脚本新增本地端口预检：19091 曾被 06:05 遗留的 `r3-receiver.mjs` 占用，
+  网关按 IPv4 命中残留进程，导致 307 断言假红/假绿；现在端口被占用会明确失败。
+
+**验证落点**
+
+- 静态：`node --check` 两脚本通过；`.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS**
+  （约 5:03；Java 未改，跑于脚本改动前，最终 HEAD 由 Verifier 亲跑）；`STATUS ok`、
+  `verify_doc_truth` 878 tests / 144 suites、`check_doc_links` 119 文件 / 234 链接、
+  `git diff --check` 退出 0。
+- 活体（8082/8091/8092 + Redis 16379）：
+  `verify-workspace.mjs` **30/30 PASS**，新增 high/money 落单、队列可见、
+  三张种子单 `紧急=0 资金=1 普通=2` 全绿；
+  `verify-channel-hot-reload.mjs` **30/30 PASS**，activeAppId 三处独立期望、
+  旧连接停止日志 0→1、重启幂等、指数退避与回执工单全绿。
+- 渠道套件前置：`SHOPPILOT_OUTBOUND_ALLOWLIST=localhost` 与
+  `SHOPPILOT_OUTBOUND_POLL_INTERVAL=1s` 必须在网关**启动时**生效；本次临时写入
+  `.env`，跑完已原样恢复并重启网关。
+
+**三个现场追问**
+
+1. 旧/新 appId 掩码相同（本次 `.env` 前后是同一 appId）时 activeAppId 无法区分
+   连接切换，已用启动/停止日志补证；要更强的连接代号需管理面 API 变更，另票。
+2. 高/资金种子走工单服务直连，需要 `SHOPPILOT_INTERNAL_TOKEN` 与可达的 8092；
+   验收环境不暴露 8092 时需网关新增创建端点（API 变更，另票）。
+3. **P1（票外，建议单独开票）**：`scripts/lib-launch.ps1` 经 WMI 脱离启动服务，
+   子进程不继承调用方环境；而 `Get-ShoppilotDotEnv` 把「调用方已存在的同名变量」
+   视为已注入并跳过。结果：从已导出 `SHOPPILOT_*` 的进程调用
+   `start-gateway.ps1` 时，脱离的网关拿不到 `.env` 的内部令牌（实测登录 401、
+   SSRF allowlist 不生效），日志只留默认凭证 WARN。本票绕行是只导出脚本自身
+   需要的 `SHOPPILOT_IDENTITY_DEMO_PASSWORD`；根因修复应在 `lib-launch.ps1`
+   或启动器，不在本票 allowed paths。
