@@ -232,6 +232,11 @@ shoppilot:
     retry-factor: ${SHOPPILOT_OUTBOUND_RETRY_FACTOR:2.0}
     retry-max: ${SHOPPILOT_OUTBOUND_RETRY_MAX:5s}
     retry-jitter: ${SHOPPILOT_OUTBOUND_RETRY_JITTER:0.2}
+    # round57 票 227：回执未落定、事件留在 PEL 后的跨轮退避（与单轮重试分开）。
+    round-backoff-base: ${SHOPPILOT_OUTBOUND_ROUND_BACKOFF_BASE:5s}
+    round-backoff-factor: ${SHOPPILOT_OUTBOUND_ROUND_BACKOFF_FACTOR:2.0}
+    round-backoff-max: ${SHOPPILOT_OUTBOUND_ROUND_BACKOFF_MAX:5m}
+    round-backoff-jitter: ${SHOPPILOT_OUTBOUND_ROUND_BACKOFF_JITTER:0.2}
     dedupe-ttl: ${SHOPPILOT_OUTBOUND_DEDUPE_TTL:7d}
     # 显式运维覆盖：逗号分隔 host 或 host:port；默认空 = 私网/回环一律拒绝。
     allowlist: ${SHOPPILOT_OUTBOUND_ALLOWLIST:}

@@ -392,4 +392,15 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   （8082 被外部项目占用），脚本默认端口未改；222/223 的三项现场追问留后续决策。
   **边界**：本次只改票面与状态台账，未改代码、测试、gold、阈值或证据结论。
 
+- **票 227 出站跨轮退避与 PEL 公平读取（2026-11-23，round57）**：实现方窄测
+  `OutboundDeliveryTest + RoundBackoffPolicyTest` **18/18**，全量 `mvnw verify`
+  **BUILD SUCCESS**，四模块 **12 + 98 + 717 + 50 = 877 tests / 144 suites**；
+  `STATUS ok`、`verify_doc_truth` 877/144 一致、`check_doc_links` 119 文件/234 链接、
+  `git diff --check` 退出 0。**实现**：`handle()==false`（回执未落定）后按事件做
+  跨轮指数退避（默认 5s / ×2 / 5m / ±20%，有界 4096 条），事件保留 PEL 不丢；
+  PEL（`0`）与新消息（`>`）各读最多 64 条、按 `RecordId` 去重，PEL 满 64 时新消息
+  不再等一轮；单轮 `RetryPolicy` 曲线与 ack 语义未改。**边界**：退避状态是进程内，
+  重启后 pending 立即重试一次；活体 `verify-channel-hot-reload.mjs` 未跑，
+  独立 Verifier 结果待补。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。

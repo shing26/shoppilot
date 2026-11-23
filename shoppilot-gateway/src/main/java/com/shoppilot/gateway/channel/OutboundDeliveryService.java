@@ -22,12 +22,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 /**
  * 渠道出站的消费端（round26 票 88 / ADR 0059）。
@@ -68,6 +71,8 @@ public class OutboundDeliveryService {
      */
     private static final String GROUP = "shoppilot-outbound";
     private static final String CONSUMER = "gateway";
+    /** 跨轮退避表的硬上限；单线程消费者用最旧淘汰，避免长时间故障把内存撑大。 */
+    private static final int MAX_ROUND_STATES = 4096;
 
     private final StringRedisTemplate redis;
     private final HttpClient http;
@@ -77,6 +82,14 @@ public class OutboundDeliveryService {
     private final EgressPolicy egress;
     private final DeliveredEventStore deliveredStore;
     private final RetryPolicy retry;
+    private final RoundBackoffPolicy roundBackoff;
+    private final LongSupplier clock;
+    private final Map<String, RoundState> roundStates = new LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, RoundState> eldest) {
+            return size() > MAX_ROUND_STATES;
+        }
+    };
 
     private final ScheduledExecutorService loop;
 
@@ -89,7 +102,8 @@ public class OutboundDeliveryService {
                         .connectTimeout(Duration.ofSeconds(5))
                         .followRedirects(HttpClient.Redirect.NEVER)
                         .build()),
-                DeliveredEventStore.inMemory(Duration.ZERO), RetryPolicy.fast());
+                DeliveredEventStore.inMemory(Duration.ZERO), RetryPolicy.fast(),
+                RoundBackoffPolicy.fast(), System::currentTimeMillis);
     }
 
     @Autowired
@@ -98,7 +112,16 @@ public class OutboundDeliveryService {
                                    io.micrometer.core.instrument.MeterRegistry registry,
                                    @Value("${shoppilot.outbound.poll-interval:5s}") Duration pollInterval,
                                    EgressPolicy egress, DeliveredEventStore deliveredStore,
-                                   RetryPolicy retry) {
+                                   RetryPolicy retry, RoundBackoffPolicy roundBackoff) {
+        this(redis, http, mapper, receiptWriter, registry, pollInterval, egress, deliveredStore, retry,
+                roundBackoff, System::currentTimeMillis);
+    }
+
+    OutboundDeliveryService(StringRedisTemplate redis, HttpClient http, ObjectMapper mapper,
+                            EmailReceiptWriter receiptWriter,
+                            io.micrometer.core.instrument.MeterRegistry registry,
+                            Duration pollInterval, EgressPolicy egress, DeliveredEventStore deliveredStore,
+                            RetryPolicy retry, RoundBackoffPolicy roundBackoff, LongSupplier clock) {
         this.redis = redis;
         this.http = http;
         this.mapper = mapper;
@@ -107,6 +130,8 @@ public class OutboundDeliveryService {
         this.egress = egress;
         this.deliveredStore = deliveredStore;
         this.retry = retry;
+        this.roundBackoff = roundBackoff;
+        this.clock = clock;
         // 单线程 + 固定延迟。审计那条流选了惰性消费（要有人读审计才收），但出站不行——
         // 「要有人点一下才投递」是 ADR 0059 明确否掉的形态：一个从后台自己走的定时任务就够。
         this.loop = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -125,11 +150,12 @@ public class OutboundDeliveryService {
         try {
             // 先读本消费者 PEL（ID 0），再读新消息（>）。只读 ">" 会让上一轮未 ack 的
             // 事件永久卡在 pending：回执服务短暂不可用后即使恢复，也不会再被处理。
+            //
+            // **两读各自最多 BATCH，不共用剩余容量**：旧实现先读满 64 条 PEL 就不再读
+            // 新消息，PEL 恰好满 BATCH 时新事件至少等一轮。这里把两条读取拆开，PEL 满
+            // 时新消息仍在本轮进入处理；去重按 RecordId 做，避免同一记录被处理两次。
             records.addAll(read(ReadOffset.from("0"), BATCH));
-            int remaining = BATCH - records.size();
-            if (remaining > 0) {
-                records.addAll(read(ReadOffset.lastConsumed(), remaining));
-            }
+            records.addAll(read(ReadOffset.lastConsumed(), BATCH));
         } catch (RuntimeException nothingYet) {
             if (isNoGroup(nothingYet)) {
                 // **第一张工单结单之前这就是正常状态**：流不存在、消费组也不存在，
@@ -151,19 +177,46 @@ public class OutboundDeliveryService {
             }
             return 0;
         }
+        long now = clock.getAsLong();
+        Set<String> seenRecordIds = new HashSet<>();
         List<RecordId> acked = new ArrayList<>();
         for (MapRecord<String, Object, Object> record : records) {
+            String recordId = record.getId() == null ? null : record.getId().getValue();
+            if (recordId != null && !seenRecordIds.add(recordId)) {
+                continue;
+            }
             Event event = Event.from(valuesOf(record));
             if (event == null) {
                 // 坏消息认领掉但不当成功：留在 pending 里等人看，不让它无限重投（同审计那条纪律）
-                acked.add(record.getId());
+                if (record.getId() != null) {
+                    acked.add(record.getId());
+                }
+                continue;
+            }
+            String stateKey = event.eventId() == null ? recordId : event.eventId();
+            RoundState state = stateKey == null ? null : roundStates.get(stateKey);
+            if (state != null && now < state.nextAttemptAtMillis()) {
+                log.debug("出站事件 {} 仍在跨轮退避，{}ms 后再试", stateKey,
+                        state.nextAttemptAtMillis() - now);
                 continue;
             }
             if (handle(event)) {
-                acked.add(record.getId());
+                if (record.getId() != null) {
+                    acked.add(record.getId());
+                }
+                if (stateKey != null) {
+                    roundStates.remove(stateKey);
+                }
             } else {
                 // 回执也没落下去：**不 ack**，留在 pending 等下一轮重投，否则结论静默丢失。
-                log.warn("出站事件 {} 未落定（回执写入失败），保留 pending 等下一轮重投", event.eventId());
+                // 跨轮退避只在这一支生效：事件一直留在 PEL，退避窗口内不再重打下游。
+                int failedRounds = state == null ? 1 : state.failures() + 1;
+                long delayMillis = roundBackoff.delay(failedRounds).toMillis();
+                if (stateKey != null) {
+                    roundStates.put(stateKey, new RoundState(failedRounds, now + delayMillis));
+                }
+                log.info("出站事件 {} 未落定（回执写入失败），第 {} 轮后跨轮退避 {}ms，保留 pending",
+                        stateKey, failedRounds, delayMillis);
             }
         }
         if (!acked.isEmpty()) {
@@ -175,6 +228,15 @@ public class OutboundDeliveryService {
             }
         }
         return acked.size();
+    }
+
+    /** 仅供同包测试观察跨轮退避表大小；不是对外 API。 */
+    int roundStateCount() {
+        return roundStates.size();
+    }
+
+    /** 跨轮退避状态：失败轮次与下次可重试的单调时钟毫秒。 */
+    private record RoundState(int failures, long nextAttemptAtMillis) {
     }
 
     private List<MapRecord<String, Object, Object>> read(ReadOffset offset, int count) {

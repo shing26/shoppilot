@@ -11,6 +11,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.RecordId;
@@ -24,11 +25,14 @@ import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -229,6 +233,95 @@ class OutboundDeliveryTest {
         assertThat(received).as("同一条事件在一轮里只投递一次").hasSize(1);
     }
 
+    @Test
+    @DisplayName("回执未落定：跨轮退避窗口内不再投递，到期后才重试")
+    void crossRoundBackoffSkipsUntilDue() {
+        status.set(500);
+        doReturn(Optional.empty()).when(receiptWriter)
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+        AtomicLong now = new AtomicLong(1_000_000L);
+        OutboundDeliveryService service = service(
+                RoundBackoffPolicy.of(Duration.ofSeconds(5), 2, Duration.ofMinutes(5), 0), now::get);
+        MapRecord<String, Object, Object> rec = record("1-0",
+                outboundEvent("ev-backoff", "webhook", echoUrl, "T-227", "已处理"));
+
+        drainWithRecords(service, List.of(rec), List.of());
+        assertThat(received).as("第一轮对下游试满 3 次").hasSize(3);
+        assertThat(service.roundStateCount()).isEqualTo(1);
+        verify(receiptWriter, times(1))
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+
+        now.addAndGet(4_000);
+        drainWithRecords(service, List.of(rec), List.of());
+        assertThat(received).as("退避窗口内不再重打下游").hasSize(3);
+        verify(receiptWriter, times(1))
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+
+        now.addAndGet(2_000);
+        drainWithRecords(service, List.of(rec), List.of());
+        assertThat(received).as("退避到期后重新尝试").hasSize(6);
+        verify(receiptWriter, times(2))
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("跨轮退避到期后回执落库：ack 并清除退避状态")
+    void successfulRetryAcksAndClearsBackoff() {
+        status.set(500);
+        doReturn(Optional.empty(), Optional.of("T-227"))
+                .when(receiptWriter)
+                .writeReceipt(anyString(), nullable(String.class), anyString(), anyString(), anyString());
+        AtomicLong now = new AtomicLong(1_000_000L);
+        OutboundDeliveryService service = service(
+                RoundBackoffPolicy.of(Duration.ofSeconds(5), 2, Duration.ofMinutes(5), 0), now::get);
+        MapRecord<String, Object, Object> rec = record("2-0",
+                outboundEvent("ev-recover", "webhook", echoUrl, "T-230", "已处理"));
+
+        drainWithRecords(service, List.of(rec), List.of());
+        assertThat(service.roundStateCount()).isEqualTo(1);
+
+        now.addAndGet(6_000);
+        StreamOperations<String, Object, Object> streams = drainWithRecords(service, List.of(rec), List.of());
+
+        assertThat(service.roundStateCount()).as("回执落库后清除跨轮状态").isZero();
+        verify(streams).acknowledge(anyString(), anyString(), any(RecordId[].class));
+        assertThat(received).as("两轮各试满 3 次").hasSize(6);
+    }
+
+    @Test
+    @DisplayName("PEL 已满 BATCH：新消息仍在本轮被读取并处理")
+    void newMessageIsNotStarvedWhenPelIsFull() {
+        List<MapRecord<String, Object, Object>> pending = new ArrayList<>();
+        for (int i = 0; i < 64; i++) {
+            pending.add(record((i + 1) + "-0", Map.of("eventId", "pending-" + i)));
+        }
+        MapRecord<String, Object, Object> fresh = record("65-0",
+                outboundEvent("ev-fresh", "webhook", echoUrl, "T-228", "已处理"));
+
+        StreamOperations<String, Object, Object> streams =
+                drainWithRecords(service(), pending, List.of(fresh));
+
+        assertThat(received).as("新消息没有被 64 条 PEL 饿死").hasSize(1);
+        ArgumentCaptor<RecordId[]> acked = ArgumentCaptor.forClass(RecordId[].class);
+        verify(streams).acknowledge(anyString(), anyString(), acked.capture());
+        assertThat(acked.getValue()).as("64 条坏消息 + 1 条新消息").hasSize(65);
+    }
+
+    @Test
+    @DisplayName("同一 RecordId 同时出现在 PEL 与新消息：只处理一次")
+    void duplicateRecordIsProcessedOnce() {
+        MapRecord<String, Object, Object> rec = record("1-0",
+                outboundEvent("ev-same-record", "webhook", echoUrl, "T-229", "已处理"));
+
+        StreamOperations<String, Object, Object> streams =
+                drainWithRecords(service(), List.of(rec), List.of(rec));
+
+        assertThat(received).as("同一条记录不产生第二次 POST").hasSize(1);
+        ArgumentCaptor<RecordId[]> acked = ArgumentCaptor.forClass(RecordId[].class);
+        verify(streams).acknowledge(anyString(), anyString(), acked.capture());
+        assertThat(acked.getValue()).hasSize(1);
+    }
+
     // --- harness ---------------------------------------------------------------------------
 
     private void record(HttpExchange exchange) throws IOException {
@@ -261,6 +354,35 @@ class OutboundDeliveryTest {
                 any(Consumer.class), any(StreamReadOptions.class), any(StreamOffset[].class));
         service.drain();
         return streams;
+    }
+
+    private OutboundDeliveryService service(RoundBackoffPolicy backoff, LongSupplier clock) {
+        return new OutboundDeliveryService(redis, HttpClient.newHttpClient(), JSON, receiptWriter, registry,
+                Duration.ofHours(1),
+                new EgressPolicy("127.0.0.1,localhost", HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(5))
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .build()),
+                DeliveredEventStore.inMemory(Duration.ZERO), RetryPolicy.fast(), backoff, clock);
+    }
+
+    private StreamOperations<String, Object, Object> drainWithRecords(
+            OutboundDeliveryService service,
+            List<MapRecord<String, Object, Object>> pending,
+            List<MapRecord<String, Object, Object>> fresh) {
+        StreamOperations<String, Object, Object> streams = mock(StreamOperations.class);
+        doReturn(streams).when(redis).opsForStream();
+        doReturn(pending, fresh).when(streams).read(
+                any(Consumer.class), any(StreamReadOptions.class), any(StreamOffset[].class));
+        service.drain();
+        return streams;
+    }
+
+    private static MapRecord<String, Object, Object> record(String id, Map<String, String> fields) {
+        MapRecord<String, Object, Object> rec = mock(MapRecord.class);
+        doReturn(fields).when(rec).getValue();
+        doReturn(RecordId.of(id)).when(rec).getId();
+        return rec;
     }
 
     private static Map<String, String> outboundEvent(String eventId, String channel, String target, String ticketId,
