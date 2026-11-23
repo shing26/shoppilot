@@ -1,7 +1,7 @@
 # 票 222：三端 unslop 精修
 
 Round: 54（UI-only；所有者 2026-11-21 确认设计阅览稿）
-ADR: 0030 / 0031（UI-only 展示层；按 ADR 0031 的回归修复例外执行）　Status: implemented（待所有者验收；整改见票 223）　Claimed by: root　Blocked by: 无
+ADR: 0030 / 0031（UI-only 展示层；按 ADR 0031 的回归修复例外执行）　Status: done（2026-11-23 所有者书面签收；审查整改已由票 223 收口）　Claimed by: root　Blocked by: 无
 契约：[plans/222-unslop-frontend-refinement.md](../../plans/222-unslop-frontend-refinement.md)（2026-11-21 冻结）
 
 ## What to build
@@ -77,3 +77,10 @@ git status --short
 
 - 票 222 的代码审查发现两处既有活体门禁会变红：买家工单列表改写完整工单号、坐席 `.identity` 改写登录名。两处不在本票原地改判，统一由票 223 按 ADR 0031 收口。
 - 票 223 同时处理根入口重复链路、非安全上下文复制、移动端间距、等宽数位与非药丸计数；票 222 的原始契约保持只读。
+
+**所有者签收（2026-11-23）**
+
+- 所有者对话内书面指令「签收」。签收范围：九轮 UI 精修与票面 Verify——两端
+  typecheck、37 + 13 vitest、build、全仓 827/136，以及 1440×900 / 390×844 活体断言。
+- 已知边界按原样保留：审查发现的两处门禁冲突由票 223 整改，不在本票改判；
+  `.scratch` 截图为非入库本机证据。
