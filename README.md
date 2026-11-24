@@ -1,28 +1,32 @@
 <div align="center">
 
-# Shoppilot
+<img src="docs/readme-banner.svg" alt="ShopPilot：可验证、可审计、可回归的受控 Agent 运行时" width="100%" />
 
-**面向不可靠大模型的防御式 Agent 运行时与高可用网关底座**
+<h1>ShopPilot</h1>
 
-[![Java](https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/projects/loom/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
-[![Virtual Threads](https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue)](https://openjdk.org/jeps/444)
-[![ADR](https://img.shields.io/badge/Architecture-86%20ADRs-blueviolet)](docs/adr/)
-[![JVM Tests](https://img.shields.io/badge/JVM%20Tests-878-informational?logo=apache-maven&logoColor=white)](#-端到端评测门禁)
-[![CI](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg)](https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml)
+<p><strong>可验证、可审计、可回归的受控 Agent 运行时</strong></p>
 
-**10** 态有界状态机 · **4** 轮工具硬上限 · 命中路径 **P99 22 ms**（200 并发） · 800 并发 **0 错误率**
-
-<p align="center">
-<a href="#-架构与工程验证索引">核心索引</a> •
-<a href="#-架构拓扑与数据流向">架构拓扑</a> •
-<a href="#-四大防御式工程支柱">工程支柱</a> •
-<a href="#-基准压测与现场证据">性能证据</a> •
-<a href="#-快速开始一条命令">快速开始</a> •
-<a href="#-端到端评测门禁">评测体系</a>
+<p>
+<a href="https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml"><img src="https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg" alt="CI"></a>
+<a href="#eval-gates"><img src="https://img.shields.io/badge/JVM%20Tests-878-informational?logo=apache-maven&amp;logoColor=white" alt="JVM Tests"></a>
+<a href="docs/adr/"><img src="https://img.shields.io/badge/Architecture-86%20ADRs-blueviolet" alt="ADRs"></a>
+<a href="https://openjdk.org/projects/loom/"><img src="https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&amp;logoColor=white" alt="Java 21 Loom"></a>
+<a href="https://spring.io/projects/spring-boot"><img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&amp;logoColor=white" alt="Spring Boot 3.3.5"></a>
+<a href="https://openjdk.org/jeps/444"><img src="https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue" alt="Virtual Threads"></a>
 </p>
 
-![Shoppilot 调试台：状态机事件时间线、工具调用与工单队列](docs/console.png)
+<p><strong>10</strong> 态有界状态机 · <strong>4</strong> 轮工具硬上限 · 命中路径 <strong>P99 22 ms</strong>（200 并发） · 800 并发 <strong>0 错误率</strong></p>
+
+<p align="center">
+<a href="#quick-glance">60 秒速览</a> •
+<a href="#product-surfaces">产品界面</a> •
+<a href="#architecture-index">核心索引</a> •
+<a href="#architecture-topology">架构拓扑</a> •
+<a href="#defense-pillars">工程支柱</a> •
+<a href="#perf-evidence">性能证据</a> •
+<a href="#quick-start">快速开始</a> •
+<a href="#eval-gates">评测体系</a>
+</p>
 
 </div>
 
@@ -30,6 +34,54 @@
 
 > **Round 51–58 交付状态（2026-11-24）**：219 / 220 / 221 / 222 / 223 / 224 /
 > 225 / 226 / 227 / 228 均已书面签收；224–228 经独立 Verifier PASS。
+
+<a id="quick-glance" name="quick-glance"></a>
+
+## ⚡ 60 秒速览
+
+| **878**<br/><sub>JVM tests</sub> | **144**<br/><sub>test suites</sub> | **86**<br/><sub>ADRs</sub> | **29**<br/><sub>full-tier acceptance steps</sub> |
+| :---: | :---: | :---: | :---: |
+
+当前测试数与覆盖率以 [`docs/STATUS.md`](docs/STATUS.md) 为准；历史读数、未达成项与复现命令在 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)，两处不混读。
+
+- **模型不可靠** → 三级意图级联 + 10 态显式状态机 + 4 轮工具硬上限；读工具失败只反思一次，超限落可查工单，不拿失败前提硬办后步。
+- **并发热点会打穿缓存** → Java 21 虚拟线程 + SingleFlight 合并穿透 + L1/L2 双层缓存 + 词法极性守卫；命中路径模型与远程向量化增量恒为 0。
+- **涉资动作必须担责** → 退款只生成 `PENDING_APPROVAL` 提案，放行与驳回必须由已验签坐席执行，审计事件同时记录 `actor_authenticated`。
+- **结论要能被机器守住** → 878 条 JVM 测试、0-token 评测门禁、离线 rescore、检索录放门与覆盖率棘轮一起进 CI；判据、gold 与分母不为变绿而改。
+
+<a id="product-surfaces" name="product-surfaces"></a>
+
+## 🖥️ 产品界面
+
+从产品导航进入三个入口，共用同一套网关与身份面：买家提问、坐席处理、工程师看链路。
+
+<table>
+<tr>
+<td width="50%"><a href="docs/r44-index-desktop.png"><img src="docs/r44-index-desktop.png" width="100%" alt="ShopPilot 产品导航：买家端、坐席控制台、运维调试台与服务状态"></a><br/><sub><b>产品导航</b>：买家端、坐席控制台、工程调试入口与服务状态同页。</sub></td>
+<td width="50%"><a href="docs/buyer-agent-run.png"><img src="docs/buyer-agent-run.png" width="100%" alt="ShopPilot 买家端：对话、我的订单、我的工单与 Agent Run 执行轨迹"></a><br/><sub><b>买家端</b>：对话、订单、工单进度与可展开的 Agent Run 在同一工作区。</sub></td>
+</tr>
+<tr>
+<td width="50%"><a href="docs/r44-workspace-queue-desktop.png"><img src="docs/r44-workspace-queue-desktop.png" width="100%" alt="ShopPilot 坐席工作台：工单队列、优先级、退款审核与编排质量"></a><br/><sub><b>坐席工作台</b>：队列、优先级、退款审核、编排质量与买家原话。</sub></td>
+<td width="50%"><a href="docs/console.png"><img src="docs/console.png" width="100%" alt="ShopPilot 运维调试台：状态机时间线、故障注入、工具调用与工单队列"></a><br/><sub><b>运维调试台</b>：状态机时间线、故障注入、工具调用与工单队列。</sub></td>
+</tr>
+</table>
+
+> 截图为本机演示栈实拍；店铺、订单与工单均为 seed 合成数据，不是真实平台条款。
+
+<details>
+<summary>移动端适配（390px 视口）</summary>
+
+<table>
+<tr>
+<td width="33%"><a href="docs/r44-buyer-mobile.png"><img src="docs/r44-buyer-mobile.png" width="100%" alt="买家端移动版：问候、快捷问题与最近订单"></a><br/><sub>买家端</sub></td>
+<td width="33%"><a href="docs/ui-ux03-mobile.png"><img src="docs/ui-ux03-mobile.png" width="100%" alt="买家端移动版：工单详情与处理进度"></a><br/><sub>买家工单详情</sub></td>
+<td width="33%"><a href="docs/workspace-conversations-mobile.png"><img src="docs/workspace-conversations-mobile.png" width="100%" alt="坐席工作台移动版：渠道会话与接管"></a><br/><sub>坐席工作台</sub></td>
+</tr>
+</table>
+
+</details>
+
+---
 
 ## 🧭 先看这里
 
@@ -42,18 +94,20 @@
   [《两个能跑的场景：一份给业务侧的一页纸》](docs/round32-two-runnable-scenarios.md)——
   三分钟能复述**谁在问、走哪几步、哪一步转人、什么情况办不了、现在哪段没通**。
   它只讲业务、不复述指标；所有数字与未达成项仍只在本文与 [`docs/EVIDENCE.md`](docs/EVIDENCE.md) 维护。
-- **工程读者**：从下面的[架构与工程验证索引](#-架构与工程验证索引)进入，或直接看
-  [快速开始](#-快速开始一条命令)。要降低模型依赖、修当前评测红点，按
+- **工程读者**：从下面的[架构与工程验证索引](#architecture-index)进入，或直接看
+  [快速开始](#quick-start)。要降低模型依赖、修当前评测红点，按
   [`docs/TUNING_PLAN.md`](docs/TUNING_PLAN.md) 的三周路线执行。
 - **外部评审者（60 秒）**：`python scripts/demo.py --up`（Docker + Python 3.11+ + Ollama `bge-m3`）——容器档 demo 档（意图感知模板）起全栈并跑三个场景。当前测试数/覆盖率/指标口径只看
   [`docs/STATUS.md`](docs/STATUS.md)；历史读数与未达成项在 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)，两处不要混读。
 - **Docker Hub 401 / Maven 网络不通**：用镜像站基础镜像（`SHOPPILOT_MAVEN_IMAGE` / `SHOPPILOT_JRE_IMAGE`，见 RUNBOOK），或 `python scripts/demo.py --prebuilt`（用本机已构建 jar，不走 Dockerfile 的 Maven stage）。
 
-> **核心哲学**：大模型本质是具有随机性、高延迟与幻觉风险的概率引擎。**Shoppilot** 不盲目采用重型封装的黑盒 Agent 框架，而是基于 **Spring MVC + Java 21 虚拟线程**，以确定性的经典系统工程手段为大模型交互构建高吞吐、防击穿、防死循环与涉资不可抵赖的工业级运行底座。
+> **核心哲学**：大模型本质是具有随机性、高延迟与幻觉风险的概率引擎。**ShopPilot** 不盲目采用重型封装的黑盒 Agent 框架，而是基于 **Spring MVC + Java 21 虚拟线程**，以确定性的经典系统工程手段为大模型交互构建高吞吐、防击穿、防死循环与涉资不可抵赖的工业级运行底座。
 
 发布声明与冻结策略见 [RELEASE.md](RELEASE.md)；逐条数字的证据文件与复现命令见 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)——**未达成的也照写**。
 
 ---
+
+<a id="architecture-index" name="architecture-index"></a>
 
 ## 🧭 架构与工程验证索引
 
@@ -61,12 +115,14 @@
 
 | 评估维度 | 依据路径 | 关键设计考量与实测读数 |
 | :--- | :--- | :--- |
-| **架构决策演进** | [`docs/adr/`](docs/adr/) | 87 个编号位 / 86 篇成文（ADR-0022 有意预留未占用；篇数 11-21 实点），包含完整选型权衡、备选方案与后果推演。 |
+| **架构决策演进** | [`docs/adr/`](docs/adr/) | 87 个编号位（0001-0087，0022 预留未占用）/ 86 篇成文，包含完整选型权衡、备选方案与后果推演。 |
 | **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求实打 bge-m3 为 24–65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平。 |
 | **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0-token 判据抓出三个静默缺陷。 |
-| **全套技术栈本地运行** | [快速开始](#-快速开始一条命令) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |
+| **全套技术栈本地运行** | [快速开始](#quick-start) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |
 
 ---
+
+<a id="architecture-topology" name="architecture-topology"></a>
 
 ## 🏗️ 架构拓扑与数据流向
 
@@ -111,6 +167,8 @@ flowchart TD
 
 ---
 
+<a id="defense-pillars" name="defense-pillars"></a>
+
 ## 🛡️ 四大防御式工程支柱
 
 ### 1. 三级意图级联防御 (T0/T1/T2 Cascade)
@@ -138,6 +196,8 @@ flowchart TD
 * **实测收益**：压测对照组（同模型同并发，仅关闭 `spring.threads.virtual.enabled`）显示 400 / 800 并发吞吐 **+64% / +65%**；100 / 200 并发无排队时反而 **-3%**——低并发负收益与高并发收益一并照登，不挑好看的说。
 
 ---
+
+<a id="perf-evidence" name="perf-evidence"></a>
 
 ## 📊 基准压测与现场证据
 
@@ -224,6 +284,7 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
 ```text
 .
 ├── shoppilot-gateway/         # Agent 核心网关：意图级联、双层缓存、虚拟线程、有界 FSM、限流
+├── shoppilot-embedding-sidecar/ # ONNX int8 查询向量化 sidecar：保住 bge-m3 同模型，缩短未命中关键路径
 ├── shoppilot-ticket/          # 工单流转服务：SLA 路由规则、涉资操作审核队列、出站通知
 ├── shoppilot-biz-mock/        # 下游电商业务基座：多租户行级隔离、身份域、审计流
 ├── shoppilot-tool-api/        # 工具规范抽象：JSON Schema 自动派生、ToolStatus 契约定义
@@ -231,13 +292,16 @@ pwsh -NoProfile -File scripts/demo.ps1 -Which cache    # 只看一条：cache | 
 ├── frontend-workspace/        # 客服审核工作台 (Vue 3 + Vite)：全高操作台、队列筛选与优先级、领取、结单、退款审核、SLA 与买家原话（票 219）
 ├── frontend-shared/           # 两个产品入口共用的设计令牌、契约类型与请求封装
 ├── loadtest/                  # locust 流量模型与压测产物（ladder-*.csv / env-*.json）
-├── knowledge/                 # 30 篇政策语料（ingest 入库后推进 kb_epoch）
-├── docs/                      # 架构决策记录 (ADR)、双曲线压测、真实事故复盘与架构走读
-├── eval/                      # 8 分区端到端自动化回归评测数据集与判据
+├── knowledge/                 # 37 篇政策语料 / 111 个基础规则块（ingest 后推进 kb_epoch）
+├── docs/                      # ADR、README 证据地图、双曲线压测、事故复盘与架构走读
+├── eval/                      # Part 1-10 评测分区 + 行为 / 安全 / 答案级独立套件
+├── ops/ · deploy/ · docker/   # 告警规则、部署与容器编排资产
 └── scripts/                   # up/down/start、ingest、demo、verify-*、压测与报告生成
 ```
 
 ---
+
+<a id="quick-start" name="quick-start"></a>
 
 ## 🚀 快速开始一条命令
 
@@ -285,7 +349,7 @@ ollama pull qwen2.5:3b                            # local 模式的生成模型
 mvn -o -DskipTests package                        # 干净机器去掉 -o 联网取依赖；或用 .\mvnw.cmd
 pwsh -NoProfile -File scripts/start-bizmock.ps1   # :8091，seed 3 租户 / 200 买家 / 5 万订单
 pwsh -NoProfile -File scripts/start-ticket.ps1    # :8092，工单与坐席服务
-pwsh -NoProfile -File scripts/ingest.ps1          # 30 篇政策 -> 90 规则块 -> ES + Qdrant，推进 kb_epoch
+pwsh -NoProfile -File scripts/ingest.ps1          # 37 篇政策 -> 111 个基础规则块 -> ES + Qdrant，推进 kb_epoch
 pwsh -NoProfile -File scripts/start-gateway.ps1 -Profile local
 ```
 
@@ -308,19 +372,25 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 
 ---
 
+<a id="eval-gates" name="eval-gates"></a>
+
 ## 🧪 端到端评测门禁
 
 项目摒弃主观打分，在 `eval/` 建立了多分区的自动化评测基准，任何 Prompt 或编排层代码变更均须通过回归门禁：
 
 * **Part 1 Policy**：政策检索召回率与分块边界判定
 * **Part 2 Action**：工具调用选择精度与参数提取吻合度
-* **Part 3 Edge**：极端恶意输入、越狱与边界输入防御
+* **Part 3 Edge**：极端恶意输入、越狱与七类边界输入防御（54 条）
 * **Part 4 Emotion**：负向情绪识别与人工升级转接率
 * **Part 5 Channel**：多渠道入站协议统一归一化验证
 * **Part 6 Plan**：有界状态机（4 轮上限）执行步进有效性
 * **Part 7 Style & Feedback**：话术风格注入与反馈回流完整性
 * **Part 8 Task**：复合业务长链路端到端完成率
+* **Part 9 Hotel**：酒店入住 / 退改 / 押金 / 早餐等 12 条跨行业用例，单独成列，不并入电商 180 条 gold
 * **Part 10 Autonomy**：4 轮链 / 2 步链、反思三态（触发 / 不触发 / 次数用尽）与超限出口（单独成列，不给总分；dev 档 30 条，票 148/149）
+* **Regression 40**（`eval/regression-cases.jsonl`）：历史故障成对回归集，20 对用例钉住"修过的缺陷不再回来"；与边界集一样，判分 0 token。
+* **Security 30**（`eval/security-cases.jsonl`）：六类安全剧本、39 个执行步骤，覆盖越权、注入、泄露与涉资动作边界；活体跑批与离线夹具分离。
+* **Answer-level**（`eval/answer-cases.jsonl`）：答案级评测与工具级评测分开记分，避免"工具选对但答案办错"被总分掩盖。
 * **UX Golden 30**（`eval/golden-ux-30.jsonl`）：买家侧 30 条行为面回归，覆盖意图、工具结果、引用、缓存、降级工单、跨店隔离与可读答案关键词；独立成列，**不并入 180 条 gold 的分母**。运行：`python scripts/run_golden_set.py --base http://127.0.0.1:8082`（输出 `eval/results/golden-ux-*.md`，失败项原样登记）。
 * **Handoff Golden 23**（`eval/handoff-golden.jsonl`）：ADR 0072 的路由纯函数 / 角色工具面 / 有向边 / 同诉求升级 / 风险面原因判据，由 JVM 重算；覆盖售前意图、售后动作、UNKNOWN、行业门、允许边、反向边、深度超限、同角色、无办理证据的 route reset、首次路由与工具面拒绝原因，不连模型、不并分母。
 * **Quality Sidecar**（ADR 0072 H4）：`GET /api/v1/support/ops/quality/report` 只读汇总 Handoff 计数 / blocked 分布 / 决策耗时 / tool risk / friction（工具成功仍降级、重复追问槽位），并从 Redis `shoppilot:audit` 聚合最近 15 分钟坐席动作（报表内 30 秒缓存，只输出动作名不输出坐席 ID）；需要 `X-Ops-Token`，不改路由、不加 LLM 调用。Prometheus 新增 blocked handoff、tool-success-fallback、handoff-context-loss 三条告警，promtool 双侧测试入库。
@@ -511,7 +581,7 @@ PLAN 的承诺项里有四条本来就没有阈值（只要出数据、出归因
 - **跨实例 singleflight 只在单实例环境验证过**。Redis `SETNX` 那层写了、测了，但没有两个网关实例跑真实流量。
 - **身份提供方是 mock 的**：验签逻辑真（HS256、过期、错签名都拒），发 token 的接口是演示入口（ADR 0014）。
 - **四个请求坐标直接进日志是合成数据下的取巧**：`traceId / tenantId / customerId / conversationId` 一行日志一个不落，演示与排障极好用（ADR 0027），但 `tenantId` 与 `customerId` 在真实业务里是可识别的身份标识，日志的留存、索引与访问面都比数据库宽得多。真实投产要换成不可逆的假名标识（每租户一个盐的哈希或专用映射服务），并把"谁能在日志平台上按身份键检索"当成与数据库权限同等级的门来管。
-- **政策语料是 LLM 生成后人工校对的合成数据**，不是真实平台条款；90 个规则块要测的是链路而不是召回率上限。
+- **政策语料是 LLM 生成后人工校对的合成数据**，不是真实平台条款；111 个基础规则块要测的是链路而不是召回率上限。
 - **风格档位的 intent 维度当前不可能命中**：档位在 INTAKE 阶段算（`AgentStateMachine` 调 `StyleService.tierFor`），那时意图还没判定，所以传的是 `null`；而 `style/profiles.yml` 里本来也没写 intent 规则。三者是自洽的——这是**预留维度 + 诚实的 null**，不是配置与实现漂移。要让 intent 真正参与档位判定，得先把档位计算点移到 TRIAGE 之后，那会改 system prompt 的内容，属行为变更（ADR 0044 把它登记为已知边界，本轮不改代码）。
 - **ES 停在够用级、不做 rerank 是判断不是未完成**：16 条查询上 dense-only 已经 16/16，精排没有可证明的收益，这条对比表就放在 `docs/retrieval-comparison.md`，打平也照登。
 - **0.95 工作点上 L2 语义缓存召回实测为 0**：bge-m3 在短中文同意图改写对上最大余弦 0.9435。80% 级拦截由 L1 精确哈希与穿透合并承担，L2 只兜"同一政策、写法极近"这一小撮。

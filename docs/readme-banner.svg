@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="440" viewBox="0 0 1600 440" role="img" aria-labelledby="heroTitle heroDesc">
+  <title id="heroTitle">ShopPilot — 可验证、可审计、可回归的受控 Agent 运行时</title>
+  <desc id="heroDesc">ShopPilot 把概率模型放进确定性工程边界：意图级联、双层缓存、十态有界状态机、四轮工具上限与涉资动作人工门禁。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1512"/>
+      <stop offset="0.55" stop-color="#0E1B17"/>
+      <stop offset="1" stop-color="#0A1210"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2DD4A7"/>
+      <stop offset="1" stop-color="#7DE2C4"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2DD4A7" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#2DD4A7" stop-opacity="0.08"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#B8F5E4" stroke-opacity="0.055" stroke-width="1"/>
+    </pattern>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="440" rx="26" fill="url(#bg)"/>
+  <rect width="1600" height="440" rx="26" fill="url(#grid)"/>
+  <circle cx="1420" cy="60" r="220" fill="#2DD4A7" fill-opacity="0.08" filter="url(#softGlow)"/>
+  <circle cx="760" cy="430" r="180" fill="#2DD4A7" fill-opacity="0.05" filter="url(#softGlow)"/>
+
+  <g font-family="'Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif">
+    <text x="96" y="86" fill="#7DE2C4" font-size="16" font-weight="600" letter-spacing="3.2">SHOPPILOT / CONTROLLED AGENT RUNTIME</text>
+    <text x="96" y="164" fill="#F4FAF7" font-size="48" font-weight="700" letter-spacing="-1.2">让 Agent 跑在</text>
+    <text x="96" y="220" fill="#F4FAF7" font-size="48" font-weight="700" letter-spacing="-1.2">可验证的轨道上</text>
+    <text x="96" y="270" fill="#B8CCC4" font-size="21">10 态有界状态机 · 4 轮工具硬上限 · 三层意图防御 · 涉资动作人工门禁</text>
+    <text x="96" y="306" fill="#83A399" font-size="17">把概率引擎关进确定性工程边界：能缓存、能降级、能转人、能审计。</text>
+
+    <g font-size="15" font-weight="600">
+      <rect x="96" y="340" width="118" height="38" rx="19" fill="#12261F" stroke="#275044"/>
+      <text x="155" y="365" fill="#CFF8EA" text-anchor="middle">Java 21</text>
+      <rect x="226" y="340" width="172" height="38" rx="19" fill="#12261F" stroke="#275044"/>
+      <text x="312" y="365" fill="#CFF8EA" text-anchor="middle">Spring Boot 3.3.5</text>
+      <rect x="410" y="340" width="172" height="38" rx="19" fill="#12261F" stroke="#275044"/>
+      <text x="496" y="365" fill="#CFF8EA" text-anchor="middle">Virtual Threads</text>
+    </g>
+    <text x="96" y="408" fill="#66877C" font-size="15">Redis · Qdrant · Elasticsearch · PostgreSQL · Flyway · Prometheus</text>
+
+    <g transform="translate(900 78)">
+      <text x="0" y="0" fill="#7DE2C4" font-size="14" font-weight="700" letter-spacing="2.4">REQUEST PATH</text>
+      <line x1="0" y1="18" x2="600" y2="18" stroke="#24473D" stroke-width="1"/>
+
+      <g transform="translate(0 38)">
+        <rect width="600" height="54" rx="12" fill="#10211C" stroke="#275044"/>
+        <rect width="5" height="54" rx="2.5" fill="url(#accent)"/>
+        <text x="28" y="23" fill="#F1F8F5" font-size="19" font-weight="650">① 意图级联 T0 / T1 / T2</text>
+        <text x="28" y="43" fill="#7FA397" font-size="14">规则与词典先行，高置信直接路由；不确定才交给模型</text>
+        <text x="566" y="33" fill="#7DE2C4" font-size="14" font-weight="600" text-anchor="end">0 token 快路径</text>
+      </g>
+
+      <g transform="translate(0 104)">
+        <rect width="600" height="54" rx="12" fill="#10211C" stroke="#275044"/>
+        <rect width="5" height="54" rx="2.5" fill="url(#accent)"/>
+        <text x="28" y="23" fill="#F1F8F5" font-size="19" font-weight="650">② L1 / L2 缓存 + 极性守卫</text>
+        <text x="28" y="43" fill="#7FA397" font-size="14">SingleFlight 合并穿透，反义句越阈也强制回源</text>
+        <text x="566" y="33" fill="#7DE2C4" font-size="14" font-weight="600" text-anchor="end">P99 22 ms @200</text>
+      </g>
+
+      <g transform="translate(0 170)">
+        <rect width="600" height="54" rx="12" fill="#10211C" stroke="#275044"/>
+        <rect width="5" height="54" rx="2.5" fill="url(#accent)"/>
+        <text x="28" y="23" fill="#F1F8F5" font-size="19" font-weight="650">③ 10 态状态机 · 4 轮工具</text>
+        <text x="28" y="43" fill="#7FA397" font-size="14">读工具失败只反思一次；超限落可查工单，不硬办后步</text>
+        <text x="566" y="33" fill="#7DE2C4" font-size="14" font-weight="600" text-anchor="end">禁止死循环</text>
+      </g>
+
+      <g transform="translate(0 236)">
+        <rect width="600" height="54" rx="12" fill="#10211C" stroke="#275044"/>
+        <rect width="5" height="54" rx="2.5" fill="url(#accent)"/>
+        <text x="28" y="23" fill="#F1F8F5" font-size="19" font-weight="650">④ HITL 门禁 · 工单回流</text>
+        <text x="28" y="43" fill="#7FA397" font-size="14">退款只生成提案；放行必须由已验签坐席执行并落审计</text>
+        <text x="566" y="33" fill="#7DE2C4" font-size="14" font-weight="600" text-anchor="end">涉资不可抵赖</text>
+      </g>
+
+      <line x1="28" y1="92" x2="28" y2="104" stroke="#2DD4A7" stroke-opacity="0.45" stroke-width="1.5"/>
+      <line x1="28" y1="158" x2="28" y2="170" stroke="#2DD4A7" stroke-opacity="0.45" stroke-width="1.5"/>
+      <line x1="28" y1="224" x2="28" y2="236" stroke="#2DD4A7" stroke-opacity="0.45" stroke-width="1.5"/>
+    </g>
+  </g>
+
+  <rect x="0.5" y="0.5" width="1599" height="439" rx="25.5" fill="none" stroke="url(#edge)"/>
+</svg>
