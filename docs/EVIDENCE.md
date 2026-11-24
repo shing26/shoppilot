@@ -505,5 +505,7 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   首轮独立 Verifier 判 P1：按 mtime 取最新会在旧 jar 残留时静默启动旧版本；
   已改为从根 `pom.xml` 读版本并精确匹配 `module-<version>.jar`，缺失即
   `missing jars` 快速失败。受控反证：旧 jar mtime 更新仍只选 1.1.0。
+  独立 Verifier 复验 **PASS**（HEAD `0e24718`，P0/P1 无）；P2 计数口径
+  已由契约修订 2 关闭。AC1 换代、AC2/AC3/AC4 仍未执行。
 
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。

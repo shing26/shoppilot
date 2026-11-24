@@ -2,7 +2,7 @@
 
 Round: 60（收尾 / 验收 / 文档；无新功能面）
 ADR: 无（不新增功能；不触发 ADR 0030/0031 的新功能限制）
-Status: in-progress（2026-11-25 所有者选定发布案 B；B 已落地，AC2–AC4 待执行）　Claimed by: root　Blocked by: 无
+Status: in-progress（2026-11-25 发布案 B 已落地且独立 Verifier PASS；AC2–AC4 待执行）　Claimed by: root　Blocked by: 无
 
 契约：[plans/230-round60-closeout.md](../../plans/230-round60-closeout.md)（2026-11-25 冻结）
 
@@ -88,6 +88,10 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
   现改为从根 `pom.xml` 读取项目版本，精确拼
   `shoppilot-<module>-<version>.jar`；缺失即返回 `None` 走既有 `missing jars`
   快速失败。受控反证：旧 jar mtime 更新时仍只选 1.1.0；缺失版本返回 `None`。
+- **独立 Verifier 复验 PASS（HEAD `0e24718`）**：P0/P1 无；P1 已关闭
+  （版本号单一来源，mtime 不再参与选择，缺失即快速失败）；P2「提交计数
+  口径未单列修订」已由**契约修订 2**关闭。AC1 换代、AC2/AC3/AC4 尚未执行，
+  不在本次 B 增量判定内。
 
 **三个现场追问**
 

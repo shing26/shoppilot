@@ -137,3 +137,7 @@ U2（AC3）：
   `shoppilot-*-0.1.0-SNAPSHOT.jar` 写死在三处；版本号一改，`--prebuilt`
   会找不到 jar。实现改为按 `shoppilot-<module>-*.jar` 通配解析，
   不改变 `--prebuilt` 的语义。
+- **契约修订 2**：问题段与 AC1 的提交计数从固定值改为
+  **「400+，以 `git rev-list --count v1.0.0..HEAD` 为准」**。
+  原因是计数随本轮每次提交增长，固定值会在票内漂移；此修订只改计数口径，
+  不改变任何 AC 判据。
