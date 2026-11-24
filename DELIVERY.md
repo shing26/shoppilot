@@ -39,7 +39,30 @@ Windows 本机 JVM 开发路径仍可用 `pwsh -NoProfile -File scripts/up.ps1`�
 
 ---
 
-## 当前状态（2026-10-19）
+## 当前状态（2026-11-25）
+
+- **HEAD**：收尾分支 `codex/230-round60-closeout` 的 `1f9c6f0`；`main` 基线 `19ebd12`（CI success）。
+- **发布**：所有者 2026-11-25 选定 **B**——根 POM 与四个子模块统一 `1.1.0-SNAPSHOT`，
+  **不打 tag、不建 Release**；`v1.0.0` 仍指向 `7f4334c`，之后 **403 个提交**未发布。
+  C（`v1.1.0`）的前置 = 29 步 full 通过 + 欠账裁决 + 所有者书面签收。
+- **功能面**：票 **01-229 全部收口**，`ready-for-agent` 仅剩 **{230}**（本轮收尾票）。
+- **测试**：`mvnw verify` **878 tests / 144 suites / 0 skipped**；覆盖率
+  tool-api **40.93%** / biz-mock **83.71%** / gateway **70.42%** / ticket **78.66%**
+  （`docs/STATUS.md`）。
+- **29 步 full（2026-11-25，HEAD `1f9c6f0`）**：**25 绿 / 4 红**。三次执行合计 1229 s
+  （首跑含构建与起栈，后两次为配置对齐与定向复跑；日志见 `docs/EVIDENCE.md`）。
+  红项：`console`（票 221 角色级 403 后 3 条 probe 期望过期）、`emotion`
+  （票 163 词表后 `EMO-ESC-07` 期望过期）、`feedback`（隐式信号③，已登记）、
+  `plansteps`（local 档 0/7，已登记）。`build` / `unit` 在干净环境首跑双绿；
+  带演示口令重跑会撞 `IdentityDomainTest` 的「无口令不播种」断言，属测试隔离边界。
+- **U2 已闭环**：完整 `up.ps1` 链路下演示账号播种成功、`/auth/login` **200**
+  （role=AGENT）、错误口令 **401**；`.env` 从备份恢复，SHA-256 仍为
+  `8E0AEB60…D233`。
+- **欠账**：R1/R3/R5/R6/R8/R10/R15 保留触发条件；U1、U2 关闭；U11 本轮在 warm
+  状态复跑通过一次，仍按「间歇」保留；新增 R16–R19（全量矩阵工装漂移），
+  见 `.scratch/shoppilot-mvp/registered-debt.md`。
+
+## 历史状态（2026-10-19，原文保留）
 
 - **发布**：`v1.0.0` 已冻结（tag → `7f4334c`，CI run `35104751284` 验证）
 - **未发布**：`v1.0.0` 之后 **200 个提交**，属 round15 – round35

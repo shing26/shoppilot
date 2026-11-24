@@ -2,7 +2,7 @@
 
 Round: 60（收尾 / 验收 / 文档；无新功能面）
 ADR: 无（不新增功能；不触发 ADR 0030/0031 的新功能限制）
-Status: in-progress（2026-11-25 发布案 B 已落地且独立 Verifier PASS；AC2–AC4 待执行）　Claimed by: root　Blocked by: 无
+Status: in-progress（2026-11-25 发布案 B 已落地；AC2 全量 29 步、AC3 U2、AC4 欠账裁决已执行；待独立 Verifier 与所有者签收）　Claimed by: root　Blocked by: 无
 
 契约：[plans/230-round60-closeout.md](../../plans/230-round60-closeout.md)（2026-11-25 冻结）
 
@@ -98,3 +98,50 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
 1. 发布案选 A、B 还是 C？建议在全量验收绿之前选 B。
 2. 全量 29 步前置不足时，接受「SKIP + 边界」还是等环境？
 3. R15 / U10 / U11 是继续登记还是本轮修？收尾票只给建议，需所有者裁决。
+
+**AC2 全量 29 步（2026-11-25，HEAD `1f9c6f0`）**
+
+- 首跑 `logs/acceptance-run-20261125-034500.log`：`build` / `unit` / `stack` /
+  `syntax` / `stop` / `report` 绿；18 步红集中在鉴权（`ops.token_mismatch`、
+  `missing internal token`、缺演示口令）——本机 `.env` 是 bootstrap 生成的自定义
+  随机凭证，而各 `verify-*` 脚本内置 `dev-ops-token` / `dev-internal-token-change-me`。
+- 第二跑 `logs/acceptance-run-20261125-040852.log`：进程环境对齐
+  `SHOPPILOT_OPS_TOKEN` / `SHOPPILOT_INTERNAL_TOKEN` /
+  `SHOPPILOT_IDENTITY_DEMO_PASSWORD` 后 **19 绿 / 10 红**；`plan`、`hitzero`、
+  `action`、`fallback`、`l2`、`workspace`、`buyer`、`channel`、`isolation`、`demo`、
+  `eval` 等转绿。`build` / `unit` 本次红是导出演示口令撞
+  `IdentityDomainTest.noDemoAccountsWithoutExplicitPassword`，不是代码回归；
+  首跑干净环境下双绿。
+- 第三跑（定向）`logs/acceptance-run-20261125-041533.log`：补
+  `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1` 后 `idem`、`refund`、`polarity`、
+  `outbound`（10/10）转绿，单次 115 s。
+- **合并口径：25 绿 / 4 红**。四条红逐条归因：
+  - `console` 42/45：票 221 的 `/ops/**` 角色级 403 落地后，页面切回买家身份
+    仍读 circuit，脚本三条 probe 期望 `circuitState=live` 已过期（R17）。
+  - `emotion` 28/29：票 163 把「找真人」纳入 T0 升级词后，`EMO-ESC-07`
+    返回 `USER_REQUESTED`，脚本自 2026-09-27 未更新（R18）。
+  - `feedback`：隐式信号③ 幂等重放计数（既有登记）。
+  - `plansteps`：local 档 0/7（既有登记，ADR 0043 明令不改判据）。
+- 前置边界：`polarity` 第二跑 exit 3（L2 无源条目，U11），第三跑 warm 状态下
+  通过；`console` 定向复跑多出一条 `PENDING_APPROVAL` 是 refund 步紧邻执行
+  造成的顺序污染，全量矩阵中不出现。
+
+**AC3 U2 闭环（2026-11-25）**
+
+- `.env` 备份：`%TEMP%\shoppilot-env-before-230.bak`，恢复后 SHA-256 =
+  `8E0AEB60BE5CED207514DAAD70290021588329F09C5C28CEA84762EB2CA6D233`。
+- 完整 `up.ps1` 链路（含 `bootstrap_env.py --force` 受控改写）后：
+  `/auth/login`（T001 / agent）**200**、`role=AGENT`、token 227 字符；
+  错误口令 **401**；`workspace` 30/30、`buyer` 14/14、`console` 坐席登录成功。
+- 结论：演示账号投放链路在完整 `up.ps1` 下成立，U2 关闭。
+
+**AC4 欠账裁决（2026-11-25）**
+
+- **关闭**：U1（workspace 30/30、buyer 14/14、console 坐席登录 200）、
+  U2（上述完整链路 + SHA 恢复）。
+- **保留触发条件**：R1、R3、R5、R6、R8、R10、R15、U3、U8、U10、U11
+  （触发条件与边界见 `registered-debt.md`；本轮未改判据、未扩词表、未重跑 gold/压测）。
+- **新增登记**：R16（脚本 dev 凭证 vs bootstrap 随机凭证）、R17（console circuit
+  期望过期）、R18（EMO-ESC-07 期望过期）、R19（outbound 回环 SSRF allowlist）。
+- **需所有者裁定**：R15 的 A/B/C 仍挂起；R17/R18/R19 的修法属于下一张票，
+  本票只登记不执行。

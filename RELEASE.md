@@ -4,6 +4,11 @@
 
 状态：`v1.0.0` 已发布并冻结。Tag `v1.0.0` 指向 CI run `35104751284` 已验证的 release commit `7f4334c`。
 
+> **2026-11-25 换代指针**：`v1.0.0` 之后未发布。所有者选定发布案 **B**
+> （`1.1.0-SNAPSHOT`，不打 tag、不建 Release）；`v1.1.0` 的前置与判定入口见
+> [`docs/STATUS.md`](docs/STATUS.md)、[`DELIVERY.md`](DELIVERY.md) 与
+> [票 230](.scratch/shoppilot-mvp/issues/230-round60-closeout.md)。
+
 ## What it does
 
 一条买家诉求从 SSE 对话进入有界状态机，经鉴权、意图判定、缓存与检索后，走到政策答复、业务工具办理或降级工单。项目定位是单机可复现的面试作品，不宣称任何形态的生产上线。

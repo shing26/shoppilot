@@ -12,6 +12,11 @@
 > 实质收口，挪入第一节；U2 的疑似根因已定位为启动器环境继承缺陷，由票 229 判定
 > （见 `plans/229-launcher-env-inheritance.md`）；其余条目触发条件未变。
 
+> **2026-11-25 复核（round60 / 票 230）**：U1、U2 关闭（`workspace` 30/30、
+> `buyer` 14/14、完整 `up.ps1` 下登录 200 且 `.env` SHA 恢复）；U11 在 warm
+> 状态复跑通过一次，仍按间歇保留。全量矩阵新增四条工装漂移 R16–R19，
+> 均只登记不执行；R15 / U10 / U11 的产品面裁决仍归所有者。
+
 ## 一、已关闭（留档，因为它们证明过这条路走得通）
 
 | 项 | 结论 |
@@ -45,17 +50,21 @@
 | R8 | **输入侧提示注入防护**（实测「忽略以上所有指令…」未泄露系统提示词，但按指令倾倒了 892 字条款正文；29s、无工单） | round34 QA 走查（票 131，N10） | 出现对外暴露面（B4 真连之后任何可被陌生人输入的入口） | **2026-10-20 所有者确认：飞书机器人未对外开放、一直内测**——触发条件未成立，继续登记不执行（政策正文本身是公开内容，谈不上泄露）；到点做输入侧裁剪与拒答规则 |
 | R10 | **JVM 测试的审计事件经共享 Redis 流泄漏进活体服务的审计表**（`EventReconciliationTest`/`RefundReviewTest` 发到真流，运行中的 biz-mock 惰性 drain 时把 `agent-001`/`alice` 之类的测试行落进活体台账；取证时极易误读成"有人放了款"） | 2026-10-18 审计修复的取证过程（票 132） | 出现"审计面必须干净"的诉求（对外演示/面试展示审计查询时） | 同机同时跑测试与活体栈的固有噪声；修法 = 测试用独立流名（或独立 Redis DB），登记不执行 |
 | R15 | **qwen-plus gold 的 4 个意图低于 95%**（2026-10-20 全量 180：`ACTION_LOGISTICS` 88.9%——2 条选了 `queryOrderDetail` 而非 `queryLogistics`；`ACTION_ORDER` 94.4%——1 条散文追问新地址；`ESCALATE` 88.9%——ESC-03/05/14/18 的「真人/拍板的客服/机器人办不了/活人」不在 T0 升级词表、模型也没实际转人；`UNKNOWN` 83.3%——UNK-06/12/16 的「笑话/便宜点/写诗」被模型调 `queryOrderDetail` 追问单号。ACTION 总体 69/72=95.8%、POLICY 72/72=100%） | 2026-10-20 qwen-plus 全量 gold（`eval/results/tool-eval-20261020-125346-dev-gold-qwenplus-r7r14.csv`）；与历史 95.0% 基线**不可直接比**（prompt v1.2.0 / 4 轮 / R7 / R14 已变） | **所有者裁定**：A) 扩 T0 显式升级词表（真人/拍板的/活人/机器人办不了…）+ 补 UNKNOWN 的「不调工具」护栏；B) 接受新基线、只登记不修；C) 做同代码 A/B 定位是否 round35 引入（约 40-60 万 token） | **只登记不执行**；gold / 阈值 / 分母 / `judge()` 零触碰 |
+| R16 | **验收脚本内置 dev 凭证与 bootstrap 生成的随机凭证不一致**（`verify-*.ps1` 默认 `dev-ops-token` / `dev-internal-token-change-me`，而 `bootstrap_env.py --force` 生成 32 字符随机值；启动器不把 `.env` 注入脚本进程） | 2026-11-25 round60 全量矩阵：18 步因 `ops.token_mismatch` / `missing internal token` / 缺演示口令变红；进程环境覆盖 4 个变量并重启后，`idem`/`refund`/`outbound` 转绿 | **fresh clone 按 README 跑 full 必红**；修法 = 门禁从 `.env` 读同一份凭证，或 `bootstrap_env` 在 dev 档直接写脚本默认值 | 本机以进程环境覆盖完成验收，不改脚本；下一票决定门禁取凭证的唯一来源 |
+| R17 | **票 221 角色级 403 后 `verify-console.mjs` 的 circuit 期望过期**（`/ops/**` 统一要求坐席/管理员；页面切回买家身份后 circuit 读到 `role.denied`，脚本仍断言 `circuitState=live`） | 2026-11-25 全量矩阵 `console` 42/45；定向复跑 41/45（多一条是 refund 步紧邻造成的顺序污染） | 触发条件已成立（票 221 落地，2026-11-23）；修法三选一：circuit 放开给任意登录用户 / 调试台保留坐席令牌 / 门禁按新契约改期望 | 判据未改；留待新票 |
+| R18 | **票 163 口语升级词表后 `EMO-ESC-07` 期望过期**（用例「我要找真人领导谈」命中 T0 `找真人` → `USER_REQUESTED`，脚本仍期望 `EMOTION_ESCALATION`） | 2026-11-25 全量矩阵 `emotion` 28/29；脚本自 2026-09-27 未更新，词表 2026-10-27 变更 | 触发条件已成立；修法 = 换一条不含显式升级词的用例，或接受 `USER_REQUESTED` 为通过（需所有者裁定语义） | 判据未改；留待新票 |
+| R19 | **票 225 SSRF 落地后 `verify-outbound.mjs` 的回环回声端点被策略拒绝**（门禁未设置 `SHOPPILOT_OUTBOUND_ALLOWLIST`；网关日志明确「回环/私网/链路本地」） | 2026-11-25 全量矩阵 `outbound` 5/7；导出 `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1` 并重启后 **10/10** | 新环境按 README 跑 full 时 `outbound` 必红；修法 = 门禁启动回环回声时自动设置 allowlist，或在 `run-acceptance` 里显式声明 | 本机以环境覆盖完成验收，未改判据 |
 
 ## 三、活跃的「未达成」（不是不执行，是还没验成）
 
 | # | 项 | 现状 | 欠着的理由 |
 |---|---|---|---|
-| U1 | `verify-workspace` 的两条红 | **live 档里 buyer/workspace 仍红** | ① 未登录提示与 `username` 显示——**已修**，但 live 档的 `up.ps1` 链路拿不到演示口令（见 U2），所以还没在门禁里复验；② live 档链路缺陷（U2） |
-| U2 | **`up.ps1` 链路下 biz-mock 拿不到 `SHOPPILOT_IDENTITY_DEMO_PASSWORD`** | 手工直接跑 `start-bizmock.ps1` **正常**（播种成功、登录 200）；走 `up.ps1` 不播种 → 登录 401 | **投放链路已由票 229 封堵，完整 `up.ps1` 未复跑**：WMI 脱离启动不再依赖继承，合并环境显式写进 `run-*.cmd`。实测导出过期口令后 biz-mock 按该值播种（authenticate：过期 200 / `.env` 401），证明值确实到达。未复跑的原因是 `up.ps1` 会经 `bootstrap_env.py --force` 改写 `.env`，与本次“不得改动 `.env`”的验证约束冲突；本机 Docker 29.5.3 可用，但 Ollama 服务 `127.0.0.1:11434` 未监听（CLI 存在）。故**保留本行**。**触发条件**：`up.ps1` 链路再次出现演示账号未播种；届时先查调用方是否残留过期 `SHOPPILOT_IDENTITY_DEMO_PASSWORD` |
+| U1 | **2026-11-25 已关闭**：全量矩阵 `workspace` 30/30、`buyer` 14/14，坐席登录与买家依据面板均在活体上复验 | 原判定：`verify-workspace` 的两条红（未登录提示、`username` 显示）与 live 档演示口令链路 | 证据：`logs/acceptance-run-20261125-040852.log` 与 `logs/acceptance/{workspace,buyer}.log`（本机，不入库） |
+| U2 | **2026-11-25 已关闭（AC3）**：完整 `up.ps1` 链路（含 `bootstrap_env.py --force` 受控改写）下 biz-mock 播种演示账号、`/auth/login` **200**（role=AGENT）、错误口令 **401**；`.env` 从备份恢复后 SHA-256 = `8E0AEB60…D233` | 原判定：`up.ps1` 链路下拿不到 `SHOPPILOT_IDENTITY_DEMO_PASSWORD`，票 229 已封堵投放链路但未复跑 | 证据：票 230 Handoff「AC3 U2 闭环」；触发条件：`up.ps1` 链路再次出现演示账号未播种 |
 | U3 | 退款审批的**跨进程**原子性 | 「受理 → 开单」不再同事务（真源是 `refunds.PENDING_REVIEW`） | 票 72 已登记；B1（换真库）会第一次让它显形 |
 | U8 | 修复前写下的 L1 条目**没有 `sourceDocs`**（命中时 `citationDetails.doc` 为空串；内容正确，随 TTL 自然换代）；**检索降级对调用方不可见**（响应无 degraded 字段，只有 trace 的 `degraded=` 读数——QA N6） | 旧条目在 TTL 内可见；降级可见性缺口影响排障与门禁前置判断 | 前者等 TTL 即可；后者要动响应契约（add-only 字段），触发 = 下一次有人因它误判 |
 | U10 | **压测 mix80 的绝对拦截率与 09-08 梯子不可比**：本机实测 ~52% vs 历史 78.2%，差额来自工装漂移（会话号秒级碰撞把动作流量堆进同一会话 → `SLOT_UNRESOLVED` 44320；三条文本被 T1 质心误判成动作意图），与 ADR 0068 的修复无关（A/B 两臂同工装同参数，差值可比） | 2026-10-18 两店交替压测（票 133） | 需要对外引用「拦截率 ≥80%」这条判据时，先把会话号与 T1 误判两条定位清楚 | 登记；修它属于压测工装与判定质量两笔独立的账 |
-| U11 | **极性守卫门禁的前置不稳定**（2026-10-19 矩阵两次跑分别停在「L2 里没有源条目（写回只落 L1 / 被降级资格拒掉）」与「探针 A `cache=NONE`」；守卫计数器 +0 是因为**根本没命中 L2**，不是守卫没拦） | 本机 local 档（`OLLAMA_MAX_LOADED_MODELS=1`，bge-m3 与 qwen2.5:3b 换入换出）下 L2 写回/读取形态不稳定；未证明是 round33/34 的 L2 分区或平台桶改动导致 | 先在同一 warm 模型状态下复跑 3 次取样；若稳定复现再查 L2 filter 与写回资格。**判据不改、门禁不摘** |
+| U11 | **极性守卫门禁的前置不稳定**（2026-10-19 矩阵两次跑分别停在「L2 里没有源条目（写回只落 L1 / 被降级资格拒掉）」与「探针 A `cache=NONE`」；守卫计数器 +0 是因为**根本没命中 L2**，不是守卫没拦） | 本机 local 档（`OLLAMA_MAX_LOADED_MODELS=1`，bge-m3 与 qwen2.5:3b 换入换出）下 L2 写回/读取形态不稳定；未证明是 round33/34 的 L2 分区或平台桶改动导致 | 先在同一 warm 模型状态下复跑 3 次取样；若稳定复现再查 L2 filter 与写回资格。**判据不改、门禁不摘**。2026-11-25 全量矩阵 warm 状态一次通过（`logs/acceptance-run-20261125-041533.log`），仍按间歇保留 |
 
 ## 四、本清单的纪律
 
