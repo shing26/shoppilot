@@ -502,5 +502,8 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   `shoppilot-{gateway,biz-mock,ticket}-1.1.0-SNAPSHOT.jar`；
   `_fat_jar` 探针分别解析到这三个文件。AC2 全量 29 步、AC3 U2、
   AC4 欠账裁决仍待执行；C（发布 `v1.1.0`）未启动。
+  首轮独立 Verifier 判 P1：按 mtime 取最新会在旧 jar 残留时静默启动旧版本；
+  已改为从根 `pom.xml` 读版本并精确匹配 `module-<version>.jar`，缺失即
+  `missing jars` 快速失败。受控反证：旧 jar mtime 更新仍只选 1.1.0。
 
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。

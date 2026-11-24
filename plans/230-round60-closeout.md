@@ -10,7 +10,8 @@
 
 ## 问题（开票时事实）
 
-1. **发布未换代**：`v1.0.0` tag 指向 `7f4334c`，之后已有 **399 个提交**；
+1. **发布未换代**：`v1.0.0` tag 指向 `7f4334c`，之后已有 **400+ 个提交**
+   （计数随提交增长，以 `git rev-list --count v1.0.0..HEAD` 为准）；
    没有新 tag/release，`pom.xml` 仍是 `0.1.0-SNAPSHOT`。
 2. **交付文档过期**：`DELIVERY.md` 的「当前状态」停在 2026-10-19
    （200 个提交 / 577 tests / 票 01-150）；`docs/PROJECT_PLAN.md` 是历史计划；
@@ -51,7 +52,7 @@
 ## Acceptance criteria
 
 - **AC1 文档换代**：`DELIVERY.md` 状态段更新到 2026-11-25 / 当前 HEAD /
-  `v1.0.0` 之后 399 个提交 / 878 tests / 144 suites / 票 01-229 收口 /
+  `v1.0.0` 之后 400+ 个提交 / 878 tests / 144 suites / 票 01-229 收口 /
   frontier {230}；`RELEASE.md` 增加「`v1.0.0` 之后未发布」指针与发布判定入口；
   `docs/PROJECT_PLAN.md` 的历史指针保持不误导；`gen_status --check` 与
   `verify_doc_truth` 全绿。

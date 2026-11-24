@@ -26,6 +26,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -265,23 +266,28 @@ def up() -> None:
     run_scenarios("all")
 
 
-def _fat_jar(module: str):
-    target = ROOT / module / "target"
-    candidates = [
-        jar for jar in target.glob(f"{module}-*.jar")
-        if not jar.name.endswith((".original", "-sources.jar", "-javadoc.jar"))
-    ]
-    return max(candidates, key=lambda jar: jar.stat().st_mtime) if candidates else None
+def _project_version() -> str:
+    root = ET.parse(ROOT / "pom.xml").getroot()
+    node = root.find("{http://maven.apache.org/POM/4.0.0}version")
+    if node is None or not (node.text or "").strip():
+        raise DemoError("pom.xml 缺少项目版本")
+    return node.text.strip()
+
+
+def _fat_jar(module: str, version: str):
+    jar = ROOT / module / "target" / f"{module}-{version}.jar"
+    return jar if jar.exists() else None
 
 
 def prebuilt() -> None:
     """Docker Hub/Maven 网络不可用时的降级：宿主机 jar + JRE 运行时镜像，不走 Dockerfile 的 Maven stage。"""
     subprocess.run([sys.executable, str(ROOT / "scripts" / "bootstrap_env.py"), "--force"], check=True)
     require_tools()
+    version = _project_version()
     jars = {
-        "gateway": _fat_jar("shoppilot-gateway"),
-        "biz-mock": _fat_jar("shoppilot-biz-mock"),
-        "ticket": _fat_jar("shoppilot-ticket"),
+        "gateway": _fat_jar("shoppilot-gateway", version),
+        "biz-mock": _fat_jar("shoppilot-biz-mock", version),
+        "ticket": _fat_jar("shoppilot-ticket", version),
     }
     missing = [name for name, jar in jars.items() if jar is None or not jar.exists()]
     if missing:

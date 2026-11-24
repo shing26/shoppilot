@@ -60,7 +60,7 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
   `19ebd12`，工作区干净，CI 对 `19ebd12` 为 success。
 - 当前基线 **878 tests / 144 suites**；`gen_status --check` 与
   `verify_doc_truth` 通过。
-- 交付层未收尾项：`v1.0.0` 之后 **399 个提交**未发布；`DELIVERY.md`
+- 交付层未收尾项：`v1.0.0` 之后 **400+ 个提交**未发布；`DELIVERY.md`
   状态段停在 2026-10-19（200 提交 / 577 tests / 票 01-150）；
   29 步 full 档最近落点是 2026-10-19 `0bfb400`；U2 完整 `up.ps1` 未复跑；
   工具准确率 `179/180` 因 `ACT-ORD-14` 仍判未达成；活跃欠账
@@ -83,6 +83,11 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
   `shoppilot-{gateway,biz-mock,ticket}-1.1.0-SNAPSHOT.jar`；
   `scripts/demo.py::_fat_jar` 探针实测解析到这三个 1.1.0 jar。
   AC2（29 步 full）、AC3（U2）、AC4（欠账裁决）尚未执行。
+- **首轮 B 增量 Verifier P1 已整改**：原实现按 `*.jar` + mtime 取最新，
+  旧版本 jar 残留且 mtime 更新时会静默启动旧版本（各模块还可能跨版本混搭）。
+  现改为从根 `pom.xml` 读取项目版本，精确拼
+  `shoppilot-<module>-<version>.jar`；缺失即返回 `None` 走既有 `missing jars`
+  快速失败。受控反证：旧 jar mtime 更新时仍只选 1.1.0；缺失版本返回 `None`。
 
 **三个现场追问**
 
