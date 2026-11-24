@@ -50,19 +50,20 @@ Windows 本机 JVM 开发路径仍可用 `pwsh -NoProfile -File scripts/up.ps1`�
 - **测试**：`mvnw verify` **878 tests / 144 suites / 0 skipped**；覆盖率
   tool-api **40.93%** / biz-mock **83.78%** / gateway **70.42%** / ticket **78.66%**
   （`docs/STATUS.md`）。
-- **29 步 full（2026-11-25，证据 HEAD `888d50e`）**：**25 绿 / 4 红**。
-  27 步活体矩阵 **23 绿 / 4 红**（757 s）；`build` / `unit` 另在干净环境
-  `mvnw verify` BUILD SUCCESS（3:03，878/144/0 skipped）。首轮曾跑在残留的
+- **29 步 full（2026-11-25，证据 HEAD `888d50e`）**：合并口径 **25 绿 / 4 红**。
+  1.1.0 栈上的矩阵共 29 行 = **22 PASS + 4 FAIL + 3 SKIP**（757 s）；
+  3 个 SKIP 是 `stop` / `build` / `unit`，由首跑与干净环境
+  `mvnw verify` BUILD SUCCESS（3:03，878/144/0 skipped）提供。首轮曾跑在残留的
   `0.1.0-SNAPSHOT` 旧 jar 上，独立 Verifier 判 P1；清掉旧产物后三服务均从
   `*-1.1.0-SNAPSHOT.jar` 启动重跑，本读数来自 1.1.0 栈。红项：`console`
   （票 221 角色级 403 后 3 条 probe 期望过期）、`emotion`（票 163 词表后
   `EMO-ESC-07` 期望过期）、`feedback`（隐式信号③，已登记）、`plansteps`
-  （local 档 0/7，已登记）。
+  （local 档 `PASS 1 / FAIL 6`，已登记）。
 - **U2 已闭环**：完整 `up.ps1` 链路下演示账号播种成功、`/auth/login` **200**
   （role=AGENT）、错误口令 **401**；`.env` 从备份恢复，SHA-256 仍为
   `8E0AEB60…D233`。
 - **欠账**：R1/R3/R5/R6/R8/R10/R15 保留触发条件；U1、U2 关闭；U11 本轮在 warm
-  状态复跑通过一次，仍按「间歇」保留；新增 R16–R19（全量矩阵工装漂移），
+  状态复跑通过一次，仍按「间歇」保留；新增 R16–R20（全量矩阵工装漂移），
   见 `.scratch/shoppilot-mvp/registered-debt.md`。
 
 ## 历史状态（2026-10-19，原文保留）

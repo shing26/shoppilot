@@ -522,8 +522,9 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
     `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1` 后定向复跑，`idem`、`refund`、
     `polarity`、`outbound`（10/10）转绿。
   - `logs/acceptance-run-20261125-045314.log`：**1.1.0 栈上的完整矩阵**，
-    27 步 **23 绿 / 4 红**（757 s）；`build` / `unit` 另在干净环境
-    `mvnw verify` BUILD SUCCESS（3:03，878/144/0 skipped）。
+    29 行 = **22 PASS + 4 FAIL + 3 SKIP**（757 s）；3 个 SKIP 是
+    `stop` / `build` / `unit`，由首跑与干净环境 `mvnw verify`
+    BUILD SUCCESS（3:03，878/144/0 skipped）提供。
 - **独立 Verifier 首轮 P1（已整改）**：前三跑的 `logs/run-{gateway,bizmock,ticket}.cmd`
   指向残留的 `*-0.1.0-SNAPSHOT.jar`——`start-*.ps1` 用未排序的
   `Get-ChildItem | Select-Object -First 1`，两版 jar 并存时选中旧包。清掉四个
@@ -537,7 +538,7 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   - `emotion` 28/29：票 163 把「找真人」纳入 T0 升级词后，`EMO-ESC-07`
     返回 `USER_REQUESTED`，脚本自 2026-09-27 未更新（新登记 **R18**）。
   - `feedback`：隐式信号③ 幂等重放计数（既有登记）。
-  - `plansteps`：local 档 0/7（既有登记，ADR 0043 明令不改判据）。
+  - `plansteps`：local 档 `PASS 1 / FAIL 6`（既有登记，ADR 0043 明令不改判据）。
 - **工装漂移**：本机 `.env` 是 bootstrap 生成的随机凭证，而 `verify-*` 脚本
   内置 `dev-ops-token` / `dev-internal-token-change-me`；票 225 的 SSRF 策略
   还会拒绝 `verify-outbound.mjs` 的回环回声端点。分别登记 **R16** 与 **R19**。

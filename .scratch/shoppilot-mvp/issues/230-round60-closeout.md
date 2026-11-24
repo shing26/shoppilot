@@ -121,7 +121,7 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
   - `emotion` 28/29：票 163 把「找真人」纳入 T0 升级词后，`EMO-ESC-07`
     返回 `USER_REQUESTED`，脚本自 2026-09-27 未更新（R18）。
   - `feedback`：隐式信号③ 幂等重放计数（既有登记）。
-  - `plansteps`：local 档 0/7（既有登记，ADR 0043 明令不改判据）。
+  - `plansteps`：local 档 `PASS 1 / FAIL 6`（既有登记，ADR 0043 明令不改判据）。
 - 前置边界：`polarity` 第二跑 exit 3（L2 无源条目，U11），第三跑 warm 状态下
   通过；`console` 定向复跑多出一条 `PENDING_APPROVAL` 是 refund 步紧邻执行
   造成的顺序污染，全量矩阵中不出现。
@@ -135,8 +135,9 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
 - 整改（不改 launcher）：清掉四个 `0.1.0-SNAPSHOT` 构建产物，三服务均从
   `*-1.1.0-SNAPSHOT.jar` 启动；以
   `run-acceptance.ps1 -Tier full -SkipBuild -SkipIngest` 重跑，
-  `logs/acceptance-run-20261125-045314.log` **23 绿 / 4 红 / 757 s**；
-  `build`/`unit` 由干净环境 `mvnw verify` 提供（878/144/0 skipped）。
+  `logs/acceptance-run-20261125-045314.log` 29 行 =
+  **22 PASS + 4 FAIL + 3 SKIP / 757 s**；3 个 SKIP 是 `stop`/`build`/`unit`，
+  由首跑与干净环境 `mvnw verify` 提供（878/144/0 skipped）。
   **合并口径仍为 25 绿 / 4 红**，红项不变。
 - 该 jar 选择缺陷登记 **R20**，本票不修 launcher；下一票从根 POM 读版本精确匹配。
 - **P1-2（已整改）**：U2 的登录半边补落 `logs/u2-login-20261125.txt`
