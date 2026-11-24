@@ -2,7 +2,7 @@
 
 Round: 60（收尾 / 验收 / 文档；无新功能面）
 ADR: 无（不新增功能；不触发 ADR 0030/0031 的新功能限制）
-Status: in-progress（2026-11-25 发布案 B 已落地；AC2 全量 29 步、AC3 U2、AC4 欠账裁决已执行；待独立 Verifier 与所有者签收）　Claimed by: root　Blocked by: 无
+Status: in-progress（2026-11-25 发布案 B 已落地；AC2 全量 29 步、AC3 U2、AC4 欠账裁决已执行；首轮 Verifier P1 已整改，待复验与所有者签收）　Claimed by: root　Blocked by: 无
 
 契约：[plans/230-round60-closeout.md](../../plans/230-round60-closeout.md)（2026-11-25 冻结）
 
@@ -125,6 +125,25 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
 - 前置边界：`polarity` 第二跑 exit 3（L2 无源条目，U11），第三跑 warm 状态下
   通过；`console` 定向复跑多出一条 `PENDING_APPROVAL` 是 refund 步紧邻执行
   造成的顺序污染，全量矩阵中不出现。
+
+**独立 Verifier 首轮 P1 与整改（2026-11-25）**
+
+- **P1-1（已整改）**：前三跑的 `logs/run-{gateway,bizmock,ticket}.cmd` 实际指向
+  残留的 `*-0.1.0-SNAPSHOT.jar`。根因是 `start-*.ps1` 用未排序的
+  `Get-ChildItem | Select-Object -First 1`，两版 jar 并存时选中旧包；与
+  `demo.py --prebuilt` 属同一类缺陷。
+- 整改（不改 launcher）：清掉四个 `0.1.0-SNAPSHOT` 构建产物，三服务均从
+  `*-1.1.0-SNAPSHOT.jar` 启动；以
+  `run-acceptance.ps1 -Tier full -SkipBuild -SkipIngest` 重跑，
+  `logs/acceptance-run-20261125-045314.log` **23 绿 / 4 红 / 757 s**；
+  `build`/`unit` 由干净环境 `mvnw verify` 提供（878/144/0 skipped）。
+  **合并口径仍为 25 绿 / 4 红**，红项不变。
+- 该 jar 选择缺陷登记 **R20**，本票不修 launcher；下一票从根 POM 读版本精确匹配。
+- **P1-2（已整改）**：U2 的登录半边补落 `logs/u2-login-20261125.txt`
+  （`/auth/login` 200 / role=AGENT / 错误口令 401 / 证据 HEAD `888d50e`）。
+- **P2（已整改）**：`DELIVERY.md` 的 HEAD 改为「证据 HEAD `888d50e`」、提交计数
+  按契约修订 2 写「400+」、biz-mock 覆盖率对齐 `STATUS.md` 的 83.78%；
+  U1/U2 已挪入 `registered-debt` 的已关闭节。
 
 **AC3 U2 闭环（2026-11-25）**
 

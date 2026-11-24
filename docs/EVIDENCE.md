@@ -510,8 +510,8 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 
 ## round60 · 29 步全量矩阵与 U2 闭环（2026-11-25 / 票 230）
 
-- **落点**：HEAD `1f9c6f0`，工作树 clean；三次执行合计 1229 s。矩阵日志
-  （本机，不入库）：
+- **证据 HEAD**：`888d50e`（1.1.0 jar），工作树 clean；四次执行合计 1986 s。
+  矩阵日志（本机，不入库）：
   - `logs/acceptance-run-20261125-034500.log`：首跑，`syntax`/`stop`/`build`/
     `unit`/`report`/`stack` 绿；18 步红集中在凭证（`ops.token_mismatch`、
     `missing internal token`、缺演示口令）。
@@ -521,9 +521,17 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   - `logs/acceptance-run-20261125-041533.log`：补
     `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1` 后定向复跑，`idem`、`refund`、
     `polarity`、`outbound`（10/10）转绿。
-- **合并口径 25 绿 / 4 红**（`build`/`unit` 以首跑干净环境为准；带演示口令
-  重跑会撞 `IdentityDomainTest.noDemoAccountsWithoutExplicitPassword`，属测试
-  隔离边界，不是代码回归）。四条红：
+  - `logs/acceptance-run-20261125-045314.log`：**1.1.0 栈上的完整矩阵**，
+    27 步 **23 绿 / 4 红**（757 s）；`build` / `unit` 另在干净环境
+    `mvnw verify` BUILD SUCCESS（3:03，878/144/0 skipped）。
+- **独立 Verifier 首轮 P1（已整改）**：前三跑的 `logs/run-{gateway,bizmock,ticket}.cmd`
+  指向残留的 `*-0.1.0-SNAPSHOT.jar`——`start-*.ps1` 用未排序的
+  `Get-ChildItem | Select-Object -First 1`，两版 jar 并存时选中旧包。清掉四个
+  0.1.0 构建产物后，三服务均从 `*-1.1.0-SNAPSHOT.jar` 启动重跑；
+  矩阵读数以 `-045314` 为准。该选择逻辑另登记 **R20**（本票不改 launcher）。
+- **合并口径 25 绿 / 4 红**（`build`/`unit` 以干净环境 `mvnw verify` 为准；
+  带演示口令重跑会撞 `IdentityDomainTest.noDemoAccountsWithoutExplicitPassword`，
+  属测试隔离边界，不是代码回归）。四条红：
   - `console` 42/45：票 221 的 `/ops/**` 角色级 403 后，页面切回买家身份仍读
     circuit，脚本三条 probe 期望 `circuitState=live` 已过期（新登记 **R17**）。
   - `emotion` 28/29：票 163 把「找真人」纳入 T0 升级词后，`EMO-ESC-07`
@@ -536,7 +544,8 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   本轮以进程环境覆盖完成验收，未改 `.env`、未改脚本、未改判据。
 - **U2 闭环**：完整 `up.ps1` 链路（含 `bootstrap_env.py --force` 受控改写）后
   `/auth/login`（T001 / agent）**200**、`role=AGENT`、错误口令 **401**；
-  `workspace` 30/30、`buyer` 14/14。`.env` 从备份恢复，SHA-256 =
+  证据落 `logs/u2-login-20261125.txt`（本机，不入库）。`workspace` 30/30、
+  `buyer` 14/14。`.env` 从备份恢复，SHA-256 =
   `8E0AEB60BE5CED207514DAAD70290021588329F09C5C28CEA84762EB2CA6D233`。
   **U1/U2 关闭**；U11 在 warm 状态复跑通过一次，仍按间歇保留。
 - **未达成照登**：`feedback`、`plansteps` 两条既有红未消；`polarity` 第二跑

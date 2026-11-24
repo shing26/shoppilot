@@ -41,20 +41,23 @@ Windows 本机 JVM 开发路径仍可用 `pwsh -NoProfile -File scripts/up.ps1`�
 
 ## 当前状态（2026-11-25）
 
-- **HEAD**：收尾分支 `codex/230-round60-closeout` 的 `1f9c6f0`；`main` 基线 `19ebd12`（CI success）。
+- **证据 HEAD**：`888d50e`（活体矩阵与 U2 均在此提交、`1.1.0-SNAPSHOT` jar 上执行；
+  之后仅文档提交）。`main` 基线 `e572a07`（CI success）。
 - **发布**：所有者 2026-11-25 选定 **B**——根 POM 与四个子模块统一 `1.1.0-SNAPSHOT`，
-  **不打 tag、不建 Release**；`v1.0.0` 仍指向 `7f4334c`，之后 **403 个提交**未发布。
+  **不打 tag、不建 Release**；`v1.0.0` 仍指向 `7f4334c`，之后 **400+ 个提交**未发布。
   C（`v1.1.0`）的前置 = 29 步 full 通过 + 欠账裁决 + 所有者书面签收。
 - **功能面**：票 **01-229 全部收口**，`ready-for-agent` 仅剩 **{230}**（本轮收尾票）。
 - **测试**：`mvnw verify` **878 tests / 144 suites / 0 skipped**；覆盖率
-  tool-api **40.93%** / biz-mock **83.71%** / gateway **70.42%** / ticket **78.66%**
+  tool-api **40.93%** / biz-mock **83.78%** / gateway **70.42%** / ticket **78.66%**
   （`docs/STATUS.md`）。
-- **29 步 full（2026-11-25，HEAD `1f9c6f0`）**：**25 绿 / 4 红**。三次执行合计 1229 s
-  （首跑含构建与起栈，后两次为配置对齐与定向复跑；日志见 `docs/EVIDENCE.md`）。
-  红项：`console`（票 221 角色级 403 后 3 条 probe 期望过期）、`emotion`
-  （票 163 词表后 `EMO-ESC-07` 期望过期）、`feedback`（隐式信号③，已登记）、
-  `plansteps`（local 档 0/7，已登记）。`build` / `unit` 在干净环境首跑双绿；
-  带演示口令重跑会撞 `IdentityDomainTest` 的「无口令不播种」断言，属测试隔离边界。
+- **29 步 full（2026-11-25，证据 HEAD `888d50e`）**：**25 绿 / 4 红**。
+  27 步活体矩阵 **23 绿 / 4 红**（757 s）；`build` / `unit` 另在干净环境
+  `mvnw verify` BUILD SUCCESS（3:03，878/144/0 skipped）。首轮曾跑在残留的
+  `0.1.0-SNAPSHOT` 旧 jar 上，独立 Verifier 判 P1；清掉旧产物后三服务均从
+  `*-1.1.0-SNAPSHOT.jar` 启动重跑，本读数来自 1.1.0 栈。红项：`console`
+  （票 221 角色级 403 后 3 条 probe 期望过期）、`emotion`（票 163 词表后
+  `EMO-ESC-07` 期望过期）、`feedback`（隐式信号③，已登记）、`plansteps`
+  （local 档 0/7，已登记）。
 - **U2 已闭环**：完整 `up.ps1` 链路下演示账号播种成功、`/auth/login` **200**
   （role=AGENT）、错误口令 **401**；`.env` 从备份恢复，SHA-256 仍为
   `8E0AEB60…D233`。
