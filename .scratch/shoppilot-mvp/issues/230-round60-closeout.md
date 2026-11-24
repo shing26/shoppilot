@@ -2,7 +2,7 @@
 
 Round: 60（收尾 / 验收 / 文档；无新功能面）
 ADR: 无（不新增功能；不触发 ADR 0030/0031 的新功能限制）
-Status: in-progress（2026-11-25 发布案 B 已落地；AC2 全量 29 步、AC3 U2、AC4 欠账裁决已执行；首轮 Verifier P1 已整改，待复验与所有者签收）　Claimed by: root　Blocked by: 无
+Status: implemented（2026-11-25 独立 Verifier 最终 PASS，P0/P1 无；待所有者书面签收）　Claimed by: root　Blocked by: 无
 
 契约：[plans/230-round60-closeout.md](../../plans/230-round60-closeout.md)（2026-11-25 冻结）
 
@@ -162,6 +162,15 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
 - **保留触发条件**：R1、R3、R5、R6、R8、R10、R15、U3、U8、U10、U11
   （触发条件与边界见 `registered-debt.md`；本轮未改判据、未扩词表、未重跑 gold/压测）。
 - **新增登记**：R16（脚本 dev 凭证 vs bootstrap 随机凭证）、R17（console circuit
-  期望过期）、R18（EMO-ESC-07 期望过期）、R19（outbound 回环 SSRF allowlist）。
+  期望过期）、R18（EMO-ESC-07 期望过期）、R19（outbound 回环 SSRF allowlist）、
+  R20（`start-*.ps1` 多版本 jar 选旧包）。
 - **需所有者裁定**：R15 的 A/B/C 仍挂起；R17/R18/R19 的修法属于下一张票，
   本票只登记不执行。
+
+**独立 Verifier 最终 PASS（HEAD `09e771f`）**
+
+- AC1–AC5、AC7、AC8 全部 PASS；P0/P1 无。
+- 计数口径：矩阵 29 行 = 22 PASS + 4 FAIL + 3 SKIP，合并 25 绿 / 4 红；
+  `plansteps` 实读 `PASS 1 / FAIL 6`；U1/U2 已移入已关闭节；R16–R20 齐全。
+- AC6 的「`origin/main` 同步 + 最终 HEAD CI success」属于签收后合并动作，
+  不计实现缺陷；合并前需所有者书面签收。
