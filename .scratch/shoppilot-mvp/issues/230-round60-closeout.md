@@ -2,7 +2,7 @@
 
 Round: 60（收尾 / 验收 / 文档；无新功能面）
 ADR: 无（不新增功能；不触发 ADR 0030/0031 的新功能限制）
-Status: ready-for-agent　Claimed by: 待领取　Blocked by: 无
+Status: in-progress（2026-11-25 所有者选定发布案 B；B 已落地，AC2–AC4 待执行）　Claimed by: root　Blocked by: 无
 
 契约：[plans/230-round60-closeout.md](../../plans/230-round60-closeout.md)（2026-11-25 冻结）
 
@@ -17,8 +17,8 @@ Status: ready-for-agent　Claimed by: 待领取　Blocked by: 无
    与登录 200；恢复 `.env` 并断言 SHA 不变；按结果更新 U2。
 4. **欠账裁决**：逐项处理 R1/R3/R5/R6/R8/R10/R15 与 U1/U2/U3/U8/U10/U11，
    给出「保留 / 关闭 / 需所有者裁定」并同步台账。
-5. **发布判定**：给出 A（维持 `0.1.0-SNAPSHOT`）/ B（`1.1.0-SNAPSHOT`）/
-   C（发布 `v1.1.0`）三案，所有者选定后只执行该案；选 C 需 CI 绿后再打 tag。
+5. **发布判定**：所有者 2026-11-25 选定 **B（`1.1.0-SNAPSHOT`，不打 tag）**；
+   本票只执行 B，C（发布 `v1.1.0`）待 29 步 full 与欠账裁决后再评估。
 6. **仓库卫生**：清理本地已合并的 `codex/*` 分支，确认工作区干净、
    HEAD 与 `origin/main` 同步、CI 对最终 HEAD success。
 
@@ -74,6 +74,15 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
   前置不足时按边界登记，不能以「定向活体已过」替代 29 步 full。
 - 票 229 的「不得改动 `.env`」只属于 229；本票允许备份 → 运行 → 恢复，
   但最终必须断言 SHA-256 不变。
+- **发布案已定 B（2026-11-25 所有者裁定）**：5 个 POM 的版本统一为
+  `1.1.0-SNAPSHOT`；`scripts/demo.py` 的 `--prebuilt` 改为按
+  `shoppilot-<module>-*.jar` 通配解析，避免版本号变更后找不到 jar。
+  不打 tag、不建 GitHub Release；C 的前置条件不变。
+- **B 落地读数**：`.\mvnw.cmd -B -ntp verify` → **BUILD SUCCESS**
+  （3:32，878 tests / 144 suites，0 skipped）；三个 fat jar 实际名为
+  `shoppilot-{gateway,biz-mock,ticket}-1.1.0-SNAPSHOT.jar`；
+  `scripts/demo.py::_fat_jar` 探针实测解析到这三个 1.1.0 jar。
+  AC2（29 步 full）、AC3（U2）、AC4（欠账裁决）尚未执行。
 
 **三个现场追问**
 

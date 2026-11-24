@@ -265,16 +265,25 @@ def up() -> None:
     run_scenarios("all")
 
 
+def _fat_jar(module: str):
+    target = ROOT / module / "target"
+    candidates = [
+        jar for jar in target.glob(f"{module}-*.jar")
+        if not jar.name.endswith((".original", "-sources.jar", "-javadoc.jar"))
+    ]
+    return max(candidates, key=lambda jar: jar.stat().st_mtime) if candidates else None
+
+
 def prebuilt() -> None:
     """Docker Hub/Maven 网络不可用时的降级：宿主机 jar + JRE 运行时镜像，不走 Dockerfile 的 Maven stage。"""
     subprocess.run([sys.executable, str(ROOT / "scripts" / "bootstrap_env.py"), "--force"], check=True)
     require_tools()
     jars = {
-        "gateway": ROOT / "shoppilot-gateway/target/shoppilot-gateway-0.1.0-SNAPSHOT.jar",
-        "biz-mock": ROOT / "shoppilot-biz-mock/target/shoppilot-biz-mock-0.1.0-SNAPSHOT.jar",
-        "ticket": ROOT / "shoppilot-ticket/target/shoppilot-ticket-0.1.0-SNAPSHOT.jar",
+        "gateway": _fat_jar("shoppilot-gateway"),
+        "biz-mock": _fat_jar("shoppilot-biz-mock"),
+        "ticket": _fat_jar("shoppilot-ticket"),
     }
-    missing = [name for name, jar in jars.items() if not jar.exists()]
+    missing = [name for name, jar in jars.items() if jar is None or not jar.exists()]
     if missing:
         raise DemoError("missing jars: " + ", ".join(missing)
                         + "；先运行 mvnw -B -ntp -DskipTests package")

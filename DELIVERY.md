@@ -73,7 +73,7 @@ Windows 本机 JVM 开发路径仍可用 `pwsh -NoProfile -File scripts/up.ps1`�
 
 | 项 | 现状 | 选项 |
 | --- | --- | --- |
-| `pom.xml` 版本 | `0.1.0-SNAPSHOT` | **A** 改 `1.0.0` —— 与 tag 对齐，声明"仓内即已发布版本"<br>**B** 改 `1.1.0-SNAPSHOT` —— 承认 `v1.0.0` 之后有 **141** 个未发布提交，正在走向下一个版本<br><span class="st">脚本已全部用通配符（`shoppilot-gateway-*.jar`），两条路都不会打断启动链</span> |
+| `pom.xml` 版本 | `1.1.0-SNAPSHOT` | **已裁定 B（2026-11-25）**：承认 `v1.0.0` 之后有未发布提交，正在走向 1.1.0；不打 tag、不建 release。发布 C 待 29 步 full 与欠账裁决后再评估。<span class="st">脚本按通配符解析 jar，版本变更不打断启动链</span> |
 
 ### 已登记的口径说明（非缺陷）
 

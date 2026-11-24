@@ -493,4 +493,14 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   复验 **PASS**（HEAD `25c1393`：24/24、878/144、AC1–AC8、P0/P1 无）；
   2026-11-24 所有者书面签收。
 
+- **票 230 发布案 B（2026-11-25，round60）**：所有者选定 **B**——
+  5 个 POM（根 + 4 模块 parent）统一 `0.1.0-SNAPSHOT → 1.1.0-SNAPSHOT`，
+  **不打 tag、不建 GitHub Release**；`scripts/demo.py` 的 `--prebuilt`
+  从硬编码 `0.1.0-SNAPSHOT` jar 名改为按 `shoppilot-<module>-*.jar`
+  取最新 fat jar。读数：`mvnw verify` **BUILD SUCCESS**（3:32，
+  878 tests / 144 suites，0 skipped）；三个 jar 实际落为
+  `shoppilot-{gateway,biz-mock,ticket}-1.1.0-SNAPSHOT.jar`；
+  `_fat_jar` 探针分别解析到这三个文件。AC2 全量 29 步、AC3 U2、
+  AC4 欠账裁决仍待执行；C（发布 `v1.1.0`）未启动。
+
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。

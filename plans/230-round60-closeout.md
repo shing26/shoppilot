@@ -45,6 +45,7 @@
 - `README.md`（仅当数字、链接或状态口径漂移时）
 - `docs/STATUS.md`（只由 `python scripts/gen_status.py` 生成，不手改）
 - `pom.xml`（仅当所有者选定发布版本时）
+- `scripts/demo.py`（仅当版本号变更导致 `--prebuilt` 硬编码 jar 名失效时）
 - `docs/HANDOFF-20261125.md`（新建收尾交接，可选）
 
 ## Acceptance criteria
@@ -124,3 +125,14 @@ U2（AC3）：
    票 229 的「不得改动 `.env`」约束只属于 229，不延续到本票。
 4. **R15 / U10 / U11 属产品决策**：收尾票只给建议与证据，不替所有者裁决
    是否扩词表、重跑压测或重做极性前置。
+
+## Owner ruling（2026-11-25）
+
+- 所有者选定 **AC5 发布案 B**：`pom.xml` 从 `0.1.0-SNAPSHOT` 改为
+  `1.1.0-SNAPSHOT`；**不打 tag、不建 GitHub Release**。
+- 选 C（发布 `v1.1.0`）的前置保留：29 步 full 验收通过、欠账裁决完成、
+  所有者书面签收发布声明后才评估。
+- **契约修订 1**：`scripts/demo.py` 进入 Allowed paths。原因是它把
+  `shoppilot-*-0.1.0-SNAPSHOT.jar` 写死在三处；版本号一改，`--prebuilt`
+  会找不到 jar。实现改为按 `shoppilot-<module>-*.jar` 通配解析，
+  不改变 `--prebuilt` 的语义。

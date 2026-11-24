@@ -6,7 +6,7 @@
 
   <groupId>com.shoppilot</groupId>
   <artifactId>shoppilot-parent</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>1.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>ShopPilot</name>
   <description>面向电商大促的高并发智能客服与业务网关</description>
