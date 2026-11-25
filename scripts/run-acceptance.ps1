@@ -47,6 +47,36 @@ $env:MAVEN_OPTS = '-Duser.language=en -Duser.country=US'
 # python 步骤（verify_l2_filters.py）经 cmd 重定向落盘时默认按控制台代码页 cp936 写，
 # 下面的尾部预览用 UTF-8 读就会花屏；显式要 UTF-8 后日志与预览都对。
 $env:PYTHONIOENCODING = 'utf-8'
+# 票 231 / R19：验收栈要允许 verify-outbound.mjs 自己起的 127.0.0.1 回声端点。
+# 这个 allowlist 只作用于本次验收进程拉起的网关；不写进 application.yml 或
+# .env.example，默认启动仍按 EgressPolicy 拒绝回环/私网。
+$outboundAllowlist = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_OUTBOUND_ALLOWLIST'
+$outboundHosts = @()
+if ($outboundAllowlist) {
+    $outboundHosts = @($outboundAllowlist -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+if ('127.0.0.1' -notin $outboundHosts) { $outboundHosts += '127.0.0.1' }
+$outboundAllowlistValue = ($outboundHosts -join ',')
+# 票 231 / R19 现场回归：plan 与 console 步骤会在验收中途重启网关（start-gateway.ps1
+# 是独立子进程）。up.ps1 推导出的 SHOPPILOT_EMBEDDING_SIDECAR_URL 只活在 up.ps1 进程里，
+# 不会回流到本进程，重启后的网关就退回 Ollama 直连；本机单条向量化实测 9.5 s，
+# 超过网关超时 → 检索降级 → 写回被拒（WriteBackPolicy degraded）→ L1 永不命中，
+# 连带 polarity / isolation / console / plan 的红。这里在跑步骤前固定一次，
+# 后续所有重启继承同一个值；sidecar 不在时保持原行为（回落 Ollama，不判红）。
+$embeddingSidecar = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_EMBEDDING_SIDECAR_URL'
+if (-not $embeddingSidecar) {
+    try {
+        if ((Invoke-RestMethod 'http://127.0.0.1:8110/health' -TimeoutSec 3).status -eq 'ok') {
+            $embeddingSidecar = 'http://127.0.0.1:8110'
+        }
+    } catch { }
+}
+if ($embeddingSidecar) {
+    $env:SHOPPILOT_EMBEDDING_SIDECAR_URL = $embeddingSidecar
+    Write-Host "  embedding sidecar：$embeddingSidecar（验收进程固定，重启网关继承）" -ForegroundColor DarkGray
+} else {
+    Write-Host '  embedding sidecar：未检测到，查询向量化走 Ollama 回落' -ForegroundColor DarkGray
+}
 $pwsh = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
 if (-not $pwsh) { $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source }
 if (-not $pwsh) {
@@ -224,6 +254,11 @@ foreach ($name in $steps.Keys) {
     $log = Join-Path $outDir "$name.log"
     Write-Host "`n=== $name : $($step.Cmd) $($step.Arg -join ' ') -> $log" -ForegroundColor Cyan
     $sw = [Diagnostics.Stopwatch]::StartNew()
+    if ($name -eq 'stack') {
+        # 只给验收栈声明回环 allowlist；build/unit 等 Maven 步骤不吃这个值。
+        $env:SHOPPILOT_OUTBOUND_ALLOWLIST = $outboundAllowlistValue
+        Write-Host "  验收出站 allowlist：$env:SHOPPILOT_OUTBOUND_ALLOWLIST" -ForegroundColor DarkGray
+    }
     switch ($step.Kind) {
         'ps1' {
             & $pwsh -NoProfile -File (Join-Path $root $step.Cmd) @($step.Arg) *> $log

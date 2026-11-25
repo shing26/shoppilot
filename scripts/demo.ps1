@@ -7,9 +7,16 @@
 param(
     [ValidateSet('cache', 'isolation', 'fallback', 'all')] [string]$Which = 'all',
     [string]$BaseUrl = 'http://127.0.0.1:8082',
-    [string]$OpsToken = 'dev-ops-token'
+    [string]$OpsToken = ''
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+$root = Split-Path -Parent $PSScriptRoot
+if (-not $OpsToken) { $OpsToken = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_OPS_TOKEN' }
+if (-not $OpsToken) {
+    Write-Host '缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。' -ForegroundColor Red
+    exit 2
+}
 
 function Get-Token([string]$tenant, [string]$customer) {
     $body = @{ tenantId = $tenant; customerId = $customer } | ConvertTo-Json -Compress

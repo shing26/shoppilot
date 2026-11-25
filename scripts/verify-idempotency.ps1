@@ -11,6 +11,13 @@ param(
     [string]$ShippedOrder = '90002'
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+$root = Split-Path -Parent $PSScriptRoot
+$internalToken = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_INTERNAL_TOKEN'
+if (-not $internalToken) {
+    Write-Host '缺少 SHOPPILOT_INTERNAL_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。' -ForegroundColor Red
+    exit 2
+}
 
 function Get-MockToken([string]$tenantId, [string]$customerId) {
     return (Invoke-RestMethod -Uri "$BaseUrl/auth/mock-token" -Method Post -ContentType 'application/json' `
@@ -30,12 +37,12 @@ function Get-EventNames([string]$raw) {
 }
 
 function Get-RefundCount {
-    $h = @{ 'X-Internal-Token' = 'dev-internal-token-change-me' }
+    $h = @{ 'X-Internal-Token' = $internalToken }
     return (Invoke-RestMethod -Uri 'http://127.0.0.1:8091/api/admin/stats' -Headers $h).refunds
 }
 
 function Reset-DemoFixtures {
-    $h = @{ 'X-Internal-Token' = 'dev-internal-token-change-me' }
+    $h = @{ 'X-Internal-Token' = $internalToken }
     Invoke-RestMethod -Uri 'http://127.0.0.1:8091/api/admin/demo/reset' -Method Post -Headers $h | Out-Null
 }
 

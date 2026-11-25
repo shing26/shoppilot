@@ -13,12 +13,18 @@
 #>
 param(
     [string]$BaseUrl = 'http://127.0.0.1:8082',
-    [string]$OpsToken = 'dev-ops-token',
+    [string]$OpsToken = '',
     [switch]$WithRestarts
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+if (-not $OpsToken) { $OpsToken = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_OPS_TOKEN' }
+if (-not $OpsToken) {
+    Write-Host '缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。' -ForegroundColor Red
+    exit 2
+}
 $failures = @()
 
 function Assert-True([bool]$condition, [string]$label) {

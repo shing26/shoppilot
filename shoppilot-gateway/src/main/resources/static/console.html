@@ -323,11 +323,22 @@ async function api(method, path, body, withAuth = true, tokenOverride = '') {
 
 // ---- 身份 ----
 async function loadTenants() {
-  const res = await api('GET', '/api/v1/support/ops/tenants', null);
-  const list = Array.isArray(res.body) && res.body.length ? res.body
-    : [{ tenantId: 'T001', name: '星选生活旗舰店' }, { tenantId: 'T002', name: '鲜果驿站' }, { tenantId: 'T003', name: '云裳服饰旗舰店' }, { tenantId: 'T004', name: '云栖酒店' }];
+  const fallback = [{ tenantId: 'T001', name: '星选生活旗舰店' }, { tenantId: 'T002', name: '鲜果驿站' },
+    { tenantId: 'T003', name: '云裳服饰旗舰店' }, { tenantId: 'T004', name: '云栖酒店' }];
+  // 票 221 后 /ops/** 统一要求坐席/管理员或运维凭证。开页时手里只有买家令牌，
+  // 再打这一枪就是一条稳定 403（浏览器控制台红字会污染「页面无失败请求」断言）。
+  // 没有可用的身份时直接渲染兜底清单；坐席登录成功后会再拉一次真实清单。
+  if (!state.staffToken && !$('opsToken').value.trim()) {
+    $('tenant').innerHTML = fallback.map((t) =>
+      `<option value="${t.tenantId}">${t.tenantId} · ${t.name}</option>`).join('');
+    return;
+  }
+  const res = await api('GET', '/api/v1/support/ops/tenants', null, true, state.staffToken);
+  const list = Array.isArray(res.body) && res.body.length ? res.body : fallback;
+  const current = $('tenant').value;
   $('tenant').innerHTML = list.map((t) =>
     `<option value="${t.tenantId}">${t.tenantId} · ${t.name}</option>`).join('');
+  if (current && list.some((t) => t.tenantId === current)) $('tenant').value = current;
 }
 
 async function login() {
@@ -559,13 +570,23 @@ function failureReason(res) {
 async function refreshOps() {
   // 走查第 9 项：这一格原先只在成功时写字，失败时 footer 上留的还是上一次的成功值——
   // 指标没撒谎，但它装死。现在失败就把「读不到 + 为什么」写上去。
-  const circuit = await api('GET', '/api/v1/support/ops/circuit', null, true);
-  if (circuit.status === 200 && circuit.body) {
-    setGauge('circuit', circuit.body.circuitState + ' / ' + circuit.body.llmMode, false);
-    setGauge('mode', 'mode ' + circuit.body.llmMode, false);
+  // 票 221 后 /ops/** 统一要求坐席/管理员或运维凭证（circuit 不是平台独占面）。
+  // 坐席登录后必须用坐席令牌读；继续用买家令牌会稳定吃 role.denied。
+  // 两手都没有时干脆不发那一枪：否则每次打开页面都会留下一条 403，
+  // 验收里「页面无失败请求」那条断言量的就不再是真失败。
+  const hasOpsToken = !!$('opsToken').value.trim();
+  if (!state.staffToken && !hasOpsToken) {
+    setGauge('circuit', '未登录坐席', true);
+    setGauge('mode', 'mode 未登录', true);
   } else {
-    setGauge('circuit', '读不到：' + failureReason(circuit), true);
-    setGauge('mode', 'mode 读不到', true);
+    const circuit = await api('GET', '/api/v1/support/ops/circuit', null, true, state.staffToken);
+    if (circuit.status === 200 && circuit.body) {
+      setGauge('circuit', circuit.body.circuitState + ' / ' + circuit.body.llmMode, false);
+      setGauge('mode', 'mode ' + circuit.body.llmMode, false);
+    } else {
+      setGauge('circuit', '读不到：' + failureReason(circuit), true);
+      setGauge('mode', 'mode 读不到', true);
+    }
   }
   // stats 是运维凭证守护的端点，令牌框空着去读必然吃一发 403（票 21 起页面不再预填令牌，
   // ADR 0029）。没凭证就是「没得看」而不是「出错了」：这里不发那一枪，浏览器控制台才不会
@@ -754,6 +775,10 @@ async function loginStaff() {
   $('agentPass').value = '';                       // 口令不留痕
   $('agentWho').textContent = '当前坐席：' + state.staffUser;
   report(true, '坐席已登录（' + tenant + ' / ' + state.staffUser + '）');
+  // circuit 的读面随身份切换：登录前用买家令牌会 403，登录成功后立即补一次读数。
+  refreshOps();
+  // 店铺清单同样是坐席读面：开页时走的是内置兜底名册，登录后用真实清单覆盖。
+  loadTenants();
   if ($('refundDrawer').classList.contains('open')) loadRefunds();
 }
 

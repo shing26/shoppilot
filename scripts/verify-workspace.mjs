@@ -2,33 +2,30 @@
 //
 // 用法: $env:NODE_PATH="<repo>\.tools\node_modules"; node scripts/verify-workspace.mjs
 // 高/资金优先级种子走工单服务直连，需要 SHOPPILOT_TICKET_BASE（默认 :8092）与
-// SHOPPILOT_INTERNAL_TOKEN（默认 dev-internal-token-change-me）；生产档必须显式给 token。
+// SHOPPILOT_INTERNAL_TOKEN（从进程环境或 .env 读，必给）；生产档必须显式给 token。
 // 用 createRequire 而不是静态 import：ESM 解析不吃 NODE_PATH，而 Playwright 装在 .tools 下，
 // 不为一个验收脚本给项目拉一份 package.json（同 verify-console.mjs 的理由）。
 //
 // **本轮（2026-10-02）未实跑**：起栈要 ≈7 GB 而本机只剩 0.5 GB（所有者裁定 A）。
 // 脚本已写好并通过 `node --check`，实跑读数按**未达成登记**，不许声称「已验证」。
 import { createRequire } from 'node:module';
+import { requireEnv } from './lib-dotenv.mjs';
 const { chromium } = createRequire(import.meta.url)('playwright');
 
 const BASE = process.env.SHOPPILOT_WORKSPACE_BASE || 'http://127.0.0.1:8082';
 const PAGE = `${BASE}/workspace/`;
 const TICKET_BASE = process.env.SHOPPILOT_TICKET_BASE || 'http://127.0.0.1:8092';
-const INTERNAL_TOKEN = process.env.SHOPPILOT_INTERNAL_TOKEN || 'dev-internal-token-change-me';
+const INTERNAL_TOKEN = requireEnv('SHOPPILOT_INTERNAL_TOKEN',
+  '缺少 SHOPPILOT_INTERNAL_TOKEN：工单种子要直连工单服务；请在 .env 里给一个再跑。');
 
 // 票 83：工作台改成**坐席账号登录**，凭证形态从「ops token + 自报坐席名」换成真登录。
 // 口令来自环境变量而不是仓库默认值（ADR 0029 的同一条家法）；没给就明说别跑，别退回去
 // 用 ops token——那正是本票要退役的东西，退回去等于这个门禁在验一个已经不存在的产品形态。
 const TENANT = process.env.SHOPPILOT_IDENTITY_TENANT || 'T001';
 const USERNAME = process.env.SHOPPILOT_IDENTITY_AGENT || 'agent';
-const PASSWORD = process.env.SHOPPILOT_IDENTITY_DEMO_PASSWORD;
-if (!PASSWORD) {
-  console.error(
-    '缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：票 83 起工作台用坐席账号登录，' +
-      '演示账号的口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。',
-  );
-  process.exit(2);
-}
+const PASSWORD = requireEnv('SHOPPILOT_IDENTITY_DEMO_PASSWORD',
+  '缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：票 83 起工作台用坐席账号登录，'
+    + '演示账号的口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。');
 
 const results = [];
 const check = (name, ok, detail = '') => {

@@ -4,6 +4,13 @@ $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $base = "http://127.0.0.1:8082"
 $failures = @()
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+$root = Split-Path -Parent $PSScriptRoot
+$opsToken = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_OPS_TOKEN'
+if (-not $opsToken) {
+    Write-Host '缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。' -ForegroundColor Red
+    exit 2
+}
 
 function Metric([string]$path) {
     # /actuator/metrics 的 measurement 元素字段是 statistic，写成 metric 会静默返回空，
@@ -19,7 +26,7 @@ function Assert-True([bool]$condition, [string]$label) {
 
 $tok = (Invoke-RestMethod -Method Post "$base/auth/mock-token" -ContentType "application/json" `
         -Body '{"tenantId":"T001","customerId":"C001"}').token
-$ops = @{ Authorization = "Bearer $tok"; "X-Ops-Token" = "dev-ops-token" }
+$ops = @{ Authorization = "Bearer $tok"; "X-Ops-Token" = $opsToken }
 Invoke-RestMethod -Method Post "$base/api/v1/support/ops/cache/flush" -Headers $ops `
         -ContentType "application/json" -Body '{}' | Out-Null
 

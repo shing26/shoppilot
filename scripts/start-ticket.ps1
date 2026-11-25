@@ -20,8 +20,8 @@ $pidFile = Join-Path $logDir "ticket.pid"
 # WMI 子进程不继承调用方环境，合并结果必须显式写进 run-*.cmd（票 229）。
 $overrides = @{}
 $envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
-$jar = Get-ChildItem (Join-Path $root "shoppilot-ticket\target") -Filter "shoppilot-ticket-*.jar" `
-    -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
+$version = Get-ShoppilotProjectVersion -Root $root
+$jar = Get-ShoppilotFatJar -Root $root -Module 'shoppilot-ticket' -Version $version
 
 if ($jar) {
     $argsList = @("-XX:MaxRAMPercentage=$MaxRamPercentage", "-Dfile.encoding=UTF-8",
@@ -29,7 +29,7 @@ if ($jar) {
     $cmdPid = Start-ShoppilotService -Name "ticket" -WorkingDirectory $root `
         -FilePath $java -ArgumentList $argsList -StandardOutput $out -Environment $envVars
 } else {
-    Write-Host "未找到 fat jar，退回 mvn spring-boot:run"
+    Write-Host "未找到 shoppilot-ticket-$version.jar（不选其它版本），退回 mvn spring-boot:run"
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
     # mvn 回退路径同样走 WMI：JDK 两格必须进合并环境（票 229）。

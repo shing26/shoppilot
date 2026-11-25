@@ -23,9 +23,23 @@ param(
     # 口令从环境读，仓库里不放默认口令（ADR 0056 同一条家法）：
     # 之前这里写死 'agent123'，演示口令换代后整步在 401 上红（2026-10-18 全量矩阵实测），
     # 而那看起来像闸门坏了。缺口令时与 buyer/workspace 门禁同口径 exit 2。
-    [string]$AgentPassword = $env:SHOPPILOT_IDENTITY_DEMO_PASSWORD
+    [string]$AgentPassword = ''
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+$root = Split-Path -Parent $PSScriptRoot
+if (-not $AgentPassword) {
+    $AgentPassword = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_IDENTITY_DEMO_PASSWORD'
+}
+$internalToken = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_INTERNAL_TOKEN'
+if (-not $AgentPassword) {
+    Write-Host '缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：退款审核走坐席账号登录，演示口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。' -ForegroundColor Red
+    exit 2
+}
+if (-not $internalToken) {
+    Write-Host '缺少 SHOPPILOT_INTERNAL_TOKEN：审计查询面在 biz-mock 上、要内部令牌。请在 .env 里给一个再跑。' -ForegroundColor Red
+    exit 2
+}
 
 $script:failures = @()
 function Assert([string]$name, [bool]$ok, [string]$detail) {
@@ -81,7 +95,7 @@ function Invoke-Review([string]$token, [string]$refundId, [string]$decision) {
 }
 
 function Reset-DemoFixtures {
-    $h = @{ 'X-Internal-Token' = 'dev-internal-token-change-me' }
+    $h = @{ 'X-Internal-Token' = $internalToken }
     Invoke-RestMethod -Uri 'http://127.0.0.1:8091/api/admin/demo/reset' -Method Post -Headers $h | Out-Null
 }
 
@@ -89,10 +103,6 @@ function New-Token { return 'rev-' + [guid]::NewGuid().ToString('N').Substring(0
 
 Reset-DemoFixtures
 $buyerToken = Get-MockToken $Tenant $Customer
-if (-not $AgentPassword) {
-    Write-Host '缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：退款审核走坐席账号登录，演示口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。' -ForegroundColor Red
-    exit 2
-}
 $agentToken = Get-AgentToken $Tenant $AgentUser $AgentPassword
 
 Write-Host "`n=== 1. apply refund (order $ApproveOrder) ===" -ForegroundColor Cyan
@@ -137,14 +147,10 @@ Assert 'rejected order can be refunded again (rollback)' ($raw3 -match 'PENDING_
 Write-Host "`n=== 8. B3: audit actor_authenticated ===" -ForegroundColor Cyan
 # B3 起（ADR 0063）：资金动作的责任人必须是已验签账号。
 # 查审计表，确认退款审核事件的 actor_authenticated = true。
-if (-not $env:SHOPPILOT_INTERNAL_TOKEN) {
-    Write-Host '缺少 SHOPPILOT_INTERNAL_TOKEN：审计查询面在 biz-mock 上、要内部令牌。请在 .env 里给一个（harness 不注入）再跑。' -ForegroundColor Red
-    exit 2
-}
 # Invoke-RestMethod 在 PS7 上把顶层 JSON 数组包成单元素 Object[]（实测），
 # 用 ConvertFrom-Json 才能拿到按行可枚举的形状——否则 $_.action 会投影成数组，断言直接炸。
 $auditRows = @((Invoke-WebRequest -Uri "$BizMockUrl/api/audit?limit=200" `
-    -Headers @{ 'X-Internal-Token' = $env:SHOPPILOT_INTERNAL_TOKEN; 'X-Tenant-Id' = $Tenant } `
+    -Headers @{ 'X-Internal-Token' = $internalToken; 'X-Tenant-Id' = $Tenant } `
     -UseBasicParsing).Content | ConvertFrom-Json)
 # action 名以 AuditActions 常量为准（REFUND_APPROVED / REFUND_REJECTED）。
 # 旧写法找的 'REVIEW' 子串一个都匹配不上——这条断言此前要么打在 404 上、要么恒走 else 分支，

@@ -21,8 +21,8 @@ $pidFile = Join-Path $logDir "bizmock.pid"
 $overrides = @{}
 if ($PoolSize) { $overrides['SHOPPILOT_BIZMOCK_POOL_SIZE'] = $PoolSize }
 $envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
-$jar = Get-ChildItem (Join-Path $root "shoppilot-biz-mock\target") -Filter "shoppilot-biz-mock-*.jar" `
-    -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
+$version = Get-ShoppilotProjectVersion -Root $root
+$jar = Get-ShoppilotFatJar -Root $root -Module 'shoppilot-biz-mock' -Version $version
 
 if ($jar) {
     $argsList = @("-XX:MaxRAMPercentage=$MaxRamPercentage", "-Dfile.encoding=UTF-8",
@@ -31,7 +31,7 @@ if ($jar) {
     $cmdPid = Start-ShoppilotService -Name "bizmock" -WorkingDirectory $root `
         -FilePath $java -ArgumentList $argsList -StandardOutput $out -Environment $envVars
 } else {
-    Write-Host "未找到 fat jar，退回 mvn spring-boot:run"
+    Write-Host "未找到 shoppilot-biz-mock-$version.jar（不选其它版本），退回 mvn spring-boot:run"
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
     # mvn 回退路径同样走 WMI：JDK 两格必须进合并环境（票 229）。
