@@ -46,7 +46,7 @@ Windows 本机 JVM 开发路径仍可用 `pwsh -NoProfile -File scripts/up.ps1`�
 - **发布**：所有者 2026-11-25 选定 **B**——根 POM 与四个子模块统一 `1.1.0-SNAPSHOT`，
   **不打 tag、不建 Release**；`v1.0.0` 仍指向 `7f4334c`，之后 **400+ 个提交**未发布。
   C（`v1.1.0`）的前置 = 29 步 full 通过 + 欠账裁决 + 所有者书面签收。
-- **功能面**：票 **01-230 已实现**（230 待所有者书面签收），`ready-for-agent` **为空**。
+- **功能面**：票 **01-230 全部收口**（230 于 2026-11-25 所有者签收），`ready-for-agent` **为空**。
 - **测试**：`mvnw verify` **878 tests / 144 suites / 0 skipped**；覆盖率
   tool-api **40.93%** / biz-mock **83.78%** / gateway **70.42%** / ticket **78.66%**
   （`docs/STATUS.md`）。

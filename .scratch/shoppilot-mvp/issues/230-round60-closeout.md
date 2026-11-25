@@ -2,7 +2,7 @@
 
 Round: 60（收尾 / 验收 / 文档；无新功能面）
 ADR: 无（不新增功能；不触发 ADR 0030/0031 的新功能限制）
-Status: implemented（2026-11-25 独立 Verifier 最终 PASS，P0/P1 无；待所有者书面签收）　Claimed by: root　Blocked by: 无
+Status: done（2026-11-25 所有者书面签收；独立 Verifier 最终 PASS，P0/P1 无）　Claimed by: root　Blocked by: 无
 
 契约：[plans/230-round60-closeout.md](../../plans/230-round60-closeout.md)（2026-11-25 冻结）
 
@@ -174,3 +174,10 @@ U2（AC3）：备份 `.env` → `scripts/up.ps1` → 断言播种与登录 200 �
   `plansteps` 实读 `PASS 1 / FAIL 6`；U1/U2 已移入已关闭节；R16–R20 齐全。
 - AC6 的「`origin/main` 同步 + 最终 HEAD CI success」属于签收后合并动作，
   不计实现缺陷；合并前需所有者书面签收。
+
+**所有者签收（2026-11-25）**
+
+- 所有者书面签收（「签收」）。本票 `done`。
+- 合并 `codex/230-round60-closeout` → `main` 并推送；`ci-subset` 对合并后
+  HEAD 绿后删除分支。证据 HEAD 仍为 `888d50e`（活体矩阵与 U2），
+  文档/签收提交在其后。
