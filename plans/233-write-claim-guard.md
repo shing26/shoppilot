@@ -41,6 +41,9 @@
 - `.scratch/shoppilot-mvp/issues/233-write-claim-guard.md`
 - `.scratch/shoppilot-mvp/README.md`
 - `docs/EVIDENCE.md`
+- `docs/STATUS.md`（契约修订 1：`gen_status.py` 生成，测试数随新增用例变化）
+- `README.md`（契约修订 1：仅同步 badge / 复现段 / CI 段的测试数）
+- `docs/TUNING_PLAN.md`（契约修订 1：仅同步测试数）
 - `shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/PlanExecuteHandler.java`
 - `shoppilot-gateway/src/test/java/com/shoppilot/gateway/agent/PlanExecutionTest.java`
 - 如需纯函数与词表：`shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/WriteClaimGuard.java`
@@ -77,6 +80,15 @@
   （`expectedWriteDone` 仍是唯一「办成了」的判据）。
 - 不删除、跳过或弱化任何测试；不把活体红写成 PASS。
 - 不提交 `.env`、`logs/`、崩溃日志、截图或临时产物。
+
+## 契约修订
+
+1. **2026-11-27（新增 0-token 用例后的生成读数）**：AC1–AC5 需要新增
+   `WriteClaimGuardTest` 与 `PlanExecutionTest` 用例，JVM 测试总数会变化。
+   允许同步 `docs/STATUS.md`、`README.md` 的 badge / 复现段 / CI 段、
+   `docs/TUNING_PLAN.md` 的测试数；**只改计数，不改阈值、分母、gold、
+   `judge()` 或任何既有断言**。`docs/STATUS.md` 仍由 `python scripts/gen_status.py`
+   生成，不手改。
 
 ## Verify
 

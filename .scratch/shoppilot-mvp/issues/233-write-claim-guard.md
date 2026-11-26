@@ -2,7 +2,7 @@
 
 Round: 62（产品行为回归修复；ADR 0008 / ADR 0031）
 ADR: 0008（不猜不骗）、0031（回归修复）、0009（降级原因可枚举）
-Status: blocked（2026-11-27 冻结契约；Blocked by 票 231 合并）　Claimed by: —　Blocked by: 231
+Status: implemented（2026-11-27；AC1–AC7 通过，待独立 Verifier）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
 
 契约：[plans/233-write-claim-guard.md](../../plans/233-write-claim-guard.md)（2026-11-27 冻结）
 
@@ -48,3 +48,26 @@ Status: blocked（2026-11-27 冻结契约；Blocked by 票 231 合并）　Claim
    是否接受，还是另开票加独立 reason/metric（要同步 README 计数）？
 3. 如实拒绝（「抱歉，这个动作我办不了」）不带问号也不带完成词时原样透出；
    是否要求这类也转人工（更保守，但会把正常拒答也变成工单）？
+
+**实现与验证（2026-11-27，HEAD `30f96cd`）**
+
+- 新增 `WriteClaimGuard` 纯函数，判定顺序 **ASK → REFUSAL → CLAIM**：
+  追问优先，避免把「已收到您的申请，请提供订单号」误伤；如实拒绝（「无法为您发起」）
+  先于完成声明排除。初版词表里的裸词「多少 / 是否 / 什么时候」已剔除——
+  「退款已提交，是否到账以银行为准」这类完成声明此前会被误放行。
+- `PlanExecuteHandler` 只在 `expectedWrite != null && !expectedWriteDone && nudged`
+  且正文为 `CLAIM` 时收口：`TOOL_ROUNDS_EXHAUSTED` + 可查工单，正文不透出，
+  trace 增 `write-claim-blocked write-pending=<tool>`；`ASK` / `NONE` 原样返回。
+  未新增降级枚举、未改 `FallbackReason` 文案、gold / 阈值 / 分母 / `judge()` 零改动。
+- 窄测 **14/14**（`PlanExecutionTest` 11 + `WriteClaimGuardTest` 3）；全量
+  `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，885 tests / 145 suites**
+  （tool-api 12 + biz-mock 98 + gateway 725 + ticket 50，3:35）。
+- **AC7 活体**（HEAD `30f96cd`，local `qwen2.5:3b`，每轮先 reset demo、新会话、
+  新幂等 token）：**10/10 `PENDING_APPROVAL`、0 次无 tool 事件却声称已办理**
+  （`logs/ac7-233-20261127g.log`，本机 gitignored）。补充读数：同一路径早一轮
+  **9 PENDING + 1 `TOOL_ROUNDS_EXHAUSTED` + 工单、0 谎报**
+  （`logs/ac7-233-20261127e.log`）。
+- 边界：AC7 的 10 次均命中工具，降级分支由 AC1 的 0-token 用例覆盖；
+  早期三轮采样因问句无空格、订单不存在、trace 大小写匹配错误作废，未计入读数。
+- 文档检查：`python scripts/gen_status.py --check`、`python scripts/verify_doc_truth.py`、
+  `python scripts/check_doc_links.py`、`git diff --check` 全绿。
