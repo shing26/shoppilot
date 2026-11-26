@@ -114,7 +114,22 @@ final class PlanExecuteHandler {
             }
             usage.add(lastReply);
             if (!lastReply.wantsTool()) {
-                if (expectedWrite == null || expectedWriteDone || nudged) {
+                if (expectedWrite == null || expectedWriteDone) {
+                    break;
+                }
+                if (nudged) {
+                    // 票 233：纠偏后仍然不派发写工具。追问缺失参数是合法的；但正文若在
+                    // 声称“已办理 / 正在办理”，不能让买家拿到一句没有业务事实的完成声明。
+                    // expectedWriteDone 仍是唯一“办成了”的判据，这里只是拦住冒充完成的正文。
+                    if (WriteClaimGuard.classify(lastReply.content()) == WriteClaimGuard.Verdict.CLAIM) {
+                        services.toolRoundExhaustedCounter.increment();
+                        TurnServices.step(trace, sink, AgentState.PLAN,
+                                "write-claim-blocked write-pending=" + expectedWrite.apiName());
+                        return ToolLoopResult.terminal(services.fallback(AgentState.TOOL_EXEC, trace, sink,
+                                FallbackReason.TOOL_ROUNDS_EXHAUSTED, query,
+                                "纠偏后仍未派发写工具，但正文声称已办理 " + expectedWrite.apiName(),
+                                ctx.styleTier(), usage));
+                    }
                     break;
                 }
                 // 模型用文字承诺了业务动作却没调用工具（dev 评测实测形态："我这就为您提交退款申请"之后直接收尾）。
