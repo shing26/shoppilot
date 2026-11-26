@@ -19,8 +19,9 @@ foreach ($pair in $dotEnv.GetEnumerator()) {
 # 这份 jar 与常驻网关共用同一套 logback 配置：不分名的话两个进程会去轮转同一个 logs\gateway.log
 # 用环境变量而不是 -Dspring-boot.run.jvmArguments：实测后者到不了 spring-boot:run 另起的那个 JVM
 $previousLogApp = $env:LOG_APP
-$jar = Get-ChildItem (Join-Path $root "shoppilot-gateway\target") -Filter "shoppilot-gateway-*.jar" `
-    -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
+# 与 start-*.ps1 / up.ps1 同一条 R20 规矩：按根 POM 版本精确取包，不按通配抓第一个。
+# 否则 target 里同时存在旧版本 jar 时，入库 JVM 会加载旧代码。
+$jar = Get-ShoppilotFatJar -Root $root -Module "shoppilot-gateway"
 Push-Location $root
 try {
     $env:LOG_APP = "ingest"

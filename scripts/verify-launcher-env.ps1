@@ -114,6 +114,12 @@ try {
     Check 'up.ps1 不再按通配符取 jar' `
         ($upText -notmatch "Get-ChildItem .*-Filter \(\$_ \+ '-\*\.jar'\)") ''
 
+    $ingestText = Get-Content (Join-Path $PSScriptRoot 'ingest.ps1') -Raw
+    Check 'ingest.ps1 按根 POM 版本精确取 jar' `
+        ($ingestText -match 'Get-ShoppilotFatJar\s+-Root\s+\$root') ''
+    Check 'ingest.ps1 不再按通配符取 jar' `
+        ($ingestText -notmatch 'shoppilot-gateway-\*\.jar') ''
+
     # 票 231 / R20 的受控反证：同一目录里同时放旧版本与当前版本，只选当前版本；
     # 当前版本缺失时返回 $null，让启动器走 mvn 回退，而不是抓起旧包。
     $jarRoot = Join-Path $tempRoot 'jar-probe'

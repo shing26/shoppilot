@@ -67,6 +67,7 @@ round60 的 29 步 full 档留下五条**工装漂移**，全部已登记在
 - `scripts/up.ps1`
 - `scripts/run-acceptance.ps1`
 - `scripts/verify-launcher-env.ps1`
+- `scripts/ingest.ps1`（契约修订 6：Verifier P1，入库 JVM 同样按版本取包）
 - `scripts/demo.ps1`
 - `scripts/verify-plan-actions.ps1`
 - `scripts/verify-action-loop.ps1`
@@ -99,6 +100,8 @@ round60 的 29 步 full 档留下五条**工装漂移**，全部已登记在
   jar；均按根 POM 版本精确解析。受控回归：同一临时目录同时放
   `0.1.0-SNAPSHOT` 与当前版本 jar 时，只返回当前版本；只有旧 jar 时返回
   `$null`，启动器走 `mvn spring-boot:run` 回退，不启动旧包。
+  （契约修订 6：Verifier P1 发现 `scripts/ingest.ps1` 仍按通配选包，full 档入库
+  会加载旧 jar；同一 R20 判据补到该脚本，静态检查 +2，判据不放宽。）
 - **AC2（R16）**：29 步矩阵用到的 `verify-*` / `demo` 脚本从进程环境（非空）
   或仓库 `.env` 取 `SHOPPILOT_OPS_TOKEN` / `SHOPPILOT_INTERNAL_TOKEN` /
   `SHOPPILOT_IDENTITY_DEMO_PASSWORD`；源码中不再有这三个键的 dev 默认值。
@@ -226,3 +229,15 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full
    - **环境边界**：修完 profile 透传后两次重跑 dev 矩阵均在 `stack` 步失败
      （biz-mock 进程被主机内存压力杀死 / ingest 原生 OOM），未产生可判读数。
      所有者已裁定 AC6 以 local 的 **25/4** 为准；dev 矩阵不作为 AC6 的替代读数。
+
+6. **2026-11-27（Verifier P1 整改：入库 launcher 也按版本取包）**：
+   - 独立 Verifier 受控复现：`scripts/ingest.ps1` 仍用
+     `Get-ChildItem ... -Filter "shoppilot-gateway-*.jar" | Select-Object -First 1`，
+     双版本并存时返回 `0.1.0-SNAPSHOT`；而 `up.ps1` 的 full 档 stack 步会调用它。
+     R20 在三个 `start-*.ps1` 与 `Find-FatJars` 已关闭，入库 JVM 仍可加载旧包，
+     属同族契约缺口。
+   - 整改：`ingest.ps1` 改用共享 `Get-ShoppilotFatJar`；`verify-launcher-env.ps1`
+     增加「按根 POM 版本精确取 jar」「不再按通配符取 jar」两条静态断言
+     （70 → 72）。不删除、不跳过、不弱化任何既有断言。
+   - 该文件加入 Allowed paths；AC1 原文不改，只补注覆盖范围。整改后交回同一
+     Verifier 复验 AC1–AC7。

@@ -559,12 +559,15 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   全部落地（R20 启动器按根 POM 版本精确选 jar；R16 凭证唯一来源
   `.env` + 进程环境；R19 验收栈合并 `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1`；
   R17 调试台坐席令牌读 circuit；R18 EMO-ESC-07 归入 `USER_REQUESTED`）。
-  全量矩阵现场又暴露并修掉三处 harness 自身的红：`run-acceptance.ps1` 固定
+  全量矩阵现场又暴露并修掉四处 harness 自身的红：`run-acceptance.ps1` 固定
   `SHOPPILOT_EMBEDDING_SIDECAR_URL`（`plan`/`console` 中途重启网关后丢失，
   稠密向量化退回 Ollama 实测 9.5 s 超时 → 检索降级 → 写回拒 → L1 断言假红）、
   `up.ps1` 在入库前等 biz-mock readiness（原并行顺序在 seed 窗口 exit 1）、
-  `console.html::loadTenants()` 未登录时不打必然 403 的 `/ops/tenants`。
-  **读数**：`check-ps-syntax` 38/0；`verify-launcher-env` **70/70**；
+  `console.html::loadTenants()` 未登录时不打必然 403 的 `/ops/tenants`、
+  `verify-plan-actions.ps1` 重启网关硬编码 `-Profile local`（dev 矩阵回退 3B）。
+  **读数**：`check-ps-syntax` 38/0；`verify-launcher-env` **72/72**
+  （Verifier P1 后补 `ingest.ps1` 精确取包两条）；`plan` 重启透传 `-Profile`
+  （dev 矩阵不再回退 local）；
   `console` **45/45**；`plan -WithRestarts` 全过；`polarity` 通过；
   `isolation` **5/5**；冷启动 `up.ps1 -SkipBuild` 全栈 **158 s**（入库 111 块、
   纪元 14）；最终 29 步矩阵 `logs/acceptance-run-20261126-043649.log`

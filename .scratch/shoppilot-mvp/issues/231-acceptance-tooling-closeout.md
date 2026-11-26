@@ -157,15 +157,25 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full
 - **AC6 最终口径**：以所有者裁定的 local **25 绿 / 4 红**为准；dev 读数
   只作补充说明，不作替代。
 
+**Verifier P1 整改（2026-11-27）**
+
+- 首轮独立 Verifier 判 FAIL：`scripts/ingest.ps1` 仍按通配取第一个 jar，
+  full 档 `up.ps1` 调用它入库时可加载 `0.1.0-SNAPSHOT`（受控复现）。
+- 已按 R20 同族修法改用 `Get-ShoppilotFatJar`，并在
+  `verify-launcher-env.ps1` 增加两条静态断言（70 → 72）；契约修订 6 已记。
+- AC1 范围扩展到入库 launcher；判据只增不减，原断言一条未动。
+
 **AC 逐条**
 
-- AC1（R20）PASS：`verify-launcher-env.ps1` 70/70，含双版本 jar 反证与旧包不选。
-- AC2（R16）PASS：70/70 内含凭证优先级与源码无 dev 默认值断言。
+- AC1（R20）PASS：`verify-launcher-env.ps1` 72/72，含双版本 jar 反证、
+  旧包不选，以及 `ingest.ps1` 精确取包。
+- AC2（R16）PASS：72/72 内含凭证优先级与源码无 dev 默认值断言。
 - AC3（R19）PASS：`verify-outbound.mjs` 10/10。
 - AC4（R17）PASS：`verify-console.mjs` 45/45。
 - AC5（R18）PASS：`verify-emotion.ps1` 30/30（29 条 + 汇总）。
-- AC6 **偏差**：25 绿 / 4 红，读数与归因见上；待所有者裁定。
-- AC7 PASS：`check-ps-syntax` 38/0、`verify-launcher-env` 70/70、
+- AC6 PASS（按 Owner ruling）：local 25 绿 / 4 红，读数与归因见上；
+  dev 27/2 受 R21 限制，不作替代。
+- AC7 PASS：`check-ps-syntax` 38/0、`verify-launcher-env` 72/72、
   `mvnw verify` BUILD SUCCESS、`gen_status --check` / `verify_doc_truth` /
   `check_doc_links`、`git diff --check` / `git status --short`。
 - AC8 未执行：独立 Verifier + 所有者书面签收 + 合并/CI/删分支。
