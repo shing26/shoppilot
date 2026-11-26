@@ -279,7 +279,7 @@ class PlanExecutionTest {
                 .thenReturn(Optional.of("T-233"));
         when(llm.complete(any())).thenReturn(
                 LlmTypes.Reply.text("我这就为您提交退款申请"),
-                LlmTypes.Reply.text("我已为您发起退款申请"));
+                LlmTypes.Reply.text("我已为您发起退款申请，请问还需要其他帮助吗？"));
         ArgumentCaptor<String> detail = ArgumentCaptor.forClass(String.class);
 
         AgentResult result = machine().run("订单90001我要申请退款，商品有质量问题", null, EventSink.NOOP);
