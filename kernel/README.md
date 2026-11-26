@@ -66,8 +66,8 @@ CI：`.github/workflows/kernel-ci.yml`，只在 `kernel/**` 变更时触发；
 ## 当前状态
 
 - contract：30 条测试绿（13 TCK + 13 工作流 + 4 状态机）。
-- Shopify：23 条测试（21 条执行 + 2 条 live 默认跳过；执行部分含 13 条 TCK
-  与 8 条适配器/资金安全/限流映射）。
+- Shopify：26 条测试（24 条执行 + 2 条 live 默认跳过；执行部分含 13 条 TCK
+  与 11 条适配器/资金安全/幂等/限流映射）。
 - 默认构建零网络、零凭据。
 - **AC8 已在 Shopify Partner 免费开发商店执行真实退款写操作**（2026-11-27，
   Admin GraphQL `2026-10`）；实测暴露并修掉一个真实资金缺口，见下节。
@@ -106,10 +106,30 @@ transactions: [{ orderId, kind: REFUND, gateway, amount, parentId }]
 | 适配器 live 全链路 | `#1010` | 首退、重放、同键冲突、末次退款均 SETTLED，订单 REFUNDED |
 | 行项目 + 运费 | `#1012` | 总额 15（其中运费 5），`REFUND/SUCCESS`，订单 REFUNDED |
 | 手工网关 + 显式交易 | `#1013` | 10 USD，`REFUND/SUCCESS`，订单 REFUNDED（仅记账，无真实资金） |
+| 退空后同键重放 | `#1015` | 首退/末退各 10 USD `SETTLED`，订单 REFUNDED；退空后同键同参仍返回首笔 refund id |
+| API 建 SALE 缺网关 reference | `#1003` | `refundCreate` 返回 userError `Reference can't be blank`，订单仍 PAID、可退数量 2 未消耗；根因待查 |
 
 现场响应头包含 `x-shopify-api-version: 2026-10`、operation name/signature、
 `x-shopify-api-gql-engine: cardinal`、`X-Request-ID`；退款 mutation 实测
 cost 约 20–30，`maximumAvailable=2000`、`restoreRate=100/s`。
+
+### 幂等重放（`e7004e6`）
+
+`createRefund` 在报价之前先查进程内重放缓存：键为 `tenant + "|" + key`，
+指纹为 `order + 排序后的 lineItemId×quantity + refundShipping + reason`。
+同键同指纹返回原 `RefundReceipt`，同键不同指纹返回 `INVALID_REQUEST`。
+缓存是 access-order `LinkedHashMap`，上限 10,000 条，**只在进程内**；
+跨进程/重启的持久幂等仍依赖后续 `RefundApprovalStore` / outbox。
+
+### 真实限流形状（2026-11-27）
+
+- GraphQL：6 个 `orders(first: 250)` 别名并发，单查询 `requestedQueryCost=936`；
+  6 个请求中 2 个返回 HTTP 200 + `errors[0].extensions.code=THROTTLED`、
+  `message=Throttled`、`currentlyAvailable=128`。
+- 8 个别名（1248）先被 `MAX_COST_EXCEEDED` 拒绝，确认单查询上限仍为 1000。
+- Admin REST：`orders.json?limit=1` 80 并发，32 个 HTTP 429、
+  `Retry-After: 2`、body 为
+  `{"errors":"Exceeded 2 calls per second for api client..."}`。
 
 ### 仍然没验证或没做
 
@@ -122,8 +142,8 @@ cost 约 20–30，`maximumAvailable=2000`、`restoreRate=100/s`。
 - 多笔 CAPTURE 的跨交易拆分未实现：适配器选单笔金额足够的最近 CAPTURE/SALE，
   不足即失败关闭。
 - 60 天边界未触发：App 已有 `read_all_orders`，且测试店铺没有更早订单。
-- 真实 `THROTTLED` 未触发：店铺数据量太小，最高 cost 查询实际只计 4；
-  HTTP 429 与 GraphQL `THROTTLED` 的映射由单测覆盖。
+- 真实 HTTP 429 与 GraphQL `THROTTLED` 已按上面的并发探测触发；适配器仍只做
+  映射，不做主动退避或 `RateBudget`。
 
 ## 明确没做
 
@@ -135,7 +155,8 @@ cost 约 20–30，`maximumAvailable=2000`、`restoreRate=100/s`。
 
 ## 路线
 
-1. AC8 已完成（2026-11-27）；继续补真实网关对账与 Webhook/退货链路，再谈生产可用。
+1. AC8 写链路已于 2026-11-27 实测，**待独立 Verifier 复验与所有者签收**；
+   继续补真实网关对账与 Webhook/退货链路，再谈生产可用。
 2. 补持久化 `RefundApprovalStore` 与 outbox。
 3. 把「有界工具循环 + 降级工单 + 租户隔离」的 runtime 部分抽到同一 reactor，
    让退款只是第一个宿主适配器。

@@ -2,10 +2,11 @@
 
 Round: 62（模块转正 / 生产依赖变更）
 ADR: 0088（审批载体）、0089（终态读模型）、0090（买家术语）
-Status: implemented（2026-11-27；AC8 已执行，现场读数见下；待独立 Verifier
-复验 AC8 修复 + 所有者书面签收）
+Status: implemented（2026-11-27；AC8 已执行；Verifier 首轮 FAIL 的 F1/P1-1/P1-2/
+P1-3 已整改，现场读数见下；待独立 Verifier 复验 + 所有者书面签收）
 Claimed by: root　Blocked by: 无
-实现提交: `5ee7e02`（2026-11-26 模块转正）、`40a5357`（2026-11-27 AC8 资金缺口修复）
+实现提交: `5ee7e02`（2026-11-26 模块转正）、`40a5357`（2026-11-27 AC8 资金缺口修复）、
+`e7004e6`（2026-11-27 退空后同键重放修复）
 
 契约：[plans/232-commerce-kernel-promotion.md](../../plans/232-commerce-kernel-promotion.md)（2026-11-26 冻结）
 
@@ -123,14 +124,24 @@ git status --short
     订单 `REFUNDED`。
   - `#1013`：manual `SALE` + 显式 `REFUND` 10 USD，订单 `REFUNDED`（仅记账）；
     `CANCEL` 缺 `locationId` 被拒，`NO_RESTOCK` 通过。
+  - `#1015`：AUTHORIZATION → CAPTURE 20 USD、2 件可退；live 测试首退/末退各
+    10 USD `SETTLED`，同键重放同 id、同键改参 `INVALID_REQUEST`；订单
+    `REFUNDED`、总额 20、两笔 `REFUND/SUCCESS`。**退空后**用首笔同键同参重放，
+    仍返回首笔 refund id（`1030085935269`）。
+  - `#1003` 边界：API 建 `SALE/SUCCESS` 20 USD 的 `refundCreate` 返回 userError
+    `Reference can't be blank`，留下两条 `REFUND/ERROR`，订单仍 `PAID`、
+    可退数量仍 2；适配器映射 `INVALID_REQUEST`。根因未完全隔离，不作生产结论。
 - 测试：`.\mvnw.cmd -f kernel/pom.xml -B -ntp verify` → contract 30 /
-  shopify 21 + 2 skipped，BUILD SUCCESS；coverage contract 84.53% /
-  shopify 63.48%。新增 `ShopifyLiveRefundTest` 默认跳过，只有
+  shopify 24 + 2 skipped，BUILD SUCCESS；coverage contract 84.53% /
+  shopify 65.38%。新增 `ShopifyLiveRefundTest` 默认跳过，只有
   `SHOPIFY_LIVE_WRITE=1` 才写真实店铺。
+- 真实限流：GraphQL 6 个 936-cost 查询并发，2 个 HTTP 200 + `THROTTLED`
+  （`currentlyAvailable=128`）；Admin REST 80 并发，32 个 HTTP 429 +
+  `Retry-After: 2`；8 别名（1248）被 `MAX_COST_EXCEEDED` 拒绝。
 - 边界：`Refund.staffMember` 返回 `ACCESS_DENIED`（需 `read_users` +
   finance embedded/Plus/Advanced）；Webhook、`returnCreate`、退货/换货未验证
-  （无对应 scope）；多笔 CAPTURE 的跨交易拆分未实现；60 天边界与真实
-  `THROTTLED` 未触发（后者由 HTTP 429 / GraphQL `THROTTLED` 单测覆盖）。
+  （无对应 scope）；多笔 CAPTURE 的跨交易拆分未实现；60 天边界未触发；
+  重放缓存仅在进程内，跨进程/重启的持久幂等仍待 `RefundApprovalStore` / outbox。
 
 **AC8 三个现场追问的回答**
 
@@ -156,3 +167,24 @@ git status --short
 - **AC8 修复后（`40a5357`）需要独立 Verifier 重新亲跑 AC1–AC8**；上面的 PASS
   只覆盖 AC1–AC7 与 AC8 BLOCKED 时的状态。
 - 所有者书面签收尚未发生，所以本票保持 `implemented`，不是 `done`。
+
+**独立 Verifier（2026-11-27，HEAD `fa6befa`）：FAIL + 整改**
+
+- A–G 全过：内核 verify、覆盖率、根回归 878/144、文档真值/链接、
+  `git diff --check`、AC8 退款写链路本身均 PASS；无 P0。
+- **F1**：AC8 要求真实 `429` 与 `THROWS/THROTTLED` 形状，此前只有单测合成。
+  整改：真实触发 GraphQL `THROTTLED`（6×936 cost 并发，2 次）与 REST 429
+  （80 并发，32 次，`Retry-After: 2`）；读数写入 `docs/EVIDENCE.md`、
+  `kernel/README.md`、映射表 §8.1。
+- **P1-1**：`kernel/shoppilot-commerce-shopify/README.md` 曾写“尚未对真实开发
+  商店执行写操作”、测试计数过期。已更新为 AC8 已执行、24 执行 + 2 skipped。
+- **P1-2**：`docs/shopify-refund-contract-mapping.md:5` 曾写“尚未在开发商店实跑”
+  且错误引用“第 9 节”。已改为 §8.1 实测结论。
+- **P1-3**：订单退空后同键重放先撞 `RefundQuoter.quote`，返回
+  `STATE_NOT_ALLOWED` 而不是原 receipt。整改：`createRefund` 在报价前查
+  按租户 + key 隔离的进程内重放缓存（access-order，上限 10,000）；同键同指纹
+  返回原 receipt，同键不同指纹 `INVALID_REQUEST`。新增 3 条单测 + live
+  `#1015` 退空后重放断言。红对照：移除缓存后 2 条用例分别得到
+  `result is not Ok` 与 `STATE_NOT_ALLOWED`。
+- 整改提交：`e7004e6`。**仍需独立 Verifier 复跑 AC1–AC8 与 live 测试**；
+  所有者书面签收前保持 `implemented`。
