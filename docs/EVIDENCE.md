@@ -581,7 +581,7 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   阈值 / 覆盖率门槛零改动；`/ops/**` 403 与 SSRF 回环拒绝未放宽；未删除或弱化
   任何断言。AC6 的 25/4 偏差与三条现场追问留在票面，等所有者裁定。
 
-- **round62 / 票 233 动作意图忠实性守卫（2026-11-27，代码 HEAD `034d4ce`）**：
+- **round62 / 票 233 动作意图忠实性守卫（2026-11-27，代码 HEAD `bf1c314`）**：
   病根是写意图只纠偏一次，纠偏后模型仍不调工具时正文被当最终答案——本地 3B
   5 次采样仅 1 次真正派发 `applyRefund`，其余 4 次输出「已为您发起退款申请」
   而无任何 tool 事件。新增 `WriteClaimGuard` 纯函数（已完成声明 → 强承诺
@@ -602,18 +602,24 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   「我办不了……我会为您说明退款政策」「退款成功后款项会原路退回」
   被强承诺/条件句误伤；修复补裸声明与「已给您/已向您」前缀，强承诺跳过
   「说明/查询/核实/确认/政策/流程」等非动作语境，「成功后 / 如果…」按条件句排除。
+  **第三轮 P1 已整改**：补 `退款处理完成` / `退款办理完成` / `退款处理成功` /
+  `退款申请成功` / `退款完成`；裸 `已提交/已处理/已申请/已办理` 只在句末或
+  非动作宾语后算数，「已提交的退款申请」「已办理退款的订单」「订单已提交了吗？」
+  「订单已提交的话」按定语、疑问、条件句排除。**AC7 的 ASK 边界按字面收紧**：
+  固定退款问句已含订单号时，追问订单号/收件人不算缺失参数；`applyRefund` 在
+  query 带 5 位以上订单号时 ASK 直接降级 + 工单，地址修改等其它写工具仍允许
+  合理补参追问。AC2 的 handler 用例改为地址修改（新地址确实缺失）验证合法 ASK。
   **读数**：窄测 **14/14**
   （`PlanExecutionTest` 11 + `WriteClaimGuardTest` 3）；全量
   `mvnw -B -ntp verify` **BUILD SUCCESS，885 tests / 145 suites**
   （tool-api 12 + biz-mock 98 + gateway 725 + ticket 50）；AC7 活体（local
-  `qwen2.5:3b`，HEAD `034d4ce`，每轮 reset demo + 新会话 + 新幂等 token）
-  **7 `PENDING_APPROVAL` + 1 `TOOL_ROUNDS_EXHAUSTED` + 工单 + 2 次合法追问、
-  0 次「无 tool 事件却声称已办理」**（`logs/ac7-233-20261127j.log`，本机
-  gitignored）；两次追问为「请问收件人姓名和手机号？」与
-  「请告诉我订单号，我来帮您处理」，属 AC2 允许的缺失参数追问。累计读数：
-  i 轮 **8 PENDING + 2 DEGRADED + 工单、0 谎报**（降级两次）；h 轮
-  **10/10 `PENDING_APPROVAL`、0 谎报**；e 轮 **9 PENDING + 1 DEGRADED、0 谎报**。
-  **边界**：i 的降级分支被真实触发两次并落工单；h 的 10 次均命中工具；
+  `qwen2.5:3b`，HEAD `bf1c314`，每轮 reset demo + 新会话 + 新幂等 token）
+  **10/10 `PENDING_APPROVAL`、0 次「无 tool 事件却声称已办理」**
+  （`logs/ac7-233-20261127l.log`，本机 gitignored），字面满足「每一次 PENDING
+  或降级 + 工单」。累计读数：k 轮 8 PENDING + 1 DEGRADED + 1 次追问（修复前，
+  0 谎报）；i 轮 **8 PENDING + 2 DEGRADED + 工单、0 谎报**（降级两次）；
+  h 轮 **10/10 PENDING、0 谎报**；e 轮 **9 PENDING + 1 DEGRADED、0 谎报**。
+  **边界**：i 的降级分支被真实触发两次并落工单；h/l 的 10 次均命中工具；
   早期三轮采样因问句缺空格、订单不存在、按小写 trace 匹配分别作废，未计入读数；
   未清 Redis 回放索引，以新幂等 token 规避。`gen_status --check` /
   `verify_doc_truth` / `check_doc_links` / `git diff --check` 全绿。
