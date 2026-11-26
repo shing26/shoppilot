@@ -24,6 +24,9 @@ SEED = "shoppilot-gateway/src/main/resources/intent-samples.json"
 SEEDRUNNER = "shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/seed/SeedRunner.java"
 SCORER = "scripts/run_tool_eval.py"
 VALIDATOR = "scripts/build_eval_set.py"
+# 2026-11-26 票 231：run_tool_eval 的凭证读取下沉到 envfile.py（R16）；干净副本
+# 必须带上它，否则对照组会在 import 阶段就红，后面的变异检查全部失效。
+CREDENTIAL_HELPER = "scripts/envfile.py"
 
 RELAXED = {"ACT-ORD-09", "ACT-ORD-11", "ACT-ORD-16", "ACT-ORD-17"}
 STILL_SINGLE = {"ACT-ORD-13", "ACT-ADR-14", "ACT-RFD-14"}
@@ -76,7 +79,7 @@ def scaffold():
     (root / "scripts").mkdir()
     (root / "eval").mkdir()
     (root / SEED).parent.mkdir(parents=True)
-    for rel in [SCORER, VALIDATOR, *PARTS, SEED]:
+    for rel in [SCORER, VALIDATOR, CREDENTIAL_HELPER, *PARTS, SEED]:
         shutil.copy2(REPO / rel, root / rel)
     return root
 

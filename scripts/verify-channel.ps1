@@ -8,6 +8,13 @@
 $ErrorActionPreference = "Stop"
 $Base = "http://127.0.0.1:8082"
 $Pass = 0; $Fail = 0
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+$root = Split-Path -Parent $PSScriptRoot
+$opsToken = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_OPS_TOKEN'
+if (-not $opsToken) {
+    Write-Host '缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。' -ForegroundColor Red
+    exit 2
+}
 
 function Get-Token([string]$Tenant, [string]$Customer) {
     $body = '{"tenantId":"' + $Tenant + '","customerId":"' + $Customer + '"}'
@@ -76,7 +83,7 @@ if ($other.answer -notmatch "SO20260901007" -and $other.answer -notmatch "90007"
 $email = Post-Json "/api/v1/support/email" (Get-Token "T001" "C155") $null `
     '{"from":"buyer@example.com","subject":"退货","body":"请问退货的运费险怎么用"}'
 if ($email.channel -eq "email" -and $email.receiptTicketId) {
-    $rechecked = Invoke-RestMethod -Uri "$Base/api/v1/support/ops/tickets" -Headers @{ Authorization = "Bearer $(Get-Token 'T001' 'C155')"; "X-Ops-Token" = "dev-ops-token" }
+    $rechecked = Invoke-RestMethod -Uri "$Base/api/v1/support/ops/tickets" -Headers @{ Authorization = "Bearer $(Get-Token 'T001' 'C155')"; "X-Ops-Token" = $opsToken }
     $hit = $rechecked | Where-Object { $_.id -eq $email.receiptTicketId -and $_.reason -eq "EMAIL_REPLY" }
     if ($hit) {
         $Pass++

@@ -12,9 +12,12 @@ import sys
 import time
 import urllib.request
 
+from envfile import env_value
+
 GATEWAY = "http://127.0.0.1:8082"
 QDRANT = "http://127.0.0.1:16333"
 COLLECTION = "answer_cache"
+OPS_TOKEN = env_value("SHOPPILOT_OPS_TOKEN")
 
 
 def http(url, payload=None, method=None, timeout=60):
@@ -64,7 +67,7 @@ def flush(tok):
     根本不产生 CACHE_WRITE，重试就只是在测一个没在写回的分支。"""
     request = urllib.request.Request(
         f"{GATEWAY}/api/v1/support/ops/cache/flush", data=b"{}", method="POST",
-        headers={"Authorization": "Bearer " + tok, "X-Ops-Token": "dev-ops-token",
+        headers={"Authorization": "Bearer " + tok, "X-Ops-Token": OPS_TOKEN,
                  "Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=60) as response:
         return json.loads(response.read().decode())
@@ -78,6 +81,10 @@ def main() -> int:
         if not ok:
             failures.append(label)
 
+    if not OPS_TOKEN:
+        print("缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。",
+              file=sys.stderr)
+        return 2
     tok = token("T001", "C001")
     flushed = flush(tok)
     check("缓存已清空（L1 与 L2 一起）", flushed.get("l1KeysDeleted", -1) >= 0, str(flushed))

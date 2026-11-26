@@ -40,8 +40,19 @@
 | 工作台修订编辑器（round43 spec §4 登记项 1） | **2026-11-03 已关闭（round44 票 190 执行）**：触发条件「修订面进入产品演示清单」在 round44 成立。交付工作台「知识飞轮」视图（复核队列 → 附稿 → 发布/驳回 → 「需重跑 ingest」显式提示），`verify-workspace.mjs` 实跑走通全链。**没有**变成"发布即生效"——进程内 ingest 仍按 round43 §4 第 2 条登记不执行。 |
 | U4 出站去重表在进程内存 | **2026-11-24 关闭（票 225 / round56）**：去重键落 Redis `shoppilot:outbound:delivered:<eventId>`（TTL 默认 7d），活体验证「网关重启后同一 eventId 仍只投递一次」；进程内 LRU 降为 Redis 不可用时的兜底。**保留边界**：Redis 挂掉时跨重启幂等会退化，是否暂停出站由 225 现场追问 3 待裁定。 |
 | U5 重试无退避 | **2026-11-24 关闭（票 225 + 票 227 / round56-57）**：单轮重试改为指数退避 + 抖动（活体 499/1076ms）；票 227 再补跨轮退避（默认 5s / ×2 / 上限 5m / ±20%，有界 4096），事件保留 PEL 不丢。**保留边界**：退避状态为进程内，重启后 pending 立即重试一次。 |
+| R16 验收脚本凭证双源 | **2026-11-26 关闭（round61 / 票 231）**：29 步用到的 `verify-*` / `demo` / Python 侧全部改为「进程环境非空 > 仓库 `.env`」，新增 `scripts/envfile.py` 与 `scripts/lib-dotenv.mjs`；缺凭证 exit 2。`verify-launcher-env.ps1` 70/70（含优先级与源码无 dev 默认值断言）。 |
+| R17 调试台 circuit 身份过期 | **2026-11-26 关闭（round61 / 票 231）**：坐席登录后用坐席令牌读 circuit；无坐席/运维令牌时不发请求；`/ops/**` 403 与买家 `role.denied` 未放宽。`console` **45/45**。同族补修：`loadTenants()` 未登录时走内置名册，登录后补拉真实清单，消除开页必然 403。 |
+| R18 EMO-ESC-07 期望过期 | **2026-11-26 关闭（round61 / 票 231）**：按 ADR 0042 归入显式转人工组（`USER_REQUESTED`、无 high）；`eval/cases-part4-emotion.jsonl` 同步 `escalate:false, reason:USER_REQUESTED`；用例数与分母不变。`verify-emotion.ps1` **30/30**。 |
+| R19 出站回环被 SSRF 拒绝 | **2026-11-26 关闭（round61 / 票 231）**：`run-acceptance.ps1` 只给验收栈合并 `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1`（保留已有条目去重），不写 `application.yml` / `.env.example`；默认启动仍拒绝回环。`verify-outbound.mjs` **10/10**。 |
+| R20 多版本 jar 选旧包 | **2026-11-26 关闭（round61 / 票 231）**：`start-gateway/bizmock/ticket` 与 `up.ps1::Find-FatJars` 统一按根 POM 版本精确匹配 `<module>-<version>.jar`；当前版本缺失走 `mvn spring-boot:run`，不回退旧包。受控回归（双版本 jar / 仅旧 jar）在 70/70 内。 |
 
 ## 二、活跃的「已登记不执行」（等触发条件）
+
+> 2026-11-26：**R16–R20 已由 round61 / 票 231 收口并移入「已关闭」**；
+> 契约 [`plans/231`](../../plans/231-acceptance-tooling-closeout.md)；
+> 证据见 `docs/EVIDENCE.md` 的 round61 行与
+> `logs/acceptance-run-20261126-043649.log`（本机）。AC6 的 25/4 偏差
+> 与退款模型路径的归因见票面现场追问。
 
 | # | 项 | 登记于 | 触发条件 | 现状 |
 |---|---|---|---|---|
@@ -52,11 +63,7 @@
 | R8 | **输入侧提示注入防护**（实测「忽略以上所有指令…」未泄露系统提示词，但按指令倾倒了 892 字条款正文；29s、无工单） | round34 QA 走查（票 131，N10） | 出现对外暴露面（B4 真连之后任何可被陌生人输入的入口） | **2026-10-20 所有者确认：飞书机器人未对外开放、一直内测**——触发条件未成立，继续登记不执行（政策正文本身是公开内容，谈不上泄露）；到点做输入侧裁剪与拒答规则 |
 | R10 | **JVM 测试的审计事件经共享 Redis 流泄漏进活体服务的审计表**（`EventReconciliationTest`/`RefundReviewTest` 发到真流，运行中的 biz-mock 惰性 drain 时把 `agent-001`/`alice` 之类的测试行落进活体台账；取证时极易误读成"有人放了款"） | 2026-10-18 审计修复的取证过程（票 132） | 出现"审计面必须干净"的诉求（对外演示/面试展示审计查询时） | 同机同时跑测试与活体栈的固有噪声；修法 = 测试用独立流名（或独立 Redis DB），登记不执行 |
 | R15 | **qwen-plus gold 的 4 个意图低于 95%**（2026-10-20 全量 180：`ACTION_LOGISTICS` 88.9%——2 条选了 `queryOrderDetail` 而非 `queryLogistics`；`ACTION_ORDER` 94.4%——1 条散文追问新地址；`ESCALATE` 88.9%——ESC-03/05/14/18 的「真人/拍板的客服/机器人办不了/活人」不在 T0 升级词表、模型也没实际转人；`UNKNOWN` 83.3%——UNK-06/12/16 的「笑话/便宜点/写诗」被模型调 `queryOrderDetail` 追问单号。ACTION 总体 69/72=95.8%、POLICY 72/72=100%） | 2026-10-20 qwen-plus 全量 gold（`eval/results/tool-eval-20261020-125346-dev-gold-qwenplus-r7r14.csv`）；与历史 95.0% 基线**不可直接比**（prompt v1.2.0 / 4 轮 / R7 / R14 已变） | **所有者裁定**：A) 扩 T0 显式升级词表（真人/拍板的/活人/机器人办不了…）+ 补 UNKNOWN 的「不调工具」护栏；B) 接受新基线、只登记不修；C) 做同代码 A/B 定位是否 round35 引入（约 40-60 万 token） | **只登记不执行**；gold / 阈值 / 分母 / `judge()` 零触碰 |
-| R16 | **验收脚本内置 dev 凭证与 bootstrap 生成的随机凭证不一致**（`verify-*.ps1` 默认 `dev-ops-token` / `dev-internal-token-change-me`，而 `bootstrap_env.py --force` 生成 32 字符随机值；启动器不把 `.env` 注入脚本进程） | 2026-11-25 round60 全量矩阵：18 步因 `ops.token_mismatch` / `missing internal token` / 缺演示口令变红；进程环境覆盖 4 个变量并重启后，`idem`/`refund`/`outbound` 转绿 | **fresh clone 按 README 跑 full 必红**；修法 = 门禁从 `.env` 读同一份凭证，或 `bootstrap_env` 在 dev 档直接写脚本默认值 | 本机以进程环境覆盖完成验收，不改脚本；下一票决定门禁取凭证的唯一来源 |
-| R17 | **票 221 角色级 403 后 `verify-console.mjs` 的 circuit 期望过期**（`/ops/**` 统一要求坐席/管理员；页面切回买家身份后 circuit 读到 `role.denied`，脚本仍断言 `circuitState=live`） | 2026-11-25 全量矩阵 `console` 42/45；定向复跑 41/45（多一条是 refund 步紧邻造成的顺序污染） | 触发条件已成立（票 221 落地，2026-11-23）；修法三选一：circuit 放开给任意登录用户 / 调试台保留坐席令牌 / 门禁按新契约改期望 | 判据未改；留待新票 |
-| R18 | **票 163 口语升级词表后 `EMO-ESC-07` 期望过期**（用例「我要找真人领导谈」命中 T0 `找真人` → `USER_REQUESTED`，脚本仍期望 `EMOTION_ESCALATION`） | 2026-11-25 全量矩阵 `emotion` 28/29；脚本自 2026-09-27 未更新，词表 2026-10-27 变更 | 触发条件已成立；修法 = 换一条不含显式升级词的用例，或接受 `USER_REQUESTED` 为通过（需所有者裁定语义） | 判据未改；留待新票 |
-| R19 | **票 225 SSRF 落地后 `verify-outbound.mjs` 的回环回声端点被策略拒绝**（门禁未设置 `SHOPPILOT_OUTBOUND_ALLOWLIST`；网关日志明确「回环/私网/链路本地」） | 2026-11-25 全量矩阵 `outbound` 5/7；导出 `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1` 并重启后 **10/10** | 新环境按 README 跑 full 时 `outbound` 必红；修法 = 门禁启动回环回声时自动设置 allowlist，或在 `run-acceptance` 里显式声明 | 本机以环境覆盖完成验收，未改判据 |
-| R20 | **`start-*.ps1` 在多版本 jar 并存时选旧包**（`Get-ChildItem ... | Select-Object -First 1` 未排序；0.1.0 与 1.1.0 同时在 `target/` 时活体栈加载 0.1.0） | 2026-11-25 独立 Verifier P1：前三跑服务实际加载 `0.1.0-SNAPSHOT`；清掉旧 jar 后三服务均 `1.1.0-SNAPSHOT`，矩阵 22 PASS + 4 FAIL + 3 SKIP（合并 25 绿 / 4 红） | 与 `demo.py --prebuilt` 同一类缺陷；修法 = 启动器也从根 POM 读版本并精确匹配，缺失即快速失败 | 本票以清理构建产物完成验收，不改 launcher；下一票收口 |
+| R21 | **dev 档全量矩阵被 local 延迟标定的断言挡住**（plan 步 ticket-13 连打：买家桶 5 QPS，dev 串行 14 发约 1 s/发 → 0 个 429；local（3B + L1）约 0.2 s/发才会超桶。同块还要求「准入请求模型调用为 0」，而 dev 情绪门每请求多一次 LLM 调用且无独立计数） | 2026-11-27 dev 矩阵 `logs/acceptance-run-20261127-034838.log`（后半段还因 `-Profile local` 硬编码实际跑在 3B；该缺陷已在票 231 修掉） | 触发 = 需要 `-Profile dev` 的 29 步全绿读数时 | 断言保持原样，未改判据方法；修法需把 burst 改并发并重做逐发归因，且给情绪 LLM 调用加独立计数（都要同步 README 指标面），另开票 |
 
 ## 三、活跃的「未达成」（不是不执行，是还没验成）
 
@@ -66,6 +73,7 @@
 | U8 | 修复前写下的 L1 条目**没有 `sourceDocs`**（命中时 `citationDetails.doc` 为空串；内容正确，随 TTL 自然换代）；**检索降级对调用方不可见**（响应无 degraded 字段，只有 trace 的 `degraded=` 读数——QA N6） | 旧条目在 TTL 内可见；降级可见性缺口影响排障与门禁前置判断 | 前者等 TTL 即可；后者要动响应契约（add-only 字段），触发 = 下一次有人因它误判 |
 | U10 | **压测 mix80 的绝对拦截率与 09-08 梯子不可比**：本机实测 ~52% vs 历史 78.2%，差额来自工装漂移（会话号秒级碰撞把动作流量堆进同一会话 → `SLOT_UNRESOLVED` 44320；三条文本被 T1 质心误判成动作意图），与 ADR 0068 的修复无关（A/B 两臂同工装同参数，差值可比） | 2026-10-18 两店交替压测（票 133） | 需要对外引用「拦截率 ≥80%」这条判据时，先把会话号与 T1 误判两条定位清楚 | 登记；修它属于压测工装与判定质量两笔独立的账 |
 | U11 | **极性守卫门禁的前置不稳定**（2026-10-19 矩阵两次跑分别停在「L2 里没有源条目（写回只落 L1 / 被降级资格拒掉）」与「探针 A `cache=NONE`」；守卫计数器 +0 是因为**根本没命中 L2**，不是守卫没拦） | 本机 local 档（`OLLAMA_MAX_LOADED_MODELS=1`，bge-m3 与 qwen2.5:3b 换入换出）下 L2 写回/读取形态不稳定；未证明是 round33/34 的 L2 分区或平台桶改动导致 | 先在同一 warm 模型状态下复跑 3 次取样；若稳定复现再查 L2 filter 与写回资格。**判据不改、门禁不摘**。2026-11-25 全量矩阵 warm 状态一次通过（`logs/acceptance-run-20261125-041533.log`），仍按间歇保留 |
+| U12 | **本地 3B 的动作工具调用与回读措辞不稳定**（2026-11-26 round61 矩阵：`refund` 首步 `applyRefund` 5 次采样仅 1 次产出 `PENDING_APPROVAL`，其余是「我已为您发起退款申请」的散文；同问句 dev 档 qwen-plus 一次通过。`refund` 第 4 步回读按自由文本匹配「放行 / 支付渠道」，qwen-plus 答「退款处理中（REFUNDING）」即判红） | 本地 `qwen2.5:3b`（4096 ctx，首轮 prompt ≈ 3.3k tokens）能力边界 + 回读断言依赖措辞；与本轮 harness 改动无关（sidecar 固定后 `plan`/`console` 缓存格已绿）。`console` 的退款流断言同源 | 触发 = ① 有人要求 local 档 29 步达到 27/2；② 出现「模型谎报已办理」的对外影响。修法三选一：换更大本地模型 / 给动作意图加「未派发写工具不得声称完成」的收尾检查 / 回读改断 `refundStatus` 字段。**判据不改、门禁不摘**；2026-11-26 所有者裁定待定（票 231 现场追问 1-3） |
 
 ## 四、本清单的纪律
 

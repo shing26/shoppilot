@@ -554,3 +554,29 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   mix80 压测本轮未重跑。
 
 当前 tracker 见 [`.scratch/shoppilot-mvp/README.md`](../.scratch/shoppilot-mvp/README.md)，接手顺序见 [`AGENTS.md`](../AGENTS.md)。
+
+- **round61 / 票 231 验收工装收口（2026-11-26）**：R16–R20 五条工装漂移
+  全部落地（R20 启动器按根 POM 版本精确选 jar；R16 凭证唯一来源
+  `.env` + 进程环境；R19 验收栈合并 `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1`；
+  R17 调试台坐席令牌读 circuit；R18 EMO-ESC-07 归入 `USER_REQUESTED`）。
+  全量矩阵现场又暴露并修掉四处 harness 自身的红：`run-acceptance.ps1` 固定
+  `SHOPPILOT_EMBEDDING_SIDECAR_URL`（`plan`/`console` 中途重启网关后丢失，
+  稠密向量化退回 Ollama 实测 9.5 s 超时 → 检索降级 → 写回拒 → L1 断言假红）、
+  `up.ps1` 在入库前等 biz-mock readiness（原并行顺序在 seed 窗口 exit 1）、
+  `console.html::loadTenants()` 未登录时不打必然 403 的 `/ops/tenants`、
+  `verify-plan-actions.ps1` 重启网关硬编码 `-Profile local`（dev 矩阵回退 3B）。
+  **读数**：`check-ps-syntax` 38/0；`verify-launcher-env` **72/72**
+  （Verifier P1 后补 `ingest.ps1` 精确取包两条）；`plan` 重启透传 `-Profile`
+  （dev 矩阵不再回退 local）；
+  `console` **45/45**；`plan -WithRestarts` 全过；`polarity` 通过；
+  `isolation` **5/5**；冷启动 `up.ps1 -SkipBuild` 全栈 **158 s**（入库 111 块、
+  纪元 14）；最终 29 步矩阵 `logs/acceptance-run-20261126-043649.log`
+  **22 绿 / 4 红 / 3 SKIP**（合并口径 **25 绿 / 4 红**）。四条红：`refund`/
+  `console` 同属本地 3B 的 `applyRefund` 工具调用不稳定（5 次采样 1 次成功；
+  同问句 dev 档 qwen-plus 一次通过，但回读措辞「退款处理中」未命中字面
+  「放行 / 支付渠道」）、`feedback` 隐式信号③、`plansteps` local 3B——后两条
+  为契约内既有红。全量 `mvnw verify` **BUILD SUCCESS**（3:54，878 tests / 144
+  suites 未变）；`gen_status --check` / `verify_doc_truth` / `check_doc_links`
+  通过。**边界**：Java 业务代码 / Vue / `application.yml` / DB / API / gold /
+  阈值 / 覆盖率门槛零改动；`/ops/**` 403 与 SSRF 回环拒绝未放宽；未删除或弱化
+  任何断言。AC6 的 25/4 偏差与三条现场追问留在票面，等所有者裁定。

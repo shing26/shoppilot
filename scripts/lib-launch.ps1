@@ -194,3 +194,50 @@ function Get-ShoppilotMvnFallbackEnvironment {
     $mvnOverrides['MAVEN_OPTS'] = '-Duser.language=en -Duser.country=US'
     return Get-ShoppilotLaunchEnvironment -Root $Root -Overrides $mvnOverrides
 }
+
+# 根 POM 的项目版本：启动器与验收脚本都从这里取，不再按通配符猜 jar 名。
+# 2026-11-25 票 230 的 P1：`target/` 同时有 0.1.0 与 1.1.0 时，未排序的
+# `Get-ChildItem | Select-Object -First 1` 会启动旧包，服务版本与源码不一致。
+function Get-ShoppilotProjectVersion {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $pom = Join-Path $Root 'pom.xml'
+    if (-not (Test-Path -LiteralPath $pom)) { throw "缺少根 pom.xml：$pom" }
+    [xml]$xml = Get-Content -LiteralPath $pom -Raw -Encoding UTF8
+    $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+    $ns.AddNamespace('m', 'http://maven.apache.org/POM/4.0.0')
+    $node = $xml.SelectSingleNode('/m:project/m:version', $ns)
+    if (-not $node -or [string]::IsNullOrWhiteSpace($node.InnerText)) {
+        throw "根 pom.xml 缺少 <version>：$pom"
+    }
+    return $node.InnerText.Trim()
+}
+
+# 精确版本的 fat jar。找不到当前版本就返回 $null，调用方走既有的
+# `mvn spring-boot:run` 回退；绝不返回其它版本的同名 jar。
+function Get-ShoppilotFatJar {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Module,
+        [string]$Version = ''
+    )
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        $Version = Get-ShoppilotProjectVersion -Root $Root
+    }
+    $path = Join-Path (Join-Path (Join-Path $Root $Module) 'target') "$Module-$Version.jar"
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    return Get-Item -LiteralPath $path
+}
+
+# 验收脚本的凭证唯一来源：进程环境（非空）> 仓库 .env。两边都没有就返回 $null，
+# 由调用方明确报缺并退出；不再内置 dev 默认值（票 230 的 R16）。
+function Get-ShoppilotCredential {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if (-not [string]::IsNullOrWhiteSpace($value)) { return $value }
+    $value = (Get-ShoppilotDotEnv -Root $Root)[$Name]
+    if ([string]::IsNullOrWhiteSpace($value)) { return $null }
+    return $value
+}

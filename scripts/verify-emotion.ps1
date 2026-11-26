@@ -1,6 +1,6 @@
 ﻿# 票 36 活体验收：情绪门用例（对应 eval/cases-part4-emotion.jsonl）。
-# 8 条**情绪驱动**的升级 → 必须在 TRIAGE 之前落 EMOTION_ESCALATION 工单（priority=high，队列反查）；
-# 1 条**显式转人工** → 按 ADR 0042 落 USER_REQUESTED（不是 EMOTION_ESCALATION，也不带 high）；
+# 7 条**情绪驱动**的升级 → 必须在 TRIAGE 之前落 EMOTION_ESCALATION 工单（priority=high，队列反查）；
+# 2 条**显式转人工** → 按 ADR 0042 落 USER_REQUESTED（不是 EMOTION_ESCALATION，也不带 high）；
 # 12 条非升级 → 不得出现任何 fallback。词典层用例 0 token（不触发任何模型调用）。
 # 前置：网关起在 dev/local（需 Ollama 或 DashScope 配置）+ biz-mock + 容器栈。
 # 用法：pwsh -NoProfile -File scripts/verify-emotion.ps1
@@ -8,6 +8,13 @@
 $ErrorActionPreference = "Stop"
 $Base = "http://127.0.0.1:8082"
 $Pass = 0; $Fail = 0
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+$root = Split-Path -Parent $PSScriptRoot
+$opsToken = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_OPS_TOKEN'
+if (-not $opsToken) {
+    Write-Host '缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。' -ForegroundColor Red
+    exit 2
+}
 
 function Get-Token([string]$Tenant, [string]$Customer) {
     $body = '{"tenantId":"' + $Tenant + '","customerId":"' + $Customer + '"}'
@@ -33,25 +40,26 @@ function Get-ChatResult([string]$Token, [string]$Query) {
     }
 }
 
-# 8 条**情绪驱动**的升级样本（id, 期望 emotion）；情绪门在 TRIAGE 前定案，落到 priority=high 工单。
+# 7 条**情绪驱动**的升级样本（id, 期望 emotion）；情绪门在 TRIAGE 前定案，落到 priority=high 工单。
 # 2026-09-27（票 54 / ADR 0045）：EMO-ESC-02 移出到下面的 $explicitEscalations，由新增的
 # EMO-ESC-09 补位——所以「8 条」这个计数不变，变的是成员。原 02 的问句含 T0 升级词表里的
 # 「转人工」，ADR 0042 之后它按显式转人工优先，不再走情绪短路。
+# 2026-11-26（round61 票 231 / R18）：EMO-ESC-07 移入显式转人工组——票 163 把「找真人」
+# 纳入 T0 升级词后，这句话按 ADR 0042 合法返回 USER_REQUESTED。用例数不变，仍为 29 条。
 $escalations = @(
     @{ id = "EMO-ESC-01"; emotion = "ANGRY" },
     @{ id = "EMO-ESC-03"; emotion = "ANGRY" },
     @{ id = "EMO-ESC-04"; emotion = "ANGRY" },
     @{ id = "EMO-ESC-05"; emotion = "URGENT" },
     @{ id = "EMO-ESC-06"; emotion = "URGENT" },
-    @{ id = "EMO-ESC-07"; emotion = "ANGRY" },
     @{ id = "EMO-ESC-08"; emotion = "ANGRY" },
     @{ id = "EMO-ESC-09"; emotion = "ANGRY" }
 )
-# 1 条**显式转人工**样本：问句含「转人工」，按 ADR 0042 在 TRIAGE 之前不走情绪短路，放行到
+# 2 条**显式转人工**样本：问句含「转人工」/「找真人」，按 ADR 0042 在 TRIAGE 之前不走情绪短路，放行到
 # triage 由既有 USER_REQUESTED 出口收口。判据两条：reason 必须是 USER_REQUESTED，且工单
 # **不带** high——只有 EMOTION_ESCALATION 才传 high（AgentStateMachine 的 escalate 分支），
 # 所以「带不带 high」正是两类出口的区分点，钉住它才不至于把两者混成"都是升级"。
-$explicitEscalations = @("EMO-ESC-02")
+$explicitEscalations = @("EMO-ESC-02", "EMO-ESC-07")
 # 查询原文与 eval/cases-part4-emotion.jsonl 一一对应（id -> query），拷自该文件
 $queries = @{
     "EMO-ESC-01" = "你们就是骗子！订单SO20260901001拖了半个月不退款，我今天必须拿到说法，不然就去投诉到底"
@@ -116,7 +124,7 @@ foreach ($id in $explicitEscalations) {
 # 于是返回 401「missing bearer token」→ 本脚本 ErrorActionPreference=Stop，**在中止前
 # 下面 8 条 priority 反查与 12 条非升级断言全都没跑**（矩阵里这一步长期只跑到第 9 条）。
 $queue = Invoke-RestMethod -Uri "$Base/api/v1/support/ops/tickets" `
-    -Headers @{ Authorization = "Bearer $token"; "X-Ops-Token" = "dev-ops-token" }
+    -Headers @{ Authorization = "Bearer $token"; "X-Ops-Token" = $opsToken }
 foreach ($id in $ticketIds) {
     $ticket = $queue | Where-Object { $_.id -eq $id } | Select-Object -First 1
     if (-not $ticket) {

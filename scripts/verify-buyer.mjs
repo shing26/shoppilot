@@ -14,6 +14,7 @@
 // 而且 **B 的工单必须真的存在过**——否则「A 的页面没有 B 的单」可能只是因为 B 压根没有单，
 // 那是一条恒成立的断言（同 round23 抓到的「队列空也判过」同族假绿）。
 import { createRequire } from 'node:module';
+import { requireEnv } from './lib-dotenv.mjs';
 const { chromium } = createRequire(import.meta.url)('playwright');
 
 const BASE = process.env.SHOPPILOT_GATEWAY_BASE || 'http://127.0.0.1:8082';
@@ -22,15 +23,9 @@ const BASE = process.env.SHOPPILOT_GATEWAY_BASE || 'http://127.0.0.1:8082';
 const PAGE = `${BASE}/buyer/?store=${encodeURIComponent(process.env.SHOPPILOT_IDENTITY_TENANT || 'T001')}&guest=0`;
 const TENANT = process.env.SHOPPILOT_IDENTITY_TENANT || 'T001';
 const BUYER = process.env.SHOPPILOT_IDENTITY_AGENT || 'buyer';
-const PASSWORD = process.env.SHOPPILOT_IDENTITY_DEMO_PASSWORD;
-
-if (!PASSWORD) {
-  console.error(
-    '缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：买家端用账号登录，' +
-      '演示账号的口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。',
-  );
-  process.exit(2);
-}
+const PASSWORD = requireEnv('SHOPPILOT_IDENTITY_DEMO_PASSWORD',
+  '缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：买家端用账号登录，'
+    + '演示账号的口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。');
 
 const results = [];
 const check = (name, ok, detail = '') => {

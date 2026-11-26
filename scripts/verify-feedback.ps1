@@ -6,6 +6,13 @@
 $ErrorActionPreference = "Stop"
 $Base = "http://127.0.0.1:8082"
 $Pass = 0; $Fail = 0
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+$root = Split-Path -Parent $PSScriptRoot
+$opsToken = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_OPS_TOKEN'
+if (-not $opsToken) {
+    Write-Host '缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。' -ForegroundColor Red
+    exit 2
+}
 
 function Get-Token([string]$Tenant, [string]$Customer) {
     $body = '{"tenantId":"' + $Tenant + '","customerId":"' + $Customer + '"}'
@@ -81,7 +88,7 @@ if ($fb.reviewQueued -and $fb.ruleIds.Count -gt 0) {
 
 # 队列可见：经运维代理按租户读复核队列，必须包含这条点踩
 $queue = Invoke-RestMethod -Uri "$Base/api/v1/support/ops/feedback/review-queue" `
-    -Headers @{ Authorization = "Bearer $token"; "X-Ops-Token" = "dev-ops-token" }
+    -Headers @{ Authorization = "Bearer $token"; "X-Ops-Token" = $opsToken }
 $found = $false
 foreach ($row in $queue) {
     if ($row.id -eq $fb.feedbackId) {
@@ -137,7 +144,7 @@ if ($repeatAfter -gt $repeatBefore) {
 #   ② **幂等键要按本次进程取**。结果按 token 存 Redis，写死 token 会让**下一次跑脚本的第一次请求**
 #      一开始就是重放，断言可能假绿。同时写操作会改订单状态，跑前把演示固定单复位（与 run_tool_eval 同例）。
 Invoke-RestMethod -Uri "$Base/api/v1/support/ops/demo/reset" -Method Post `
-    -Headers @{ Authorization = "Bearer $token"; "X-Ops-Token" = "dev-ops-token" } `
+    -Headers @{ Authorization = "Bearer $token"; "X-Ops-Token" = $opsToken } `
     -ContentType "application/json" -Body '{}' | Out-Null
 $refundToken = Get-Token -Tenant "T001" -Customer "C001"
 $retryBefore = Get-Implied "implied_retry"

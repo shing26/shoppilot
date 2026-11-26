@@ -36,8 +36,8 @@ if ($Profile) {
     if ($profileMode) { $overrides['SHOPPILOT_LLM_MODE'] = $profileMode }
 }
 $envVars = Get-ShoppilotLaunchEnvironment -Root $root -Overrides $overrides
-$jar = Get-ChildItem (Join-Path $root "shoppilot-gateway\target") -Filter "shoppilot-gateway-*.jar" `
-    -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "sources|original" } | Select-Object -First 1
+$version = Get-ShoppilotProjectVersion -Root $root
+$jar = Get-ShoppilotFatJar -Root $root -Module 'shoppilot-gateway' -Version $version
 
 if ($jar) {
     $argsList = @("-XX:MaxRAMPercentage=$MaxRamPercentage", "-Dfile.encoding=UTF-8",
@@ -45,7 +45,7 @@ if ($jar) {
     $cmdPid = Start-ShoppilotService -Name "gateway-$fileSuffix" -WorkingDirectory $root `
         -FilePath $java -ArgumentList $argsList -StandardOutput $out -Environment $envVars
 } else {
-    Write-Host "未找到 fat jar，退回 mvn spring-boot:run；先跑 mvnw -pl shoppilot-gateway package 可获得更稳的启动路径"
+    Write-Host "未找到 shoppilot-gateway-$version.jar（不选其它版本），退回 mvn spring-boot:run；先跑 mvnw -pl shoppilot-gateway package 可获得更稳的启动路径"
     $env:JAVA_HOME = $jdk
     $env:MAVEN_OPTS = "-Duser.language=en -Duser.country=US"
     # mvn 回退路径同样走 WMI：JDK 两格必须进合并环境（票 229）。

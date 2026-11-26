@@ -7,13 +7,20 @@ param(
     [string]$BaseUrl = 'http://127.0.0.1:8082',
     [string]$Tenant = 'T001',
     [string]$Customer = 'C001',
-    [string]$OpsToken = 'dev-ops-token'
+    [string]$OpsToken = ''
 )
 $ErrorActionPreference = 'Stop'
 # 第 8 步用到 pwsh 7 才有的 -SkipHttpErrorCheck（429 也要能读到响应体）。
 # 用 Windows PowerShell 5.1 跑会在参数上直接炸，所以先把话说清楚。
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Host 'requires PowerShell 7+: pwsh -NoProfile -File scripts/verify-fallback.ps1'
+    exit 2
+}
+. (Join-Path $PSScriptRoot 'lib-launch.ps1')
+$root = Split-Path -Parent $PSScriptRoot
+if (-not $OpsToken) { $OpsToken = Get-ShoppilotCredential -Root $root -Name 'SHOPPILOT_OPS_TOKEN' }
+if (-not $OpsToken) {
+    Write-Host '缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。' -ForegroundColor Red
     exit 2
 }
 $script:Results = @()

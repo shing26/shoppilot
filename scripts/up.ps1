@@ -149,10 +149,10 @@ if (-not $SkipBuild) {
     & (Join-Path $root 'scripts\stop.ps1') -Ports '8082,8091,8092' | Out-Null
 }
 function Find-FatJars {
+    $version = Get-ShoppilotProjectVersion -Root $root
     @('shoppilot-gateway', 'shoppilot-biz-mock', 'shoppilot-ticket') | ForEach-Object {
-        Get-ChildItem (Join-Path $root "$_\target") -Filter ($_ + '-*.jar') -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -notmatch 'sources|original' } | Select-Object -First 1
-    }
+        Get-ShoppilotFatJar -Root $root -Module $_ -Version $version
+    } | Where-Object { $_ }
 }
 $jars = Find-FatJars
 if ($SkipBuild -and $jars.Count -eq 3) {
@@ -174,12 +174,19 @@ if ($SkipBuild -and $jars.Count -eq 3) {
 $built = Find-FatJars
 if ($built.Count -lt 3) {
     $have = @($built | ForEach-Object { $_.Directory.Parent.Name })
-    $missing = @('shoppilot-gateway', 'shoppilot-biz-mock') | Where-Object { $_ -notin $have }
+    $missing = @('shoppilot-gateway', 'shoppilot-biz-mock', 'shoppilot-ticket') |
+        Where-Object { $_ -notin $have }
     throw ("构建没有产出 fat jar（缺：{0}）。这台机器上多半是内存不够把 Maven 的 JVM 打断了；" -f ($missing -join ', ')) + '重跑 scripts/up.ps1 即可（每一步都可重入）。'
 }
 
-Write-Host '[4/7] 业务 Mock 中台（seed 5 万订单，与入库并行）' -ForegroundColor Cyan
+Write-Host '[4/7] 业务 Mock 中台（seed 5 万订单）' -ForegroundColor Cyan
 & (Join-Path $root 'scripts\start-bizmock.ps1') | Out-Null
+# 票 231 现场回归：start-bizmock.ps1 只负责拉起进程，不等种子跑完。入库要经 8091
+# 拉人工核准的知识修订（ADR 0078），紧跟着跑会在 seed 窗口里直接 exit 1。
+# 这里等 readiness=UP 再入库；总耗时比并行多一轮 seed（本机约 35 s），换来可复跑。
+if (-not (Wait-For { (Invoke-RestMethod 'http://127.0.0.1:8091/actuator/health/readiness' -TimeoutSec 5).status -eq 'UP' } 'biz-mock :8091' 300)) {
+    throw 'biz-mock 未就绪，看 logs\bizmock.out'
+}
 
 if (-not $SkipIngest) {
     Write-Host '[5/7] 政策知识库入库（幂等，重跑条目数不增长）' -ForegroundColor Cyan

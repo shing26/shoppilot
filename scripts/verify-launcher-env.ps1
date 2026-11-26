@@ -102,7 +102,103 @@ try {
             $fallbackText = $text.Substring($fallbackAt)
             Check "$script 的回退分支不再手写下标覆盖" ($fallbackText -notmatch '\$overrides\[') ''
         }
+        Check "$script 按根 POM 版本精确取 jar" `
+            ($text -match 'Get-ShoppilotFatJar\s+-Root\s+\$root') ''
+        Check "$script 不再按通配符取 jar" `
+            ($text -notmatch 'shoppilot-[A-Za-z-]+-\*\.jar') ''
     }
+
+    $upText = Get-Content (Join-Path $PSScriptRoot 'up.ps1') -Raw
+    Check 'up.ps1::Find-FatJars 使用精确版本 jar' `
+        ($upText -match 'Get-ShoppilotFatJar\s+-Root\s+\$root') ''
+    Check 'up.ps1 不再按通配符取 jar' `
+        ($upText -notmatch "Get-ChildItem .*-Filter \(\$_ \+ '-\*\.jar'\)") ''
+
+    $ingestText = Get-Content (Join-Path $PSScriptRoot 'ingest.ps1') -Raw
+    Check 'ingest.ps1 按根 POM 版本精确取 jar' `
+        ($ingestText -match 'Get-ShoppilotFatJar\s+-Root\s+\$root') ''
+    Check 'ingest.ps1 不再按通配符取 jar' `
+        ($ingestText -notmatch 'shoppilot-gateway-\*\.jar') ''
+
+    # 票 231 / R20 的受控反证：同一目录里同时放旧版本与当前版本，只选当前版本；
+    # 当前版本缺失时返回 $null，让启动器走 mvn 回退，而不是抓起旧包。
+    $jarRoot = Join-Path $tempRoot 'jar-probe'
+    $jarTarget = Join-Path $jarRoot 'probe-mod\target'
+    New-Item -ItemType Directory -Force -Path $jarTarget | Out-Null
+    @'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.shoppilot</groupId>
+  <artifactId>probe</artifactId>
+  <version>1.2.3</version>
+</project>
+'@ | Set-Content -Path (Join-Path $jarRoot 'pom.xml') -Encoding utf8
+    Set-Content -Path (Join-Path $jarTarget 'probe-mod-1.2.3.jar') -Value 'current' -Encoding ascii
+    Set-Content -Path (Join-Path $jarTarget 'probe-mod-0.9.0.jar') -Value 'old' -Encoding ascii
+    Check '根 POM 版本被正确解析' `
+        ((Get-ShoppilotProjectVersion -Root $jarRoot) -eq '1.2.3') ''
+    $picked = Get-ShoppilotFatJar -Root $jarRoot -Module 'probe-mod'
+    Check '旧版本并存时只选当前版本 jar' `
+        ($null -ne $picked -and $picked.Name -eq 'probe-mod-1.2.3.jar') `
+        "got=$(if ($picked) { $picked.Name } else { '<null>' })"
+    Remove-Item -LiteralPath (Join-Path $jarTarget 'probe-mod-1.2.3.jar') -Force
+    $missingJar = Get-ShoppilotFatJar -Root $jarRoot -Module 'probe-mod'
+    Check '当前版本缺失时返回 $null（不选旧包）' ($null -eq $missingJar) `
+        "got=$(if ($missingJar) { $missingJar.Name } else { '<null>' })"
+
+    # 票 231 / R16：凭证唯一来源 = 进程环境（非空）> .env；两边都缺返回 $null。
+    $savedOps = [Environment]::GetEnvironmentVariable('SHOPPILOT_OPS_TOKEN')
+    try {
+        [Environment]::SetEnvironmentVariable('SHOPPILOT_OPS_TOKEN', '', 'Process')
+        Check '凭证：进程环境覆盖 .env' `
+            ((Get-ShoppilotCredential -Root $tempRoot -Name 'SHOPPILOT_INTERNAL_TOKEN') -eq 'from-process') ''
+        Check '凭证：进程环境为空时回落到 .env' `
+            ((Get-ShoppilotCredential -Root $tempRoot -Name 'SHOPPILOT_IDENTITY_DEMO_PASSWORD') -eq 'dotenv-password') ''
+        Check '凭证：两处都缺时返回 $null' `
+            ($null -eq (Get-ShoppilotCredential -Root $tempRoot -Name 'SHOPPILOT_OPS_TOKEN')) ''
+    } finally {
+        [Environment]::SetEnvironmentVariable('SHOPPILOT_OPS_TOKEN', $savedOps, 'Process')
+    }
+
+    # 验收工装不再内置 dev 凭证默认值。
+    foreach ($script in @('demo.ps1', 'verify-plan-actions.ps1', 'verify-action-loop.ps1',
+            'verify-fallback.ps1', 'verify-polarity.ps1', 'verify-idempotency.ps1',
+            'verify-refund-approval.ps1', 'verify-emotion.ps1', 'verify-feedback.ps1',
+            'verify-channel.ps1', 'verify-hit-zero-llm.ps1')) {
+        $text = Get-Content (Join-Path $PSScriptRoot $script) -Raw
+        Check "$script 不再内置 dev ops token" ($text -notmatch "'dev-ops-token'") ''
+        Check "$script 不再内置 dev internal token" `
+            ($text -notmatch "'dev-internal-token-change-me'") ''
+    }
+    foreach ($script in @('verify_l2_filters.py', 'run_tool_eval.py')) {
+        $text = Get-Content (Join-Path $PSScriptRoot $script) -Raw
+        Check "$script 不再内置 dev ops token" ($text -notmatch '"dev-ops-token"') ''
+    }
+    foreach ($script in @('verify-console.mjs', 'verify-workspace.mjs',
+            'verify-outbound.mjs', 'verify-buyer.mjs')) {
+        $text = Get-Content (Join-Path $PSScriptRoot $script) -Raw
+        Check "$script 不再内置 dev ops token" ($text -notmatch "'dev-ops-token'") ''
+        Check "$script 不再内置 dev internal token" `
+            ($text -notmatch "'dev-internal-token-change-me'") ''
+    }
+
+    # 票 231 / R19：allowlist 只进验收 harness 的启动环境。
+    $acceptanceText = Get-Content (Join-Path $PSScriptRoot 'run-acceptance.ps1') -Raw
+    Check 'run-acceptance 为验收栈声明回环 allowlist' `
+        ($acceptanceText -match 'SHOPPILOT_OUTBOUND_ALLOWLIST[\s\S]{0,200}127\.0\.0\.1') ''
+
+    # 票 231 / R17：调试台 circuit 优先用坐席令牌，/ops/** 契约不变。
+    $consolePath = Join-Path $RepoRoot 'shoppilot-gateway\src\main\resources\static\console.html'
+    $consoleText = Get-Content -LiteralPath $consolePath -Raw
+    Check '调试台 circuit 用坐席令牌读取' `
+        ($consoleText -match "/ops/circuit', null, true, state\.staffToken") ''
+
+    # 票 231 / R18：EMO-ESC-07 与 ADR 0042 对齐，条目仍在。
+    $emotionCase = Select-String -Path (Join-Path $RepoRoot 'eval\cases-part4-emotion.jsonl') `
+        -Pattern '"id": "EMO-ESC-07"' | Select-Object -First 1
+    Check 'EMO-ESC-07 期望 USER_REQUESTED' `
+        ($null -ne $emotionCase -and $emotionCase.Line -match '"reason": "USER_REQUESTED"') ''
 } finally {
     foreach ($key in @('SHOPPILOT_INTERNAL_TOKEN', 'SHOPPILOT_EMBEDDING_SIDECAR_URL',
             'SHOPPILOT_IDENTITY_DEMO_PASSWORD', 'AWS_SECRET_ACCESS_KEY', 'GITHUB_TOKEN', 'OPENAI_API_KEY')) {

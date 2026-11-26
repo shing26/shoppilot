@@ -3,26 +3,25 @@
 // 用 createRequire 而不是静态 import：ESM 解析不吃 NODE_PATH，而 Playwright 装在 .tools 下，
 // 不为一个验收脚本给项目拉一份 package.json。
 import { createRequire } from 'node:module';
+import { envValue, requireEnv } from './lib-dotenv.mjs';
 const { chromium } = createRequire(import.meta.url)('playwright');
 
 const BASE = process.env.SHOPPILOT_CONSOLE_BASE || 'http://127.0.0.1:8082';
 // 票 21（ADR 0029）起页面不再预填运维令牌：凭证不该出现在网关下发的静态资源里。
 // 本脚本按各 verify-*.ps1 的 $OpsToken 家法自带这个值，代人在输入框里敲一次。
 // 15 条断言一字未改，改的只是「谁来提供凭证」这一步前置。
-const OPS_TOKEN = process.env.SHOPPILOT_OPS_TOKEN || 'dev-ops-token';
+const OPS_TOKEN = requireEnv('SHOPPILOT_OPS_TOKEN',
+  '缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。');
 // 退款面板的读面是 staff-only（B3 / ADR 0063）：调试台要读队列必须先用坐席账号登录
 // （2026-10-18 / R9）。口令按工作台与买家端门禁同一家法从环境读、缺则 exit 2——
 // 仓库里不放默认口令（ADR 0056）。
-const DEMO_PASSWORD = process.env.SHOPPILOT_IDENTITY_DEMO_PASSWORD;
-if (!DEMO_PASSWORD) {
-  console.error('缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：退款面板走坐席账号登录才能读队列，'
+const DEMO_PASSWORD = requireEnv('SHOPPILOT_IDENTITY_DEMO_PASSWORD',
+  '缺少 SHOPPILOT_IDENTITY_DEMO_PASSWORD：退款面板走坐席账号登录才能读队列，'
     + '演示口令不进仓库（ADR 0056）。请在 .env / 容器档 .env 里给一个再跑。');
-  process.exit(2);
-}
 // 造一笔待审核退款的确定性回退路径（模型不可用时用）：直连 biz-mock 的工具边界，带内部令牌。
 // 不给就退回到「只靠模型造数据」的旧形态——那条路在 3B 抖动或显存被占时会整段红，
 // 而这一段门禁要量的是**面板**，不是模型肯不肯发工具调用。
-const INTERNAL_TOKEN = process.env.SHOPPILOT_INTERNAL_TOKEN || '';
+const INTERNAL_TOKEN = envValue('SHOPPILOT_INTERNAL_TOKEN');
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });

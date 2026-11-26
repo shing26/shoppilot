@@ -39,6 +39,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from envfile import env_value
+
 REPO = Path(__file__).resolve().parent.parent
 CASES = REPO / "eval" / "tool-cases.jsonl"
 RESULTS = REPO / "eval" / "results"
@@ -551,7 +553,7 @@ def main() -> int:
     parser.add_argument("--concurrency", type=int, default=2)
     parser.add_argument("--dry-run", action="store_true", help="只打印预估与口径，不发请求")
     parser.add_argument("--force", action="store_true", help="跳过预算熔断预检")
-    parser.add_argument("--ops-token", default=os.environ.get("SHOPPILOT_OPS_TOKEN", "dev-ops-token"))
+    parser.add_argument("--ops-token", default=env_value("SHOPPILOT_OPS_TOKEN"))
     parser.add_argument("--tag", default="", help="输出文件名后缀，区分同模式不同端点（如 dev-localcompat）")
     parser.add_argument("--selfcheck", action="store_true",
                         help="只跑量具夹具就退出：不发任何请求，供人当场复核评分器")
@@ -621,6 +623,11 @@ def main() -> int:
             return 2
         print(f"AUTONOMY SELFCHECK ok={autonomy_fixtures}")
         return eval_autonomy.run(args, sys.modules[__name__])
+
+    if not args.ops_token:
+        print("缺少 SHOPPILOT_OPS_TOKEN：gold / dry-run 路径要读 circuit。"
+              "请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。", file=sys.stderr)
+        return 2
 
     cases = [json.loads(line) for line in CASES.read_text(encoding="utf-8").splitlines() if line.strip()]
     if args.only_intent:

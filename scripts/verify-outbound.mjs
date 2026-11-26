@@ -3,8 +3,13 @@
 // 用法: node scripts/verify-outbound.mjs
 //   环境变量：
 //     SHOPPILOT_GATEWAY_BASE   默认 http://127.0.0.1:8082
-//     SHOPPILOT_OPS_TOKEN      默认 dev-ops-token（运维面凭证；坐席账号那条线见下）
+//     SHOPPILOT_OPS_TOKEN      必给：从进程环境或 .env 读（不再内置 dev 默认值）
 //     SHOPPILOT_IDENTITY_TENANT / _AGENT / _DEMO_PASSWORD   可选：给了就用真账号登录
+//
+// 网关侧必须允许本机回环，否则 EgressPolicy 会按 SSRF 防护拒绝回声端点。正式入口
+// `run-acceptance.ps1` 会在启动验收栈时合并
+// `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1`；单独跑本脚本时请用同样方式启动网关，
+// 不要把这项写进生产默认值。
 //
 // **本轮（2026-10-04）未实跑**：要起四服务栈（≈6.6 GB）而本机只剩约 1.9 GB（裁定 A）。
 // 脚本已写好并通过 `node --check`；实跑读数按**未达成登记**，不许声称「已验证」。
@@ -16,9 +21,11 @@
 // **门禁自己造那张工单**，不依赖前一步的残留（round23 票 73 的同款纪律）：
 // 工单服务的库是内存库，任何一次重启都会清空，靠别处留下就等于在别的顺序下变成假绿。
 import http from 'node:http';
+import { requireEnv } from './lib-dotenv.mjs';
 
 const BASE = process.env.SHOPPILOT_GATEWAY_BASE || 'http://127.0.0.1:8082';
-const OPS_TOKEN = process.env.SHOPPILOT_OPS_TOKEN || 'dev-ops-token';
+const OPS_TOKEN = requireEnv('SHOPPILOT_OPS_TOKEN',
+  '缺少 SHOPPILOT_OPS_TOKEN：请在 .env 里给一个（python scripts/bootstrap_env.py）再跑。');
 const TENANT = process.env.SHOPPILOT_IDENTITY_TENANT || 'T001';
 
 const results = [];
@@ -160,4 +167,8 @@ await new Promise((resolve) => echo.close(resolve));
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n结果回流断言 ${results.length - failed.length}/${results.length} 通过`);
+if (failed.length && !(process.env.SHOPPILOT_OUTBOUND_ALLOWLIST || '').includes('127.0.0.1')) {
+  console.log('提示：若网关日志出现「回环/私网/链路本地」，请用 '
+    + 'SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1 启动验收栈（run-acceptance.ps1 已自动处理）。');
+}
 process.exit(failed.length === 0 ? 0 : 1);
