@@ -1,5 +1,6 @@
 package com.shoppilot.gateway.agent;
 
+import com.shoppilot.tool.ToolName;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -63,6 +64,11 @@ class WriteClaimGuardTest {
         assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已全额退款"));
         assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已为您优先处理"));
         assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("操作成功"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("退款处理完成"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("退款办理完成"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("退款处理成功"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("退款申请成功"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("退款完成"));
     }
 
     @Test
@@ -79,6 +85,12 @@ class WriteClaimGuardTest {
                 WriteClaimGuard.classify("请提供订单号，我这就为您提交退款申请"));
         assertEquals(WriteClaimGuard.Verdict.ASK,
                 WriteClaimGuard.classify("请提供订单号，我将为您发起退款申请"));
+        assertEquals(WriteClaimGuard.Verdict.ASK, WriteClaimGuard.classify("订单已提交了吗？"));
+        assertEquals(WriteClaimGuard.Verdict.ASK, WriteClaimGuard.classify("已退款了吗？"));
+        assertEquals(true, WriteClaimGuard.isSpuriousAsk("订单 90001 我要申请退款", ToolName.APPLY_REFUND));
+        assertEquals(false, WriteClaimGuard.isSpuriousAsk("我要申请退款", ToolName.APPLY_REFUND));
+        assertEquals(false,
+                WriteClaimGuard.isSpuriousAsk("订单 90001 改地址", ToolName.MODIFY_DELIVERY_ADDRESS));
     }
 
     @Test
@@ -103,6 +115,12 @@ class WriteClaimGuardTest {
                 WriteClaimGuard.classify("如果退款成功，系统会通知您"));
         assertEquals(WriteClaimGuard.Verdict.NONE,
                 WriteClaimGuard.classify("如果已为您退款，请查收"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("已提交的退款申请会尽快处理"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("已办理退款的订单不能重复申请"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("订单已提交的话，请耐心等待"));
         assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify(null));
         assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify("   "));
     }

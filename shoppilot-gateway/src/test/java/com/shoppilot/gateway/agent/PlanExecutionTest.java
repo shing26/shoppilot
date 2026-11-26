@@ -299,15 +299,16 @@ class PlanExecutionTest {
     }
 
     @Test
-    @DisplayName("票233 AC2：纠偏后改为追问缺失参数 → 原样返回，不降级、不落工单")
+    @DisplayName("票233 AC2：缺参追问原样返回；订单号已给出仍追问 → 降级")
     void missingParameterQuestionAfterNudgeIsAllowed() {
         when(llm.complete(any())).thenReturn(
-                LlmTypes.Reply.text("我这就为您提交退款申请"),
-                LlmTypes.Reply.text("请提供订单号，我需要核实后为您处理"));
+                LlmTypes.Reply.text("我这就为您提交修改"),
+                LlmTypes.Reply.text("请提供新的收货地址，我需要确认后为您修改"));
 
-        AgentResult result = machine().run("订单90001我要申请退款", null, EventSink.NOOP);
+        AgentResult result = machine(Domain.ECOMMERCE, Intent.ACTION_ADDRESS)
+                .run("订单90001修改收货地址，收件人张三，手机13800138000", null, EventSink.NOOP);
 
-        assertEquals("请提供订单号，我需要核实后为您处理", result.answer());
+        assertEquals("请提供新的收货地址，我需要确认后为您修改", result.answer());
         assertNull(result.fallbackReason());
         assertFalse(result.degraded());
         assertNull(result.ticketId());
@@ -315,6 +316,23 @@ class PlanExecutionTest {
         assertFalse(result.trace().stream().anyMatch(step -> step.detail() != null
                 && step.detail().startsWith("write-claim-blocked")));
         verify(fallback, never()).escalate(any(FallbackReason.class), anyString(), anyString());
+
+        when(fallback.escalate(any(FallbackReason.class), anyString(), anyString()))
+                .thenReturn(Optional.of("T-233-ASK"));
+        when(llm.complete(any())).thenReturn(
+                LlmTypes.Reply.text("我这就为您提交退款申请"),
+                LlmTypes.Reply.text("请提供订单号，我需要核实后为您处理"));
+
+        AgentResult spurious = machine().run("订单90001我要申请退款", null, EventSink.NOOP);
+
+        assertEquals(FallbackReason.TOOL_ROUNDS_EXHAUSTED, spurious.fallbackReason());
+        assertTrue(spurious.degraded(), "订单号已给出仍追问，必须降级而不是继续空转");
+        assertEquals("T-233-ASK", spurious.ticketId());
+        assertEquals(2.0d, nudgeCounter(), "两次写意图各纠偏一次");
+        assertTrue(spurious.trace().stream().anyMatch(step -> step.detail() != null
+                        && "write-claim-blocked write-pending=applyRefund ask=spurious".equals(step.detail())),
+                "必须留下 spurious ask 的取证行");
+        verify(bizMock, never()).call(any(), anyMap(), any());
     }
 
     @Test
