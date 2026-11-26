@@ -121,14 +121,9 @@ final class PlanExecuteHandler {
                     // 票 233：纠偏后仍然不派发写工具。追问缺失参数是合法的；但正文若在
                     // 声称“已办理 / 正在办理”，不能让买家拿到一句没有业务事实的完成声明。
                     // expectedWriteDone 仍是唯一“办成了”的判据，这里只是拦住冒充完成的正文。
-                    if (WriteClaimGuard.classify(lastReply.content()) == WriteClaimGuard.Verdict.CLAIM) {
-                        services.toolRoundExhaustedCounter.increment();
-                        TurnServices.step(trace, sink, AgentState.PLAN,
-                                "write-claim-blocked write-pending=" + expectedWrite.apiName());
-                        return ToolLoopResult.terminal(services.fallback(AgentState.TOOL_EXEC, trace, sink,
-                                FallbackReason.TOOL_ROUNDS_EXHAUSTED, query,
-                                "纠偏后仍未派发写工具，但正文声称已办理 " + expectedWrite.apiName(),
-                                ctx.styleTier(), usage));
+                    ToolLoopResult blocked = blockWriteClaim(ctx, expectedWrite, lastReply.content());
+                    if (blocked != null) {
+                        return blocked;
                     }
                     break;
                 }
@@ -382,7 +377,36 @@ final class PlanExecuteHandler {
                     FallbackReason.TOOL_UNAVAILABLE, query, "读工具失败后模型直接作答、没有成功重试",
                     ctx.styleTier(), usage));
         }
+        // 票 233 补充：模型可能先调读工具、文本落在一轮工具上限的出口；这条路径
+        // 不经过上面的 nudged 分支，必须再兜一次，否则「没派发写工具却声称已办理」
+        // 仍会从轮次耗尽处漏出去。
+        if (expectedWrite != null && !expectedWriteDone && lastReply != null && !lastReply.wantsTool()) {
+            ToolLoopResult blocked = blockWriteClaim(ctx, expectedWrite, lastReply.content());
+            if (blocked != null) {
+                return blocked;
+            }
+        }
         return ToolLoopResult.ok(messages, lastReply, toolUsed, planSteps, answeredByBudgetCheck, rounds);
+    }
+
+    private ToolLoopResult blockWriteClaim(TurnContext ctx, ToolName expectedWrite, String content) {
+        WriteClaimGuard.Verdict verdict = WriteClaimGuard.classify(content);
+        boolean spuriousAsk = verdict == WriteClaimGuard.Verdict.ASK
+                && WriteClaimGuard.isSpuriousAsk(ctx.query(), expectedWrite);
+        if (verdict != WriteClaimGuard.Verdict.CLAIM && !spuriousAsk) {
+            return null;
+        }
+        services.toolRoundExhaustedCounter.increment();
+        TurnServices.step(ctx.trace(), ctx.sink(), AgentState.PLAN,
+                "write-claim-blocked write-pending=" + expectedWrite.apiName()
+                        + (spuriousAsk ? " ask=spurious" : ""));
+        return ToolLoopResult.terminal(services.fallback(AgentState.TOOL_EXEC, ctx.trace(), ctx.sink(),
+                FallbackReason.TOOL_ROUNDS_EXHAUSTED, ctx.query(),
+                (spuriousAsk
+                        ? "纠偏后仍未派发写工具，且订单号已给出仍继续追问 "
+                        : "纠偏后仍未派发写工具，但正文声称已办理 ")
+                        + expectedWrite.apiName(),
+                ctx.styleTier(), ctx.usage()));
     }
 
     /**

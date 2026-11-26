@@ -3,6 +3,8 @@ package com.shoppilot.gateway.agent;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import com.shoppilot.tool.ToolName;
+
 /**
  * 票 233：写意图在文字纠偏后仍未派发写工具时，判断模型正文是在追问缺失参数、
  * 如实拒绝，还是在冒充“已经办成 / 马上办成”。
@@ -117,9 +119,22 @@ final class WriteClaimGuard {
             "已经在处理", "退款正在", "正在处理中", "已转人工", "已转接人工",
             "已退款", "已完成退款", "已完成", "已取消", "已处理完毕",
             "已为您全额退款", "已为您原路退回", "已为您加急处理",
-            "已提交", "已办理", "已处理", "已申请", "已发起",
             "已办好", "已退回", "已全额退款", "已加急处理", "已优先处理",
-            "已为您优先处理", "已为您催促", "已为您反馈", "操作成功", "已操作"
+            "已为您优先处理", "已为您催促", "已为您反馈", "操作成功", "已操作",
+            "退款处理完成", "退款办理完成", "退款处理成功", "退款申请成功", "退款完成"
+    );
+
+    /**
+     * 裸动作词（「已提交」「已办理」）只有在句末或后接非动作宾语时才算完成声明。
+     * 「已提交退款」「已办理退款的订单」由更长的短语或定语规则处理，裸词不能先命中。
+     */
+    private static final List<String> BARE_COMPLETIONS = List.of(
+            "已提交", "已办理", "已处理", "已申请", "已发起"
+    );
+
+    private static final List<String> BARE_OBJECT_PREFIXES = List.of(
+            "退款", "申请", "提交", "办理", "处理", "取消", "修改", "更改",
+            "安排", "转接", "操作", "催促", "反馈", "优先"
     );
 
     /**
@@ -137,6 +152,8 @@ final class WriteClaimGuard {
     private static final Pattern NEGATED_BEFORE = Pattern.compile(
             "(尚未|还没有|还没|并未|没有|未曾|无法|不能|不支持|办不了|做不到|未|没)"
                     + "[^，。；！？,.;!?]{0,4}$");
+
+    private static final Pattern ORDER_NO = Pattern.compile("\\d{5,}");
 
     private WriteClaimGuard() {
     }
@@ -170,7 +187,26 @@ final class WriteClaimGuard {
     }
 
     private static boolean hasCompletedClaim(String text) {
-        return hasMarker(text, COMPLETED_PHRASES) || hasPrefixVerb(text, COMPLETED_PREFIXES);
+        return hasMarker(text, COMPLETED_PHRASES)
+                || hasBareCompletion(text)
+                || hasPrefixVerb(text, COMPLETED_PREFIXES);
+    }
+
+    private static boolean hasBareCompletion(String text) {
+        for (String marker : BARE_COMPLETIONS) {
+            int from = 0;
+            int index;
+            while ((index = text.indexOf(marker, from)) >= 0) {
+                if (!negated(text, index) && !conditionalCompletion(text, index, marker)) {
+                    String after = text.substring(index + marker.length());
+                    if (BARE_OBJECT_PREFIXES.stream().noneMatch(after::startsWith)) {
+                        return true;
+                    }
+                }
+                from = index + 1;
+            }
+        }
+        return false;
     }
 
     private static boolean hasPromiseClaim(String text) {
@@ -247,13 +283,28 @@ final class WriteClaimGuard {
                 || before.contains("只要") || before.contains("假如") || before.contains("要是")) {
             return true;
         }
-        if (!marker.endsWith("成功")) {
-            return false;
-        }
         String after = text.substring(index + marker.length());
-        return after.startsWith("后") || after.startsWith("之后")
-                || after.startsWith("的话") || after.startsWith("即可")
-                || after.startsWith("才能");
+        if (after.startsWith("的") || after.startsWith("了吗") || after.startsWith("了么")
+                || after.startsWith("吗") || after.startsWith("？") || after.startsWith("?")
+                || after.startsWith("的话")) {
+            return true;
+        }
+        if (marker.endsWith("成功") || marker.endsWith("完成")) {
+            return after.startsWith("后") || after.startsWith("之后")
+                    || after.startsWith("即可") || after.startsWith("才能");
+        }
+        return false;
+    }
+
+    /**
+     * 票 233：固定退款问句已经带订单号时，再追问订单号/收件人不是“缺失参数”，
+     * 而是没有派发写工具。只对 `applyRefund` 生效（它唯一必填参数是 orderNo）；
+     * 地址修改等其它写工具仍允许合理的补参追问。
+     */
+    static boolean isSpuriousAsk(String query, ToolName tool) {
+        return tool == ToolName.APPLY_REFUND
+                && query != null
+                && ORDER_NO.matcher(query).find();
     }
 
     private static boolean containsAny(String text, List<String> markers) {
