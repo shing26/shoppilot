@@ -126,6 +126,37 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full
    模型换一种正确措辞就红。是否改为断订单视图的 `refundStatus` + 到账边界
    字段（需要 add-only 响应面），还是保留文本匹配并接受模型方差？
 
+**Owner ruling（2026-11-27）**
+
+- **AC6-local：接受 25/4**。`refund` / `console` 登记为 U12 既有模型方差
+  （本地 3B 的 `applyRefund` 5 次采样 1 次成功；qwen-plus 一次通过），
+  `feedback` / `plansteps` 为契约内既有红；**不把红写成 PASS**。
+- **AC6-dev：追加 `-Profile dev`（qwen-plus）29 步读数**作为第二证据。
+  云 token 已授权；本次只在验收进程环境把日预算临时提到 600000，不改 `.env`、
+  不改 `application.yml` 默认值，判据与本机 local 档逐字相同。
+- **后续票**：另开一张产品行为票，处理「动作意图未派发写工具却声称已办理」
+  的收尾检查（ADR 0008；触及 `AgentStateMachine`，不在本票实现）。
+  实际开票为 **233**（原拟 232，与并发任务 `232-commerce-kernel-promotion`
+  冲突），契约 [`plans/233`](../../plans/233-write-claim-guard.md)，
+  Blocked by 本票。
+
+**dev 矩阵追加读数（2026-11-27）**
+
+- 首轮 `-Profile dev`：`logs/acceptance-run-20261127-034838.log`，
+  22 绿 / 4 红 / 3 SKIP，红为 `plan` / `refund` / `feedback` / `plansteps`。
+  **但这一轮不作数**：`verify-plan-actions.ps1` 重启网关时硬编码
+  `-Profile local`，plan 步之后所有步骤（含 `console` 45/45、`eval`
+  `mode=local`）实际跑在 3B 上。这是本票抓到的第 6 处工装缺陷，已修
+  （`-Profile` 参数 + `run-acceptance` 透传），判据零改动。
+- 修复后两次重跑均在 `stack` 步因主机内存压力失败（biz-mock 被杀死 /
+  ingest 原生 OOM），没有可判读数；不再反复重试。
+- **27/2 在现有判据下不可达**（已登记 R21）：plan 的 ticket-13 连打
+  依赖 local 延迟（买家桶 5 QPS；dev 约 1 s/发打不出 429），且 dev 情绪门
+  每请求多一次 LLM 调用（无独立计数），使「准入请求模型调用为 0」不成立。
+  两条同一断言块，改它就是改判据方法，本票不改。
+- **AC6 最终口径**：以所有者裁定的 local **25 绿 / 4 红**为准；dev 读数
+  只作补充说明，不作替代。
+
 **AC 逐条**
 
 - AC1（R20）PASS：`verify-launcher-env.ps1` 70/70，含双版本 jar 反证与旧包不选。

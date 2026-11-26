@@ -196,3 +196,33 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full
    `plansteps`（local 3B，契约内既有红）。`refund` / `console` 的归因见票面
    Handoff notes「现场追问」，属 local 3B 动作工具调用稳定性，不是本轮工装回归。
    本修订只登记读数与归因，**不把红写成 PASS，也不降低任何判据**。
+
+4. **2026-11-27（Owner ruling，AC6 双读数）**：
+   - **local 档**：所有者接受 **25 绿 / 4 红**，`refund` / `console` 归入
+     `registered-debt.md` **U12**（本地 3B 动作工具调用 1/5 + 回读措辞脆性），
+     `feedback` / `plansteps` 仍为契约内既有红；不写成 PASS。
+   - **dev 档补充**：追加一次 `-Profile dev`（qwen-plus）的 29 步全量矩阵，
+     作为 AC6 的第二读数。云 token 由所有者授权；本机 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET`
+     只在**本次验收进程环境**临时提到 600000，不改 `.env`、不改
+     `application.yml` 默认值。该读数的判据与 local 档逐字相同。
+   - **后续票**：另开票处理「动作意图未派发写工具却声称已办理」的收尾检查
+     （ADR 0008 忠实性；触及 `AgentStateMachine` / 编排层，属产品行为改动，
+     不在本票实现）。
+
+5. **2026-11-27（dev 矩阵现场：一个工装缺陷 + 一条不可达结论）**：
+   - **缺陷（已修）**：`verify-plan-actions.ps1` 的两处网关重启硬编码
+     `-Profile local`，`run-acceptance.ps1` 也没把 `-Profile` 传进去。结果
+     `-Tier full -Profile dev` 在 plan 步之后整轮悄悄退回 local（3B）：
+     首轮 dev 矩阵 `logs/acceptance-run-20261127-034838.log` 的后半段
+     `console` / `eval` 读数实际是 local，**不能当 dev 证据**。修法：
+     `verify-plan-actions.ps1` 新增 `-Profile` 参数（默认 local，保持既有调用），
+     `run-acceptance.ps1` 的 plan 步透传 `$Profile`。判据零改动。
+   - **结论（27/2 在现有判据下不可达）**：plan 步的 ticket-13 连打断言依赖
+     **local 档的请求延迟**。买家桶是 5 QPS；dev（qwen-plus）串行 14 发约
+     1 s/发，永远打不出 429；local（3B + L1 命中）约 0.2 s/发才会超桶。
+     同一块还有第二条：dev 的情绪门第二层每个请求多一次 LLM 调用（无独立计数），
+     使「准入请求模型调用为 0」也无法成立。两条都在同一个断言块里，
+     改它等于改判据方法，本票不做；登记为 **R21**。
+   - **环境边界**：修完 profile 透传后两次重跑 dev 矩阵均在 `stack` 步失败
+     （biz-mock 进程被主机内存压力杀死 / ingest 原生 OOM），未产生可判读数。
+     所有者已裁定 AC6 以 local 的 **25/4** 为准；dev 矩阵不作为 AC6 的替代读数。
