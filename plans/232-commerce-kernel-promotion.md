@@ -152,6 +152,13 @@ kernel/
 证据落 `docs/EVIDENCE.md` 或 `kernel/docs/`，并绑定 commit SHA。
 **没有所有者提供的 dev store 凭据时，AC8 记 BLOCKED，不得用假传输层结果替代。**
 
+**AC8 执行结果（2026-11-27，已执行；待独立 Verifier 复验）**：免费开发商店已执行真实退款写操作。
+实测发现 `refundCreate` 不传 `transactions` 时返回 0 金额、无交易，但消耗
+`refundableQuantity`；已修为显式提交 `REFUND` 交易并失败关闭（`40a5357`）。
+证据：`docs/EVIDENCE.md` 的 round62 章节、`kernel/README.md` 的 AC8 章节。
+边界：staffMember、Webhook、returnCreate/退货、多笔 CAPTURE 拆分、60 天边界
+与真实 THROTTLED 未触发；不改变上面的验收判据。
+
 ### AC9 独立验证与签收
 
 - Verifier 与 Implementer 不同会话；

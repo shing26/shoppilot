@@ -270,6 +270,36 @@ interface WebhookVerifier { VerifiedEvent verify(headers, rawBody); }
 9. 60 天边界：无 `read_all_orders` 时查旧订单的报错。
 10. API 创建的退款在 `Refund.staffMember` 上如何归因（预期为空或 app，而不是放行人）。
 
+### 8.1 实测结果（2026-11-27，HEAD `40a5357`）
+
+环境：Shopify Partner 免费开发商店，Admin GraphQL `2026-10`；App scopes
+`read_orders, write_orders, read_order_edits, write_order_edits, read_all_orders`。
+
+**关键发现（已修）**：`refundCreate` 不传 `transactions` 时，Shopify 会创建退款单并
+消耗 `refundableQuantity`，但 `totalRefundedSet = 0`、`transactions = []`，订单仍是
+`PAID`。手工网关与已捕获 Bogus 网关订单都复现。适配器现在读取订单的
+`CAPTURE`（优先）或 `SALE` 交易，显式提交
+`transactions: [{ orderId, kind: REFUND, gateway, amount, parentId }]`；没有足够金额的
+成功支付交易时返回 `STATE_NOT_ALLOWED`。
+
+| # | 项目 | 实测结论 |
+| --- | --- | --- |
+| 1 | `transactions.amount` / `refundLineItems` | 成功响应会回显 `refundLineItems`；超量退款被 userError 拒绝，`field=refundLineItems.0.quantity` |
+| 2 | 同键重放 | 同键同参返回同一 refund id；同键改 note 返回 `Idempotency key has been used with a different request payload.` |
+| 3 | 测试模式交易时序 | 显式 `REFUND` 交易立即 `SUCCESS`，未观测到 `PENDING`；订单同步进入 `PARTIALLY_REFUNDED` / `REFUNDED` |
+| 4 | 未履约订单的 restock | `NO_RESTOCK` 可接受；`CANCEL` 无 `locationId` 时返回 `You need to set a location to restock items` |
+| 5 | `returnCreate` | 未执行：App 无 `read_returns` / `write_returns` scope |
+| 6 | 多次部分退款 | `#1008` 两笔 10 USD：`PARTIALLY_REFUNDED` → `REFUNDED`；总额 20、可退 0 |
+| 7 | 退款 Webhook | 未执行：App 无 `read_webhooks` / `write_webhooks` scope |
+| 8 | cost / 限流 | `refundCreate` 实测 cost 20–30；响应头含版本、operation name/signature、engine、request id；`maximumAvailable=2000`、`restoreRate=100/s`。真实 `THROTTLED` 未触发（店铺数据量小），HTTP 429 与 GraphQL `THROTTLED` 映射由单测覆盖 |
+| 9 | 60 天边界 | 未触发：App 已有 `read_all_orders`，且测试店铺没有更早订单 |
+| 10 | `staffMember` 归因 | 不可读：免费开发商店查询返回 `ACCESS_DENIED`，需要 `read_users` 且为 finance embedded / Plus / Advanced；适配器不依赖该字段 |
+
+补充实测：`#1007` 显式交易退款 24.95 USD → `REFUND/SUCCESS`、订单 `REFUNDED`；
+`#1010` 适配器 live 首退/重放/同键冲突/末次退款全部 SETTLED；
+`#1012` 行项目 10 + 运费 5 → 总额 15、`refundShippingLines` 5、订单 `REFUNDED`；
+`#1013` 手工 `SALE` + 显式 `REFUND` 也能记账到 `REFUNDED`（无真实资金）。
+
 ## 9. 工作量
 
 只算适配器 v0，不含内核抽取：
@@ -289,7 +319,12 @@ interface WebhookVerifier { VerifiedEvent verify(headers, rawBody); }
 - **不动 `biz-mock`**：它是演示与 JVM 判据的宿主，先保留。
 - 新代码放独立模块（例如 `shoppilot-commerce-shopify`），通过第 6 节的端口接回内核；用绞杀者模式，不原地重构 `AgentStateMachine`。
 - 端口与 TCK 已转正到独立 reactor `kernel/shoppilot-commerce-contract/`：不进入根 reactor，当前 30 条测试全绿，TCK 以 `test-jar` 发布。
-- Shopify 2026-10 适配器已转正到 `kernel/shoppilot-commerce-shopify/`：继承同一份 TCK，假传输层 13 条 TCK + 2 条资金安全用例绿，live smoke 默认跳过；尚未对真实店铺执行写操作。
+- Shopify 2026-10 适配器已转正到 `kernel/shoppilot-commerce-shopify/`：继承同一份 TCK，
+  假传输层 13 条 TCK + 8 条适配器/资金安全/限流映射绿，2 条 live 用例默认跳过。
+- **AC8 已于 2026-11-27 在免费开发商店执行退款写操作**：发现 `refundCreate` 不传
+  `transactions` 会“消耗可退数量但不退钱”，已改为显式提交 `REFUND` 交易并失败关闭；
+  实测覆盖部分退款到 `REFUNDED`、同键重放、同键冲突、运费退款、手工网关记账。
+  完整证据见 `kernel/README.md` 的 AC8 章节与 `docs/EVIDENCE.md`。
 - 三个待裁决项已于 2026-11-26 由所有者接受并升为正式 ADR：`docs/adr/0088-refund-approval-ledger.md`、`0089-refund-settlement-read-model.md`、`0090-buyer-term-and-store-scoped-customer.md`。H6 明确选 A：保留平台全局买家，Shopify Customer 只作租户内的渠道顾客档案；`CONTEXT.md` 原文不改。
 - 模块转正契约已冻结：`plans/232-commerce-kernel-promotion.md`。目标是独立 `kernel/` reactor，不并入根 `pom.xml`，因此根 878 条读数与 `docs/STATUS.md` 不动。
 - 统一跑法：`.\mvnw.cmd -f kernel/pom.xml -B -ntp verify`。

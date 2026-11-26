@@ -577,3 +577,51 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   通过。**边界**：Java 业务代码 / Vue / `application.yml` / DB / API / gold /
   阈值 / 覆盖率门槛零改动；`/ops/**` 403 与 SSRF 回环拒绝未放宽；未删除或弱化
   任何断言。AC6 的 25/4 偏差与三条现场追问留在票面，等所有者裁定。
+
+## round62 · AC8 真实开发商店退款（2026-11-27 / 票 232）
+
+- **证据 HEAD**：`40a5357`（代码提交；本文件的文档提交随后绑定）。代码提交后
+  `git status --short` 为空。
+- **环境**：Shopify Partner 免费开发商店
+  `shoppilot-kernel-dev.myshopify.com`，Admin GraphQL `2026-10`；App scopes
+  `read_orders, write_orders, read_order_edits, write_order_edits, read_all_orders`。
+- **修复前的真实形状**：`refundCreate` 不传 `transactions` 时，Shopify 返回
+  `refund.totalRefundedSet = 0`、`refund.transactions = []`，订单仍是 `PAID`，
+  但行项目 `refundableQuantity` 已被消耗。`#1001`（manual）、`#1002`/`#1006`
+  （Bogus SALE/CAPTURE）均复现。这是“退款单已建但钱没退”的资金缺口。
+- **修复**：适配器先读订单的 `CAPTURE`（优先）或 `SALE` 交易，显式提交
+  `transactions: [{orderId, kind: REFUND, gateway, amount, parentId}]`；没有足够
+  金额的成功支付交易时返回 `STATE_NOT_ALLOWED`。回执金额取报价金额，
+  `totalRefundedSet` 仍必须存在；非零但与报价不一致返回 `INTERNAL`。
+- **修复后现场读数**：
+  - `#1007`：第一次显式交易退款 24.95 USD，`REFUND/SUCCESS`，订单 `REFUNDED`。
+  - `#1008`：10 + 10 两次部分退款，`PARTIALLY_REFUNDED` → `REFUNDED`；
+    同键同参重放返回同一 refund id；同键改 note 返回
+    `Idempotency key has been used with a different request payload.`。
+  - `#1010`：适配器 live 测试，首退 10 USD `SETTLED`、同键重放同 id、
+    同键改参 `INVALID_REQUEST`、末次 10 USD `SETTLED`，订单 `REFUNDED`。
+  - `#1012`：行项目 10 + 运费 5，退款总额 15，`refundShippingLines` 5，
+    `REFUND/SUCCESS`，订单 `REFUNDED`。
+  - `#1013`：manual `SALE` + 显式 `REFUND` 10 USD，订单 `REFUNDED`；
+    仅记账，无真实资金。`restockType=CANCEL` 缺 `locationId` 被拒，
+    `NO_RESTOCK` 通过。
+- **测试读数**：`.\mvnw.cmd -f kernel/pom.xml -B -ntp verify` →
+  contract 30 / shopify 21 + 2 skipped，BUILD SUCCESS；
+  `python kernel\scripts\check_coverage.py` → contract 84.53% / shopify 63.48%，
+  两模块 OK。`THROTTLED` 映射用 HTTP 429 与 GraphQL `THROTTLED` 两条单测覆盖。
+- **复现（live refund，需显式允许写）**：
+
+```powershell
+$env:SHOPIFY_SHOP='<dev-store>.myshopify.com'
+$env:SHOPIFY_TOKEN='<admin-api-token>'
+$env:SHOPIFY_LIVE_ORDER='#<order-with-2-refundable-units>'
+$env:SHOPIFY_LIVE_WRITE='1'
+.\mvnw.cmd -f kernel/pom.xml -pl shoppilot-commerce-shopify -am -B -ntp verify `
+  "-Dtest=ShopifyLiveRefundTest" "-Dsurefire.failIfNoSpecifiedTests=false"
+```
+
+- **边界**：`Refund.staffMember` 在免费开发商店返回 `ACCESS_DENIED`（需
+  `read_users` + finance embedded/Plus/Advanced）；Webhook、`returnCreate`、
+  退货/换货未验证（无对应 scope）；`CANCEL` 回库需 location 权限，适配器固定
+  `NO_RESTOCK`；多笔 CAPTURE 的跨交易拆分未实现；60 天边界与真实 `THROTTLED`
+  未触发。以上均不替代 AC8 已覆盖的真实退款写链路。

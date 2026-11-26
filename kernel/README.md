@@ -66,11 +66,64 @@ CI：`.github/workflows/kernel-ci.yml`，只在 `kernel/**` 变更时触发；
 ## 当前状态
 
 - contract：30 条测试绿（13 TCK + 13 工作流 + 4 状态机）。
-- Shopify：15 条测试（13 TCK + 2 条资金安全用例）+ 1 条 live smoke 默认跳过。
+- Shopify：23 条测试（21 条执行 + 2 条 live 默认跳过；执行部分含 13 条 TCK
+  与 8 条适配器/资金安全/限流映射）。
 - 默认构建零网络、零凭据。
-- **尚未对真实开发商店执行退款写操作**；AC8 的 10 条沙箱验证仍阻塞，
-  需要 Shopify Partner 开发商店的 shop 域名与 Admin API token。
+- **AC8 已在 Shopify Partner 免费开发商店执行真实退款写操作**（2026-11-27，
+  Admin GraphQL `2026-10`）；实测暴露并修掉一个真实资金缺口，见下节。
 - **尚未接入 ShopPilot 网关**；本 reactor 是可独立复用的内核，不是现有 agent 的运行改动。
+
+## AC8 真实开发商店实测（2026-11-27）
+
+环境：免费开发商店，App scopes 为
+`read_orders, write_orders, read_order_edits, write_order_edits, read_all_orders`。
+
+### 关键发现（已修）
+
+`2026-10` 的 `refundCreate` **不传 `transactions` 时不会真正退款**：Shopify 会创建
+退款单、消耗行项目 `refundableQuantity`，但返回
+`totalRefundedSet = 0`、`transactions = []`，订单仍是 `PAID`。手工网关和已捕获的
+Bogus 网关订单都复现。适配器现在会先读取订单的 `CAPTURE`（优先）或 `SALE` 交易，
+再显式提交：
+
+```text
+transactions: [{ orderId, kind: REFUND, gateway, amount, parentId }]
+```
+
+没有足够金额的成功支付交易时返回 `STATE_NOT_ALLOWED`，不再创建零金额退款。
+回执金额取报价金额；`totalRefundedSet` 仍必须存在，非零但与报价不一致时
+返回 `INTERNAL`。
+
+### 实测证据
+
+| 场景 | 订单 | 结果 |
+| --- | --- | --- |
+| 不传 `transactions` | `#1001` / `#1002` / `#1006` | 退款单已建，金额 0、无交易，订单仍 PAID，可退数量被消耗 |
+| 显式 `REFUND` + 父 CAPTURE | `#1007` | 24.95 USD，`REFUND/SUCCESS`，订单 `REFUNDED` |
+| 两次部分退款 | `#1008` | 10 + 10，`PARTIALLY_REFUNDED` → `REFUNDED` |
+| 同键同参重放 | `#1008` / `#1010` | 返回同一 refund id |
+| 同键改 note | `#1008` / `#1010` | userError：idempotency key used with a different request payload |
+| 适配器 live 全链路 | `#1010` | 首退、重放、同键冲突、末次退款均 SETTLED，订单 REFUNDED |
+| 行项目 + 运费 | `#1012` | 总额 15（其中运费 5），`REFUND/SUCCESS`，订单 REFUNDED |
+| 手工网关 + 显式交易 | `#1013` | 10 USD，`REFUND/SUCCESS`，订单 REFUNDED（仅记账，无真实资金） |
+
+现场响应头包含 `x-shopify-api-version: 2026-10`、operation name/signature、
+`x-shopify-api-gql-engine: cardinal`、`X-Request-ID`；退款 mutation 实测
+cost 约 20–30，`maximumAvailable=2000`、`restoreRate=100/s`。
+
+### 仍然没验证或没做
+
+- `Refund.staffMember` 在免费开发商店不可读：需要 `read_users`，且 App 必须是
+  finance embedded 或安装在 Plus/Advanced 店铺；适配器不依赖该字段。
+- Webhook、`returnCreate`、退货/换货未验证：当前 App 没有
+  `read_webhooks` / `write_webhooks` / `read_returns` / `write_returns` scope。
+- `restockType=CANCEL` 需要 `locationId`，当前 App 无 location 权限；适配器固定
+  使用 `NO_RESTOCK`，不承诺回库。
+- 多笔 CAPTURE 的跨交易拆分未实现：适配器选单笔金额足够的最近 CAPTURE/SALE，
+  不足即失败关闭。
+- 60 天边界未触发：App 已有 `read_all_orders`，且测试店铺没有更早订单。
+- 真实 `THROTTLED` 未触发：店铺数据量太小，最高 cost 查询实际只计 4；
+  HTTP 429 与 GraphQL `THROTTLED` 的映射由单测覆盖。
 
 ## 明确没做
 
@@ -82,8 +135,8 @@ CI：`.github/workflows/kernel-ci.yml`，只在 `kernel/**` 变更时触发；
 
 ## 路线
 
-1. 完成 AC8 的真实开发商店验证，修掉只会在真实 API 上暴露的形状差异。
-2. 补持久化 `RefundApprovalStore` 与 outbox，再谈生产可用。
+1. AC8 已完成（2026-11-27）；继续补真实网关对账与 Webhook/退货链路，再谈生产可用。
+2. 补持久化 `RefundApprovalStore` 与 outbox。
 3. 把「有界工具循环 + 降级工单 + 租户隔离」的 runtime 部分抽到同一 reactor，
    让退款只是第一个宿主适配器。
 

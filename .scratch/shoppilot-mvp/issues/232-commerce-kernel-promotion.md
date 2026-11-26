@@ -2,10 +2,10 @@
 
 Round: 62（模块转正 / 生产依赖变更）
 ADR: 0088（审批载体）、0089（终态读模型）、0090（买家术语）
-Status: implemented（2026-11-26；独立 Verifier PASS，P0 无、P1 已关闭；
-待所有者书面签收；AC8 BLOCKED，待 Shopify Partner dev store 凭据）
-Claimed by: root　Blocked by: 无（AC8 另需凭据）
-实现提交: `5ee7e02`（2026-11-26；提交后工作树为空）
+Status: implemented（2026-11-27；AC8 已执行，现场读数见下；待独立 Verifier
+复验 AC8 修复 + 所有者书面签收）
+Claimed by: root　Blocked by: 无
+实现提交: `5ee7e02`（2026-11-26 模块转正）、`40a5357`（2026-11-27 AC8 资金缺口修复）
 
 契约：[plans/232-commerce-kernel-promotion.md](../../plans/232-commerce-kernel-promotion.md)（2026-11-26 冻结）
 
@@ -99,11 +99,51 @@ git status --short
 3. **根 reactor 是否被碰？** 没有。根 `pom.xml`、`STATUS.md`、`TUNING_PLAN.md`、
    四模块源码与 878/144 读数均未变；README 只同步了 ADR 计数。
 
-**AC8（阻塞，未执行）**
+**AC8 真实开发商店（2026-11-27，已执行；待独立 Verifier 复验）**
 
-真实开发商店的 10 条验证仍未跑。需要所有者提供 Shopify Partner 免费开发商店的
-`SHOPIFY_SHOP` 与 `SHOPIFY_TOKEN`（至少读订单；创建退款另需写权限）。
-在 AC8 完成前，对外只能称「假传输层 TCK 通过」，不得称「已接入 Shopify」。
+- 环境：Shopify Partner 免费开发商店 `shoppilot-kernel-dev.myshopify.com`，
+  Admin GraphQL `2026-10`；App scopes
+  `read_orders, write_orders, read_order_edits, write_order_edits, read_all_orders`。
+- **关键发现（P0，已修，提交 `40a5357`）**：`refundCreate` 不传 `transactions`
+  时，Shopify 创建退款单并消耗 `refundableQuantity`，但
+  `totalRefundedSet = 0`、`transactions = []`，订单仍是 `PAID`。`#1001`
+  （manual）、`#1002`/`#1006`（Bogus SALE/CAPTURE）均复现。
+- 修复：适配器先读订单 `CAPTURE`（优先）或 `SALE` 交易，显式提交
+  `transactions: [{orderId, kind: REFUND, gateway, amount, parentId}]`；
+  无可退支付交易时 `STATE_NOT_ALLOWED`；回执金额取报价金额，
+  `totalRefundedSet` 缺失仍 `INTERNAL`，非零但与报价不一致也 `INTERNAL`。
+- 实测：
+  - `#1007`：24.95 USD 显式交易退款，`REFUND/SUCCESS`，订单 `REFUNDED`。
+  - `#1008`：10 + 10 两次部分退款，`PARTIALLY_REFUNDED` → `REFUNDED`；
+    同键同参返回同一 refund id；同键改 note 返回
+    `Idempotency key has been used with a different request payload.`。
+  - `#1010`：适配器 live 测试，首退 10 USD `SETTLED`、同键重放同 id、
+    同键改参 `INVALID_REQUEST`、末次 10 USD `SETTLED`，订单 `REFUNDED`。
+  - `#1012`：行项目 10 + 运费 5，退款总额 15、`refundShippingLines` 5，
+    订单 `REFUNDED`。
+  - `#1013`：manual `SALE` + 显式 `REFUND` 10 USD，订单 `REFUNDED`（仅记账）；
+    `CANCEL` 缺 `locationId` 被拒，`NO_RESTOCK` 通过。
+- 测试：`.\mvnw.cmd -f kernel/pom.xml -B -ntp verify` → contract 30 /
+  shopify 21 + 2 skipped，BUILD SUCCESS；coverage contract 84.53% /
+  shopify 63.48%。新增 `ShopifyLiveRefundTest` 默认跳过，只有
+  `SHOPIFY_LIVE_WRITE=1` 才写真实店铺。
+- 边界：`Refund.staffMember` 返回 `ACCESS_DENIED`（需 `read_users` +
+  finance embedded/Plus/Advanced）；Webhook、`returnCreate`、退货/换货未验证
+  （无对应 scope）；多笔 CAPTURE 的跨交易拆分未实现；60 天边界与真实
+  `THROTTLED` 未触发（后者由 HTTP 429 / GraphQL `THROTTLED` 单测覆盖）。
+
+**AC8 三个现场追问的回答**
+
+1. **为什么假传输层没抓到？** 假传输层假设 `refundCreate` 会返回
+   `totalRefundedSet` 和 transaction；真实 2026-10 在不传 `transactions` 时
+   两者都为空，但仍消耗可退数量。现已用真实形状补假传输层用例，并强制
+   `REFUND` 交易。
+2. **会不会把“已提交”误报成“已到账”？** 不会。只有显式 `REFUND` 交易
+   `SUCCESS` 才映射 `SETTLED`；空交易仍是 `SUBMITTED`。修复后真实退款在
+   响应里立即 `SUCCESS`，live 测试断言 `SETTLED`。
+3. **开发商店的 Bogus 结果能否代表生产？** 只能证明 GraphQL 形状、幂等、
+   交易时序和金额映射；Bogus 是测试网关，不代表真实清算。生产前仍需
+   Shopify Payments/真实网关的退款对账与 Webhook 验证。
 
 **独立 Verifier（2026-11-26）**
 
@@ -113,4 +153,6 @@ git status --short
   非 clean 重跑不再受旧 `jacoco.exec` 影响。
 - 复核（2026-11-26）：不 clean 重跑仍为 contract 84.53% / shopify 56.35%，
   P1 关闭；最终结论 **PASS**，无需继续整改。
+- **AC8 修复后（`40a5357`）需要独立 Verifier 重新亲跑 AC1–AC8**；上面的 PASS
+  只覆盖 AC1–AC7 与 AC8 BLOCKED 时的状态。
 - 所有者书面签收尚未发生，所以本票保持 `implemented`，不是 `done`。
