@@ -45,6 +45,24 @@ class WriteClaimGuardTest {
         assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("正在帮您处理退款"));
         assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已为您安排退款"));
         assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("退款正在处理中"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已退款"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已完成退款"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已完成"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已取消"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已处理完毕"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已给您退款"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已经给您退款"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已经替您退款"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已向您退款"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已为您全额退款"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已为您原路退回"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已为您加急处理"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已提交"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已办理"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已处理"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已全额退款"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("已为您优先处理"));
+        assertEquals(WriteClaimGuard.Verdict.CLAIM, WriteClaimGuard.classify("操作成功"));
     }
 
     @Test
@@ -73,6 +91,18 @@ class WriteClaimGuardTest {
         assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify("尚未为您办理退款"));
         assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify("我们还没有为您办理退款"));
         assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify("我无法马上为您办理退款"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("这个动作我办不了，我会为您说明退款政策"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("抱歉，我无法为您办理退款，我会为您说明退款政策"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("退款成功后款项会原路退回"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("提交成功后系统会通知您"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("如果退款成功，系统会通知您"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("如果已为您退款，请查收"));
         assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify(null));
         assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify("   "));
     }
