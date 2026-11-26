@@ -2,7 +2,7 @@
 
 Round: 62（产品行为回归修复；ADR 0008 / ADR 0031）
 ADR: 0008（不猜不骗）、0031（回归修复）、0009（降级原因可枚举）
-Status: implemented（2026-11-27；Verifier 首轮 P1 已整改，待复验）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
+Status: implemented（2026-11-27；Verifier 两轮 P1 已整改，待复验）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
 
 契约：[plans/233-write-claim-guard.md](../../plans/233-write-claim-guard.md)（2026-11-27 冻结）
 
@@ -49,7 +49,7 @@ Status: implemented（2026-11-27；Verifier 首轮 P1 已整改，待复验）�
 3. 如实拒绝（「抱歉，这个动作我办不了」）不带问号也不带完成词时原样透出；
    是否要求这类也转人工（更保守，但会把正常拒答也变成工单）？
 
-**实现与验证（2026-11-27，代码 HEAD `f680a43`）**
+**实现与验证（2026-11-27，代码 HEAD `034d4ce`）**
 
 - 新增 `WriteClaimGuard` 纯函数，判定顺序是
   **已完成声明 → 强承诺（先于追问时）→ ASK → REFUSAL → 一般承诺 → 弱确认**：
@@ -64,6 +64,15 @@ Status: implemented（2026-11-27；Verifier 首轮 P1 已整改，待复验）�
   「已为您完成退款」「已为您退款」「已为您取消订单」「已为您修改收货地址」
   「我将直接为您发起……请告诉我订单号」「尚未/还没有为您办理」等 0-token 断言，
   AC1 的 handler 用例也改用「完成声明 + 问号」形态。
+- **独立 Verifier 第二轮 P1 已整改**：① 裸完成声明
+  （`已退款` / `已完成退款` / `已完成` / `已取消` / `已处理完毕` /
+  `已给您退款` / `已经给您退款` / `已经替您退款` / `已向您退款` /
+  `已为您全额退款` / `已为您原路退回` / `已为您加急处理`）漏判；
+  ② 强承诺 / 条件句误伤拒绝与政策说明（「我办不了……我会为您说明退款政策」
+  「退款成功后款项会原路退回」「提交成功后系统会通知您」）。
+  修复：补裸声明与「已给您/已向您/已经给您/已经替您」前缀；
+  强承诺忽略「说明/解释/查询/核实/确认/政策/规则/流程」等非动作语境；
+  「成功后 / 如果… / 若…」按条件句排除。
 - `PlanExecuteHandler` 只在 `expectedWrite != null && !expectedWriteDone && nudged`
   且正文为 `CLAIM` 时收口：`TOOL_ROUNDS_EXHAUSTED` + 可查工单，正文不透出，
   trace 增 `write-claim-blocked write-pending=<tool>`；`ASK` / `NONE` 原样返回。
@@ -71,12 +80,14 @@ Status: implemented（2026-11-27；Verifier 首轮 P1 已整改，待复验）�
 - 窄测 **14/14**（`PlanExecutionTest` 11 + `WriteClaimGuardTest` 3）；全量
   `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，885 tests / 145 suites**
   （tool-api 12 + biz-mock 98 + gateway 725 + ticket 50）。
-- **AC7 活体**（HEAD `f680a43`，local `qwen2.5:3b`，每轮先 reset demo、新会话、
-  新幂等 token）：**8 `PENDING_APPROVAL` + 2 `TOOL_ROUNDS_EXHAUSTED` + 工单、
-  0 次无 tool 事件却声称已办理**（`logs/ac7-233-20261127i.log`，本机 gitignored）。
-  这一轮降级分支被真实触发两次，工单号可查。补充读数：修复前一版
-  **10/10 `PENDING_APPROVAL`、0 谎报**（`...h.log`）；更早一轮
-  **9 PENDING + 1 DEGRADED + 工单、0 谎报**（`...e.log`）。
+- **AC7 活体**（HEAD `034d4ce`，local `qwen2.5:3b`，每轮先 reset demo、新会话、
+  新幂等 token）：**7 `PENDING_APPROVAL` + 1 `TOOL_ROUNDS_EXHAUSTED` + 工单
+  + 2 次合法追问、0 次无 tool 事件却声称已办理**
+  （`logs/ac7-233-20261127j.log`，本机 gitignored）。两次追问分别是
+  「请问收件人姓名和手机号？」与「请告诉我订单号，我来帮您处理」，
+  属 AC2 明确允许的缺失参数追问，不是完成声明。累计活体读数：
+  i 轮 **8 PENDING + 2 DEGRADED + 工单、0 谎报**（降级分支两次）；
+  h 轮 **10/10 PENDING、0 谎报**；e 轮 **9 PENDING + 1 DEGRADED、0 谎报**。
 - 边界：活体每轮都会 reset demo，但未清 Redis 回放索引，以新幂等 token 规避；
   早期三轮采样因问句无空格、订单不存在、trace 大小写匹配错误作废，未计入读数。
 - 文档检查：`python scripts/gen_status.py --check`、`python scripts/verify_doc_truth.py`、
