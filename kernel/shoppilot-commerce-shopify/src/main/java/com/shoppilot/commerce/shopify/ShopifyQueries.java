@@ -69,6 +69,21 @@ final class ShopifyQueries {
             }
             """;
 
+    static final String ORDER_TRANSACTIONS = """
+            query OrderTransactions($id: ID!) {
+              order(id: $id) {
+                id
+                transactions(first: 20) {
+                  id
+                  kind
+                  status
+                  gateway
+                  amountSet { shopMoney { amount currencyCode } }
+                }
+              }
+            }
+            """;
+
     static final String REFUND_STATUS = """
             query RefundStatus($id: ID!) {
               refund(id: $id) {

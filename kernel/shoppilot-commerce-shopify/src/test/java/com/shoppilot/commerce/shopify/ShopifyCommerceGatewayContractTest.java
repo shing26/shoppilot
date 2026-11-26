@@ -10,6 +10,8 @@ import com.shoppilot.commerce.TenantId;
 import com.shoppilot.commerce.tck.CommerceGatewayContractTest;
 import org.junit.jupiter.api.BeforeEach;
 
+import java.math.BigDecimal;
+
 class ShopifyCommerceGatewayContractTest extends CommerceGatewayContractTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -19,6 +21,7 @@ class ShopifyCommerceGatewayContractTest extends CommerceGatewayContractTest {
     private final TenantId otherTenant = new TenantId("other.myshopify.com");
     private final OrderRef paidOrder = new OrderRef("#1001");
     private final OrderRef uncapturedOrder = new OrderRef("#1002");
+    private final OrderRef unbackedOrder = new OrderRef("#1003");
 
     @BeforeEach
     void seedOrders() throws Exception {
@@ -55,7 +58,16 @@ class ShopifyCommerceGatewayContractTest extends CommerceGatewayContractTest {
                       "discountedUnitPriceSet": {"shopMoney": {"amount": "30.00", "currencyCode": "CNY"}},
                       "originalUnitPriceSet": {"shopMoney": {"amount": "30.00", "currencyCode": "CNY"}}
                     }
-                  ]}
+                  ]},
+                  "transactions": [
+                    {
+                      "id": "gid://shopify/OrderTransaction/9001",
+                      "kind": "CAPTURE",
+                      "status": "SUCCESS",
+                      "gateway": "bogus",
+                      "amountSet": {"shopMoney": {"amount": "140.00", "currencyCode": "CNY"}}
+                    }
+                  ]
                 }
                 """));
         transport.seedOrder(tenant, (ObjectNode) mapper.readTree("""
@@ -81,6 +93,40 @@ class ShopifyCommerceGatewayContractTest extends CommerceGatewayContractTest {
                       "originalUnitPriceSet": {"shopMoney": {"amount": "50.00", "currencyCode": "CNY"}}
                     }
                   ]}
+                }
+                """));
+        transport.seedOrder(tenant, (ObjectNode) mapper.readTree("""
+                {
+                  "id": "gid://shopify/Order/1003",
+                  "name": "#1003",
+                  "displayFinancialStatus": "PAID",
+                  "displayFulfillmentStatus": "UNFULFILLED",
+                  "createdAt": "2026-11-24T00:00:00Z",
+                  "processedAt": "2026-11-25T00:00:00Z",
+                  "totalPriceSet": {"shopMoney": {"amount": "50.00", "currencyCode": "CNY"}},
+                  "totalRefundedSet": {"shopMoney": {"amount": "0.00", "currencyCode": "CNY"}},
+                  "totalRefundedShippingSet": {"shopMoney": {"amount": "0.00", "currencyCode": "CNY"}},
+                  "shippingLines": {"nodes": []},
+                  "lineItems": {"nodes": [
+                    {
+                      "id": "gid://shopify/LineItem/1",
+                      "sku": "SKU-A",
+                      "title": "A",
+                      "quantity": 1,
+                      "refundableQuantity": 1,
+                      "discountedUnitPriceSet": {"shopMoney": {"amount": "50.00", "currencyCode": "CNY"}},
+                      "originalUnitPriceSet": {"shopMoney": {"amount": "50.00", "currencyCode": "CNY"}}
+                    }
+                  ]},
+                  "transactions": [
+                    {
+                      "id": "gid://shopify/OrderTransaction/9003",
+                      "kind": "AUTHORIZATION",
+                      "status": "SUCCESS",
+                      "gateway": "bogus",
+                      "amountSet": {"shopMoney": {"amount": "50.00", "currencyCode": "CNY"}}
+                    }
+                  ]
                 }
                 """));
     }
@@ -143,5 +189,72 @@ class ShopifyCommerceGatewayContractTest extends CommerceGatewayContractTest {
         org.assertj.core.api.Assertions.assertThat(
                         errorOf(commerce.createRefund(tenant, intent(1, false), key("missing-total"))))
                 .isEqualTo(com.shoppilot.commerce.CommerceError.INTERNAL);
+    }
+
+    @org.junit.jupiter.api.Test
+    void zeroReportedTotalUsesQuotedAmount() {
+        transport.useUnsettledCreationShapeOnNextCreate();
+
+        var receipt = CommerceResults.unwrap(
+                commerce.createRefund(tenant, intent(1, false), key("unsettled-shape")));
+
+        org.assertj.core.api.Assertions.assertThat(receipt.amount())
+                .isEqualTo(Money.of(5000, "CNY"));
+        org.assertj.core.api.Assertions.assertThat(receipt.status())
+                .isEqualTo(com.shoppilot.commerce.RefundStatus.SUBMITTED);
+    }
+
+    @org.junit.jupiter.api.Test
+    void positiveReportedTotalMismatchFailsClosed() {
+        transport.reportWrongRefundTotalOnNextCreate(new BigDecimal("49.99"));
+
+        org.assertj.core.api.Assertions.assertThat(
+                        errorOf(commerce.createRefund(tenant, intent(1, false), key("wrong-total"))))
+                .isEqualTo(com.shoppilot.commerce.CommerceError.INTERNAL);
+    }
+
+    @org.junit.jupiter.api.Test
+    void refundUsesCapturedPaymentTransaction() {
+        CommerceResults.unwrap(
+                commerce.createRefund(tenant, intent(1, false), key("capture-link")));
+
+        var transaction = transport.lastRefundInput().path("transactions").path(0);
+        org.assertj.core.api.Assertions.assertThat(transaction.path("kind").asText())
+                .isEqualTo("REFUND");
+        org.assertj.core.api.Assertions.assertThat(transaction.path("gateway").asText())
+                .isEqualTo("bogus");
+        org.assertj.core.api.Assertions.assertThat(transaction.path("parentId").asText())
+                .isEqualTo("gid://shopify/OrderTransaction/9001");
+        org.assertj.core.api.Assertions.assertThat(transaction.path("amount").asText())
+                .isEqualTo("50.00");
+    }
+
+    @org.junit.jupiter.api.Test
+    void noCapturedPaymentFailsClosed() {
+        var intent = new com.shoppilot.commerce.RefundIntent(
+                unbackedOrder,
+                java.util.List.of(new com.shoppilot.commerce.RefundLine(lineItemId(), 1)),
+                false,
+                "no captured payment");
+
+        org.assertj.core.api.Assertions.assertThat(
+                        errorOf(commerce.createRefund(tenant, intent, key("no-capture"))))
+                .isEqualTo(com.shoppilot.commerce.CommerceError.STATE_NOT_ALLOWED);
+    }
+
+    @org.junit.jupiter.api.Test
+    void httpThrottleMapsToThrottled() {
+        transport.failNextWithHttp(429);
+
+        org.assertj.core.api.Assertions.assertThat(errorOf(commerce.getOrder(tenant, paidOrder)))
+                .isEqualTo(com.shoppilot.commerce.CommerceError.THROTTLED);
+    }
+
+    @org.junit.jupiter.api.Test
+    void graphQlThrottleMapsToThrottled() {
+        transport.failNextWithGraphQlError("THROTTLED");
+
+        org.assertj.core.api.Assertions.assertThat(errorOf(commerce.getOrder(tenant, paidOrder)))
+                .isEqualTo(com.shoppilot.commerce.CommerceError.THROTTLED);
     }
 }

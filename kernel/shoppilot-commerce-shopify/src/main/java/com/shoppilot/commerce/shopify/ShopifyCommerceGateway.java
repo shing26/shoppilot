@@ -91,6 +91,21 @@ public final class ShopifyCommerceGateway implements CommerceGateway {
         if (!quoteResult.isOk()) {
             return CommerceResults.copyErr(quoteResult);
         }
+        RefundQuote quote = CommerceResults.unwrap(quoteResult);
+
+        var transactionsResult = execute(tenant, ShopifyQueries.ORDER_TRANSACTIONS,
+                Map.of("id", order.commerceOrderId()));
+        if (!transactionsResult.isOk()) {
+            return CommerceResults.copyErr(transactionsResult);
+        }
+        JsonNode payment = findRefundablePayment(
+                CommerceResults.unwrap(transactionsResult)
+                        .path("order").path("transactions"),
+                quote.amount());
+        if (payment == null) {
+            return CommerceResult.err(CommerceError.STATE_NOT_ALLOWED,
+                    "order has no captured payment transaction large enough to refund");
+        }
 
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("orderId", order.commerceOrderId());
@@ -109,6 +124,13 @@ public final class ShopifyCommerceGateway implements CommerceGateway {
         if (intent.refundShipping()) {
             input.put("shipping", Map.of("fullRefund", true));
         }
+        input.put("transactions", List.of(Map.of(
+                "orderId", order.commerceOrderId(),
+                "kind", "REFUND",
+                "gateway", ShopifyJson.text(payment, "gateway"),
+                "amount", ShopifyJson.toDecimal(
+                        quote.amount().minorUnits(), quote.amount().currency()),
+                "parentId", ShopifyJson.text(payment, "id"))));
 
         var dataResult = execute(tenant, ShopifyQueries.REFUND_CREATE,
                 Map.of("input", input, "key", key.value()));
@@ -132,7 +154,13 @@ public final class ShopifyCommerceGateway implements CommerceGateway {
                 return CommerceResult.err(CommerceError.STATE_NOT_ALLOWED,
                         "Shopify refund transaction failed");
             }
-            Money amount = ShopifyJson.money(refund.path("totalRefundedSet"));
+            Money reported = ShopifyJson.money(refund.path("totalRefundedSet"));
+            Money amount = quote.amount();
+            if (!reported.isZero() && !reported.equals(amount)) {
+                return CommerceResult.err(CommerceError.INTERNAL,
+                        "Shopify refund amount mismatch: quoted " + amount
+                                + " but reported " + reported);
+            }
             return CommerceResult.ok(new RefundReceipt(
                     refund.path("id").asText(), status, amount, key, Instant.now()));
         } catch (RuntimeException e) {
@@ -294,5 +322,35 @@ public final class ShopifyCommerceGateway implements CommerceGateway {
             return RefundStatus.FAILED;
         }
         return settled ? RefundStatus.SETTLED : RefundStatus.SUBMITTED;
+    }
+
+    private static JsonNode findRefundablePayment(JsonNode nodes, Money amount) {
+        if (nodes == null || !nodes.isArray()) {
+            return null;
+        }
+        JsonNode sale = null;
+        JsonNode capture = null;
+        for (JsonNode node : nodes) {
+            String kind = ShopifyJson.text(node, "kind");
+            if (!"SUCCESS".equals(ShopifyJson.text(node, "status"))
+                    || ShopifyJson.text(node, "gateway").isBlank()) {
+                continue;
+            }
+            Money paid;
+            try {
+                paid = ShopifyJson.money(node.path("amountSet"));
+            } catch (RuntimeException e) {
+                continue;
+            }
+            if (!paid.currency().equals(amount.currency()) || paid.compareTo(amount) < 0) {
+                continue;
+            }
+            if ("CAPTURE".equals(kind)) {
+                capture = node;
+            } else if ("SALE".equals(kind)) {
+                sale = node;
+            }
+        }
+        return capture != null ? capture : sale;
     }
 }

@@ -26,6 +26,11 @@ final class FakeShopifyTransport implements ShopifyGraphQlTransport {
     private final Map<String, String> refundIdByKey = new ConcurrentHashMap<>();
     private final AtomicInteger refundSequence = new AtomicInteger();
     private volatile boolean omitRefundTotal;
+    private volatile boolean unsettledCreationShape;
+    private volatile BigDecimal reportedTotalOverride;
+    private volatile ObjectNode lastRefundInput;
+    private volatile Integer nextHttpStatus;
+    private volatile String nextGraphQlErrorCode;
 
     void seedOrder(TenantId tenant, ObjectNode order) {
         ordersByName.put(tenant.value() + "|" + order.path("name").asText(), order);
@@ -44,8 +49,38 @@ final class FakeShopifyTransport implements ShopifyGraphQlTransport {
         omitRefundTotal = true;
     }
 
+    void useUnsettledCreationShapeOnNextCreate() {
+        unsettledCreationShape = true;
+    }
+
+    void reportWrongRefundTotalOnNextCreate(BigDecimal reportedTotal) {
+        reportedTotalOverride = reportedTotal;
+    }
+
+    ObjectNode lastRefundInput() {
+        return lastRefundInput;
+    }
+
+    void failNextWithHttp(int status) {
+        nextHttpStatus = status;
+    }
+
+    void failNextWithGraphQlError(String code) {
+        nextGraphQlErrorCode = code;
+    }
+
     @Override
     public Response execute(TenantId tenant, String query, Map<String, Object> variables) {
+        if (nextHttpStatus != null) {
+            int status = nextHttpStatus;
+            nextHttpStatus = null;
+            return new Response(status, mapper.createObjectNode());
+        }
+        if (nextGraphQlErrorCode != null) {
+            String code = nextGraphQlErrorCode;
+            nextGraphQlErrorCode = null;
+            return new Response(200, errorBody(code, "throttled"));
+        }
         if (query.contains("OrderByName")) {
             return orderByName(tenant, variables);
         }
@@ -54,6 +89,9 @@ final class FakeShopifyTransport implements ShopifyGraphQlTransport {
         }
         if (query.contains("RefundCreate")) {
             return refundCreate(tenant, variables);
+        }
+        if (query.contains("OrderTransactions")) {
+            return orderTransactions(tenant, variables);
         }
         if (query.contains("RefundStatus")) {
             return refundStatus(tenant, variables);
@@ -91,6 +129,7 @@ final class FakeShopifyTransport implements ShopifyGraphQlTransport {
         String key = String.valueOf(variables.get("key"));
         String keyKey = tenant.value() + "|" + key;
         ObjectNode input = mapper.valueToTree(variables.get("input"));
+        lastRefundInput = input;
 
         ObjectNode priorInput = inputsByKey.get(keyKey);
         if (priorInput != null) {
@@ -105,6 +144,12 @@ final class FakeShopifyTransport implements ShopifyGraphQlTransport {
         ObjectNode order = ordersById.get(tenant.value() + "|" + orderId);
         if (order == null) {
             return userError("NOT_FOUND", "order not found");
+        }
+
+        JsonNode transactions = input.path("transactions");
+        if (!transactions.isArray() || transactions.isEmpty()
+                || !"REFUND".equals(transactions.path(0).path("kind").asText())) {
+            return userError("NO_TRANSACTION", "a REFUND transaction is required");
         }
 
         BigDecimal amount = BigDecimal.ZERO;
@@ -143,19 +188,45 @@ final class FakeShopifyTransport implements ShopifyGraphQlTransport {
         ObjectNode refund = mapper.createObjectNode();
         refund.put("id", refundId);
         if (!omitRefundTotal) {
-            setMoney(refund, "totalRefundedSet", amount, currency);
+            BigDecimal reported = reportedTotalOverride != null
+                    ? reportedTotalOverride
+                    : (unsettledCreationShape ? BigDecimal.ZERO : amount);
+            setMoney(refund, "totalRefundedSet", reported, currency);
         }
-        ObjectNode transaction = refund.putObject("transactions")
-                .putArray("nodes")
-                .addObject();
-        transaction.put("status", "PENDING");
-        transaction.put("kind", "REFUND");
-        setMoney(transaction, "amountSet", amount, currency);
+        if (!unsettledCreationShape) {
+            ObjectNode transaction = refund.putObject("transactions")
+                    .putArray("nodes")
+                    .addObject();
+            transaction.put("status", "PENDING");
+            transaction.put("kind", "REFUND");
+            setMoney(transaction, "amountSet", amount, currency);
+        }
+        unsettledCreationShape = false;
+        reportedTotalOverride = null;
 
         refundsById.put(tenant.value() + "|" + refundId, refund);
         inputsByKey.put(keyKey, input);
         refundIdByKey.put(keyKey, refundId);
         return refundPayload(refund);
+    }
+
+    private Response orderTransactions(TenantId tenant, Map<String, Object> variables) {
+        String id = String.valueOf(variables.get("id"));
+        ObjectNode order = ordersById.get(tenant.value() + "|" + id);
+
+        ObjectNode root = mapper.createObjectNode();
+        ObjectNode data = root.putObject("data");
+        if (order == null) {
+            data.putNull("order");
+        } else {
+            ObjectNode view = data.putObject("order");
+            view.put("id", id);
+            view.set("transactions",
+                    order.path("transactions").isArray()
+                            ? order.path("transactions")
+                            : mapper.createArrayNode());
+        }
+        return new Response(200, root);
     }
 
     private Response refundStatus(TenantId tenant, Map<String, Object> variables) {
