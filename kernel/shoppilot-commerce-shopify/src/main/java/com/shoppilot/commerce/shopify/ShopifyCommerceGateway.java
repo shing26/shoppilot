@@ -22,9 +22,11 @@ import com.shoppilot.commerce.TenantId;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Shopify Admin GraphQL 适配器。
@@ -34,12 +36,24 @@ import java.util.Map;
  */
 public final class ShopifyCommerceGateway implements CommerceGateway {
 
+    private static final int MAX_REPLAYS = 10_000;
+
     private final ShopifyGraphQlTransport transport;
     private final ObjectMapper mapper;
+    private final Map<String, Replay> replays = Collections.synchronizedMap(
+            new LinkedHashMap<>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Replay> eldest) {
+                    return size() > MAX_REPLAYS;
+                }
+            });
 
     public ShopifyCommerceGateway(ShopifyGraphQlTransport transport, ObjectMapper mapper) {
         this.transport = transport;
         this.mapper = mapper;
+    }
+
+    private record Replay(String fingerprint, RefundReceipt receipt) {
     }
 
     @Override
@@ -82,6 +96,17 @@ public final class ShopifyCommerceGateway implements CommerceGateway {
     @Override
     public CommerceResult<RefundReceipt> createRefund(
             TenantId tenant, RefundIntent intent, IdempotencyKey key) {
+        String replayKey = tenant.value() + "|" + key.value();
+        String fingerprint = fingerprint(intent);
+        Replay known = replays.get(replayKey);
+        if (known != null) {
+            if (known.fingerprint().equals(fingerprint)) {
+                return CommerceResult.ok(known.receipt());
+            }
+            return CommerceResult.err(CommerceError.INVALID_REQUEST,
+                    "idempotency key reused with a different refund intent");
+        }
+
         var orderResult = getOrder(tenant, intent.order());
         if (!orderResult.isOk()) {
             return CommerceResults.copyErr(orderResult);
@@ -161,12 +186,23 @@ public final class ShopifyCommerceGateway implements CommerceGateway {
                         "Shopify refund amount mismatch: quoted " + amount
                                 + " but reported " + reported);
             }
-            return CommerceResult.ok(new RefundReceipt(
-                    refund.path("id").asText(), status, amount, key, Instant.now()));
+            RefundReceipt receipt = new RefundReceipt(
+                    refund.path("id").asText(), status, amount, key, Instant.now());
+            replays.put(replayKey, new Replay(fingerprint, receipt));
+            return CommerceResult.ok(receipt);
         } catch (RuntimeException e) {
             return CommerceResult.err(CommerceError.INTERNAL,
                     "malformed Shopify refund payload: " + e.getMessage());
         }
+    }
+
+    private static String fingerprint(RefundIntent intent) {
+        String lines = intent.lines().stream()
+                .map(line -> line.lineItemId() + "x" + line.quantity())
+                .sorted()
+                .collect(Collectors.joining(","));
+        return intent.order().value() + "|" + lines + "|"
+                + intent.refundShipping() + "|" + intent.reason();
     }
 
     @Override

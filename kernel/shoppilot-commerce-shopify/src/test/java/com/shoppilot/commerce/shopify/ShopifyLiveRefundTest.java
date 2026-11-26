@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -56,7 +57,7 @@ class ShopifyLiveRefundTest {
         var gateway = new ShopifyCommerceGateway(transport, new ObjectMapper());
         OrderRef order = new OrderRef(orderName);
 
-        var before = CommerceResults.unwrap(gateway.getOrder(tenant, order));
+        var before = call("getOrder", () -> gateway.getOrder(tenant, order));
         var line = before.lineItems().stream()
                 .filter(item -> item.refundableQuantity() > 0)
                 .findFirst()
@@ -65,11 +66,11 @@ class ShopifyLiveRefundTest {
                 "live order must have at least two refundable units on the selected line");
         RefundIntent intent = new RefundIntent(
                 order, List.of(new RefundLine(line.id(), 1)), false, "live adapter refund");
-        var quote = CommerceResults.unwrap(gateway.quoteRefund(tenant, intent));
+        var quote = call("quoteRefund", () -> gateway.quoteRefund(tenant, intent));
         IdempotencyKey key = new IdempotencyKey(
                 "live-" + orderName.replace("#", "") + "-" + Instant.now().toEpochMilli());
 
-        RefundReceipt first = CommerceResults.unwrap(gateway.createRefund(tenant, intent, key));
+        RefundReceipt first = call("createRefund", () -> gateway.createRefund(tenant, intent, key));
         assertThat(first.status()).isEqualTo(RefundStatus.SETTLED);
         assertThat(first.amount()).isEqualTo(quote.amount());
 
@@ -77,15 +78,15 @@ class ShopifyLiveRefundTest {
         if (!replayResult.isOk()) {
             System.out.println("live replay failed: " + replayResult);
         }
-        RefundReceipt replay = CommerceResults.unwrap(replayResult);
+        RefundReceipt replay = unwrap(replayResult);
         assertThat(replay.commerceRefundId()).isEqualTo(first.commerceRefundId());
         assertThat(replay.amount()).isEqualTo(quote.amount());
 
-        assertThat(CommerceResults.unwrap(
-                gateway.getRefundStatus(tenant, first.commerceRefundId())))
+        assertThat(call("getRefundStatus",
+                () -> gateway.getRefundStatus(tenant, first.commerceRefundId())))
                 .isEqualTo(RefundStatus.SETTLED);
 
-        var after = CommerceResults.unwrap(gateway.getOrder(tenant, order));
+        var after = call("getOrder", () -> gateway.getOrder(tenant, order));
         boolean hasRemaining = after.lineItems().stream()
                 .anyMatch(item -> item.refundableQuantity() > 0);
         if (hasRemaining) {
@@ -96,16 +97,51 @@ class ShopifyLiveRefundTest {
             assertThat(((CommerceResult.Err<?>) conflict).error())
                     .isEqualTo(CommerceError.INVALID_REQUEST);
 
-            RefundReceipt last = CommerceResults.unwrap(gateway.createRefund(
+            RefundReceipt last = call("createRefund-final", () -> gateway.createRefund(
                     tenant, intent, new IdempotencyKey(key.value() + "-final")));
             assertThat(last.status()).isEqualTo(RefundStatus.SETTLED);
-            assertThat(CommerceResults.unwrap(gateway.getOrder(tenant, order)).financial())
+            assertThat(call("getOrder", () -> gateway.getOrder(tenant, order)).financial())
                     .isEqualTo(FinancialStatus.REFUNDED);
+
+            RefundReceipt replayAfterEmpty = unwrap(
+                    gateway.createRefund(tenant, intent, key));
+            assertThat(replayAfterEmpty.commerceRefundId())
+                    .isEqualTo(first.commerceRefundId());
+            assertThat(replayAfterEmpty.amount()).isEqualTo(first.amount());
         }
 
         System.out.printf(
                 "live refund order=%s refund=%s amount=%s status=%s remaining=%s%n",
                 orderName, first.commerceRefundId(), first.amount(), first.status(),
                 hasRemaining);
+    }
+
+    private static <T> T unwrap(CommerceResult<T> result) {
+        if (!result.isOk()) {
+            throw new AssertionError("live Shopify call failed: " + result);
+        }
+        return CommerceResults.unwrap(result);
+    }
+
+    private static <T> T call(String label, Supplier<CommerceResult<T>> action) {
+        CommerceResult<T> last = null;
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            last = action.get();
+            if (last.isOk()) {
+                return CommerceResults.unwrap(last);
+            }
+            CommerceError error = ((CommerceResult.Err<T>) last).error();
+            if (error != CommerceError.UNAVAILABLE && error != CommerceError.THROTTLED) {
+                break;
+            }
+            System.out.println(label + " attempt " + attempt + " failed: " + last);
+            try {
+                Thread.sleep(3_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new AssertionError(label + " failed: " + last);
     }
 }

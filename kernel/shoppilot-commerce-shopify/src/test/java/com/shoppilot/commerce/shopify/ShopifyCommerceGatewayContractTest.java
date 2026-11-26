@@ -2,15 +2,23 @@ package com.shoppilot.commerce.shopify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.shoppilot.commerce.CommerceError;
 import com.shoppilot.commerce.CommerceGateway;
 import com.shoppilot.commerce.CommerceResults;
+import com.shoppilot.commerce.IdempotencyKey;
 import com.shoppilot.commerce.Money;
 import com.shoppilot.commerce.OrderRef;
+import com.shoppilot.commerce.RefundIntent;
+import com.shoppilot.commerce.RefundLine;
+import com.shoppilot.commerce.RefundReceipt;
 import com.shoppilot.commerce.TenantId;
 import com.shoppilot.commerce.tck.CommerceGatewayContractTest;
 import org.junit.jupiter.api.BeforeEach;
 
 import java.math.BigDecimal;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 class ShopifyCommerceGatewayContractTest extends CommerceGatewayContractTest {
 
@@ -256,5 +264,59 @@ class ShopifyCommerceGatewayContractTest extends CommerceGatewayContractTest {
 
         org.assertj.core.api.Assertions.assertThat(errorOf(commerce.getOrder(tenant, paidOrder)))
                 .isEqualTo(com.shoppilot.commerce.CommerceError.THROTTLED);
+    }
+
+    @org.junit.jupiter.api.Test
+    void replayAfterOrderFullyRefundedReturnsOriginalReceipt() {
+        RefundIntent full = new RefundIntent(
+                paidOrder,
+                List.of(new RefundLine("gid://shopify/LineItem/1", 2),
+                        new RefundLine("gid://shopify/LineItem/2", 1)),
+                true,
+                "refund everything");
+        IdempotencyKey key = new IdempotencyKey("replay-after-empty");
+
+        RefundReceipt first = CommerceResults.unwrap(
+                commerce.createRefund(tenant, full, key));
+        assertThat(first.amount()).isEqualTo(Money.of(14000, "CNY"));
+
+        RefundReceipt replay = CommerceResults.unwrap(
+                commerce.createRefund(tenant, full, key));
+
+        assertThat(replay.commerceRefundId()).isEqualTo(first.commerceRefundId());
+        assertThat(replay.amount()).isEqualTo(first.amount());
+    }
+
+    @org.junit.jupiter.api.Test
+    void changedIntentAfterOrderFullyRefundedIsStillRejected() {
+        RefundIntent full = new RefundIntent(
+                paidOrder,
+                List.of(new RefundLine("gid://shopify/LineItem/1", 2),
+                        new RefundLine("gid://shopify/LineItem/2", 1)),
+                true,
+                "refund everything");
+        IdempotencyKey key = new IdempotencyKey("replay-after-empty-changed");
+        CommerceResults.unwrap(commerce.createRefund(tenant, full, key));
+
+        RefundIntent changed = new RefundIntent(
+                paidOrder,
+                List.of(new RefundLine("gid://shopify/LineItem/1", 1)),
+                false,
+                "refund one");
+
+        assertThat(errorOf(commerce.createRefund(tenant, changed, key)))
+                .isEqualTo(CommerceError.INVALID_REQUEST);
+    }
+
+    @org.junit.jupiter.api.Test
+    void replayCacheIsTenantScoped() {
+        RefundIntent intent = new RefundIntent(
+                paidOrder, List.of(new RefundLine("gid://shopify/LineItem/1", 1)),
+                false, "tenant scope");
+        IdempotencyKey key = new IdempotencyKey("tenant-scope");
+        CommerceResults.unwrap(commerce.createRefund(tenant, intent, key));
+
+        assertThat(errorOf(commerce.createRefund(otherTenant, intent, key)))
+                .isEqualTo(CommerceError.NOT_FOUND);
     }
 }
