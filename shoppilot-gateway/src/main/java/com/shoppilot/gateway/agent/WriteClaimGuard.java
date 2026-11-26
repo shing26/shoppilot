@@ -61,6 +61,7 @@ final class WriteClaimGuard {
      */
     private static final List<String> COMPLETED_PREFIXES = List.of(
             "已为您", "已帮您", "已替您", "已经为您", "已给",
+            "已给您", "已向您", "已对您", "已经给您", "已经替您", "已经向您",
             "正在为您", "正在帮您", "正在给您", "正在替您",
             "已成功为您", "已成功帮您", "已经成功为您"
     );
@@ -86,10 +87,19 @@ final class WriteClaimGuard {
                     + "[^，。；！？,.;!?]{0,8}"
                     + "(发起|提交|申请|办理|处理|退款|取消|修改|更改|完成|成功)");
 
+    /**
+     * 「我会为您说明退款政策」「我会为您查询退款进度」不是办理承诺；
+     * 中间出现这些词时，强承诺不算数。
+     */
+    private static final List<String> NON_ACTION_CONTEXT = List.of(
+            "说明", "解释", "介绍", "查询", "核实", "确认", "告知",
+            "政策", "规则", "流程"
+    );
+
     private static final List<String> CLAIM_VERBS = List.of(
             "发起", "提交", "申请", "办理", "处理", "退款", "取消",
             "修改", "更改", "完成", "成功", "受理", "登记", "备注", "退回", "关闭",
-            "安排", "转接"
+            "安排", "转接", "操作", "催促", "反馈", "优先"
     );
 
     /**
@@ -104,7 +114,12 @@ final class WriteClaimGuard {
             "已受理您的", "已经退款", "已经提交", "已经办理", "已经处理",
             "已经取消", "已经修改", "已经更改", "已经完成", "已经改好",
             "退款成功", "提交成功", "办理成功", "修改成功", "取消成功", "订单取消",
-            "已经在处理", "退款正在", "正在处理中", "已转人工", "已转接人工"
+            "已经在处理", "退款正在", "正在处理中", "已转人工", "已转接人工",
+            "已退款", "已完成退款", "已完成", "已取消", "已处理完毕",
+            "已为您全额退款", "已为您原路退回", "已为您加急处理",
+            "已提交", "已办理", "已处理", "已申请", "已发起",
+            "已办好", "已退回", "已全额退款", "已加急处理", "已优先处理",
+            "已为您优先处理", "已为您催促", "已为您反馈", "操作成功", "已操作"
     );
 
     /**
@@ -167,7 +182,12 @@ final class WriteClaimGuard {
         int from = 0;
         while (matcher.find(from)) {
             if (!negated(text, matcher.start())) {
-                return matcher.start();
+                String middle = text.substring(
+                        matcher.start() + matcher.group(1).length(),
+                        matcher.end() - matcher.group(2).length());
+                if (!containsAny(middle, NON_ACTION_CONTEXT)) {
+                    return matcher.start();
+                }
             }
             from = matcher.start() + 1;
         }
@@ -190,7 +210,7 @@ final class WriteClaimGuard {
             int from = 0;
             int index;
             while ((index = text.indexOf(marker, from)) >= 0) {
-                if (!negated(text, index)) {
+                if (!negated(text, index) && !conditionalCompletion(text, index, marker)) {
                     return true;
                 }
                 from = index + 1;
@@ -205,7 +225,8 @@ final class WriteClaimGuard {
                 int from = 0;
                 int index;
                 while ((index = text.indexOf(prefix + verb, from)) >= 0) {
-                    if (!negated(text, index)) {
+                    if (!negated(text, index)
+                            && !conditionalCompletion(text, index, prefix + verb)) {
                         return true;
                     }
                     from = index + 1;
@@ -218,6 +239,21 @@ final class WriteClaimGuard {
     private static boolean negated(String text, int index) {
         String before = text.substring(Math.max(0, index - 8), index);
         return NEGATED_BEFORE.matcher(before).find();
+    }
+
+    private static boolean conditionalCompletion(String text, int index, String marker) {
+        String before = text.substring(Math.max(0, index - 4), index);
+        if (before.contains("如果") || before.contains("若") || before.contains("一旦")
+                || before.contains("只要") || before.contains("假如") || before.contains("要是")) {
+            return true;
+        }
+        if (!marker.endsWith("成功")) {
+            return false;
+        }
+        String after = text.substring(index + marker.length());
+        return after.startsWith("后") || after.startsWith("之后")
+                || after.startsWith("的话") || after.startsWith("即可")
+                || after.startsWith("才能");
     }
 
     private static boolean containsAny(String text, List<String> markers) {
