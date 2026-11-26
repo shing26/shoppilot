@@ -5,6 +5,7 @@ ADR: 0088（审批载体）、0089（终态读模型）、0090（买家术语）
 Status: implemented（2026-11-26；独立 Verifier PASS，P0 无、P1 已关闭；
 待所有者书面签收；AC8 BLOCKED，待 Shopify Partner dev store 凭据）
 Claimed by: root　Blocked by: 无（AC8 另需凭据）
+实现提交: `5ee7e02`（2026-11-26；提交后工作树为空）
 
 契约：[plans/232-commerce-kernel-promotion.md](../../plans/232-commerce-kernel-promotion.md)（2026-11-26 冻结）
 
@@ -72,6 +73,8 @@ git status --short
 
 **验证证据**
 
+- 提交：`5ee7e02 feat(round62): 退款内核与 Shopify 适配器转正为独立 reactor`；
+  提交内容与独立 Verifier 复验的工作树一致，提交后 `git status --short` 为空。
 - 内核：`.\mvnw.cmd -f kernel/pom.xml -B -ntp verify` → BUILD SUCCESS；
   contract 30 / shopify 15 + 1 skipped。
 - 覆盖率：`python kernel\scripts\check_coverage.py` → contract 84.53% / shopify 56.35%，
