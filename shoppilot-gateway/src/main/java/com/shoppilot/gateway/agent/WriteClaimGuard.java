@@ -1,13 +1,24 @@
 package com.shoppilot.gateway.agent;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
- * 票 233：写意图在文字纠偏后仍未派发写工具时，判断模型正文是在追问缺失参数，
- * 还是在冒充“已经办成”。
+ * 票 233：写意图在文字纠偏后仍未派发写工具时，判断模型正文是在追问缺失参数、
+ * 如实拒绝，还是在冒充“已经办成 / 马上办成”。
  *
  * <p>纯函数，不读状态机事实。{@code expectedWriteDone} 仍是唯一“办成了”的判据；
  * 本类只决定正文能不能作为正常答案返回。
+ *
+ * <p>判定顺序是刻意的：
+ * <ol>
+ *   <li>已完成声明优先——「已为您发起退款，请问还需要其他帮助吗？」不能因为
+ *       带问号就放行；</li>
+ *   <li>再认追问——「请提供订单号，我需要核实后为您处理」是合法追问，不能被
+ *       里面的「为您处理」误伤；</li>
+ *   <li>再认如实拒绝；</li>
+ *   <li>最后才是没有追问的未来承诺（「我这就为您提交」）。</li>
+ * </ol>
  */
 final class WriteClaimGuard {
 
@@ -16,13 +27,13 @@ final class WriteClaimGuard {
         NONE,
         /** 在追问缺失参数：合法，原样返回。 */
         ASK,
-        /** 声称已经办理 / 正在办理：没有工具事实时不得透出。 */
+        /** 声称已经办理 / 正在办理 / 马上办理：没有工具事实时不得透出。 */
         CLAIM
     }
 
     /**
-     * 追问标记。不要把“订单号”“收货地址”这类名词单独当标记——完成声明里也会出现，
-     * 例如“已为您修改收货地址”。这里只认明确的提问形态。
+     * 追问标记。不要把「订单号是」「您要退」这类陈述片段单独当标记——
+     * 「订单号是90001，我已经为您提交退款申请」里的「订单号是」不是提问。
      */
     private static final List<String> ASK_MARKERS = List.of(
             "？", "?",
@@ -31,44 +42,86 @@ final class WriteClaimGuard {
             "需要您提供", "需要您确认", "需要您补充",
             "能否提供", "可以告诉我",
             "哪一笔", "哪一单",
-            "订单号是", "收货地址是", "手机号是",
-            "您要退", "您想退", "吗？", "吗?"
+            "吗？", "吗?"
     );
 
     /**
-     * 如实拒绝 / 能力边界。先于完成声明判定，避免把“无法为您发起退款”当成谎报。
+     * 如实拒绝 / 能力边界。用于排除「无法为您发起退款」这类不算谎报的正文。
      */
     private static final List<String> REFUSAL_MARKERS = List.of(
             "无法为您", "不能为您", "无法直接", "不能直接",
             "无法发起", "无法提交", "无法办理", "无法处理", "无法退款",
-            "不能办理", "不能发起", "不能提交", "不支持", "办不了"
+            "不能办理", "不能发起", "不能提交", "不支持", "办不了", "做不到",
+            "尚未", "还没有", "还没", "没有为您", "未为您", "并未为您", "暂未"
     );
 
     /**
-     * 完成 / 进行中的动作声明。只收写动作相关措辞，不收“已为您查询”这类读动作，
-     * 避免把正常的查询回答误判成谎报。
+     * 已完成 / 正在办理的声明。只认「已 / 已经 / 正在」等完成态；
+     * 不含裸「为您处理」，否则会把「我需要核实后为您处理」误判成谎报。
      */
-    private static final List<String> CLAIM_MARKERS = List.of(
-            "已为您发起", "已为您提交", "已为您申请", "已为您办理", "已为您处理",
-            "已帮您发起", "已帮您提交", "已帮您申请", "已帮您办理", "已帮您处理",
-            "已替您发起", "已替您提交", "已替您申请", "已替您办理", "已替您处理",
-            "已经为您发起", "已经为您提交", "已经为您申请", "已经为您办理", "已经为您处理",
+    private static final List<String> COMPLETED_PREFIXES = List.of(
+            "已为您", "已帮您", "已替您", "已经为您", "已给",
+            "正在为您", "正在帮您", "正在给您", "正在替您",
+            "已成功为您", "已成功帮您", "已经成功为您"
+    );
+
+    /**
+     * 没有追问的未来承诺。放在 ASK / REFUSAL 之后判定：
+     * 「请提供订单号，我这就为您提交」仍是合法追问；
+     * 「我这就为您提交退款申请」没有追问，必须拦。
+     */
+    private static final List<String> PROMISE_PREFIXES = List.of(
+            "这就为您", "马上为您", "我将为您", "我帮您", "我给您",
+            "将为您", "为您", "帮您", "我马上", "我这就"
+    );
+
+    /**
+     * 带明确时态/意志的强承诺，允许「直接 / 立即 / 尽快」等副词插在中间。
+     * 它比其后的追问更强：「我将直接为您发起退款……请告诉我订单号」不能被
+     * 后面的「请告诉我」放行；但「请提供订单号，我这就为您提交」仍是先追问，
+     * 按位置规则走 ASK。
+     */
+    private static final Pattern STRONG_PROMISE = Pattern.compile(
+            "(我将|我会|我现在就|我这就|我马上|我立即|我立刻|这就|马上|立即|立刻)"
+                    + "[^，。；！？,.;!?]{0,8}"
+                    + "(发起|提交|申请|办理|处理|退款|取消|修改|更改|完成|成功)");
+
+    private static final List<String> CLAIM_VERBS = List.of(
+            "发起", "提交", "申请", "办理", "处理", "退款", "取消",
+            "修改", "更改", "完成", "成功", "受理", "登记", "备注", "退回", "关闭",
+            "安排", "转接"
+    );
+
+    /**
+     * 不带「为您」前缀、或动词被宾语隔开的完成声明。
+     */
+    private static final List<String> COMPLETED_PHRASES = List.of(
             "已发起退款", "已提交退款", "已申请退款", "已办理退款", "已处理退款",
             "退款申请已", "退款已", "地址已", "订单已取消", "已取消订单",
             "已改好", "改好了", "已修改", "已更改",
-            "已收到您的退款申请", "已收到您的申请",
-            "正在为您提交", "正在为您申请", "正在为您办理", "正在为您处理",
-            "正在为您退款", "正在为您修改", "正在为您更改",
-            "这就为您提交", "这就为您申请", "这就为您办理", "这就为您处理",
-            "马上为您提交", "马上为您申请", "马上为您办理", "马上为您处理",
-            "为您发起退款", "为您提交退款", "为您申请退款", "为您办理退款", "为您处理退款",
-            "帮您发起退款", "帮您提交退款", "帮您申请退款", "帮您办理退款",
-            "我将为您发起", "我将为您提交", "我将为您申请", "我将为您办理", "我将为您处理",
-            "我帮您发起", "我帮您提交", "我帮您申请", "我帮您办理", "我帮您处理",
-            "我给您发起", "我给您提交", "我给您申请", "我给您办理", "我给您处理",
-            "将为您发起", "将为您提交", "将为您申请", "将为您办理", "将为您处理",
-            "已成功提交", "已成功办理", "已成功退款", "已原路退回"
+            "已成功提交", "已成功办理", "已成功退款", "已原路退回",
+            "已将您的订单取消", "已将您的退款", "已进入审核", "已进入退款",
+            "已受理您的", "已经退款", "已经提交", "已经办理", "已经处理",
+            "已经取消", "已经修改", "已经更改", "已经完成", "已经改好",
+            "退款成功", "提交成功", "办理成功", "修改成功", "取消成功", "订单取消",
+            "已经在处理", "退款正在", "正在处理中", "已转人工", "已转接人工"
     );
+
+    /**
+     * 弱确认：只承认收到请求，没有可核对的业务事实。单独出现时仍然是谎报，
+     * 但与「请提供订单号」同句时按追问放行。
+     */
+    private static final List<String> ACK_MARKERS = List.of(
+            "已收到您的退款申请", "已收到您的申请", "已收到您的请求"
+    );
+
+    /**
+     * 否定词必须紧贴在声明前（允许少量非标点字符），避免「没关系，已为您发起」
+     * 被「没」误判成否定。
+     */
+    private static final Pattern NEGATED_BEFORE = Pattern.compile(
+            "(尚未|还没有|还没|并未|没有|未曾|无法|不能|不支持|办不了|做不到|未|没)"
+                    + "[^，。；！？,.;!?]{0,4}$");
 
     private WriteClaimGuard() {
     }
@@ -78,17 +131,93 @@ final class WriteClaimGuard {
             return Verdict.NONE;
         }
         String text = content.strip();
-        // 追问优先：同一个回复里既说“已收到请求”又在要订单号时，按合法追问返回。
-        if (containsAny(text, ASK_MARKERS)) {
+        if (hasCompletedClaim(text)) {
+            return Verdict.CLAIM;
+        }
+        int strongPromise = earliestStrongPromise(text);
+        int ask = earliestMarker(text, ASK_MARKERS);
+        if (strongPromise >= 0 && (ask < 0 || strongPromise < ask)) {
+            return Verdict.CLAIM;
+        }
+        if (ask >= 0) {
             return Verdict.ASK;
         }
         if (containsAny(text, REFUSAL_MARKERS)) {
             return Verdict.NONE;
         }
-        if (containsAny(text, CLAIM_MARKERS)) {
+        if (hasPromiseClaim(text)) {
+            return Verdict.CLAIM;
+        }
+        if (containsAny(text, ACK_MARKERS)) {
             return Verdict.CLAIM;
         }
         return Verdict.NONE;
+    }
+
+    private static boolean hasCompletedClaim(String text) {
+        return hasMarker(text, COMPLETED_PHRASES) || hasPrefixVerb(text, COMPLETED_PREFIXES);
+    }
+
+    private static boolean hasPromiseClaim(String text) {
+        return hasPrefixVerb(text, PROMISE_PREFIXES);
+    }
+
+    private static int earliestStrongPromise(String text) {
+        var matcher = STRONG_PROMISE.matcher(text);
+        int from = 0;
+        while (matcher.find(from)) {
+            if (!negated(text, matcher.start())) {
+                return matcher.start();
+            }
+            from = matcher.start() + 1;
+        }
+        return -1;
+    }
+
+    private static int earliestMarker(String text, List<String> markers) {
+        int earliest = -1;
+        for (String marker : markers) {
+            int index = text.indexOf(marker);
+            if (index >= 0 && (earliest < 0 || index < earliest)) {
+                earliest = index;
+            }
+        }
+        return earliest;
+    }
+
+    private static boolean hasMarker(String text, List<String> markers) {
+        for (String marker : markers) {
+            int from = 0;
+            int index;
+            while ((index = text.indexOf(marker, from)) >= 0) {
+                if (!negated(text, index)) {
+                    return true;
+                }
+                from = index + 1;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasPrefixVerb(String text, List<String> prefixes) {
+        for (String prefix : prefixes) {
+            for (String verb : CLAIM_VERBS) {
+                int from = 0;
+                int index;
+                while ((index = text.indexOf(prefix + verb, from)) >= 0) {
+                    if (!negated(text, index)) {
+                        return true;
+                    }
+                    from = index + 1;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean negated(String text, int index) {
+        String before = text.substring(Math.max(0, index - 8), index);
+        return NEGATED_BEFORE.matcher(before).find();
     }
 
     private static boolean containsAny(String text, List<String> markers) {
