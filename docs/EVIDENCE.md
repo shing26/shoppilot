@@ -581,24 +581,31 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   阈值 / 覆盖率门槛零改动；`/ops/**` 403 与 SSRF 回环拒绝未放宽；未删除或弱化
   任何断言。AC6 的 25/4 偏差与三条现场追问留在票面，等所有者裁定。
 
-- **round62 / 票 233 动作意图忠实性守卫（2026-11-27，HEAD `30f96cd`）**：
+- **round62 / 票 233 动作意图忠实性守卫（2026-11-27，代码 HEAD `f680a43`）**：
   病根是写意图只纠偏一次，纠偏后模型仍不调工具时正文被当最终答案——本地 3B
   5 次采样仅 1 次真正派发 `applyRefund`，其余 4 次输出「已为您发起退款申请」
-  而无任何 tool 事件。新增 `WriteClaimGuard` 纯函数（ASK → REFUSAL → CLAIM，
-  追问优先、如实拒绝先于完成声明；剔除「多少 / 是否」等会把
-  「退款已提交，是否到账以银行为准」误放行的裸词），`PlanExecuteHandler` 在
+  而无任何 tool 事件。新增 `WriteClaimGuard` 纯函数（已完成声明 → 强承诺
+  （先于追问时）→ ASK → REFUSAL → 一般承诺 → 弱确认；已完成声明优先，
+  避免「已为您发起退款，请问还需要其他帮助吗？」带问号被放行；强承诺按位置
+  优先，避免「我将直接为您发起……请告诉我订单号」被后面的追问放行；
+  剔除「多少 / 是否」等会把「退款已提交，是否到账以银行为准」误放行的裸词；
+  否定句「尚未 / 还没有为您办理」按拒绝处理），`PlanExecuteHandler` 在
   「写意图 + 纠偏后仍未派发 + 正文 CLAIM」时走既有 `TOOL_ROUNDS_EXHAUSTED`
   降级 + 工单，正文不透出，trace 记 `write-claim-blocked write-pending=<tool>`；
   追问 / 非写意图 / 已成功派发（含 `PENDING_APPROVAL`）均不触发。**零新增
   降级枚举**，`FallbackReason` 文案、gold 180、阈值、分母、`judge()` 与既有断言
-  零改动。**读数**：窄测 **14/14**（`PlanExecutionTest` 11 + `WriteClaimGuardTest` 3）；
-  全量 `mvnw -B -ntp verify` **BUILD SUCCESS，885 tests / 145 suites**（3:35，
-  tool-api 12 + biz-mock 98 + gateway 725 + ticket 50）；AC7 活体（local
-  `qwen2.5:3b`，HEAD `30f96cd`，每轮 reset demo + 新会话 + 新幂等 token）
-  **10/10 `PENDING_APPROVAL`、0 次「无 tool 事件却声称已办理」**
-  （`logs/ac7-233-20261127g.log`，本机 gitignored）；同一路径早一轮
-  **9 PENDING + 1 `TOOL_ROUNDS_EXHAUSTED` + 工单、0 谎报**
-  （`...e.log`）。**边界**：g 的 10 次均命中工具，降级分支的活体样本来自 e；
+  零改动。**独立 Verifier 首轮 P1 已整改**：完成声明 + 礼貌问句曾被 ASK 无条件
+  放行、CLAIM 词表漏「已为您完成/退款/取消/修改」；修复后补了对应 0-token 断言，
+  AC1 的 handler 用例改用「完成声明 + 问号」形态。**读数**：窄测 **14/14**
+  （`PlanExecutionTest` 11 + `WriteClaimGuardTest` 3）；全量
+  `mvnw -B -ntp verify` **BUILD SUCCESS，885 tests / 145 suites**
+  （tool-api 12 + biz-mock 98 + gateway 725 + ticket 50）；AC7 活体（local
+  `qwen2.5:3b`，HEAD `f680a43`，每轮 reset demo + 新会话 + 新幂等 token）
+  **8 `PENDING_APPROVAL` + 2 `TOOL_ROUNDS_EXHAUSTED` + 工单、
+  0 次「无 tool 事件却声称已办理」**（`logs/ac7-233-20261127i.log`，本机
+  gitignored）；修复前一版 **10/10 `PENDING_APPROVAL`、0 谎报**（`...h.log`），
+  更早一轮 **9 PENDING + 1 DEGRADED + 工单、0 谎报**（`...e.log`）。**边界**：i
+  的降级分支被真实触发两次并落工单；h 的 10 次均命中工具；
   早期三轮采样因问句缺空格、订单不存在、按小写 trace 匹配分别作废，未计入读数；
   未清 Redis 回放索引，以新幂等 token 规避。`gen_status --check` /
   `verify_doc_truth` / `check_doc_links` / `git diff --check` 全绿。

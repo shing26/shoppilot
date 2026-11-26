@@ -2,7 +2,7 @@
 
 Round: 62（产品行为回归修复；ADR 0008 / ADR 0031）
 ADR: 0008（不猜不骗）、0031（回归修复）、0009（降级原因可枚举）
-Status: implemented（2026-11-27；AC1–AC7 通过，待独立 Verifier）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
+Status: implemented（2026-11-27；Verifier 首轮 P1 已整改，待复验）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
 
 契约：[plans/233-write-claim-guard.md](../../plans/233-write-claim-guard.md)（2026-11-27 冻结）
 
@@ -49,25 +49,35 @@ Status: implemented（2026-11-27；AC1–AC7 通过，待独立 Verifier）　Cl
 3. 如实拒绝（「抱歉，这个动作我办不了」）不带问号也不带完成词时原样透出；
    是否要求这类也转人工（更保守，但会把正常拒答也变成工单）？
 
-**实现与验证（2026-11-27，HEAD `30f96cd`）**
+**实现与验证（2026-11-27，代码 HEAD `f680a43`）**
 
-- 新增 `WriteClaimGuard` 纯函数，判定顺序 **ASK → REFUSAL → CLAIM**：
-  追问优先，避免把「已收到您的申请，请提供订单号」误伤；如实拒绝（「无法为您发起」）
-  先于完成声明排除。初版词表里的裸词「多少 / 是否 / 什么时候」已剔除——
-  「退款已提交，是否到账以银行为准」这类完成声明此前会被误放行。
+- 新增 `WriteClaimGuard` 纯函数，判定顺序是
+  **已完成声明 → 强承诺（先于追问时）→ ASK → REFUSAL → 一般承诺 → 弱确认**：
+  已完成声明优先，避免「已为您发起退款，请问还需要其他帮助吗？」因为带问号被放行；
+  强承诺按位置优先（「我将直接为您发起……请告诉我订单号」拦下，
+  「请提供订单号，我这就为您提交」仍按追问放行）；如实拒绝（「无法为您发起」）
+  与否定句（「尚未为您办理退款」）先于承诺排除。初版词表里的裸词
+  「多少 / 是否 / 什么时候」已剔除——「退款已提交，是否到账以银行为准」
+  这类完成声明此前会被误放行。
+- **独立 Verifier 首轮 P1 已整改**：①「完成声明 + 礼貌问句」曾被 ASK 无条件
+  放行；② CLAIM 词表漏了「已为您完成/退款/取消/修改」。修复后补了
+  「已为您完成退款」「已为您退款」「已为您取消订单」「已为您修改收货地址」
+  「我将直接为您发起……请告诉我订单号」「尚未/还没有为您办理」等 0-token 断言，
+  AC1 的 handler 用例也改用「完成声明 + 问号」形态。
 - `PlanExecuteHandler` 只在 `expectedWrite != null && !expectedWriteDone && nudged`
   且正文为 `CLAIM` 时收口：`TOOL_ROUNDS_EXHAUSTED` + 可查工单，正文不透出，
   trace 增 `write-claim-blocked write-pending=<tool>`；`ASK` / `NONE` 原样返回。
   未新增降级枚举、未改 `FallbackReason` 文案、gold / 阈值 / 分母 / `judge()` 零改动。
 - 窄测 **14/14**（`PlanExecutionTest` 11 + `WriteClaimGuardTest` 3）；全量
   `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，885 tests / 145 suites**
-  （tool-api 12 + biz-mock 98 + gateway 725 + ticket 50，3:35）。
-- **AC7 活体**（HEAD `30f96cd`，local `qwen2.5:3b`，每轮先 reset demo、新会话、
-  新幂等 token）：**10/10 `PENDING_APPROVAL`、0 次无 tool 事件却声称已办理**
-  （`logs/ac7-233-20261127g.log`，本机 gitignored）。补充读数：同一路径早一轮
-  **9 PENDING + 1 `TOOL_ROUNDS_EXHAUSTED` + 工单、0 谎报**
-  （`logs/ac7-233-20261127e.log`）。
-- 边界：AC7 的 10 次均命中工具，降级分支由 AC1 的 0-token 用例覆盖；
+  （tool-api 12 + biz-mock 98 + gateway 725 + ticket 50）。
+- **AC7 活体**（HEAD `f680a43`，local `qwen2.5:3b`，每轮先 reset demo、新会话、
+  新幂等 token）：**8 `PENDING_APPROVAL` + 2 `TOOL_ROUNDS_EXHAUSTED` + 工单、
+  0 次无 tool 事件却声称已办理**（`logs/ac7-233-20261127i.log`，本机 gitignored）。
+  这一轮降级分支被真实触发两次，工单号可查。补充读数：修复前一版
+  **10/10 `PENDING_APPROVAL`、0 谎报**（`...h.log`）；更早一轮
+  **9 PENDING + 1 DEGRADED + 工单、0 谎报**（`...e.log`）。
+- 边界：活体每轮都会 reset demo，但未清 Redis 回放索引，以新幂等 token 规避；
   早期三轮采样因问句无空格、订单不存在、trace 大小写匹配错误作废，未计入读数。
 - 文档检查：`python scripts/gen_status.py --check`、`python scripts/verify_doc_truth.py`、
   `python scripts/check_doc_links.py`、`git diff --check` 全绿。
