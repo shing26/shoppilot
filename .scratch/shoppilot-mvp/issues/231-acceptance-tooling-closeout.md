@@ -3,8 +3,8 @@
 Round: 61（验收工装缺陷修复；无新功能面）
 ADR: 0031（回归修复）、0029（凭证默认值纪律）、0042（显式转人工优先）、
 0087（出站 SSRF 防护）
-Status: implemented（2026-11-26，AC1–AC5 + AC7 通过；AC6 读数 25 绿 / 4 红，
-偏差待所有者裁定；AC8 未执行）　Claimed by: root　Blocked by: 无
+Status: done（2026-11-27 所有者书面签收；独立 Verifier PASS，P0/P1 无）
+　Claimed by: root　Blocked by: 无
 
 契约：[plans/231-acceptance-tooling-closeout.md](../../plans/231-acceptance-tooling-closeout.md)（2026-11-26 冻结）
 
@@ -178,4 +178,11 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full
 - AC7 PASS：`check-ps-syntax` 38/0、`verify-launcher-env` 72/72、
   `mvnw verify` BUILD SUCCESS、`gen_status --check` / `verify_doc_truth` /
   `check_doc_links`、`git diff --check` / `git status --short`。
-- AC8 未执行：独立 Verifier + 所有者书面签收 + 合并/CI/删分支。
+- AC8 PASS：独立 Verifier 复验 AC1–AC7 PASS、P0/P1 无（HEAD `fab4b9f`，
+  工作树干净）；所有者 2026-11-27 书面签收。合并 `main`、CI 绿、删分支。
+
+**签收（2026-11-27）**
+
+- 所有者书面签收原话：「签收231」。
+- 签收口径：AC6 以 local **25 绿 / 4 红**为准；dev 27/2 受 R21 限制，
+  不作替代；P1（`ingest.ps1` 通配选包）已整改并由同一 Verifier 复验关闭。
