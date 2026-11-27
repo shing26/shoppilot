@@ -172,6 +172,9 @@ final class WriteClaimGuard {
             return Verdict.CLAIM;
         }
         if (ask >= 0) {
+            if (pastSubmissionQuestion(text) || confirmsCompletion(text)) {
+                return Verdict.NONE;
+            }
             return Verdict.ASK;
         }
         if (containsAny(text, REFUSAL_MARKERS)) {
@@ -199,7 +202,9 @@ final class WriteClaimGuard {
             while ((index = text.indexOf(marker, from)) >= 0) {
                 if (!negated(text, index) && !conditionalCompletion(text, index, marker)) {
                     String after = text.substring(index + marker.length());
-                    if (BARE_OBJECT_PREFIXES.stream().noneMatch(after::startsWith)) {
+                    if (BARE_OBJECT_PREFIXES.stream().noneMatch(after::startsWith)
+                            && !questionAboutStatus(after)
+                            && !confirmationRequested(text, index)) {
                         return true;
                     }
                 }
@@ -289,11 +294,71 @@ final class WriteClaimGuard {
                 || after.startsWith("的话")) {
             return true;
         }
+        // 「已退款后款项会到账」「已发起退款后请耐心等待」是条件/时序说明，不是完成声明。
+        if (after.startsWith("后") || after.startsWith("之后")) {
+            return true;
+        }
         if (marker.endsWith("成功") || marker.endsWith("完成")) {
             return after.startsWith("后") || after.startsWith("之后")
                     || after.startsWith("即可") || after.startsWith("才能");
         }
         return false;
+    }
+
+    /** 裸完成词后面跟着「吗 / ？」时是在问状态，不是在宣告完成。 */
+    private static boolean questionAboutStatus(String after) {
+        int stop = after.length();
+        for (String delimiter : List.of("。", "；", "！")) {
+            int index = after.indexOf(delimiter);
+            if (index >= 0 && index < stop) {
+                stop = index;
+            }
+        }
+        String clause = after.substring(0, stop);
+        return clause.contains("吗") || clause.contains("？") || clause.contains("?");
+    }
+
+    /** 「您已提交过退款申请吗？」是在核对历史事实，不是宣告本次办成，也不是缺参追问。 */
+    private static boolean pastSubmissionQuestion(String text) {
+        for (String marker : BARE_COMPLETIONS) {
+            int from = 0;
+            int index;
+            while ((index = text.indexOf(marker, from)) >= 0) {
+                String after = text.substring(index + marker.length());
+                if (after.startsWith("过") && questionAboutStatus(after)) {
+                    return true;
+                }
+                from = index + 1;
+            }
+        }
+        return false;
+    }
+
+    /** 「请确认订单已提交」是请对方核对已发生事实，不是本方向买家宣告办成。 */
+    private static boolean confirmsCompletion(String text) {
+        for (String marker : BARE_COMPLETIONS) {
+            int from = 0;
+            int index;
+            while ((index = text.indexOf(marker, from)) >= 0) {
+                if (confirmationRequested(text, index)) {
+                    return true;
+                }
+                from = index + 1;
+            }
+        }
+        return false;
+    }
+
+    /** 「请确认订单已提交」是在请对方核对事实，不是本方向买家宣告已办成。 */
+    private static boolean confirmationRequested(String text, int index) {
+        String before = text.substring(0, index);
+        int confirm = Math.max(before.lastIndexOf("请确认"), before.lastIndexOf("请核实"));
+        confirm = Math.max(confirm, before.lastIndexOf("请检查"));
+        if (confirm < 0) {
+            return false;
+        }
+        String between = before.substring(confirm + 3);
+        return between.chars().noneMatch(c -> "，。；！？,.;!?".indexOf(c) >= 0);
     }
 
     /**

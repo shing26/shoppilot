@@ -6,6 +6,7 @@ import com.shoppilot.gateway.llm.LlmException;
 import com.shoppilot.gateway.llm.LlmTypes;
 import com.shoppilot.gateway.style.StyleService;
 import com.shoppilot.tool.Intent;
+import com.shoppilot.tool.ToolName;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,7 +48,8 @@ final class ComposeHandler {
     }
 
     ComposeOutcome compose(TurnContext ctx, List<LlmTypes.Message> messages, LlmTypes.Reply lastReply,
-                           int rounds, boolean answeredByBudgetCheck, HybridRetriever.Result retrieved) {
+                           int rounds, boolean answeredByBudgetCheck, HybridRetriever.Result retrieved,
+                           ToolName pendingWrite) {
         Intent intent = ctx.triage().intent();
         TurnServices.step(ctx.trace(), ctx.sink(), AgentState.REPLY, "streaming");
         String answer;
@@ -60,22 +62,37 @@ final class ComposeHandler {
             AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(answer);
             AnswerEgressGuard.count(services.registry, "answer", guarded.hits());
             answer = guarded.text();
+            ComposeOutcome blocked = guardPendingWrite(ctx, pendingWrite, answer);
+            if (blocked != null) {
+                return blocked;
+            }
             emitChunked(answer, ctx.sink());
         } else {
             // 票 217：第二跳逐 token 直推 SSE。文本先过带 holdback 的流式守卫，跨 chunk 的标识符
             // （apply + Refund）在拼齐那一帧被替换；flush 放出末尾 holdback。
             AnswerEgressGuard.Streaming egress = new AnswerEgressGuard.Streaming();
+            // 票 233：写意图仍未派发工具时，第二跳的答案也可能冒充已办理。先缓冲、判完再决定
+            // 是否推送；宁可这一条路径晚一点出字，也不能让没有业务事实的完成声明先到买家眼前。
+            StringBuilder held = pendingWrite == null ? null : new StringBuilder();
             try {
                 LlmTypes.Reply finalReply = services.llm.stream(new LlmTypes.Request(messages, List.of(),
                         services.properties.llm().temperature()), delta -> {
                             String safe = egress.accept(delta);
                             if (!safe.isEmpty()) {
-                                ctx.sink().token(safe);
+                                if (held != null) {
+                                    held.append(safe);
+                                } else {
+                                    ctx.sink().token(safe);
+                                }
                             }
                         });
                 String tail = egress.flush();
                 if (!tail.isEmpty()) {
-                    ctx.sink().token(tail);
+                    if (held != null) {
+                        held.append(tail);
+                    } else {
+                        ctx.sink().token(tail);
+                    }
                 }
                 AnswerEgressGuard.count(services.registry, "sse_token", egress.hits());
                 ctx.usage().add(finalReply);
@@ -83,6 +100,13 @@ final class ComposeHandler {
                 AnswerEgressGuard.Result guarded = AnswerEgressGuard.sanitize(finalReply.content());
                 AnswerEgressGuard.count(services.registry, "answer", guarded.hits());
                 answer = guarded.text();
+                ComposeOutcome blocked = guardPendingWrite(ctx, pendingWrite, answer);
+                if (blocked != null) {
+                    return blocked;
+                }
+                if (held != null) {
+                    emitChunked(answer, ctx.sink());
+                }
             } catch (LlmException failure) {
                 return ComposeOutcome.terminal(services.fallback(AgentState.REPLY, ctx.trace(), ctx.sink(),
                         TurnServices.mapLlmFailure(failure), ctx.query(), failure.getMessage(), ctx.styleTier(),
@@ -101,6 +125,23 @@ final class ComposeHandler {
                     ctx.styleTier(), ctx.usage()));
         }
         return ComposeOutcome.answer(answer);
+    }
+
+    /**
+     * 票 233：写意图未派发工具时，答案不得是完成声明；退款问句已带订单号时也不得再追问。
+     * 其余追问（如改地址缺新地址）照常放行。
+     */
+    private ComposeOutcome guardPendingWrite(TurnContext ctx, ToolName pendingWrite, String answer) {
+        if (pendingWrite == null) {
+            return null;
+        }
+        WriteClaimGuard.Verdict verdict = WriteClaimGuard.classify(answer);
+        boolean spuriousAsk = verdict == WriteClaimGuard.Verdict.ASK
+                && WriteClaimGuard.isSpuriousAsk(ctx.query(), pendingWrite);
+        if (verdict != WriteClaimGuard.Verdict.CLAIM && !spuriousAsk) {
+            return null;
+        }
+        return ComposeOutcome.terminal(services.writeClaimBlocked(ctx, pendingWrite, spuriousAsk));
     }
 
     // ── 确定性出口 ────────────────────────────────────────────────────────

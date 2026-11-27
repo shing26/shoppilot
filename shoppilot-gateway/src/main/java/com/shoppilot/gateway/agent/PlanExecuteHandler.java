@@ -48,15 +48,17 @@ final class PlanExecuteHandler {
     /** 循环二选一：要么已落到终止出口，要么带着最后一次模型回复进入答案合成。 */
     record ToolLoopResult(AgentResult terminal, List<LlmTypes.Message> messages, LlmTypes.Reply lastReply,
                           boolean toolUsed, List<AgentResult.PlanStep> planSteps, boolean answeredByBudgetCheck,
-                          int rounds) {
+                          int rounds, ToolName pendingWrite) {
 
         static ToolLoopResult terminal(AgentResult result) {
-            return new ToolLoopResult(result, List.of(), null, false, List.of(), false, 0);
+            return new ToolLoopResult(result, List.of(), null, false, List.of(), false, 0, null);
         }
 
         static ToolLoopResult ok(List<LlmTypes.Message> messages, LlmTypes.Reply lastReply, boolean toolUsed,
-                                 List<AgentResult.PlanStep> planSteps, boolean answeredByBudgetCheck, int rounds) {
-            return new ToolLoopResult(null, messages, lastReply, toolUsed, planSteps, answeredByBudgetCheck, rounds);
+                                 List<AgentResult.PlanStep> planSteps, boolean answeredByBudgetCheck, int rounds,
+                                 ToolName pendingWrite) {
+            return new ToolLoopResult(null, messages, lastReply, toolUsed, planSteps, answeredByBudgetCheck,
+                    rounds, pendingWrite);
         }
 
         boolean failed() {
@@ -386,7 +388,8 @@ final class PlanExecuteHandler {
                 return blocked;
             }
         }
-        return ToolLoopResult.ok(messages, lastReply, toolUsed, planSteps, answeredByBudgetCheck, rounds);
+        return ToolLoopResult.ok(messages, lastReply, toolUsed, planSteps, answeredByBudgetCheck, rounds,
+                expectedWriteDone ? null : expectedWrite);
     }
 
     private ToolLoopResult blockWriteClaim(TurnContext ctx, ToolName expectedWrite, String content) {
@@ -396,17 +399,7 @@ final class PlanExecuteHandler {
         if (verdict != WriteClaimGuard.Verdict.CLAIM && !spuriousAsk) {
             return null;
         }
-        services.toolRoundExhaustedCounter.increment();
-        TurnServices.step(ctx.trace(), ctx.sink(), AgentState.PLAN,
-                "write-claim-blocked write-pending=" + expectedWrite.apiName()
-                        + (spuriousAsk ? " ask=spurious" : ""));
-        return ToolLoopResult.terminal(services.fallback(AgentState.TOOL_EXEC, ctx.trace(), ctx.sink(),
-                FallbackReason.TOOL_ROUNDS_EXHAUSTED, ctx.query(),
-                (spuriousAsk
-                        ? "纠偏后仍未派发写工具，且订单号已给出仍继续追问 "
-                        : "纠偏后仍未派发写工具，但正文声称已办理 ")
-                        + expectedWrite.apiName(),
-                ctx.styleTier(), ctx.usage()));
+        return ToolLoopResult.terminal(services.writeClaimBlocked(ctx, expectedWrite, spuriousAsk));
     }
 
     /**
