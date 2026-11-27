@@ -45,6 +45,12 @@
 - `README.md`（契约修订 1：仅同步 badge / 复现段 / CI 段的测试数）
 - `docs/TUNING_PLAN.md`（契约修订 1：仅同步测试数）
 - `shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/PlanExecuteHandler.java`
+- `shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/ComposeHandler.java`
+  （契约修订 2）
+- `shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/TurnServices.java`
+  （契约修订 2）
+- `shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/TurnOrchestrator.java`
+  （契约修订 2）
 - `shoppilot-gateway/src/test/java/com/shoppilot/gateway/agent/PlanExecutionTest.java`
 - 如需纯函数与词表：`shoppilot-gateway/src/main/java/com/shoppilot/gateway/agent/WriteClaimGuard.java`
   与 `shoppilot-gateway/src/test/java/com/shoppilot/gateway/agent/WriteClaimGuardTest.java`
@@ -89,6 +95,16 @@
    `docs/TUNING_PLAN.md` 的测试数；**只改计数，不改阈值、分母、gold、
    `judge()` 或任何既有断言**。`docs/STATUS.md` 仍由 `python scripts/gen_status.py`
    生成，不手改。
+2. **2026-11-27（Verifier 第四轮 P1-A）**：读工具之后还有一条可达路径——
+   `PlanExecuteHandler` 的收尾守卫只检查工具循环的 `lastReply`，但
+   `ComposeHandler` 在 `rounds > 0` 时会再打一跳 `llm.stream` 生成最终答案；
+   这一跳原先没有任何完成声明守卫。修复需要把「待办写动作」经
+   `ToolLoopResult` / `TurnOrchestrator` 传到 `ComposeHandler`，在该跳缓冲
+   全文、判完再决定是否推送；降级出口复用 `TurnServices` 的既有
+   `TOOL_ROUNDS_EXHAUSTED` 收口。为此把 `ComposeHandler`、`TurnServices`、
+   `TurnOrchestrator` 加入 Allowed paths。**判据与枚举零改动**：仍是
+   `expectedWriteDone` 唯一「办成了」事实，仍不新增降级原因，也不改
+   `FallbackReason` 文案；只是补上同一契约在第二跳的漏口。
 
 ## Verify
 

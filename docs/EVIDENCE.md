@@ -623,3 +623,15 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   早期三轮采样因问句缺空格、订单不存在、按小写 trace 匹配分别作废，未计入读数；
   未清 Redis 回放索引，以新幂等 token 规避。`gen_status --check` /
   `verify_doc_truth` / `check_doc_links` / `git diff --check` 全绿。
+  **Verifier 第四轮 P1 已整改**：① 读工具后的 compose 第二跳原先绕过守卫；
+  现在 `pendingWrite` 经 `ToolLoopResult` → `TurnOrchestrator` 传入
+  `ComposeHandler`，该跳先缓冲全文再判定，命中完成声明即走
+  `TOOL_ROUNDS_EXHAUSTED` + 工单，正文不透出（探针
+  `logs/probe-233-leak-result.txt`，本机 gitignored）。② 四条疑问/条件句
+  （`您已提交过退款申请吗？`、`请确认订单已提交`、`已退款后款项会到账`、
+  `已发起退款后请耐心等待`）不再误判 `CLAIM`；Verifier 的 65 条分类矩阵
+  复跑 **65/65 一致**（`logs/probe-233-r4.txt`）。读数更新为窄测 **15/15**
+  （`PlanExecutionTest` 12 + `WriteClaimGuardTest` 3）、全量
+  **886 tests / 145 suites**（tool-api 12 + biz-mock 98 + gateway 726 +
+  ticket 50）。契约修订 2 已把 `ComposeHandler` / `TurnServices` /
+  `TurnOrchestrator` 加入 Allowed paths；判据与降级枚举零改动。

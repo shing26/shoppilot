@@ -2,7 +2,7 @@
 
 Round: 62（产品行为回归修复；ADR 0008 / ADR 0031）
 ADR: 0008（不猜不骗）、0031（回归修复）、0009（降级原因可枚举）
-Status: implemented（2026-11-27；Verifier 三轮 P1 已整改，待复验）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
+Status: implemented（2026-11-27；Verifier 四轮 P1 已整改，待第五轮复验）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
 
 契约：[plans/233-write-claim-guard.md](../../plans/233-write-claim-guard.md)（2026-11-27 冻结）
 
@@ -48,6 +48,23 @@ Status: implemented（2026-11-27；Verifier 三轮 P1 已整改，待复验）�
    是否接受，还是另开票加独立 reason/metric（要同步 README 计数）？
 3. 如实拒绝（「抱歉，这个动作我办不了」）不带问号也不带完成词时原样透出；
    是否要求这类也转人工（更保守，但会把正常拒答也变成工单）？
+
+**Verifier 第四轮 P1 整改（2026-11-27）**
+
+- **P1-A（compose 第二跳绕过守卫）已整改**：`ToolLoopResult` 新增
+  `pendingWrite`，由 `TurnOrchestrator` 传入 `ComposeHandler`；当写意图仍未
+  派发工具时，第二跳 `llm.stream` 先缓冲全文，`WriteClaimGuard` 判完再决定
+  推送或走 `TOOL_ROUNDS_EXHAUSTED` + 工单。探针复跑：
+  `ANSWER=这个问题需要人工为您整体跟进…`、`FALLBACK=TOOL_ROUNDS_EXHAUSTED`、
+  `TRACE` 含 `write-claim-blocked write-pending=applyRefund`，完成声明不再透出。
+- **P1-B（四条 CLAIM 误判）已整改**：`已退款后…` / `已发起退款后…` 按时序
+  条件句排除；裸完成词后的「吗/？」与「请确认订单已提交」按状态询问处理，
+  返回 `NONE`，不落无谓工单。Verifier 的 65 条分类矩阵复跑 **65/65 一致**。
+- 回归：窄测 **15/15**（`PlanExecutionTest` 12 + `WriteClaimGuardTest` 3）；
+  全量 `mvnw -B -ntp verify` **BUILD SUCCESS，886 tests / 145 suites**
+  （tool-api 12 + biz-mock 98 + gateway 726 + ticket 50）。
+- 契约修订 2 已登记 `ComposeHandler` / `TurnServices` / `TurnOrchestrator`
+  三个必要路径；判据、降级枚举、`FallbackReason` 文案零改动。
 
 **实现与验证（2026-11-27，代码 HEAD `bf1c314`）**
 
