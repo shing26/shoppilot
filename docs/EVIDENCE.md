@@ -639,3 +639,6 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   **10/10 `PENDING_APPROVAL`、0 谎报**（`logs/ac7-233-20261127m.log`）；
   `verify-refund-approval.ps1` 9/9 PASS。分类矩阵保留两条 Verifier 已认定为
   良性的 `ASK`（`订单已提交了吗？` / `请问订单已提交了吗？`），其余 63 条一致。
+  **Verifier 第五轮复验 PASS**（HEAD `cc23e6c`）：P0/P1 无；窄测 15/15、
+  全量 886 tests / 145 suites、AC7 活体 10/10 PENDING、0 谎报、闸门 9/9；
+  两条状态问句保持 `ASK` 已获 Verifier 明确接受。待所有者签收后合并。

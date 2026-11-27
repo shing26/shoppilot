@@ -2,7 +2,7 @@
 
 Round: 62（产品行为回归修复；ADR 0008 / ADR 0031）
 ADR: 0008（不猜不骗）、0031（回归修复）、0009（降级原因可枚举）
-Status: implemented（2026-11-27；Verifier 四轮 P1 已整改，待第五轮复验）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
+Status: implemented（2026-11-27；Verifier 第五轮 PASS，P0/P1 无，待所有者签收）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
 
 契约：[plans/233-write-claim-guard.md](../../plans/233-write-claim-guard.md)（2026-11-27 冻结）
 
@@ -72,6 +72,21 @@ Status: implemented（2026-11-27；Verifier 四轮 P1 已整改，待第五轮�
   `订单已提交了吗？` / `请问订单已提交了吗？` 两条 `ASK` 与矩阵的 `NONE`
   不同；这两条是 Verifier 已明确称为良性的状态询问，不触发降级。
   `verify-refund-approval.ps1` 9/9 PASS（含放行、驳回、回滚与审计署名）。
+
+**Verifier 第五轮复验（2026-11-27，HEAD `cc23e6c`）**
+
+- **PASS**：P0/P1 无。窄测 15/15；全量 `mvnw verify` 886 tests / 145 suites；
+  65 条矩阵 63/65；`Probe233Leak` 已降级且无完成声明；AC7 活体亲跑
+  10/10 `PENDING_APPROVAL`、`LIES=0`；`verify-refund-approval.ps1` 9/9；
+  三份文档检查与 `git diff --check` 全绿；`eval/` 与 `FallbackReason.java`
+  零 diff；无跳测、无断言删除/弱化。
+- **ASK 裁定**：Verifier 接受 `订单已提交了吗？` / `请问订单已提交了吗？`
+  保持 `ASK`，不要求收为 `NONE`；理由是其字面为疑问句，契约禁止的是
+  `CLAIM`，且既有断言不应被修改。若要求带订单号的状态问句永不降级，
+  需另开契约修订收窄 `isSpuriousAsk`。
+- 路径合规：14 个变更路径全部在契约修订 2 的 Allowed paths 内。
+- **AC8 未完成**：所有者签收、合并 `main`、合并后 `ci-subset`、删分支
+  尚未执行；完成前不得标记 `done` 或合并。
 
 **实现与验证（2026-11-27，代码 HEAD `bf1c314`）**
 
