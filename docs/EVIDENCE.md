@@ -630,8 +630,12 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   `logs/probe-233-leak-result.txt`，本机 gitignored）。② 四条疑问/条件句
   （`您已提交过退款申请吗？`、`请确认订单已提交`、`已退款后款项会到账`、
   `已发起退款后请耐心等待`）不再误判 `CLAIM`；Verifier 的 65 条分类矩阵
-  复跑 **65/65 一致**（`logs/probe-233-r4.txt`）。读数更新为窄测 **15/15**
+  复跑 **63/65 一致**，余 2 条是良性的 `ASK`（`logs/probe-233-r4.txt`）。读数更新为窄测 **15/15**
   （`PlanExecutionTest` 12 + `WriteClaimGuardTest` 3）、全量
   **886 tests / 145 suites**（tool-api 12 + biz-mock 98 + gateway 726 +
   ticket 50）。契约修订 2 已把 `ComposeHandler` / `TurnServices` /
   `TurnOrchestrator` 加入 Allowed paths；判据与降级枚举零改动。
+  最终代码 HEAD `8bf99bc` 的 AC7 活体复跑（local `qwen2.5:3b`）：
+  **10/10 `PENDING_APPROVAL`、0 谎报**（`logs/ac7-233-20261127m.log`）；
+  `verify-refund-approval.ps1` 9/9 PASS。分类矩阵保留两条 Verifier 已认定为
+  良性的 `ASK`（`订单已提交了吗？` / `请问订单已提交了吗？`），其余 63 条一致。

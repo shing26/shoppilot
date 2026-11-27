@@ -58,13 +58,20 @@ Status: implemented（2026-11-27；Verifier 四轮 P1 已整改，待第五轮�
   `ANSWER=这个问题需要人工为您整体跟进…`、`FALLBACK=TOOL_ROUNDS_EXHAUSTED`、
   `TRACE` 含 `write-claim-blocked write-pending=applyRefund`，完成声明不再透出。
 - **P1-B（四条 CLAIM 误判）已整改**：`已退款后…` / `已发起退款后…` 按时序
-  条件句排除；裸完成词后的「吗/？」与「请确认订单已提交」按状态询问处理，
-  返回 `NONE`，不落无谓工单。Verifier 的 65 条分类矩阵复跑 **65/65 一致**。
+  条件句排除；「您已提交过…吗」「请确认订单已提交」返回 `NONE`，不落无谓
+  工单；`订单已提交了吗？` 仍按缺参追问返回 `ASK`（Verifier 已认定良性）。
+  Verifier 的 65 条分类矩阵复跑 **63/65 一致**，余 2 条即上述良性 `ASK`。
 - 回归：窄测 **15/15**（`PlanExecutionTest` 12 + `WriteClaimGuardTest` 3）；
   全量 `mvnw -B -ntp verify` **BUILD SUCCESS，886 tests / 145 suites**
   （tool-api 12 + biz-mock 98 + gateway 726 + ticket 50）。
 - 契约修订 2 已登记 `ComposeHandler` / `TurnServices` / `TurnOrchestrator`
   三个必要路径；判据、降级枚举、`FallbackReason` 文案零改动。
+- 最终代码 AC7 活体（local `qwen2.5:3b`，HEAD `8bf99bc`，每轮 reset demo +
+  新会话 + 新幂等 token）：**10/10 `PENDING_APPROVAL`、0 谎报**
+  （`logs/ac7-233-20261127m.log`，本机 gitignored）。分类矩阵只剩
+  `订单已提交了吗？` / `请问订单已提交了吗？` 两条 `ASK` 与矩阵的 `NONE`
+  不同；这两条是 Verifier 已明确称为良性的状态询问，不触发降级。
+  `verify-refund-approval.ps1` 9/9 PASS（含放行、驳回、回滚与审计署名）。
 
 **实现与验证（2026-11-27，代码 HEAD `bf1c314`）**
 
