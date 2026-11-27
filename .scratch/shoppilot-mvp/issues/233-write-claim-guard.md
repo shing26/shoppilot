@@ -93,8 +93,8 @@ Status: done（2026-11-27 所有者书面签收；独立 Verifier 第五轮 PASS
 - 所有者书面签收原话：「签收233」。
 - 签收口径：以 Verifier 第五轮 PASS（HEAD `cc23e6c`，P0/P1 无）为准；
   两条状态问句保持 `ASK` 的裁定一并接受。
-- AC8 收口：合并 `main`、合并后 `ci-subset` success、删除
-  `codex/233-write-claim-guard`。
+- AC8 收口完成：合并提交 `79d5cba`；`ci-subset` run `45945315405`
+  对合并后 HEAD **success**；删除 `codex/233-write-claim-guard`。
 
 **实现与验证（2026-11-27，代码 HEAD `bf1c314`）**
 

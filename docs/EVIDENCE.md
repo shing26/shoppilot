@@ -642,4 +642,5 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   **Verifier 第五轮复验 PASS**（HEAD `cc23e6c`）：P0/P1 无；窄测 15/15、
   全量 886 tests / 145 suites、AC7 活体 10/10 PENDING、0 谎报、闸门 9/9；
   两条状态问句保持 `ASK` 已获 Verifier 明确接受。所有者 2026-11-27 书面
-  签收（「签收233」），合并 `main` 并等待合并后 `ci-subset`。
+  签收（「签收233」）；合并提交 `79d5cba`，`ci-subset` run `45945315405`
+  对合并后 HEAD success，分支已删除。
