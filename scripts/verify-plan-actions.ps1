@@ -14,6 +14,9 @@
 param(
     [string]$BaseUrl = 'http://127.0.0.1:8082',
     [string]$OpsToken = '',
+    # 票 231 / 2026-11-27：矩阵带 -Profile dev 时，这里重启网关必须沿用同一档，
+    # 否则 plan 步之后整轮悄悄退回 local（3B），dev 读数作废。
+    [string]$Profile = 'local',
     [switch]$WithRestarts
 )
 $ErrorActionPreference = 'Stop'
@@ -347,7 +350,7 @@ if ($WithRestarts) {
         Set-Content -Path $envFile -Value $placeholder -Encoding ascii
         & (Join-Path $root 'scripts\stop.ps1') -Ports '8082' | Out-Null
         Start-Sleep -Seconds 2
-        & (Join-Path $root 'scripts\start-gateway.ps1') -Profile local | Out-Null
+        & (Join-Path $root 'scripts\start-gateway.ps1') -Profile $Profile | Out-Null
         Assert-True (Wait-ServiceUp 8082 '网关' 300 (Join-Path $root 'logs\gateway-local.pid') (Join-Path $root 'logs\gateway-local.out')) `
             "指向死端点的网关自己起来了（模型不可用不等于服务起不来）"
         Invoke-Ops 'POST' '/api/v1/support/ops/cache/flush' $null | Out-Null
@@ -366,7 +369,7 @@ if ($WithRestarts) {
         if (Test-Path $envBackup) { Move-Item -LiteralPath $envBackup -Destination $envFile }
         & (Join-Path $root 'scripts\stop.ps1') -Ports '8082' | Out-Null
         Start-Sleep -Seconds 2
-        & (Join-Path $root 'scripts\start-gateway.ps1') -Profile local | Out-Null
+        & (Join-Path $root 'scripts\start-gateway.ps1') -Profile $Profile | Out-Null
         Assert-True (Wait-ServiceUp 8082 '网关' 300 (Join-Path $root 'logs\gateway-local.pid') (Join-Path $root 'logs\gateway-local.out')) `
             '已恢复默认配置并重启网关'
     }

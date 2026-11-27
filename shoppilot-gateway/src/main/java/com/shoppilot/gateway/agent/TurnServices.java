@@ -186,6 +186,24 @@ final class TurnServices {
                 promptCatalog.version(), List.of(), AgentResult.ContextComposition.NONE, List.of());
     }
 
+    /**
+     * 票 233：写意图仍未派发工具，正文却在声称已办理（或订单号已给出仍追问）。
+     * 收口方式与轮次耗尽一致：不留一句没有业务事实的完成声明，落可查工单。
+     */
+    AgentResult writeClaimBlocked(TurnContext ctx, ToolName expectedWrite, boolean spuriousAsk) {
+        toolRoundExhaustedCounter.increment();
+        step(ctx.trace(), ctx.sink(), AgentState.PLAN,
+                "write-claim-blocked write-pending=" + expectedWrite.apiName()
+                        + (spuriousAsk ? " ask=spurious" : ""));
+        return fallback(AgentState.TOOL_EXEC, ctx.trace(), ctx.sink(),
+                FallbackReason.TOOL_ROUNDS_EXHAUSTED, ctx.query(),
+                (spuriousAsk
+                        ? "纠偏后仍未派发写工具，且订单号已给出仍继续追问 "
+                        : "纠偏后仍未派发写工具，但正文声称已办理 ")
+                        + expectedWrite.apiName(),
+                ctx.styleTier(), ctx.usage());
+    }
+
     // ── 共用小工具 ────────────────────────────────────────────────────────
 
     /** H4 friction：只认确实拿到结果的工具步；失败 / retry / 拦截不算“修好但仍留不住人”。 */

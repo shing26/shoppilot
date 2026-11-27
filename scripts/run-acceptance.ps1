@@ -98,7 +98,9 @@ $steps = [ordered]@{
     # 而这份报告的全部价值就在于不漂。--strict 下缺任何一份证据就红。不需要活体服务。
     report    = @{ Kind = 'py'; Cmd = 'scripts\build_loadtest_report.py'; Arg = @('--strict'); Need = $false; Skip = $false; Expect = @('写出 docs/loadtest-report.md') }
     stack     = @{ Kind = 'ps1'; Cmd = 'scripts\up.ps1'; Arg = @(@('-Profile', $Profile) + $(if ($SkipIngest) { @('-SkipIngest') } else { @() })); Need = $true; Skip = $SkipStack; Expect = @('栈已就绪') }
-    plan      = @{ Kind = 'ps1'; Cmd = 'scripts\verify-plan-actions.ps1'; Arg = @('-WithRestarts'); Need = $true; Skip = $false }
+    # -Profile 必须透传：这一步会重启网关（死端点 / 恢复默认两处），写死 local 会让
+    # `-Tier full -Profile dev` 在 plan 之后整轮退回 3B（2026-11-27 dev 矩阵实测）。
+    plan      = @{ Kind = 'ps1'; Cmd = 'scripts\verify-plan-actions.ps1'; Arg = @('-WithRestarts', '-Profile', $Profile); Need = $true; Skip = $false }
     hitzero   = @{ Kind = 'ps1'; Cmd = 'scripts\verify-hit-zero-llm.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('全部通过：命中路径零模型调用') }
     action    = @{ Kind = 'ps1'; Cmd = 'scripts\verify-action-loop.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('业务办理闭环验收通过') }
     idem      = @{ Kind = 'ps1'; Cmd = 'scripts\verify-idempotency.ps1'; Arg = @(); Need = $true; Skip = $false; Expect = @('state check rejected it') }

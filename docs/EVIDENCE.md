@@ -559,12 +559,15 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   全部落地（R20 启动器按根 POM 版本精确选 jar；R16 凭证唯一来源
   `.env` + 进程环境；R19 验收栈合并 `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1`；
   R17 调试台坐席令牌读 circuit；R18 EMO-ESC-07 归入 `USER_REQUESTED`）。
-  全量矩阵现场又暴露并修掉三处 harness 自身的红：`run-acceptance.ps1` 固定
+  全量矩阵现场又暴露并修掉四处 harness 自身的红：`run-acceptance.ps1` 固定
   `SHOPPILOT_EMBEDDING_SIDECAR_URL`（`plan`/`console` 中途重启网关后丢失，
   稠密向量化退回 Ollama 实测 9.5 s 超时 → 检索降级 → 写回拒 → L1 断言假红）、
   `up.ps1` 在入库前等 biz-mock readiness（原并行顺序在 seed 窗口 exit 1）、
-  `console.html::loadTenants()` 未登录时不打必然 403 的 `/ops/tenants`。
-  **读数**：`check-ps-syntax` 38/0；`verify-launcher-env` **70/70**；
+  `console.html::loadTenants()` 未登录时不打必然 403 的 `/ops/tenants`、
+  `verify-plan-actions.ps1` 重启网关硬编码 `-Profile local`（dev 矩阵回退 3B）。
+  **读数**：`check-ps-syntax` 38/0；`verify-launcher-env` **72/72**
+  （Verifier P1 后补 `ingest.ps1` 精确取包两条）；`plan` 重启透传 `-Profile`
+  （dev 矩阵不再回退 local）；
   `console` **45/45**；`plan -WithRestarts` 全过；`polarity` 通过；
   `isolation` **5/5**；冷启动 `up.ps1 -SkipBuild` 全栈 **158 s**（入库 111 块、
   纪元 14）；最终 29 步矩阵 `logs/acceptance-run-20261126-043649.log`
@@ -641,8 +644,9 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   `replayAfterOrderFullyRefundedReturnsOriginalReceipt` 在 `unwrap` 处报
   `result is not Ok`，`changedIntentAfterOrderFullyRefundedIsStillRejected`
   期望 `INVALID_REQUEST` 实得 `STATE_NOT_ALLOWED`；还原后 24 条适配器用例全绿。
-- **根回归与文档**：`.\mvnw.cmd -B -ntp verify` → BUILD SUCCESS，根五模块
-  878 tests / 144 suites 未变；`gen_status.py --check` OK；
+- **根回归与文档**：`.\mvnw.cmd -B -ntp verify` → BUILD SUCCESS，票 232 验证时
+  根五模块 878 tests / 144 suites（合并票 233 后当前为 886/145）；
+  `gen_status.py --check` OK；
   `verify_doc_truth.py` 878/144；`check_doc_links.py` 123 文件 / 254 链接；
   `git diff --check` 无输出。
 - **复现（live refund，需显式允许写）**：
@@ -661,3 +665,66 @@ $env:SHOPIFY_LIVE_WRITE='1'
   退货/换货未验证（无对应 scope）；`CANCEL` 回库需 location 权限，适配器固定
   `NO_RESTOCK`；多笔 CAPTURE 的跨交易拆分未实现；60 天边界未触发；
   重放缓存不是持久幂等。以上均不替代 AC8 已覆盖的真实退款写链路。
+- **round62 / 票 233 动作意图忠实性守卫（2026-11-27，代码 HEAD `bf1c314`）**：
+  病根是写意图只纠偏一次，纠偏后模型仍不调工具时正文被当最终答案——本地 3B
+  5 次采样仅 1 次真正派发 `applyRefund`，其余 4 次输出「已为您发起退款申请」
+  而无任何 tool 事件。新增 `WriteClaimGuard` 纯函数（已完成声明 → 强承诺
+  （先于追问时）→ ASK → REFUSAL → 一般承诺 → 弱确认；已完成声明优先，
+  避免「已为您发起退款，请问还需要其他帮助吗？」带问号被放行；强承诺按位置
+  优先，避免「我将直接为您发起……请告诉我订单号」被后面的追问放行；
+  剔除「多少 / 是否」等会把「退款已提交，是否到账以银行为准」误放行的裸词；
+  否定句「尚未 / 还没有为您办理」按拒绝处理），`PlanExecuteHandler` 在
+  「写意图 + 纠偏后仍未派发 + 正文 CLAIM」时走既有 `TOOL_ROUNDS_EXHAUSTED`
+  降级 + 工单，正文不透出，trace 记 `write-claim-blocked write-pending=<tool>`；
+  追问 / 非写意图 / 已成功派发（含 `PENDING_APPROVAL`）均不触发。**零新增
+  降级枚举**，`FallbackReason` 文案、gold 180、阈值、分母、`judge()` 与既有断言
+  零改动。**独立 Verifier 首轮 P1 已整改**：完成声明 + 礼貌问句曾被 ASK 无条件
+  放行、CLAIM 词表漏「已为您完成/退款/取消/修改」；修复后补了对应 0-token 断言，
+  AC1 的 handler 用例改用「完成声明 + 问号」形态。**第二轮 P1 已整改**：
+  裸完成声明（`已退款` / `已完成` / `已取消` / `已处理完毕` / `已给您退款` /
+  `已为您全额退款` / `已为您原路退回` / `已为您加急处理` 等）漏判，且
+  「我办不了……我会为您说明退款政策」「退款成功后款项会原路退回」
+  被强承诺/条件句误伤；修复补裸声明与「已给您/已向您」前缀，强承诺跳过
+  「说明/查询/核实/确认/政策/流程」等非动作语境，「成功后 / 如果…」按条件句排除。
+  **第三轮 P1 已整改**：补 `退款处理完成` / `退款办理完成` / `退款处理成功` /
+  `退款申请成功` / `退款完成`；裸 `已提交/已处理/已申请/已办理` 只在句末或
+  非动作宾语后算数，「已提交的退款申请」「已办理退款的订单」「订单已提交了吗？」
+  「订单已提交的话」按定语、疑问、条件句排除。**AC7 的 ASK 边界按字面收紧**：
+  固定退款问句已含订单号时，追问订单号/收件人不算缺失参数；`applyRefund` 在
+  query 带 5 位以上订单号时 ASK 直接降级 + 工单，地址修改等其它写工具仍允许
+  合理补参追问。AC2 的 handler 用例改为地址修改（新地址确实缺失）验证合法 ASK。
+  **读数**：窄测 **14/14**
+  （`PlanExecutionTest` 11 + `WriteClaimGuardTest` 3）；全量
+  `mvnw -B -ntp verify` **BUILD SUCCESS，885 tests / 145 suites**
+  （tool-api 12 + biz-mock 98 + gateway 725 + ticket 50）；AC7 活体（local
+  `qwen2.5:3b`，HEAD `bf1c314`，每轮 reset demo + 新会话 + 新幂等 token）
+  **10/10 `PENDING_APPROVAL`、0 次「无 tool 事件却声称已办理」**
+  （`logs/ac7-233-20261127l.log`，本机 gitignored），字面满足「每一次 PENDING
+  或降级 + 工单」。累计读数：k 轮 8 PENDING + 1 DEGRADED + 1 次追问（修复前，
+  0 谎报）；i 轮 **8 PENDING + 2 DEGRADED + 工单、0 谎报**（降级两次）；
+  h 轮 **10/10 PENDING、0 谎报**；e 轮 **9 PENDING + 1 DEGRADED、0 谎报**。
+  **边界**：i 的降级分支被真实触发两次并落工单；h/l 的 10 次均命中工具；
+  早期三轮采样因问句缺空格、订单不存在、按小写 trace 匹配分别作废，未计入读数；
+  未清 Redis 回放索引，以新幂等 token 规避。`gen_status --check` /
+  `verify_doc_truth` / `check_doc_links` / `git diff --check` 全绿。
+  **Verifier 第四轮 P1 已整改**：① 读工具后的 compose 第二跳原先绕过守卫；
+  现在 `pendingWrite` 经 `ToolLoopResult` → `TurnOrchestrator` 传入
+  `ComposeHandler`，该跳先缓冲全文再判定，命中完成声明即走
+  `TOOL_ROUNDS_EXHAUSTED` + 工单，正文不透出（探针
+  `logs/probe-233-leak-result.txt`，本机 gitignored）。② 四条疑问/条件句
+  （`您已提交过退款申请吗？`、`请确认订单已提交`、`已退款后款项会到账`、
+  `已发起退款后请耐心等待`）不再误判 `CLAIM`；Verifier 的 65 条分类矩阵
+  复跑 **63/65 一致**，余 2 条是良性的 `ASK`（`logs/probe-233-r4.txt`）。读数更新为窄测 **15/15**
+  （`PlanExecutionTest` 12 + `WriteClaimGuardTest` 3）、全量
+  **886 tests / 145 suites**（tool-api 12 + biz-mock 98 + gateway 726 +
+  ticket 50）。契约修订 2 已把 `ComposeHandler` / `TurnServices` /
+  `TurnOrchestrator` 加入 Allowed paths；判据与降级枚举零改动。
+  最终代码 HEAD `8bf99bc` 的 AC7 活体复跑（local `qwen2.5:3b`）：
+  **10/10 `PENDING_APPROVAL`、0 谎报**（`logs/ac7-233-20261127m.log`）；
+  `verify-refund-approval.ps1` 9/9 PASS。分类矩阵保留两条 Verifier 已认定为
+  良性的 `ASK`（`订单已提交了吗？` / `请问订单已提交了吗？`），其余 63 条一致。
+  **Verifier 第五轮复验 PASS**（HEAD `cc23e6c`）：P0/P1 无；窄测 15/15、
+  全量 886 tests / 145 suites、AC7 活体 10/10 PENDING、0 谎报、闸门 9/9；
+  两条状态问句保持 `ASK` 已获 Verifier 明确接受。所有者 2026-11-27 书面
+  签收（「签收233」）；合并提交 `79d5cba`，`ci-subset` run `45945315405`
+  对合并后 HEAD success，分支已删除。

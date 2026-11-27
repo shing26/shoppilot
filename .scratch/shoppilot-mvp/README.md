@@ -108,13 +108,15 @@
 - 2026-10-19（同日，活体面）：**149 收口（dev 档活体跑 part10 一次 + 预算 600k 落地）**——`.env` 的 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET` 260000 → **600000**（`.env.example` 注释同步；ADR 0012 闸门本体保留）。三服务起齐（网关 profile=dev + biz-mock:8091 + **工单服务:8092**）后跑 part10 全量 30 条（0.25 s 节流 + **逐条前置复位**，实测 0.03 s/次）。**读数（run#2，归因 promptVersion=v1.2.0 / max-tool-rounds=4 / HEAD `5831262`）**：计费 **222,276 token**（均值 7,409；口径 = `ops/circuit.tokensUsedToday` 增量，**不读响应 token 字段**）、墙钟 **211 s**、三态 **触发 7 / 不触发 23 / 用尽 0 / 未观测 0**、130 断言 → 红 18 / 未观测 5；`rounds` 区（打满 4 枪 + `TOOL_ROUNDS_EXHAUSTED` + 落工单）**5/5 绿**。**run#1（245,452 token）作废**：工单服务没起 → 5 条超限用例 `ticket_ok` 全红，属环境红不进读数；补起后转绿即反证。**18 条红三簇**：① PLAN 区 5 条 = **模型方差**（同样 5 条 run#1 全绿）；② 反思触发档 4 条 = 机制触发（counter +1、`induction=window`）但模型提前收尾没打第二枪；③ 用尽档 2 条撞**口径张力**（prompt 第 4 条教「换一种做法」vs 该档要求原样重试同一工具）+ 写工具档 1 条被**幂等回放**挡住（同批更早用例已用同单同参提交过退款；复位只清 biz-mock 库、不清 Redis 回放索引——round21 票 61 同源陷阱）——后两条登记给 148 面。**顺带修三处只有活体才暴露的**（0 判据改动）：ops 调用必须同时带 bearer 与 `X-Ops-Token`（否则 401）、`/ops/fault` 是 `PUT`（否则 405）、逐条前置复位。**与 140 预估差**：预估单跑 ≈29 万 → 实测 22.2 万（低 23%）。明细 + 报告落 `eval/results/`（`tool-eval-20261019-085417-dev-autonomy.csv` / `autonomy-part10-dev-20261019.md`），EVIDENCE 加行。**gold / 阈值 / 分母 / `judge()` 零触碰**（gold 180 本轮不重跑）。
 - 2026-10-19（同日，守卫面）：**146 收口（写动作守卫补行业门 = R11 闭合）**——`expectedWrite` 在**非电商租户置空**（门开在源头那一处：纠偏一枪与「写挂起但轮次用尽」两个分支共用它，一处改动同时收口两条路径；`toolsFor` 与网关派生那两道早有的门一行未碰）。病根是「**漏吃同一道门**」：酒店/未登记租户的规划请求 `tools` 为空、模型手上根本没有 `applyRefund`，纠偏却仍递一句「直接调用 applyRefund 把它真的办掉」——与 prompt 第 7 条「无工具时照实说明办不了」冲突，且诱导谎报「已提交」。用例两格（0 token）：HOTEL 负例（`tools` 为空、只 1 次 `complete`、`shoppilot_write_nudge_total` 为 0、无 `corrective=` 行、模型原话原样回给买家）+ **电商正对照**（`tools` 非空、2 次 `complete`、纠偏指令逐字含 `applyRefund`、计数为 1）——只钉负例的话，把门开成恒 null 也能绿，而票 41 花成本立起来的电商纠偏会静默死掉。**变异对照实测为真**：去掉 domain 门 → 负例恰 1 条红，还原即绿（7/7）；全量 `verify` 四模块 `10 + 73 + 446 + 45 = 574` 绿。台账 `registered-debt.md`：**R11 挪「已关闭」**；**R12 同批挪档**（已被票 145 修掉，原条目「响应字段本身未修」已成假陈述）——票 150 只做复核。gold / 阈值 / 分母 / `judge()` 零触碰。
 - 当前 `ready-for-agent` 的开放票：**无**。票 **232** 于 2026-11-27
-  **implemented（AC8 已执行；待独立 Verifier 复验 AC8 修复 + 所有者签收）**。
-  票 **231** 于 2026-11-26
-  **implemented（AC1–AC5/AC7 通过；AC6 读数 25 绿 / 4 红，待所有者裁定；
-  AC8 未执行）**：R16–R20 全部收口，矩阵现场另修三处 harness 自身的红
+  **done（独立 Verifier PASS `87ae5cb`；所有者书面签收）**；票 **231** 于
+  2026-11-27 **done（所有者书面签收；独立 Verifier PASS，P0/P1 无）**；
+  票 **233** 于 2026-11-27 **done（Verifier 第五轮 PASS；所有者签收）**：
+  R16–R20 全部收口，矩阵现场另修四处 harness 自身的红
   （sidecar 跨重启继承、入库前等 biz-mock readiness、调试台未登录不打
-  `/ops/tenants`）；最终矩阵 `logs/acceptance-run-20261126-043649.log`
-  22 绿 / 4 红 / 3 SKIP（合并 25/4），剩余红为 local 3B 退款路径与两条既有红。
+  `/ops/tenants`、plan 重启未透传 `-Profile`）；最终矩阵
+  `logs/acceptance-run-20261126-043649.log` 22 绿 / 4 红 / 3 SKIP（合并 25/4），
+  剩余红为 local 3B 退款路径（U12）与两条既有红。票 **233** 已于
+  2026-11-27 done（Verifier 第五轮 PASS、所有者签收，合并 `79d5cba`）。
   票 230 已于 2026-11-25 done（所有者签收、独立 Verifier 最终 PASS、合并
   `main` `617c847`）。此前 2026-10-19 至 2026-11-24 的 frontier 依次为
   {143..150}、{151}、{152}、{227}、{228}、{229}，均已清空；
@@ -171,6 +173,43 @@
   （staffMember/Webhook/return/多笔 CAPTURE/持久幂等）留在票面。独立 Verifier
   在 `87ae5cb` 复验 **PASS**（GraphQL 32/40 THROTTLED、REST 36/80 429；
   `#1016` live 退空后重放通过）；所有者同日书面签收，票 232 转 `done`。
+- 2026-11-27：**round61 / 票 231 收口（AC6 已裁定）**——所有者接受 local 档
+  **25 绿 / 4 红**（`refund`/`console` 归入 U12 本地 3B 动作工具方差），
+  AC6 以该读数为准。dev 档补充读数**不作替代**：首轮 dev 矩阵
+  `logs/acceptance-run-20261127-034838.log` 暴露出 `verify-plan-actions`
+  重启网关硬编码 `-Profile local`（plan 之后整轮偷偷回 3B，已修并透传）；
+  修复后两次重跑均因主机内存压力在 `stack` 步失败，无可判读数。
+  **27/2 在现有判据下不可达**：plan 的 ticket-13 连打依赖 local 延迟
+  （买家桶 5 QPS；dev 串行约 1 s/发打不出 429），同块还要求准入请求零模型调用，
+  而 dev 情绪门每请求多一次 LLM 调用（无独立计数）——登记 **R21**，判据不改。
+  独立 Verifier 首轮 P1（`ingest.ps1` 通配选包）已整改并复验 PASS，
+  所有者 2026-11-27 书面签收（「签收231」），票 231 收口。
+  另冻结 **票 233**（动作意图忠实性守卫，Blocked by 231；231 已合并后可开）。
+- 2026-11-27：**round62 / 票 233 实现（动作意图忠实性守卫）**——按所有者指令
+  「给动作意图加『未派发写工具不得声称已办理』的收尾检查」；frontier = {233}，
+  契约 [`plans/233`](../../plans/233-write-claim-guard.md)。新增 `WriteClaimGuard`
+  纯函数（ASK → REFUSAL → CLAIM，追问优先；剔除「多少/是否」等会误放行完成声明的
+  裸词），`PlanExecuteHandler` 在「写意图 + 纠偏后仍未派发 + 正文声称已办理」时
+  走既有 `TOOL_ROUNDS_EXHAUSTED` 降级 + 工单，trace 记
+  `write-claim-blocked write-pending=<tool>`；不新增降级枚举、不改文案/计数口径。
+  窄测 **14/14**；全量 `mvnw verify` **885 tests / 145 suites**。
+  独立 Verifier 三轮 P1 已整改：首轮「完成声明 + 礼貌问句被 ASK 放行 /
+  词表漏『已为您完成/退款/取消/修改』」，第二轮「裸声明漏判 /
+  承诺与条件句误伤拒绝与政策说明」，第三轮「退款处理完成类漏判 /
+  裸已提交误伤定语与疑问」。最终代码 HEAD `bf1c314` 按字面收紧 AC7：
+  `applyRefund` 在问句已带订单号时 ASK 直接降级；AC7 活体
+  **10/10 PENDING_APPROVAL、0 谎报**（`logs/ac7-233-20261127l.log`）。
+  累计：k 轮 8+1+1 追问（修复前）、i 轮 8+2+工单、h 轮 10/10、e 轮 9+1，
+  均 0 谎报。**Verifier 第四轮 P1 已整改**：compose 第二跳改为先缓冲再判
+  `WriteClaimGuard`（`pendingWrite` 经 `ToolLoopResult` → `TurnOrchestrator`
+  传入），命中完成声明即降级 + 工单；四条疑问/条件句不再判 `CLAIM`，
+  Verifier 的 65 条分类矩阵复跑 **63/65**（余 2 条为已认定良性的 `ASK`）。窄测 **15/15**、全量
+  **886 tests / 145 suites**。最终代码 AC7 活体 **10/10 PENDING、0 谎报**
+  （`logs/ac7-233-20261127m.log`）。**Verifier 第五轮复验 PASS**（P0/P1 无；
+  窄测 15/15、全量 886/145、AC7 10/10、闸门 9/9；两条状态问句保持 `ASK`
+  已获 Verifier 明确接受）。所有者 2026-11-27 书面签收（「签收233」）；
+  合并 `main`（`79d5cba`），`ci-subset` run `45945315405` success，
+  分支已删，票 233 收口。
 - **清场日新增的未达成（照登，不摘红）**：① ~~事件骨干真 Redis 未跑通~~ → **2026-10-05 已定位并修完，见上**；② 工作台两条产品缺陷（票 83：未登录无提示、身份显示 `undefined`）；③ ~~`verify-outbound` 4/7~~ → **已 10/10**；④ **local 档仍没跑成**（内存），所以「三个浏览器门禁在真实模型下」这一格仍然空着。**A 身份下的建议顺序**：① **清场日**（需所有者授权，它一次能关掉四笔欠账：三个浏览器门禁实跑 + 票 84 的修前红/修后绿 + 真实 Redis Streams 行为 + 一次带浏览器断言的 full 档矩阵）；② **票 96**（修的是现在就在架上的洞，与 B 无关）；③ IM A 段票 97（定位改写为「证明适配器契约可复现」，不是「为接 IM 做准备」）。**下一轮不能从旧字样推断**：program 路线见上表与本 tracker 的 Round 表。
 - 2026-10-01：**票 70 收口（分流规则表 + 优先级 + SLA，round23 第二票）**——工单落库**当场分派**（不存在「这张单还没有队列」的中间态），规则表是数据不是代码（Flyway `V4` 播 6 条初始规则：默认 24h / 情绪升级 1h / 普通降级 8h / 退款审批 4h / 内容复核 24h / 渠道回执 8h）。**三处与初稿不同，都记在票面**：① 匹配键用「租户 × 来源 × 降级原因」替代 ADR 0055 字面写的「意图」——落单那一刻 intent 已是 `ESCALATE`，接原始意图要穿 21 个调用点；② **优先级枚举名与存储字面量故意分开**（领域 `URGENT_EMOTION/MONEY/NORMAL`，存 `high/money/normal`）——因为 `verify-emotion.ps1:125/140` 在活体判据里逐字断言 `priority=high`，改字面量就是改判据面；③ 规则表 API **只读**，写入口等票 71 的审计事件一起上（能改但查不到谁改的，比不能改更糟）。**用例逮到两个真缺陷**：规则表**跨店劫持**（租户从打分项改成硬条件，变异对照实测为真）与**反馈复核工单绕过分派入口**（queue 为 null = 坐席台看不见）。读数：JVM **`5 + 43 + 308 = 356`**，biz-mock 覆盖率 **80.74%**，判据面零改动。
 - 2026-10-01：**票 69 收口（工单统一实体，round23 第一票）**——「需要人工介入」的三个混血体（降级工单 / 复核队列 / 退款审批）收敛成**一张 `tickets` 表 + `source` 四种来源**（`DEGRADE` / `FEEDBACK_REVIEW` / `REFUND_APPROVAL` / `CHANNEL_RECEIPT`），Flyway `V3__unified_ticket.sql` 扩列并把历史行回填 `DEGRADE`。**实现期两处与初稿不同，都记在票面**：① 是**扩表**不是新建表——新建表会让票 70 的规则表有两个分母；② 多出第四种来源 `CHANNEL_RECEIPT`（邮件回执本来就和降级单共用这张表、只靠 `reason` 区分，折进 DEGRADE 会让队列规则把「回复邮件」和「买家转人工」分到一处）——**ADR 0055 原文一个字未改**。**口径零改动**：README 的「降级 9 / 枚举 10」靠 `countBySource(DEGRADE)` 保住，gold 180 / 阈值 / `judge()` / CI 八步全未动。**票外修掉一个既有缺陷**：`findById` 不拼接 `@TenantId`，跨租户原可读**并可改**工单——新用例先红 200、修复后 404，与 round21 `reviewRefund` 同口径。**一条纪律记账**：给 ADR 0024 加换代指针会让 B7 当场判红（轮内不许改既有 ADR），已回退，**指针改写在本 tracker 与 spec 里**——这是半小时前回退语料时守的同一条，只是这次落在 ADR 上。读数：JVM **`5 + 36 + 308 = 349`**（biz-mock 29→36），覆盖率 biz-mock **79.88%**，变异对照实测为真。
@@ -256,7 +295,7 @@
 | **round58** | **验收断言补强：activeAppId 与多优先级队列**（票 228） | [`plans/228`](../../plans/228-verification-assertions.md)；开票依据 = 所有者 2026-11-23 指令；票 225-3 / 223-1 的验收入口补强（按 ADR 0031） | **done**（2026-11-24 所有者书面签收）：独立 Verifier PASS，AC1–AC8；活体 workspace 30/30、channel 30/30；AC2 异掩码分支与 AC6 失败路径仅静态审查；票外 P1（`lib-launch.ps1` 环境继承）待另票 |
 | **round59** | **启动器环境继承修复（含 U2 判定）**（票 229） | [`plans/229`](../../plans/229-launcher-env-inheritance.md)；开票依据 = 所有者 2026-11-24 指令「先开 lib-launch 票（含 U2）」；票 228 票外 P1 + `registered-debt` U2（回归修复，按 ADR 0031） | **done**（2026-11-24 所有者书面签收）：独立 Verifier 复验 PASS，AC1–AC8、P0/P1 无；合并环境写进 `run-*.cmd`，只传 `SHOPPILOT_*` 与白名单；静态 24/24、全量 878/144、活体 AC7 两场景登录 200；U2 投放链路已封堵，完整 `up.ps1` 未复跑、保留触发条件 |
 | **round60** | **项目收尾：文档换代 + 29 步全量验收 + U2 闭环 + 欠账裁决 + 发布判定**（票 230） | [`plans/230`](../../plans/230-round60-closeout.md)；开票依据 = 所有者 2026-11-25 指令「开一张 round60 收尾票」；收尾/验收/文档，不新增功能面 | **done**（2026-11-25 所有者书面签收；独立 Verifier 最终 PASS、P0/P1 无）：发布案 B 已落地（5 个 POM `1.1.0-SNAPSHOT`、不打 tag）；AC2 合并口径 **25 绿 / 4 红**（1.1.0 栈矩阵 22 PASS + 4 FAIL + 3 SKIP；红项归因 R17/R18 + 既有 `feedback`/`plansteps`）、AC3 U2 关闭、AC4 欠账裁决完成；首轮 Verifier P1（旧 0.1.0 jar）已整改并登记 R20；合并 `main`、CI 绿后删分支 |
-| **round61** | **验收工装收口（R16–R20）**（票 231） | [`plans/231`](../../plans/231-acceptance-tooling-closeout.md)；开票依据 = 所有者 2026-11-26 指令「验收工装收口（R16–R20）」；验收工装缺陷修复（ADR 0031），不新增功能面 | **implemented（AC6 偏差待裁定）**（2026-11-26）：R16–R20 全部落地；矩阵现场另修 sidecar 跨重启继承、入库前等 biz-mock readiness、调试台未登录 `/ops/tenants` 403 三处 harness 红。最终矩阵 **22 绿 / 4 红 / 3 SKIP**（合并 **25/4**）：`console` 45/45、`plan -WithRestarts` 全过、`polarity`/`isolation` 转绿；剩余 `refund`/`console` 为 local 3B 退款工具调用不稳定，`feedback`/`plansteps` 为契约内既有红。独立 Verifier 与所有者签收未执行 |
+| **round61** | **验收工装收口（R16–R20）**（票 231） | [`plans/231`](../../plans/231-acceptance-tooling-closeout.md)；开票依据 = 所有者 2026-11-26 指令「验收工装收口（R16–R20）」；验收工装缺陷修复（ADR 0031），不新增功能面 | **done**（2026-11-27 所有者书面签收；独立 Verifier PASS、P0/P1 无）：R16–R20 全部落地；矩阵现场另修 sidecar 跨重启继承、入库前等 biz-mock readiness、调试台未登录 `/ops/tenants` 403、`-Profile` 未透传到 plan 重启四处 harness 红。最终 local 矩阵 **22 绿 / 4 红 / 3 SKIP**（合并 **25/4**）：`console` 45/45、`plan -WithRestarts` 全过、`polarity`/`isolation` 转绿；剩余 `refund`/`console` 为 local 3B 退款工具调用不稳定（U12），`feedback`/`plansteps` 为契约内既有红。dev 补充读数不作替代（27/2 受 R21 限制）。Verifier P1（`ingest.ps1` 通配选包）已整改，`verify-launcher-env` 72/72 |
 | **round31** | **B4：飞书长连接真连**（票 96、97、113-116） | [`round31-spec-b4-feishu-live.md`](round31-spec-b4-feishu-live.md)；**ADR 0064**（考察）、**0065**（开线决策） | **done**（票 96/97/113-116 全部收口；wss 握手 + 事件收发全链路 + 重启自动重连三项活体通过；JVM **505**） |
 | **round29** | **B2：凭据生产态 + 按库用户隔离 + 备份恢复演练**（票 104-107） | [`round29-spec-b2-credentials-and-backup.md`](round29-spec-b2-credentials-and-backup.md)；**ADR 0062** | **done**（票 104-107 全部收口；演练 14/14；Redis 不备份/R5/TLS 带触发条件登记） |
 | **round30** | **B3：资金动作不可抵赖**（票 108-112） | [`round30-spec-b3-non-repudiation.md`](round30-spec-b3-non-repudiation.md)；**ADR 0063** | **done**（票 108-112 全部收口；JVM 466） |
@@ -469,8 +508,9 @@
 | 228 | [`228-verification-assertions.md`](issues/228-verification-assertions.md) | done（所有者签收） | round58（验收入口补强，ADR 0031）：activeAppId 改为与已知候选掩码比较（PUT + GET），旧/新掩码不同时断旧值不再活动，启动/停止日志双计数；工单服务真实创建 high/money 种子，队列三张种子单按 紧急 → 资金 → 普通 排序，全局排序断言不再 WARN；种子失败判 FAIL。**Verifier**：AC1–AC8 PASS、P0 无；workspace 30/30、channel 30/30（首轮飞书瞬时超时 27/30，复跑通过；旧连接停止日志 0→1、退避 579/1018ms）。**票外 P1 已确认**：`lib-launch.ps1` 的 WMI 脱离启动不继承调用方环境，从已导出 `SHOPPILOT_*` 的进程重启网关会丢 `.env` 内部令牌；所有者 2026-11-24 书面签收。契约 [plans/228](../../plans/228-verification-assertions.md)（2026-11-23 冻结，AC3 有活体修正留痕） |
 | 229 | [`229-launcher-env-inheritance.md`](issues/229-launcher-env-inheritance.md) | done（所有者签收） | round59（回归修复，ADR 0031 / 0029）：`Start-ShoppilotService` 经 WMI 脱离启动不继承调用方环境，`Get-ShoppilotDotEnv` 又跳过已存在变量，导致已导出 `SHOPPILOT_*` 丢失（228 实测 401）；`up.ps1` 的 `SHOPPILOT_EMBEDDING_SIDECAR_URL` 同样丢失。修法：合并环境写进 `run-*.cmd`，只传 `SHOPPILOT_*` + 白名单；`mvn` 回退也注入 `JAVA_HOME/MAVEN_OPTS`。读数：ps 语法 38/0、新增 `verify-launcher-env.ps1` 24/24、全量 878/144、AC7 两场景登录 200。首轮 Verifier P1（`start-ticket` 缺 jar 回退空引用）已整改并实跑退出码 0；复验 PASS、AC1–AC8、P0/P1 无；所有者 2026-11-24 书面签收。U2：投放链路已封堵（过期口令 200 / `.env` 401），完整 `up.ps1` 未复跑、保留触发条件。契约 [plans/229](../../plans/229-launcher-env-inheritance.md)（2026-11-24 冻结） |
 | 230 | [`230-round60-closeout.md`](issues/230-round60-closeout.md) | done（2026-11-25 所有者签收） | round60（收尾/验收/文档，无新功能面）：所有者 2026-11-25 选定 **B**——5 个 POM 改 `1.1.0-SNAPSHOT`、不打 tag，`demo.py --prebuilt` 改按 POM 版本精确解析；`DELIVERY.md` 已换代（400+ 提交 / 878 tests / 144 suites / 票 01-230 / frontier 空）；29 步 full 档合并口径 **25 绿 / 4 红**（1.1.0 栈矩阵 22 PASS + 4 FAIL + 3 SKIP）并逐条归因（首轮跑在旧 0.1.0 jar，Verifier P1 后清产物、1.1.0 重跑）；完整 `up.ps1` 复跑 U2（登录 200、`.env` SHA 恢复）；U1/U2 移至已关闭节、U11 保留、新增 R16–R20；合并 `main`、CI 绿后删分支。契约 [plans/230](../../plans/230-round60-closeout.md)（2026-11-25 冻结，Owner ruling + 契约修订 1/2） |
-| 231 | [`231-acceptance-tooling-closeout.md`](issues/231-acceptance-tooling-closeout.md) | implemented（2026-11-26；AC6 偏差待所有者裁定） | round61（验收工装缺陷修复，ADR 0031）：R20 启动器按根 POM 版本精确解析 jar，缺失走 mvn 回退、不选旧包；R16 验收脚本从进程环境或 `.env` 取凭证，删除 dev 默认值；R19 验收栈合并 `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1`；R17 调试台坐席登录后 circuit 用坐席令牌、`/ops/**` 403 不放宽；R18 EMO-ESC-07 按 ADR 0042 归入 `USER_REQUESTED`（用例数与分母不变）；新增契约修订 2/3：sidecar 跨重启固定、入库前等 biz-mock readiness、调试台未登录不打 `/ops/tenants`；最终矩阵合并 **25 绿 / 4 红**（`refund`/`console` 本地 3B 退款路径 + 既有 `feedback`/`plansteps`），读数与三条现场追问见票面；契约 [plans/231](../../plans/231-acceptance-tooling-closeout.md)（2026-11-26 冻结） |
+| 231 | [`231-acceptance-tooling-closeout.md`](issues/231-acceptance-tooling-closeout.md) | done（2026-11-27 所有者签收） | round61（验收工装缺陷修复，ADR 0031）：R20 启动器按根 POM 版本精确解析 jar，缺失走 mvn 回退、不选旧包；R16 验收脚本从进程环境或 `.env` 取凭证，删除 dev 默认值；R19 验收栈合并 `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1`；R17 调试台坐席登录后 circuit 用坐席令牌、`/ops/**` 403 不放宽；R18 EMO-ESC-07 按 ADR 0042 归入 `USER_REQUESTED`（用例数与分母不变）；契约修订 2/3/5/6：sidecar 跨重启固定、入库前等 biz-mock readiness、调试台未登录不打 `/ops/tenants`、plan 重启透传 `-Profile`、`ingest.ps1` 精确取包；最终 local 矩阵合并 **25 绿 / 4 红**（`refund`/`console` 本地 3B 退款路径 + 既有 `feedback`/`plansteps`），dev 27/2 受 R21 限制；独立 Verifier PASS、P0/P1 无；契约 [plans/231](../../plans/231-acceptance-tooling-closeout.md)（2026-11-26 冻结） |
 | 232 | [`232-commerce-kernel-promotion.md`](issues/232-commerce-kernel-promotion.md) | done（2026-11-27；Verifier PASS `87ae5cb` + 所有者书面签收） | round62（模块转正 + AC8）：退款内核与 Shopify 适配器迁往独立 `kernel/` reactor；TCK `test-jar`、两条资金缺口红绿对照（重复退运费 / 金额缺失）、内核覆盖率与独立 CI；不接网关、不改根 878 读数；根回归五模块 `12+98+718+50=878` 全绿。AC8 在免费开发商店实测发现 `refundCreate` 不传 `transactions` 会零金额退款，已修（`40a5357`）；现场覆盖部分退款到 `REFUNDED`、同键重放/冲突、运费退款、手工网关记账、真实 `THROTTLED`/429；退空后重放已修（`e7004e6`）。独立 Verifier `87ae5cb` PASS（GraphQL 32/40 THROTTLED、REST 36/80 429；`#1016` live 退空后重放）；shopify 24 执行 + 2 live skipped，覆盖率 65.38%。staffMember/Webhook/return/多笔 CAPTURE/持久幂等边界留在票面。契约 [plans/232](../../plans/232-commerce-kernel-promotion.md) |
+| 233 | [`233-write-claim-guard.md`](issues/233-write-claim-guard.md) | done（2026-11-27 所有者签收；Verifier 第五轮 PASS） | round62（产品行为回归修复，ADR 0008/0031）：动作意图在文字纠偏后仍未派发写工具、却声称「已为您办理」时，收尾走 `TOOL_ROUNDS_EXHAUSTED` 降级 + 工单，正文不得透出；追问缺失参数与非写意图不触发；`WriteClaimGuard` 判「已完成 → 强承诺（先于追问）→ ASK → REFUSAL → 一般承诺 → 弱确认」，剔除「多少/是否」等误放行裸词，补裸完成声明、条件句与定语/疑问排除；`applyRefund` 在问句已带订单号时 ASK 直接降级；Verifier 五轮 P1（ASK 优先级 / 词表漏项 / 裸声明 / 条件句误伤 / 定语疑问误伤 / compose 第二跳泄漏 / 四条疑问条件句）已整改，第二跳改为缓冲后再判；不新增降级枚举/指标。窄测 15/15、全量 886/145、AC7 活体 10/10 PENDING + 0 谎报（m），累计 0 谎报，分类矩阵 63/65（余 2 条良性 ASK，Verifier 明确接受）；合并 `79d5cba`，`ci-subset` run `45945315405` success，分支已删；契约 [plans/233](../../plans/233-write-claim-guard.md)（2026-11-27 冻结，修订 2） |
 
 ## 如何新增或领取工作
 
