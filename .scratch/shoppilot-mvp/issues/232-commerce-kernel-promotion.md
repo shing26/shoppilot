@@ -2,10 +2,12 @@
 
 Round: 62（模块转正 / 生产依赖变更）
 ADR: 0088（审批载体）、0089（终态读模型）、0090（买家术语）
-Status: done（2026-11-27；AC8 已执行；独立 Verifier PASS `87ae5cb`；所有者书面签收）
+Status: done（2026-11-27；AC8 已执行；独立 Verifier PASS `87ae5cb`；所有者书面签收；2026-11-28 合并 `cab0af2`）
 Claimed by: root　Blocked by: 无
 实现提交: `5ee7e02`（2026-11-26 模块转正）、`40a5357`（2026-11-27 AC8 资金缺口修复）、
 `e7004e6`（2026-11-27 退空后同键重放修复）
+合并: `cab0af2`（PR #1，2026-11-28 merge commit；post-merge `ci-subset` run `46060075222`、
+`kernel-ci` run `46060075288` 均 success）
 
 契约：[plans/232-commerce-kernel-promotion.md](../../plans/232-commerce-kernel-promotion.md)（2026-11-26 冻结）
 
@@ -99,7 +101,7 @@ git status --short
 3. **根 reactor 是否被碰？** 没有。根 `pom.xml`、`STATUS.md`、`TUNING_PLAN.md`、
    四模块源码与 878/144 读数均未变；README 只同步了 ADR 计数。
 
-**AC8 真实开发商店（2026-11-27，已执行；待独立 Verifier 复验）**
+**AC8 真实开发商店（2026-11-27，已执行；独立 Verifier `87ae5cb` PASS）**
 
 - 环境：Shopify Partner 免费开发商店 `shoppilot-kernel-dev.myshopify.com`，
   Admin GraphQL `2026-10`；App scopes
@@ -141,6 +143,20 @@ git status --short
   finance embedded/Plus/Advanced）；Webhook、`returnCreate`、退货/换货未验证
   （无对应 scope）；多笔 CAPTURE 的跨交易拆分未实现；60 天边界未触发；
   重放缓存仅在进程内，跨进程/重启的持久幂等仍待 `RefundApprovalStore` / outbox。
+
+**合并与 post-merge CI（2026-11-28）**
+
+- 将 `origin/main`（`f143288`，校正票 233 与 U12）合入分支，合并提交
+  `fd8ea7e`；唯一冲突 `.scratch/shoppilot-mvp/README.md`，保留票 232 记录并采用
+  main 上更完整的票 233 收口说明，`registered-debt.md` 自动合入。
+- PR [#1](https://github.com/shing26/shoppilot/pull/1) 在 `fd8ea7e` 上三项检查全绿后
+  按 merge commit 合并为 `cab0af2`（2026-11-27T19:55:34Z；本地 2026-11-28）。
+  合并前：`Build and JVM tests` 2m42s、`Build, TCK and coverage` 11s、
+  `Handoff golden set` 25s。
+- `main` post-merge：`ci-subset` run `46060075222` success（2m29s）；
+  `kernel-ci` run `46060075288` success。
+- 文档门禁：`gen_status.py --check` OK（886/145）；`verify_doc_truth.py` OK；
+  `check_doc_links.py` OK（123 文件 / 254 链接）；`git diff --check` 干净。
 
 **AC8 三个现场追问的回答**
 
