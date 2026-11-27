@@ -169,6 +169,11 @@ kernel/
 - 输出 P0/P1 清单；P0 必须修完复验；
 - 所有者书面签收后才算 `done`。
 
+**AC9 执行结果（2026-11-27）**：独立 Verifier 在 `87ae5cb` 复验 **PASS**，
+无 P0/P1；内核 contract 30 / shopify 24 执行 + 2 skipped、覆盖率
+84.53% / 65.38%，根回归 878/144，live `#1016` 与真实 `THROTTLED`/429 均通过；
+所有者书面签收 `87ae5cb`，票 232 转 `done`。
+
 ## Verify
 
 内核：

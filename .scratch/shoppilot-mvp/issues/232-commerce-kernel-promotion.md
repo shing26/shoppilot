@@ -2,8 +2,7 @@
 
 Round: 62（模块转正 / 生产依赖变更）
 ADR: 0088（审批载体）、0089（终态读模型）、0090（买家术语）
-Status: implemented（2026-11-27；AC8 已执行；Verifier 首轮 FAIL 的 F1/P1-1/P1-2/
-P1-3 已整改，现场读数见下；待独立 Verifier 复验 + 所有者书面签收）
+Status: done（2026-11-27；AC8 已执行；独立 Verifier PASS `87ae5cb`；所有者书面签收）
 Claimed by: root　Blocked by: 无
 实现提交: `5ee7e02`（2026-11-26 模块转正）、`40a5357`（2026-11-27 AC8 资金缺口修复）、
 `e7004e6`（2026-11-27 退空后同键重放修复）
@@ -165,8 +164,8 @@ git status --short
 - 复核（2026-11-26）：不 clean 重跑仍为 contract 84.53% / shopify 56.35%，
   P1 关闭；最终结论 **PASS**，无需继续整改。
 - **AC8 修复后（`40a5357`）需要独立 Verifier 重新亲跑 AC1–AC8**；上面的 PASS
-  只覆盖 AC1–AC7 与 AC8 BLOCKED 时的状态。
-- 所有者书面签收尚未发生，所以本票保持 `implemented`，不是 `done`。
+  只覆盖 AC1–AC7 与 AC8 BLOCKED 时的状态；2026-11-27 已在 `87ae5cb` 复跑，见下。
+- 当时所有者书面签收尚未发生；2026-11-27 已签收 `87ae5cb`，本票转 `done`。
 
 **独立 Verifier（2026-11-27，HEAD `fa6befa`）：FAIL + 整改**
 
@@ -186,5 +185,19 @@ git status --short
   返回原 receipt，同键不同指纹 `INVALID_REQUEST`。新增 3 条单测 + live
   `#1015` 退空后重放断言。红对照：移除缓存后 2 条用例分别得到
   `result is not Ok` 与 `STATE_NOT_ALLOWED`。
-- 整改提交：`e7004e6`。**仍需独立 Verifier 复跑 AC1–AC8 与 live 测试**；
-  所有者书面签收前保持 `implemented`。
+- 整改提交：`e7004e6`；文档证据提交：`87ae5cb`。
+
+**独立 Verifier 复验（2026-11-27，HEAD `87ae5cb`）：PASS**
+
+- 结论：F1、P1-1、P1-2、P1-3 全部闭环；A–G 与 live 写链路亲跑通过；无 P0/P1。
+- 内核：contract 30；shopify 26（24 执行 + 2 live skipped）；覆盖率
+  contract 84.53% / shopify 65.38%；BUILD SUCCESS。
+- 根回归：878 tests / 144 suites 全绿；`gen_status`、`verify_doc_truth`、
+  `check_doc_links`、`git diff --check` 全过；验证前后 `git status --short` 为空。
+- F1 亲跑：GraphQL 32/40 `THROTTLED`（HTTP 200）；Admin REST 36/80 HTTP 429
+  （`Retry-After: 2`）。
+- live `#1016`：首退 10 USD `SETTLED`，同键重放同 id，同键改参 `INVALID_REQUEST`，
+  退空后重放仍返回首笔 receipt；最终 `REFUNDED`、20 USD、两笔 `REFUND/SUCCESS`。
+- 边界：重放缓存挂在同一 `ShopifyCommerceGateway` 实例上，check-then-act 非原子；
+  并发同键仍依赖 Shopify `@idempotent`；不是持久幂等。均已在 README/EVIDENCE 声明。
+- **所有者书面签收：2026-11-27，`87ae5cb`。**
