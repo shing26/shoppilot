@@ -115,8 +115,11 @@
   （sidecar 跨重启继承、入库前等 biz-mock readiness、调试台未登录不打
   `/ops/tenants`、plan 重启未透传 `-Profile`）；最终矩阵
   `logs/acceptance-run-20261126-043649.log` 22 绿 / 4 红 / 3 SKIP（合并 25/4），
-  剩余红为 local 3B 退款路径（U12）与两条既有红。票 **233** 已于
-  2026-11-27 done（Verifier 第五轮 PASS、所有者签收，合并 `79d5cba`）。
+  剩余红为 local 3B 退款路径（U12）与两条既有红。票 **233** 于 2026-11-27
+  **done**（所有者书面签收；Verifier 第五轮 PASS，P0/P1 无）：合并
+  `79d5cba`，`ci-subset` run `45945315405` success；最终文档 HEAD `6647753`
+  的 run `45945766503` 亦 success；窄测 15/15、全量 886/145、AC7 活体
+  10/10 `PENDING_APPROVAL` + 0 谎报、退款审批闸门 9/9。
   票 230 已于 2026-11-25 done（所有者签收、独立 Verifier 最终 PASS、合并
   `main` `617c847`）。此前 2026-10-19 至 2026-11-24 的 frontier 依次为
   {143..150}、{151}、{152}、{227}、{228}、{229}，均已清空；
