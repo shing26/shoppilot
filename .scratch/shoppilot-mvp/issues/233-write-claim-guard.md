@@ -2,7 +2,7 @@
 
 Round: 62（产品行为回归修复；ADR 0008 / ADR 0031）
 ADR: 0008（不猜不骗）、0031（回归修复）、0009（降级原因可枚举）
-Status: implemented（2026-11-27；Verifier 第五轮 PASS，P0/P1 无，待所有者签收）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
+Status: done（2026-11-27 所有者书面签收；独立 Verifier 第五轮 PASS，P0/P1 无）　Claimed by: codex/233-write-claim-guard　Blocked by: 231（已合并）
 
 契约：[plans/233-write-claim-guard.md](../../plans/233-write-claim-guard.md)（2026-11-27 冻结）
 
@@ -87,6 +87,14 @@ Status: implemented（2026-11-27；Verifier 第五轮 PASS，P0/P1 无，待所�
 - 路径合规：14 个变更路径全部在契约修订 2 的 Allowed paths 内。
 - **AC8 未完成**：所有者签收、合并 `main`、合并后 `ci-subset`、删分支
   尚未执行；完成前不得标记 `done` 或合并。
+
+**签收（2026-11-27）**
+
+- 所有者书面签收原话：「签收233」。
+- 签收口径：以 Verifier 第五轮 PASS（HEAD `cc23e6c`，P0/P1 无）为准；
+  两条状态问句保持 `ASK` 的裁定一并接受。
+- AC8 收口：合并 `main`、合并后 `ci-subset` success、删除
+  `codex/233-write-claim-guard`。
 
 **实现与验证（2026-11-27，代码 HEAD `bf1c314`）**
 
