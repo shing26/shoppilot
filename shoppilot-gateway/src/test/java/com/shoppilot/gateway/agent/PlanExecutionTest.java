@@ -32,9 +32,11 @@ import org.mockito.ArgumentCaptor;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -56,6 +58,7 @@ class PlanExecutionTest {
     private SimpleMeterRegistry registry;
     private LlmGateway llm;
     private BizMockClient bizMock;
+    private FallbackService fallback;
 
     @BeforeEach
     void setUp() {
@@ -66,6 +69,9 @@ class PlanExecutionTest {
         TenantContext.set(identity);
         llm = mock(LlmGateway.class);
         bizMock = mock(BizMockClient.class);
+        fallback = mock(FallbackService.class);
+        when(fallback.escalate(any(FallbackReason.class), anyString(), anyString()))
+                .thenReturn(Optional.empty());
     }
 
     @AfterEach
@@ -79,9 +85,13 @@ class PlanExecutionTest {
     }
 
     private AgentStateMachine machine(Domain domain) {
+        return machine(domain, Intent.ACTION_REFUND);
+    }
+
+    private AgentStateMachine machine(Domain domain, Intent intent) {
         TriageEngine triage = mock(TriageEngine.class);
         when(triage.triage(anyString(), any(), any())).thenReturn(new TriageEngine.Outcome(
-                TriageResult.dynamic(Intent.ACTION_REFUND, "T1", false), null));
+                TriageResult.dynamic(intent, "T1", false), null));
         KbEpoch epoch = mock(KbEpoch.class);
         when(epoch.current()).thenReturn(7L);
         HybridRetriever retriever = mock(HybridRetriever.class);
@@ -102,7 +112,7 @@ class PlanExecutionTest {
         return new AgentStateMachine(triage, mock(CacheService.class), mock(SingleFlight.class), policy, epoch,
                 domains(domain),
                 retriever, llm, new ToolDispatcher(bizMock, idempotencyStub(), registry), store,
-                mock(FallbackService.class), properties, mock(WriteBackPool.class), new PromptCatalog(), gate,
+                fallback, properties, mock(WriteBackPool.class), new PromptCatalog(), gate,
                 new StyleService(), registry);
     }
 
@@ -260,6 +270,134 @@ class PlanExecutionTest {
                         && message.content() != null && message.content().contains("applyRefund")),
                 "纠偏指令必须逐字保住：直接调用它、并说明理由");
         assertEquals(1.0d, nudgeCounter());
+    }
+
+    @Test
+    @DisplayName("票233 AC1：纠偏后仍不调工具却声称已办理 → TOOL_ROUNDS_EXHAUSTED + 工单，正文不透出")
+    void writeClaimAfterNudgeFallsBack() {
+        when(fallback.escalate(any(FallbackReason.class), anyString(), anyString()))
+                .thenReturn(Optional.of("T-233"));
+        when(llm.complete(any())).thenReturn(
+                LlmTypes.Reply.text("我这就为您提交退款申请"),
+                LlmTypes.Reply.text("我已为您发起退款申请，请问还需要其他帮助吗？"));
+        ArgumentCaptor<String> detail = ArgumentCaptor.forClass(String.class);
+
+        AgentResult result = machine().run("订单90001我要申请退款，商品有质量问题", null, EventSink.NOOP);
+
+        assertEquals(FallbackReason.TOOL_ROUNDS_EXHAUSTED, result.fallbackReason());
+        assertTrue(result.degraded(), "谎报完成必须走降级出口");
+        assertEquals("T-233", result.ticketId(), "降级必须生成可查工单");
+        assertFalse(result.answer().contains("我已为您发起退款申请"), "谎报正文不得进入正常答案");
+        assertEquals(1.0d, nudgeCounter(), "纠偏仍只发一次");
+        verify(llm, times(2)).complete(any());
+        verify(fallback).escalate(eq(FallbackReason.TOOL_ROUNDS_EXHAUSTED), anyString(), detail.capture());
+        assertTrue(detail.getValue().contains("applyRefund"), "降级单要能定位到未派发的写工具");
+        assertTrue(result.trace().stream().anyMatch(step ->
+                        "write-claim-blocked write-pending=applyRefund".equals(step.detail())),
+                "必须留下 write-claim-blocked 取证行");
+        verify(bizMock, never()).call(any(), anyMap(), any());
+    }
+
+    @Test
+    @DisplayName("票233 AC2：缺参追问原样返回；订单号已给出仍追问 → 降级")
+    void missingParameterQuestionAfterNudgeIsAllowed() {
+        when(llm.complete(any())).thenReturn(
+                LlmTypes.Reply.text("我这就为您提交修改"),
+                LlmTypes.Reply.text("请提供新的收货地址，我需要确认后为您修改"));
+
+        AgentResult result = machine(Domain.ECOMMERCE, Intent.ACTION_ADDRESS)
+                .run("订单90001修改收货地址，收件人张三，手机13800138000", null, EventSink.NOOP);
+
+        assertEquals("请提供新的收货地址，我需要确认后为您修改", result.answer());
+        assertNull(result.fallbackReason());
+        assertFalse(result.degraded());
+        assertNull(result.ticketId());
+        assertEquals(1.0d, nudgeCounter());
+        assertFalse(result.trace().stream().anyMatch(step -> step.detail() != null
+                && step.detail().startsWith("write-claim-blocked")));
+        verify(fallback, never()).escalate(any(FallbackReason.class), anyString(), anyString());
+
+        when(fallback.escalate(any(FallbackReason.class), anyString(), anyString()))
+                .thenReturn(Optional.of("T-233-ASK"));
+        when(llm.complete(any())).thenReturn(
+                LlmTypes.Reply.text("我这就为您提交退款申请"),
+                LlmTypes.Reply.text("请提供订单号，我需要核实后为您处理"));
+
+        AgentResult spurious = machine().run("订单90001我要申请退款", null, EventSink.NOOP);
+
+        assertEquals(FallbackReason.TOOL_ROUNDS_EXHAUSTED, spurious.fallbackReason());
+        assertTrue(spurious.degraded(), "订单号已给出仍追问，必须降级而不是继续空转");
+        assertEquals("T-233-ASK", spurious.ticketId());
+        assertEquals(2.0d, nudgeCounter(), "两次写意图各纠偏一次");
+        assertTrue(spurious.trace().stream().anyMatch(step -> step.detail() != null
+                        && "write-claim-blocked write-pending=applyRefund ask=spurious".equals(step.detail())),
+                "必须留下 spurious ask 的取证行");
+        verify(bizMock, never()).call(any(), anyMap(), any());
+    }
+
+    @Test
+    @DisplayName("票233 复验 P1-A：读工具后的 compose 第二跳也不得透出完成声明")
+    void composeSecondHopClaimIsBlocked() {
+        when(fallback.escalate(any(FallbackReason.class), anyString(), anyString()))
+                .thenReturn(Optional.of("T-233-COMPOSE"));
+        when(llm.complete(any())).thenReturn(
+                toolCall("call-1", ToolName.QUERY_ORDER_DETAIL, Map.of("orderNo", "90001")),
+                LlmTypes.Reply.text("订单90001当前状态是运输中"),
+                LlmTypes.Reply.text("订单90001当前状态是运输中"));
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any()))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"orderNo\":\"90001\",\"orderStatus\":\"运输中\"}", false));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("已为您发起退款申请"));
+        EventSink sink = mock(EventSink.class);
+
+        AgentResult result = machine().run("订单90001我要申请退款", null, sink);
+
+        assertEquals(FallbackReason.TOOL_ROUNDS_EXHAUSTED, result.fallbackReason());
+        assertTrue(result.degraded(), "第二跳谎报完成必须走降级出口");
+        assertEquals("T-233-COMPOSE", result.ticketId());
+        assertFalse(result.answer().contains("已为您发起退款申请"), "第二跳正文不得进入正常答案");
+        verify(sink, never()).token(org.mockito.ArgumentMatchers.contains("已为您发起退款申请"));
+        assertTrue(result.trace().stream().anyMatch(step ->
+                        "write-claim-blocked write-pending=applyRefund".equals(step.detail())),
+                "第二跳拦截也必须留下 write-claim-blocked 取证行");
+        verify(bizMock, never()).call(eq(ToolName.APPLY_REFUND), anyMap(), any());
+    }
+
+    @Test
+    @DisplayName("票233 AC3：非写意图出现「已为您办理」字样 → 守卫不触发")
+    void completionPhraseInPolicyAnswerIsNotGuarded() {
+        when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("政策规定已为您办理退款后三个工作日到账"));
+
+        AgentResult result = machine(Domain.ECOMMERCE, Intent.POLICY_RETURN)
+                .run("退款政策怎么规定", null, EventSink.NOOP);
+
+        assertEquals("政策规定已为您办理退款后三个工作日到账", result.answer());
+        assertNull(result.fallbackReason());
+        assertEquals(0.0d, nudgeCounter());
+        verify(llm, times(1)).complete(any());
+        assertFalse(result.trace().stream().anyMatch(step -> step.detail() != null
+                && step.detail().startsWith("write-claim-blocked")));
+    }
+
+    @Test
+    @DisplayName("票233 AC4：写工具真的派发（含 PENDING_APPROVAL）→ 既有路径不变，守卫不触发")
+    void completedWriteIsNotBlocked() {
+        when(llm.complete(any())).thenReturn(
+                toolCall("call-1", ToolName.APPLY_REFUND, Map.of("orderNo", "90001")),
+                LlmTypes.Reply.text("已为您提交退款申请"));
+        when(bizMock.call(eq(ToolName.APPLY_REFUND), anyMap(), any()))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.PENDING_APPROVAL,
+                        "{\"status\":\"PENDING_APPROVAL\"}", false));
+        stubRouting();
+
+        AgentResult result = machine().run("订单90001申请退款", null, EventSink.NOOP);
+
+        assertNull(result.fallbackReason());
+        assertFalse(result.degraded());
+        assertEquals(0.0d, nudgeCounter());
+        verify(bizMock).call(eq(ToolName.APPLY_REFUND), anyMap(), any());
+        assertFalse(result.trace().stream().anyMatch(step -> step.detail() != null
+                && step.detail().startsWith("write-claim-blocked")));
     }
 
     private double nudgeCounter() {

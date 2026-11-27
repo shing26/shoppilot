@@ -482,7 +482,7 @@ final class TurnOrchestrator {
 
         ComposeHandler.ComposeOutcome outcome =
                 compose.compose(ctx, messages, loop.lastReply(), loop.rounds(), loop.answeredByBudgetCheck(),
-                        retrieved);
+                        retrieved, loop.pendingWrite());
         if (outcome.failed()) {
             return ModelRun.solo(outcome.terminal());
         }

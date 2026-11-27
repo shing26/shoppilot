@@ -48,15 +48,17 @@ final class PlanExecuteHandler {
     /** 循环二选一：要么已落到终止出口，要么带着最后一次模型回复进入答案合成。 */
     record ToolLoopResult(AgentResult terminal, List<LlmTypes.Message> messages, LlmTypes.Reply lastReply,
                           boolean toolUsed, List<AgentResult.PlanStep> planSteps, boolean answeredByBudgetCheck,
-                          int rounds) {
+                          int rounds, ToolName pendingWrite) {
 
         static ToolLoopResult terminal(AgentResult result) {
-            return new ToolLoopResult(result, List.of(), null, false, List.of(), false, 0);
+            return new ToolLoopResult(result, List.of(), null, false, List.of(), false, 0, null);
         }
 
         static ToolLoopResult ok(List<LlmTypes.Message> messages, LlmTypes.Reply lastReply, boolean toolUsed,
-                                 List<AgentResult.PlanStep> planSteps, boolean answeredByBudgetCheck, int rounds) {
-            return new ToolLoopResult(null, messages, lastReply, toolUsed, planSteps, answeredByBudgetCheck, rounds);
+                                 List<AgentResult.PlanStep> planSteps, boolean answeredByBudgetCheck, int rounds,
+                                 ToolName pendingWrite) {
+            return new ToolLoopResult(null, messages, lastReply, toolUsed, planSteps, answeredByBudgetCheck,
+                    rounds, pendingWrite);
         }
 
         boolean failed() {
@@ -114,7 +116,17 @@ final class PlanExecuteHandler {
             }
             usage.add(lastReply);
             if (!lastReply.wantsTool()) {
-                if (expectedWrite == null || expectedWriteDone || nudged) {
+                if (expectedWrite == null || expectedWriteDone) {
+                    break;
+                }
+                if (nudged) {
+                    // 票 233：纠偏后仍然不派发写工具。追问缺失参数是合法的；但正文若在
+                    // 声称“已办理 / 正在办理”，不能让买家拿到一句没有业务事实的完成声明。
+                    // expectedWriteDone 仍是唯一“办成了”的判据，这里只是拦住冒充完成的正文。
+                    ToolLoopResult blocked = blockWriteClaim(ctx, expectedWrite, lastReply.content());
+                    if (blocked != null) {
+                        return blocked;
+                    }
                     break;
                 }
                 // 模型用文字承诺了业务动作却没调用工具（dev 评测实测形态："我这就为您提交退款申请"之后直接收尾）。
@@ -367,7 +379,27 @@ final class PlanExecuteHandler {
                     FallbackReason.TOOL_UNAVAILABLE, query, "读工具失败后模型直接作答、没有成功重试",
                     ctx.styleTier(), usage));
         }
-        return ToolLoopResult.ok(messages, lastReply, toolUsed, planSteps, answeredByBudgetCheck, rounds);
+        // 票 233 补充：模型可能先调读工具、文本落在一轮工具上限的出口；这条路径
+        // 不经过上面的 nudged 分支，必须再兜一次，否则「没派发写工具却声称已办理」
+        // 仍会从轮次耗尽处漏出去。
+        if (expectedWrite != null && !expectedWriteDone && lastReply != null && !lastReply.wantsTool()) {
+            ToolLoopResult blocked = blockWriteClaim(ctx, expectedWrite, lastReply.content());
+            if (blocked != null) {
+                return blocked;
+            }
+        }
+        return ToolLoopResult.ok(messages, lastReply, toolUsed, planSteps, answeredByBudgetCheck, rounds,
+                expectedWriteDone ? null : expectedWrite);
+    }
+
+    private ToolLoopResult blockWriteClaim(TurnContext ctx, ToolName expectedWrite, String content) {
+        WriteClaimGuard.Verdict verdict = WriteClaimGuard.classify(content);
+        boolean spuriousAsk = verdict == WriteClaimGuard.Verdict.ASK
+                && WriteClaimGuard.isSpuriousAsk(ctx.query(), expectedWrite);
+        if (verdict != WriteClaimGuard.Verdict.CLAIM && !spuriousAsk) {
+            return null;
+        }
+        return ToolLoopResult.terminal(services.writeClaimBlocked(ctx, expectedWrite, spuriousAsk));
     }
 
     /**

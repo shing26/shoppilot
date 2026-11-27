@@ -8,7 +8,7 @@
 
 <p>
 <a href="https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml"><img src="https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg" alt="CI"></a>
-<a href="#eval-gates"><img src="https://img.shields.io/badge/JVM%20Tests-878-informational?logo=apache-maven&amp;logoColor=white" alt="JVM Tests"></a>
+<a href="#eval-gates"><img src="https://img.shields.io/badge/JVM%20Tests-886-informational?logo=apache-maven&amp;logoColor=white" alt="JVM Tests"></a>
 <a href="docs/adr/"><img src="https://img.shields.io/badge/Architecture-86%20ADRs-blueviolet" alt="ADRs"></a>
 <a href="https://openjdk.org/projects/loom/"><img src="https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&amp;logoColor=white" alt="Java 21 Loom"></a>
 <a href="https://spring.io/projects/spring-boot"><img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&amp;logoColor=white" alt="Spring Boot 3.3.5"></a>
@@ -39,7 +39,7 @@
 
 ## ⚡ 60 秒速览
 
-| **878**<br/><sub>JVM tests</sub> | **144**<br/><sub>test suites</sub> | **86**<br/><sub>ADRs</sub> | **29**<br/><sub>full-tier acceptance steps</sub> |
+| **886**<br/><sub>JVM tests</sub> | **145**<br/><sub>test suites</sub> | **86**<br/><sub>ADRs</sub> | **29**<br/><sub>full-tier acceptance steps</sub> |
 | :---: | :---: | :---: | :---: |
 
 当前测试数与覆盖率以 [`docs/STATUS.md`](docs/STATUS.md) 为准；历史读数、未达成项与复现命令在 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)，两处不混读。
@@ -47,7 +47,7 @@
 - **模型不可靠** → 三级意图级联 + 10 态显式状态机 + 4 轮工具硬上限；读工具失败只反思一次，超限落可查工单，不拿失败前提硬办后步。
 - **并发热点会打穿缓存** → Java 21 虚拟线程 + SingleFlight 合并穿透 + L1/L2 双层缓存 + 词法极性守卫；命中路径模型与远程向量化增量恒为 0。
 - **涉资动作必须担责** → 退款只生成 `PENDING_APPROVAL` 提案，放行与驳回必须由已验签坐席执行，审计事件同时记录 `actor_authenticated`。
-- **结论要能被机器守住** → 878 条 JVM 测试、0-token 评测门禁、离线 rescore、检索录放门与覆盖率棘轮一起进 CI；判据、gold 与分母不为变绿而改。
+- **结论要能被机器守住** → 886 条 JVM 测试、0-token 评测门禁、离线 rescore、检索录放门与覆盖率棘轮一起进 CI；判据、gold 与分母不为变绿而改。
 
 <a id="product-surfaces" name="product-surfaces"></a>
 
@@ -397,7 +397,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 
 **持久化档验收边界**：票 220 的 Postgres 档容器验收（重启存活、灾难恢复 14/14、业务读回，合计 20/20）使用的是 2026-11-10 / 11-01 构建的镜像、非 HEAD 重编，且只验 `-DockerExec` 分支；默认宿主模式未实跑（`.scratch/shoppilot-mvp/issues/220`）。
 
-**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **878 条** JVM 测试（tool-api 12 + biz-mock 98 + ticket 50 + gateway 718）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
+**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **886 条** JVM 测试（tool-api 12 + biz-mock 98 + ticket 50 + gateway 726）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
 
 ---
 
@@ -680,7 +680,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 <summary>🔁 复现：压测、评测与验收命令</summary>
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（四模块 12 + 98 + 718 + 50 = 878 项；当前值以 docs/STATUS.md 为准）
+# 单元、架构与主链路 JVM 集成测试（四模块 12 + 98 + 726 + 50 = 886 项；当前值以 docs/STATUS.md 为准）
 mvn -o test
 # LLM 录放门禁（0 token）：cassette / key / 基线 / 既有 judge() 逐条比对；缺卡即红
 python scripts/verify_llm_replay.py
