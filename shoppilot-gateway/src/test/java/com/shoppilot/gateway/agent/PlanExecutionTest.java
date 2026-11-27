@@ -336,6 +336,34 @@ class PlanExecutionTest {
     }
 
     @Test
+    @DisplayName("票233 复验 P1-A：读工具后的 compose 第二跳也不得透出完成声明")
+    void composeSecondHopClaimIsBlocked() {
+        when(fallback.escalate(any(FallbackReason.class), anyString(), anyString()))
+                .thenReturn(Optional.of("T-233-COMPOSE"));
+        when(llm.complete(any())).thenReturn(
+                toolCall("call-1", ToolName.QUERY_ORDER_DETAIL, Map.of("orderNo", "90001")),
+                LlmTypes.Reply.text("订单90001当前状态是运输中"),
+                LlmTypes.Reply.text("订单90001当前状态是运输中"));
+        when(bizMock.call(eq(ToolName.QUERY_ORDER_DETAIL), anyMap(), any()))
+                .thenReturn(new BizMockClient.Outcome(ToolStatus.OK,
+                        "{\"status\":\"OK\",\"orderNo\":\"90001\",\"orderStatus\":\"运输中\"}", false));
+        when(llm.stream(any(), any())).thenReturn(LlmTypes.Reply.text("已为您发起退款申请"));
+        EventSink sink = mock(EventSink.class);
+
+        AgentResult result = machine().run("订单90001我要申请退款", null, sink);
+
+        assertEquals(FallbackReason.TOOL_ROUNDS_EXHAUSTED, result.fallbackReason());
+        assertTrue(result.degraded(), "第二跳谎报完成必须走降级出口");
+        assertEquals("T-233-COMPOSE", result.ticketId());
+        assertFalse(result.answer().contains("已为您发起退款申请"), "第二跳正文不得进入正常答案");
+        verify(sink, never()).token(org.mockito.ArgumentMatchers.contains("已为您发起退款申请"));
+        assertTrue(result.trace().stream().anyMatch(step ->
+                        "write-claim-blocked write-pending=applyRefund".equals(step.detail())),
+                "第二跳拦截也必须留下 write-claim-blocked 取证行");
+        verify(bizMock, never()).call(eq(ToolName.APPLY_REFUND), anyMap(), any());
+    }
+
+    @Test
     @DisplayName("票233 AC3：非写意图出现「已为您办理」字样 → 守卫不触发")
     void completionPhraseInPolicyAnswerIsNotGuarded() {
         when(llm.complete(any())).thenReturn(LlmTypes.Reply.text("政策规定已为您办理退款后三个工作日到账"));

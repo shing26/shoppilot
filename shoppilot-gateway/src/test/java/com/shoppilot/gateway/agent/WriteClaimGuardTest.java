@@ -87,6 +87,8 @@ class WriteClaimGuardTest {
                 WriteClaimGuard.classify("请提供订单号，我将为您发起退款申请"));
         assertEquals(WriteClaimGuard.Verdict.ASK, WriteClaimGuard.classify("订单已提交了吗？"));
         assertEquals(WriteClaimGuard.Verdict.ASK, WriteClaimGuard.classify("已退款了吗？"));
+        assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify("您已提交过退款申请吗？"));
+        assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify("请确认订单已提交"));
         assertEquals(true, WriteClaimGuard.isSpuriousAsk("订单 90001 我要申请退款", ToolName.APPLY_REFUND));
         assertEquals(false, WriteClaimGuard.isSpuriousAsk("我要申请退款", ToolName.APPLY_REFUND));
         assertEquals(false,
@@ -121,6 +123,10 @@ class WriteClaimGuardTest {
                 WriteClaimGuard.classify("已办理退款的订单不能重复申请"));
         assertEquals(WriteClaimGuard.Verdict.NONE,
                 WriteClaimGuard.classify("订单已提交的话，请耐心等待"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("已退款后款项会到账"));
+        assertEquals(WriteClaimGuard.Verdict.NONE,
+                WriteClaimGuard.classify("已发起退款后请耐心等待"));
         assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify(null));
         assertEquals(WriteClaimGuard.Verdict.NONE, WriteClaimGuard.classify("   "));
     }
