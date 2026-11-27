@@ -581,6 +581,90 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   阈值 / 覆盖率门槛零改动；`/ops/**` 403 与 SSRF 回环拒绝未放宽；未删除或弱化
   任何断言。AC6 的 25/4 偏差与三条现场追问留在票面，等所有者裁定。
 
+## round62 · AC8 真实开发商店退款（2026-11-27 / 票 232）
+
+- **证据 HEAD**：`e7004e6`（重放修复；事务修复为 `40a5357`；本文件的文档提交
+  随后绑定）。代码提交后 `git status --short` 为空。
+- **环境**：Shopify Partner 免费开发商店
+  `shoppilot-kernel-dev.myshopify.com`，Admin GraphQL `2026-10`；App scopes
+  `read_orders, write_orders, read_order_edits, write_order_edits, read_all_orders`。
+- **修复前的真实形状**：`refundCreate` 不传 `transactions` 时，Shopify 返回
+  `refund.totalRefundedSet = 0`、`refund.transactions = []`，订单仍是 `PAID`，
+  但行项目 `refundableQuantity` 已被消耗。`#1001`（manual）、`#1002`/`#1006`
+  （Bogus SALE/CAPTURE）均复现。这是“退款单已建但钱没退”的资金缺口。
+- **修复**：适配器先读订单的 `CAPTURE`（优先）或 `SALE` 交易，显式提交
+  `transactions: [{orderId, kind: REFUND, gateway, amount, parentId}]`；没有足够
+  金额的成功支付交易时返回 `STATE_NOT_ALLOWED`。回执金额取报价金额，
+  `totalRefundedSet` 仍必须存在；非零但与报价不一致返回 `INTERNAL`。
+- **幂等重放修复（`e7004e6`）**：`createRefund` 在报价之前先查进程内重放缓存，
+  键为 `tenant + "|" + idempotencyKey`，指纹为
+  `order + 排序后的 lineItemId×quantity + refundShipping + reason`。同键同指纹
+  返回原 `RefundReceipt`；同键不同指纹返回 `INVALID_REQUEST`。缓存是
+  `LinkedHashMap` access-order、上限 10,000 条；**只在进程内**，跨进程/重启仍需
+  持久化审批账本或 outbox，不能宣称持久幂等。
+- **修复后现场读数**：
+  - `#1007`：第一次显式交易退款 24.95 USD，`REFUND/SUCCESS`，订单 `REFUNDED`。
+  - `#1008`：10 + 10 两次部分退款，`PARTIALLY_REFUNDED` → `REFUNDED`；
+    同键同参重放返回同一 refund id；同键改 note 返回
+    `Idempotency key has been used with a different request payload.`。
+  - `#1010`：适配器 live 测试，首退 10 USD `SETTLED`、同键重放同 id、
+    同键改参 `INVALID_REQUEST`、末次 10 USD `SETTLED`，订单 `REFUNDED`。
+  - `#1012`：行项目 10 + 运费 5，退款总额 15，`refundShippingLines` 5，
+    `REFUND/SUCCESS`，订单 `REFUNDED`。
+  - `#1013`：manual `SALE` + 显式 `REFUND` 10 USD，订单 `REFUNDED`；
+    仅记账，无真实资金。`restockType=CANCEL` 缺 `locationId` 被拒，
+    `NO_RESTOCK` 通过。
+  - `#1015`：AC8 重放专项。AUTHORIZATION 20 USD → CAPTURE 20 USD → PAID、
+    2 件可退；live 测试首退 10 USD `SETTLED`，同键同参重放同 refund id，
+    同键改参 `INVALID_REQUEST`，末次 10 USD `SETTLED`；订单 `REFUNDED`、
+    总额 20、两笔 `REFUND/SUCCESS`。**退空后**用首笔同键同参重放，仍返回首笔
+    refund id（`gid://shopify/Refund/1030085935269`），不再退化为
+    `STATE_NOT_ALLOWED`。
+  - `#1003` 边界：API 建的 `SALE/SUCCESS` 20 USD 交易在 `refundCreate` 时返回
+    userError `Reference can't be blank`，留下两条 `REFUND/ERROR` 交易，
+    订单仍 `PAID`、可退数量仍为 2；适配器映射为 `INVALID_REQUEST`。
+    根因未完全隔离（疑似该 Bogus SALE 交易缺少网关 reference），不作为
+    生产可用结论。
+- **真实限流读数（2026-11-27，同一开发商店）**：
+  1. GraphQL：6 个 `orders(first: 250)` 别名并发，单查询
+     `requestedQueryCost=936`；6 个请求中 2 个返回 HTTP 200 +
+     `errors[0].extensions.code=THROTTLED`、`message=Throttled`，
+     `throttleStatus.currentlyAvailable=128`，其余 4 个成功。
+     首轮 8 别名（1248）先被 `MAX_COST_EXCEEDED` 拒绝，说明单查询上限仍是 1000。
+  2. Admin REST：`GET /admin/api/2026-10/orders.json?limit=1` 80 并发，
+     32 个 HTTP 429，`Retry-After: 2`，body 为
+     `{"errors":"Exceeded 2 calls per second for api client..."}`。
+  两条都是真实响应形状，不是假传输层合成。
+- **测试读数**：`.\mvnw.cmd -f kernel/pom.xml -B -ntp verify` →
+  contract 30 / shopify 24 + 2 skipped，BUILD SUCCESS；
+  `python kernel\scripts\check_coverage.py` → contract 84.53% / shopify 65.38%，
+  两模块 OK。`THROTTLED` 映射仍由 HTTP 429 与 GraphQL `THROTTLED` 两条单测
+  常驻覆盖，另有上面的真实限流读数。
+- **红绿对照（重放修复）**：临时移除 `createRefund` 的重放缓存后，
+  `replayAfterOrderFullyRefundedReturnsOriginalReceipt` 在 `unwrap` 处报
+  `result is not Ok`，`changedIntentAfterOrderFullyRefundedIsStillRejected`
+  期望 `INVALID_REQUEST` 实得 `STATE_NOT_ALLOWED`；还原后 24 条适配器用例全绿。
+- **根回归与文档**：`.\mvnw.cmd -B -ntp verify` → BUILD SUCCESS，票 232 验证时
+  根五模块 878 tests / 144 suites（合并票 233 后当前为 886/145）；
+  `gen_status.py --check` OK；
+  `verify_doc_truth.py` 878/144；`check_doc_links.py` 123 文件 / 254 链接；
+  `git diff --check` 无输出。
+- **复现（live refund，需显式允许写）**：
+
+```powershell
+$env:SHOPIFY_SHOP='<dev-store>.myshopify.com'
+$env:SHOPIFY_TOKEN='<admin-api-token>'
+$env:SHOPIFY_LIVE_ORDER='#<order-with-2-refundable-units>'
+$env:SHOPIFY_LIVE_WRITE='1'
+.\mvnw.cmd -f kernel/pom.xml -pl shoppilot-commerce-shopify -am -B -ntp verify `
+  "-Dtest=ShopifyLiveRefundTest" "-Dsurefire.failIfNoSpecifiedTests=false"
+```
+
+- **边界**：`Refund.staffMember` 在免费开发商店返回 `ACCESS_DENIED`（需
+  `read_users` + finance embedded/Plus/Advanced）；Webhook、`returnCreate`、
+  退货/换货未验证（无对应 scope）；`CANCEL` 回库需 location 权限，适配器固定
+  `NO_RESTOCK`；多笔 CAPTURE 的跨交易拆分未实现；60 天边界未触发；
+  重放缓存不是持久幂等。以上均不替代 AC8 已覆盖的真实退款写链路。
 - **round62 / 票 233 动作意图忠实性守卫（2026-11-27，代码 HEAD `bf1c314`）**：
   病根是写意图只纠偏一次，纠偏后模型仍不调工具时正文被当最终答案——本地 3B
   5 次采样仅 1 次真正派发 `applyRefund`，其余 4 次输出「已为您发起退款申请」

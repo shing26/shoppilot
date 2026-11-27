@@ -11,6 +11,25 @@
 | `shoppilot-gateway` | 买家入口：鉴权、限流、意图、缓存、检索、Agent 编排、SSE、降级、运维指标 | 依赖 `shoppilot-tool-api`，经 HTTP 调 biz-mock 与 ticket |
 | `shoppilot-ticket` | 工单与坐席服务（round23 票 72 / ADR 0053）：统一工单实体、规则分流、坐席领取、SLA、规则表 | 依赖 `shoppilot-tool-api`，**工单数据随服务走**；业务侧与网关经 HTTP 调它 |
 
+## 内核 reactor（独立，不属四个模块）
+
+`kernel/` 是 `0.1.0-SNAPSHOT` 的独立 Maven reactor，不进入根 `pom.xml`，
+也不依赖 Spring、网关、`biz-mock` 或工单服务。它是可复用内核的第一个切片，
+不是现有 agent 的运行改动。
+
+| 模块 | 职责 |
+| --- | --- |
+| `kernel/shoppilot-commerce-contract` | 退款端口、`Money`/`OrderSnapshot`/`RefundIntent`、本地审批 `RefundWorkflow`、TCK（`test-jar`） |
+| `kernel/shoppilot-commerce-shopify` | Shopify Admin GraphQL `2026-10` 适配器，通过同一份 TCK |
+
+- 构建：`.\mvnw.cmd -f kernel/pom.xml -B -ntp verify`
+- 覆盖率：`python kernel/scripts/check_coverage.py`
+- CI：`.github/workflows/kernel-ci.yml`
+- 裁决：[ADR 0088](adr/0088-refund-approval-ledger.md) /
+  [0089](adr/0089-refund-settlement-read-model.md) /
+  [0090](adr/0090-buyer-term-and-store-scoped-customer.md)
+- 转正契约：[`plans/232-commerce-kernel-promotion.md`](../plans/232-commerce-kernel-promotion.md)
+
 ## Gateway Package Ownership
 
 | Package | 责任 | 常见首改文件 |

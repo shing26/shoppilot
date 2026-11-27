@@ -1,0 +1,42 @@
+name: kernel-ci
+
+on:
+  push:
+    paths:
+      - "kernel/**"
+      - ".github/workflows/kernel-ci.yml"
+  pull_request:
+    paths:
+      - "kernel/**"
+      - ".github/workflows/kernel-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernel-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kernel:
+    name: Build, TCK and coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Verify kernel reactor
+        run: bash ./mvnw -f kernel/pom.xml -B -ntp verify
+
+      - name: Kernel coverage ratchet
+        run: python3 kernel/scripts/check_coverage.py
