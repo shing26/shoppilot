@@ -73,6 +73,10 @@ management:
           include: livenessState
 
 shoppilot:
+  # round63 票 236：审计流名/组名可配置；生产默认不变，测试 classpath 用独立值。
+  audit:
+    stream: ${SHOPPILOT_AUDIT_STREAM:shoppilot:audit}
+    group: ${SHOPPILOT_AUDIT_GROUP:shoppilot-audit}
   bizmock:
     # ADR 0002：故障注入，用于现场演示降级
     default-delay-ms: 0

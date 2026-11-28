@@ -9,7 +9,7 @@
 ## 当前状态
 
 - 当前交付路线见 [`docs/PROJECT_PLAN.md`](../../docs/PROJECT_PLAN.md) 与 [`ADR 0091`](../../docs/adr/0091-internal-trial-hardening-program.md)：完成线是「内部试用就绪」，不是 13 项全清或生产上线。
-- **当前 frontier（2026-11-28）**：round63 第一波，票 **234 → 235 → 236**；234 已签收并合并（`fbaccd2`，`ci-subset` `46099646530` success），235 已签收并合并（`dce6909`，`ci-subset` `46142263928` success；Verifier `PASS-with-registered-unmet`），236 已解锁为 `ready-for-agent`。第二波 237–241、第三波 242–243 待上一波收口后确认。
+- **当前 frontier（2026-11-28）**：round63 第一波，票 **234 → 235 → 236**；234 已签收并合并（`fbaccd2`，`ci-subset` `46099646530` success），235 已签收并合并（`dce6909`，`ci-subset` `46142263928` success；Verifier `PASS-with-registered-unmet`），236 修订 1 已实现，独立 Verifier 在 `d0cab6c` 复验 `PASS-with-registered-unmet`（AC1–AC6 PASS、P0/P1 清零），待所有者签收。第二波 237–241、第三波 242–243 待上一波收口后确认。
 - `v1.0.0` 已冻结，tag `v1.0.0` 指向 CI run `35104751284` 验证通过的 release commit `7f4334c`；默认不开功能票，重开条件见 ADR 0030 五条与 ADR 0031 的面试反馈触发；round17（票 34-41）按 ADR 0033 记录的所有者政策覆盖执行；编排层选型与 provider 缝的触发线见 ADR 0032。
 - 2026-09-16：v1.0 release candidate 的 ADR、release note、3 分钟作品集与票 21-32 问答补录均已落地；本地 JVM verify 221 绿、量具 40/40、收口审计 `PASS 93 / FAIL 0 / SKIP 2`。
 - 2026-09-18：round16 质量轮增加网关主链路 JVM 集成缝，当前 JVM verify 为 `3 + 12 + 209 = 224` 绿；历史 round14/round15 的 221 读数仍保留为当时落点。
@@ -519,7 +519,7 @@
 | 233 | [`233-write-claim-guard.md`](issues/233-write-claim-guard.md) | done（2026-11-27 所有者签收；Verifier 第五轮 PASS） | round62（产品行为回归修复，ADR 0008/0031）：动作意图在文字纠偏后仍未派发写工具、却声称「已为您办理」时，收尾走 `TOOL_ROUNDS_EXHAUSTED` 降级 + 工单，正文不得透出；追问缺失参数与非写意图不触发；`WriteClaimGuard` 判「已完成 → 强承诺（先于追问）→ ASK → REFUSAL → 一般承诺 → 弱确认」，剔除「多少/是否」等误放行裸词，补裸完成声明、条件句与定语/疑问排除；`applyRefund` 在问句已带订单号时 ASK 直接降级；Verifier 五轮 P1（ASK 优先级 / 词表漏项 / 裸声明 / 条件句误伤 / 定语疑问误伤 / compose 第二跳泄漏 / 四条疑问条件句）已整改，第二跳改为缓冲后再判；不新增降级枚举/指标。窄测 15/15、全量 886/145、AC7 活体 10/10 PENDING + 0 谎报（m），累计 0 谎报，分类矩阵 63/65（余 2 条良性 ASK，Verifier 明确接受）；合并 `79d5cba`，`ci-subset` run `45945315405` success，分支已删；契约 [plans/233](../../plans/233-write-claim-guard.md)（2026-11-27 冻结，修订 2） |
 | 234 | [`234-refund-approval-outbox.md`](issues/234-refund-approval-outbox.md) | done（2026-11-28 所有者签收；合并 `fbaccd2`；`ci-subset` `46099646530` success） | round63（U3，ADR 0091）：受理事务内落 outbox 意图，事务外补偿开单、退避重试、回填 `ticket_id`；开单失败不回滚受理；H2/PG V13；`RefundWorkItemOutboxTest` 10 条；Verifier 三轮闭环 SENDING 取消与 Prometheus 指标名；契约 [plans/234](../../plans/234-refund-approval-outbox.md)（2026-11-28 冻结，修订 1） |
 | 235 | [`235-refund-readback-structured.md`](issues/235-refund-readback-structured.md) | done（2026-11-28 所有者签收；合并 `dce6909`；`ci-subset` `46142263928` success） | round63（U12 收窄，ADR 0091）：保留文本断言，新增 `payoutBoundary` 到账边界；`verify-refund-approval.ps1` 增加结构化断言；不追 local 27/2；契约 [plans/235](../../plans/235-refund-readback-structured.md)（2026-11-28 冻结，修订 1 纳入前端构建产物） |
-| 236 | [`236-audit-stream-isolation.md`](issues/236-audit-stream-isolation.md) | ready-for-agent（235 已收口） | round63（R10，ADR 0091）：审计流名/组名可配置，JVM 测试写独立流，活体默认不变；受控复现证明 `audit_event` 不新增测试行；契约 [plans/236](../../plans/236-audit-stream-isolation.md)（2026-11-28 冻结） |
+| 236 | [`236-audit-stream-isolation.md`](issues/236-audit-stream-isolation.md) | implemented（修订 1；独立 Verifier `PASS-with-registered-unmet`，待所有者签收） | round63（R10，ADR 0091）：审计流名/组名可配置，biz-mock 测试写独立流，ticket 测试切 DB 1，活体默认不变；受控复现证明 `audit_event` 不新增测试行；契约 [plans/236](../../plans/236-audit-stream-isolation.md)（2026-11-28 冻结，修订 1） |
 
 ## 如何新增或领取工作
 

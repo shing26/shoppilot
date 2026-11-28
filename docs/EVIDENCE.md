@@ -160,6 +160,51 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 - **环境边界**：Qdrant / Elasticsearch 不可用（Docker 引擎未能启动），网关 health 的 deps 为 DOWN；退款 1–8 步均实际执行，本票链路不依赖检索。Redis 由本机临时实例提供。未换模型、未追 local 27/2。
 - **签收与合并（2026-11-28）**：所有者书面签收；post-sign merge `dce6909` 已合入 `main`，合并后 `mvnw verify` 仍 BUILD SUCCESS（896 tests / 146 suites），文档真值与脚本语法全绿；post-merge `ci-subset` run [`46142263928`](https://github.com/shing26/shoppilot/actions/runs/46142263928) **success**。票面转 `done`，实现分支删除，236 解锁。
 
+## 2026-11-28 round63 票 236（R10）：测试审计事件隔离
+
+- **实现口径**：`RedisAuditChannel` 的流名/消费组改为配置项
+  `shoppilot.audit.stream` / `shoppilot.audit.group`，默认仍为
+  `shoppilot:audit` / `shoppilot-audit`；`publish` / `read` / `acknowledge` /
+  `createGroup` 统一使用配置值。biz-mock 测试 classpath 指向
+  `shoppilot:audit-test` / `shoppilot-audit-test`，事件字段、幂等键、
+  直写兜底与 `/api/audit` 契约零改动。ticket 测试 classpath 使用独立
+  Redis 逻辑库（`spring.data.redis.database=1`），`AuditPublisher` 本体与
+  生产流名不动。
+- **JVM**：新增 `AuditStreamIsolationTest` 3 条（默认生产值；
+  自定义流/组用于 publish/createGroup/read；自定义流/组用于 acknowledge）。
+  `RedisConfigConsistencyTest` 增加 1 条静态守卫，钉住 ticket 测试的 DB 1。
+  `shoppilot-biz-mock -am test` **111 tests BUILD SUCCESS**；
+  全仓 `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，900 tests / 147 suites，
+  0 failures / 0 errors / 0 skipped**。
+- **独立 Verifier 首轮（HEAD `39049b3`）**：判定 FAIL，抓出三项 P1——
+  ticket 测试仍经 `AuditPublisher` 写生产流（全量 verify 后
+  `XLEN shoppilot:audit=11` 并落入活体 `/api/audit`）；AC5 脚本在
+  `RefundReviewTest` 未执行或基线已有测试行时仍可假通过；票面改了
+  round63 spec 这个票外文件。实现方未合并、未签收。
+- **修订 1（2026-11-28）**：契约把 ticket 测试资源加入 Allowlist；ticket
+  测试改用 Redis DB 1；`RedisConfigConsistencyTest` 增加静态守卫；AC5 脚本
+  增加 surefire 报告 10 条断言、生产/测试流 `XLEN` 一平一增断言、基线零
+  测试形态行断言；回退 round63 spec 改动。
+- **活体（本机 Redis 16379 + biz-mock 8091，HEAD `d0cab6c`）**：全量 verify
+  前后 DB 0 `XLEN shoppilot:audit` 均为 11、
+  DB 0 测试流 112→168、DB 1 生产流 22→33；重启 biz-mock 后
+  `/api/audit` 为 0 行。`scripts/verify-audit-isolation.ps1` 退出 0：
+  `before rows=0`、`after rows=0 newEventIds=0 testShapedRows=0`，
+  生产流 11→11、测试流 118→124，surefire 报告
+  `tests=10 failures=0 errors=0 skipped=0 fresh=True`。
+- **独立 Verifier 复验（`d0cab6c`）**：P1-1/2/3 全 PASS；AC1–AC6 PASS；
+  全仓 verify **900 tests / 147 suites，0 failures / 0 errors / 0 skipped**；
+  总判定 **PASS-with-registered-unmet**，P0/P1 清零。Verifier 另用 T999
+  控制事件验证 AC5 基线失败分支：脚本退出 1 并报
+  `FAIL live audit baseline has no test-shaped rows found=1`。
+- **边界**：活体基线为空表，eventId 去重边界未在历史非空表上复测；
+  测试流 `shoppilot:audit-test` 不做 TTL/MAXLEN 清理；生产流名可被环境变量
+  误覆盖，未加启动期防呆；AC5 默认只查 T001 / `limit=200`。以上均登记，
+  不在本票扩范围。DB 0 生产流保留 11 条修复前历史测试事件（已 ack、
+  `lag=0`），按 Forbidden 不清理。
+- **状态**：修订 1 实现完成，独立 Verifier `PASS-with-registered-unmet`；
+  所有者签收未完成，不写 `done`、不合并 `main`。
+
 ## 2026-10-22 可信度收口（fix，非新功能）
 
 - **安全**：`/api/v1/support/ops/**` 默认拒绝（仅 `/ops/tickets/mine` 买家白名单）；`PostureGuard` 把 `replace-with-*` / `sk-replace-me` 判为未覆盖；`/auth/mock-token` 增加请求期 remoteAddr/Host 校验。

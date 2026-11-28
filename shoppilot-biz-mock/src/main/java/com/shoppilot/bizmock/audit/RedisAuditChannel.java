@@ -5,6 +5,8 @@ import com.shoppilot.tool.audit.AuditEvent;
 import com.shoppilot.tool.audit.AuditTopics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.ReadOffset;
@@ -33,6 +35,10 @@ import java.util.Map;
  *   <li><b>消费是惰性的</b>：不跑后台监听线程。{@link #consume} 在读审计时调用，
  *       与票 70 的 SLA 超时打戳同一套理由——少一个线程池就少一处停机负担。</li>
  * </ol>
+ *
+ * <p>流名与消费组可由 {@code shoppilot.audit.stream} / {@code shoppilot.audit.group}
+ * 覆盖（票 236）；默认仍是生产值 {@link AuditTopics#AUDIT} / {@link AuditTopics#AUDIT_GROUP}，
+ * 测试 classpath 用独立值避免把测试事件写进活体审计流。
  */
 @Component
 public class RedisAuditChannel implements AuditChannel {
@@ -43,16 +49,28 @@ public class RedisAuditChannel implements AuditChannel {
 
     private final StringRedisTemplate redis;
     private final ObjectMapper mapper;
+    private final String stream;
+    private final String group;
 
+    /** 测试与手工装配用的生产默认值；Spring 装配走下面带配置的构造。 */
     public RedisAuditChannel(StringRedisTemplate redis, ObjectMapper mapper) {
+        this(redis, mapper, AuditTopics.AUDIT, AuditTopics.AUDIT_GROUP);
+    }
+
+    @Autowired
+    public RedisAuditChannel(StringRedisTemplate redis, ObjectMapper mapper,
+                             @Value("${shoppilot.audit.stream:shoppilot:audit}") String stream,
+                             @Value("${shoppilot.audit.group:shoppilot-audit}") String group) {
         this.redis = redis;
         this.mapper = mapper;
+        this.stream = stream == null || stream.isBlank() ? AuditTopics.AUDIT : stream;
+        this.group = group == null || group.isBlank() ? AuditTopics.AUDIT_GROUP : group;
     }
 
     @Override
     public void publish(AuditEvent event) {
         try {
-            redis.opsForStream().add(AuditTopics.AUDIT, toMap(event));
+            redis.opsForStream().add(stream, toMap(event));
         } catch (RuntimeException unreachable) {
             log.warn("审计事件发布失败，改走直写兜底 action={} object={}: {}", event.action(), event.objectId(),
                     unreachable.getMessage());
@@ -67,9 +85,9 @@ public class RedisAuditChannel implements AuditChannel {
             // group/consumer 走 StreamReadOptions，ReadOffset.lastConsumed() 不带参数——这是
             // 「只取这个消费方还没 ack 过的」，不是「从流尾开始」（那会让老消息永远没人消费）。
             records = redis.opsForStream().read(
-                    Consumer.from(AuditTopics.AUDIT_GROUP, consumerName),
+                    Consumer.from(group, consumerName),
                     StreamReadOptions.empty().count(BATCH),
-                    StreamOffset.create(AuditTopics.AUDIT, ReadOffset.lastConsumed()));
+                    StreamOffset.create(stream, ReadOffset.lastConsumed()));
         } catch (RuntimeException unreachable) {
             log.warn("审计流读取失败，本轮跳过消费: {}", unreachable.getMessage());
             return 0;
@@ -87,7 +105,7 @@ public class RedisAuditChannel implements AuditChannel {
             }
         }
         if (!acked.isEmpty()) {
-            redis.opsForStream().acknowledge(AuditTopics.AUDIT, AuditTopics.AUDIT_GROUP, acked.toArray(new RecordId[0]));
+            redis.opsForStream().acknowledge(stream, group, acked.toArray(new RecordId[0]));
         }
         return acked.size();
     }
@@ -106,7 +124,7 @@ public class RedisAuditChannel implements AuditChannel {
     private void ensureGroup() {
         try {
             // 参数顺序是 (key, ReadOffset, group)——group 在最后，写成 (key, group, offset) 编译不过
-            redis.opsForStream().createGroup(AuditTopics.AUDIT, ReadOffset.from("0-0"), AuditTopics.AUDIT_GROUP);
+            redis.opsForStream().createGroup(stream, ReadOffset.from("0-0"), group);
         } catch (RuntimeException alreadyThere) {
             // BUSYGROUP：组已存在，是正常路径不是错误
             log.debug("审计消费组已存在");
