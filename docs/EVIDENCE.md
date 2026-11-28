@@ -160,6 +160,30 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 - **环境边界**：Qdrant / Elasticsearch 不可用（Docker 引擎未能启动），网关 health 的 deps 为 DOWN；退款 1–8 步均实际执行，本票链路不依赖检索。Redis 由本机临时实例提供。未换模型、未追 local 27/2。
 - **签收与合并（2026-11-28）**：所有者书面签收；post-sign merge `dce6909` 已合入 `main`，合并后 `mvnw verify` 仍 BUILD SUCCESS（896 tests / 146 suites），文档真值与脚本语法全绿；post-merge `ci-subset` run [`46142263928`](https://github.com/shing26/shoppilot/actions/runs/46142263928) **success**。票面转 `done`，实现分支删除，236 解锁。
 
+## 2026-11-28 round63 票 236（R10）：测试审计事件隔离
+
+- **实现口径**：`RedisAuditChannel` 的流名/消费组改为配置项
+  `shoppilot.audit.stream` / `shoppilot.audit.group`，默认仍为
+  `shoppilot:audit` / `shoppilot-audit`；`publish` / `read` / `acknowledge` /
+  `createGroup` 统一使用配置值。biz-mock 测试 classpath 指向
+  `shoppilot:audit-test` / `shoppilot-audit-test`，事件字段、幂等键、
+  直写兜底与 `/api/audit` 契约零改动。
+- **JVM**：新增 `AuditStreamIsolationTest` 3 条（默认生产值；
+  自定义流/组用于 publish/createGroup/read；自定义流/组用于 acknowledge）。
+  `shoppilot-biz-mock -am test` **111 tests BUILD SUCCESS**；
+  全仓 `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，899 tests / 147 suites，
+  0 failures / 0 errors / 0 skipped**。
+- **活体（本机 Redis 16379 + biz-mock 8091，HEAD `b0bb2b1` + dirty 工作树）**：
+  `pwsh -NoProfile -File scripts/verify-audit-isolation.ps1` 退出 0；
+  跑 `RefundReviewTest` 前 `/api/audit` 为 `rows=0 uniqueEventIds=0`，
+  跑完后仍为 `rows=0 newEventIds=0 testShapedRows=0`，10 条审核测试全部 PASS。
+  若测试仍写生产流，查询侧惰性 drain 会使 after 出现测试行；本次未出现。
+- **边界**：活体基线为空表，eventId 去重边界未在历史非空表上复测；
+  测试流 `shoppilot:audit-test` 不做 TTL/MAXLEN 清理；生产流名可被环境变量
+  误覆盖，未加启动期防呆。以上均登记，不在本票扩范围。
+- **状态**：实现完成，本地 AC1–AC6 PASS；独立 Verifier 与所有者签收未完成，
+  不写 `done`、不合并 `main`。
+
 ## 2026-10-22 可信度收口（fix，非新功能）
 
 - **安全**：`/api/v1/support/ops/**` 默认拒绝（仅 `/ops/tickets/mine` 买家白名单）；`PostureGuard` 把 `replace-with-*` / `sk-replace-me` 判为未覆盖；`/auth/mock-token` 增加请求期 remoteAddr/Host 校验。
