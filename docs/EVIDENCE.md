@@ -148,6 +148,7 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 - **JVM**：`RefundWorkItemOutboxTest` 10 条（AC1–AC6 + `SENDING` 取消回归 + REJECT 路径 + 上下文恢复 + Prometheus 导出名）；`RefundInvariantTest` / `WorkItemProducerTest` 既有断言未弱化。全仓 `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，896 tests / 146 suites，0 failures / 0 errors / 0 skipped**；biz-mock LINE 84.10%（门槛 76%）。
 - **活体（本机 JVM，HEAD `f143288` + dirty 工作树）**：`pwsh -NoProfile -File scripts/verify-refund-outbox.ps1` 全 PASS——停 :8092 → 直连 biz-mock 受理返回 `PENDING_APPROVAL` / `PENDING_REVIEW`（开单失败不回滚）→ 恢复工单服务 → 补偿只补开 1 张 `REFUND_APPROVAL` 工单并把 payload 回指同一 `refundId` → Prometheus 抓取端存在 `shoppilot_refund_ticket_outbox_compensated_total` 且不存在带保留后缀的旧名 → 经网关坐席账号放行进入 `PROCESSING` → 移出待审队列；`finally` 恢复 :8092。证据边界：本机演示栈，未验证多实例并发与真实支付到账。
 - **已知窗口**：审核与「补偿器已读取 PENDING_REVIEW、正在建单」并发时，仍可能补开一张已审核退款的工单；这是至少一次语义的残余窗口，不宣称恰好一次。V13 不回填升级前已存在、`ticket_id` 为空的历史退款。
+- **合并与 CI（2026-11-28）**：所有者书面签收后合入 `main`（merge `fbaccd2`）；合并前解决与票 232 的 `README.md` / `docs/STATUS.md` 冲突，`gen_status.py` 重生成后仍为 896 tests / 146 suites、90 篇 ADR。post-merge `ci-subset` run [`46099646530`](https://github.com/shing26/shoppilot/actions/runs/46099646530) **success**（Build and JVM tests 2m54s、Handoff golden set 33s）；实现分支已删除。
 
 ## 2026-10-22 可信度收口（fix，非新功能）
 

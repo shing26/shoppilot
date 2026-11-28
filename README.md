@@ -33,7 +33,7 @@
 ---
 
 > **Round 51–63 交付状态（2026-11-28）**：219–233 中已收口的票均已按票面签收（232 已于 2026-11-27
-> 并入 main）；round63 第一波 234（U3）已签收待合并，235（U12 收窄）→ 236（R10）已开票，完成线见
+> 并入 main）；round63 第一波 234（U3）已签收并合并（`fbaccd2`），235（U12 收窄）→ 236（R10）已开票，完成线见
 > [ADR 0091](docs/adr/0091-internal-trial-hardening-program.md)。
 
 <a id="quick-glance" name="quick-glance"></a>

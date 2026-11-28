@@ -2,7 +2,7 @@
 
 Round: 63（内部试用就绪第一波；ADR 0091）
 ADR: 0047（退款审核闸门）、0053（工单跨服务）、0061（持久档）、0091（程序范围）
-Status: implemented（独立 Verifier PASS，待所有者签收）　Claimed by: Codex　Blocked by: 无
+Status: done（2026-11-28 所有者签收；合并 `fbaccd2`；`ci-subset` `46099646530` success）　Claimed by: Codex　Blocked by: 无
 契约：[plans/234-refund-approval-outbox.md](../../plans/234-refund-approval-outbox.md)（2026-11-28 冻结）
 
 ## What to build
@@ -27,6 +27,12 @@ Status: implemented（独立 Verifier PASS，待所有者签收）　Claimed by:
 见契约 AC1–AC9。
 
 ## Handoff notes
+
+**收口记录（2026-11-28）**：所有者书面签收后合入 `main`（merge `fbaccd2`），
+post-merge `ci-subset` run [`46099646530`](https://github.com/shing26/shoppilot/actions/runs/46099646530)
+success（Build and JVM tests 2m54s、Handoff golden set 33s）；合并前独立 Verifier
+亲跑全仓 `mvnw verify` 896 tests / 146 suites、0 失败，活体 `verify-refund-outbox.ps1` 全 PASS。
+实现分支 `codex/234-refund-approval-outbox` 已删除。235 解锁，票面状态同步为 ready-for-agent。
 
 **实现（2026-11-28，分支 `codex/234-refund-approval-outbox`，基线 `f143288`）**
 
