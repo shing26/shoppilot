@@ -2,7 +2,7 @@
 
 Round: 63（内部试用就绪第一波；ADR 0091）
 ADR: 0047（退款审核闸门）、0091（程序范围）
-Status: ready-for-agent　Claimed by: 未领取　Blocked by: 无（234 已于 2026-11-28 收口）
+Status: in-progress　Claimed by: Codex　Blocked by: 无（234 已于 2026-11-28 收口）
 契约：[plans/235-refund-readback-structured.md](../../plans/235-refund-readback-structured.md)（2026-11-28 冻结）
 
 ## What to build

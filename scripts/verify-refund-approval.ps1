@@ -94,6 +94,12 @@ function Invoke-Review([string]$token, [string]$refundId, [string]$decision) {
         -Body (@{ decision = $decision } | ConvertTo-Json -Compress) -ContentType 'application/json'
 }
 
+# 买家订单详情读口（票 235）：退款审核态与到账边界必须能不经模型、不看措辞直接读。
+function Get-BuyerOrderDetail([string]$token, [string]$orderNo) {
+    return Invoke-RestMethod -Uri "$BaseUrl/api/v1/support/orders/mine/$orderNo" `
+        -Headers @{ Authorization = "Bearer $token" }
+}
+
 function Reset-DemoFixtures {
     $h = @{ 'X-Internal-Token' = $internalToken }
     Invoke-RestMethod -Uri 'http://127.0.0.1:8091/api/admin/demo/reset' -Method Post -Headers $h | Out-Null
@@ -127,6 +133,10 @@ Write-Host "`n=== 4. buyer readback states approval + payout boundary ===" -Fore
 $readback = Invoke-Ask $buyerToken "帮我查一下订单 $ApproveOrder 现在的状态"
 Assert 'buyer readback says released and names the payout boundary' `
     (($readback -match '放行') -and ($readback -match '支付渠道')) $readback
+$releasedDetail = Get-BuyerOrderDetail $buyerToken $ApproveOrder
+Assert 'order detail reports RELEASED + PAYMENT_CHANNEL' `
+    (($releasedDetail.refundReview -eq 'RELEASED') -and ($releasedDetail.payoutBoundary -eq 'PAYMENT_CHANNEL')) `
+    "refundReview=$($releasedDetail.refundReview), payoutBoundary=$($releasedDetail.payoutBoundary)"
 
 Write-Host "`n=== 5. reject path (order $RejectOrder) ===" -ForegroundColor Cyan
 $raw2 = Invoke-Stream $buyerToken "订单 $RejectOrder 我要申请退款" (New-Token)
@@ -139,6 +149,10 @@ Assert 'reject moves refund to REJECTED' ($rejected.payload.status -eq 'REJECTED
 Write-Host "`n=== 6. buyer readback states rejection ===" -ForegroundColor Cyan
 $readback2 = Invoke-Ask $buyerToken "帮我查一下订单 $RejectOrder 现在什么状态"
 Assert 'buyer readback says rejected' ($readback2 -match '驳回|已恢复') $readback2
+$rejectedDetail = Get-BuyerOrderDetail $buyerToken $RejectOrder
+Assert 'order detail reports REJECTED + PAYMENT_CHANNEL' `
+    (($rejectedDetail.refundReview -eq 'REJECTED') -and ($rejectedDetail.payoutBoundary -eq 'PAYMENT_CHANNEL')) `
+    "refundReview=$($rejectedDetail.refundReview), payoutBoundary=$($rejectedDetail.payoutBoundary)"
 
 Write-Host "`n=== 7. rollback: rejected order is refundable again ===" -ForegroundColor Cyan
 $raw3 = Invoke-Stream $buyerToken "订单 $RejectOrder 我想再次申请退款" (New-Token)

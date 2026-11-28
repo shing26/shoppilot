@@ -48,6 +48,23 @@ const addressLine = computed(() => {
 
 const nodes = computed<LogisticsNode[]>(() => props.logistics?.nodes ?? [])
 
+const REFUND_REVIEW_LABEL: Record<string, string> = {
+  PENDING_REVIEW: '退款审核中',
+  RELEASED: '退款已放行',
+  REJECTED: '退款已驳回',
+}
+
+const refundState = computed(() => {
+  const review = props.detail?.refundReview
+  return review ? (REFUND_REVIEW_LABEL[review] ?? '退款处理中') : ''
+})
+
+const payoutNote = computed(() =>
+  props.detail?.payoutBoundary === 'PAYMENT_CHANNEL'
+    ? '到账由支付渠道处理，本页不显示预计到账时间。'
+    : '',
+)
+
 const copyNote = ref('')
 
 /** 运单号要能直接贴进快递查询——手选 12 位数字是没必要的摩擦。 */
@@ -106,6 +123,12 @@ async function copyTracking() {
           <div><dt>品类</dt><dd>{{ detail.categoryName }}</dd></div>
           <div><dt>地址版本</dt><dd>v{{ detail.addressVersion }}</dd></div>
         </dl>
+
+        <section v-if="detail.refundReview" class="block refund-block">
+          <h3>退款进度</h3>
+          <p class="refund-state">{{ refundState }}</p>
+          <p v-if="payoutNote" class="fine">{{ payoutNote }}</p>
+        </section>
 
         <ul v-if="detail.serviceFlags.length" class="flags">
           <li v-for="flag in detail.serviceFlags" :key="flag">{{ labelOf(SERVICE_FLAG_LABEL, flag) }}</li>
@@ -189,6 +212,7 @@ async function copyTracking() {
 .order-facts div { display: grid; gap: 1px; }
 .order-facts dt { color: var(--ink-3); font-size: 12px; }
 .order-facts dd { margin: 0; font-size: 12px; }
+.refund-state { margin: 0; font-size: 12px; color: var(--ink); }
 
 .flags { list-style: none; display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 10px; padding: 0; }
 .flags li {

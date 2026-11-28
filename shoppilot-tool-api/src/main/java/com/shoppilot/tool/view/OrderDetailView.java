@@ -28,7 +28,8 @@ public record OrderDetailView(
         Instant paidAt,
         Instant shippedAt,
         Instant deliveredAt,
-        RefundReviewState refundReview) {
+        RefundReviewState refundReview,
+        PayoutBoundary payoutBoundary) {
 
     public String amountYuan() {
         return String.format("%.2f", amountFen / 100.0d);
