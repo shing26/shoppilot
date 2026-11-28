@@ -32,15 +32,15 @@
 
 ---
 
-> **Round 51–63 交付状态（2026-11-28）**：219–233 中已收口的票均已按票面签收（无 232）；round63 第一波
-> 234（U3）→ 235（U12 收窄）→ 236（R10）已开票，完成线见
+> **Round 51–63 交付状态（2026-11-28）**：219–233 中已收口的票均已按票面签收（232 已于 2026-11-27
+> 并入 main）；round63 第一波 234（U3）已签收待合并，235（U12 收窄）→ 236（R10）已开票，完成线见
 > [ADR 0091](docs/adr/0091-internal-trial-hardening-program.md)。
 
 <a id="quick-glance" name="quick-glance"></a>
 
 ## ⚡ 60 秒速览
 
-| **896**<br/><sub>JVM tests</sub> | **146**<br/><sub>test suites</sub> | **87**<br/><sub>ADRs</sub> | **29**<br/><sub>full-tier acceptance steps</sub> |
+| **896**<br/><sub>JVM tests</sub> | **146**<br/><sub>test suites</sub> | **90**<br/><sub>ADRs</sub> | **29**<br/><sub>full-tier acceptance steps</sub> |
 | :---: | :---: | :---: | :---: |
 
 当前测试数与覆盖率以 [`docs/STATUS.md`](docs/STATUS.md) 为准；历史读数、未达成项与复现命令在 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)，两处不混读。

@@ -108,8 +108,10 @@
 - 2026-10-20（qwen-plus gold 复跑，U7 关闭）：DashScope 充值后切回 `qwen-plus`（NVIDIA 块注释保留）。全量 **180/180、0 请求失败**；ACTION 工具 **69/72 = 95.8%**、POLICY **72/72 = 100%**；4 个意图低于 95%：`ACTION_LOGISTICS` 88.9%（2 条选错工具）、`ACTION_ORDER` 94.4%（1 条散文追问）、`ESCALATE` 88.9%（4 条升级措辞未实际转人）、`UNKNOWN` 83.3%（3 条越界请求被调 `queryOrderDetail`）→ **新登记 R15**；**U7 关闭**（180 条已在 qwen-plus 上跑通，红点单独登记）。token **435,495**；当日 **1,036,188/1,300,000**（临时额度后收回 600k）。与历史 95.0% 不可直接比（prompt/轮次/R7/R14 已变）。环境已复位。
 - 2026-10-19（同日，活体面）：**149 收口（dev 档活体跑 part10 一次 + 预算 600k 落地）**——`.env` 的 `SHOPPILOT_LLM_DAILY_TOKEN_BUDGET` 260000 → **600000**（`.env.example` 注释同步；ADR 0012 闸门本体保留）。三服务起齐（网关 profile=dev + biz-mock:8091 + **工单服务:8092**）后跑 part10 全量 30 条（0.25 s 节流 + **逐条前置复位**，实测 0.03 s/次）。**读数（run#2，归因 promptVersion=v1.2.0 / max-tool-rounds=4 / HEAD `5831262`）**：计费 **222,276 token**（均值 7,409；口径 = `ops/circuit.tokensUsedToday` 增量，**不读响应 token 字段**）、墙钟 **211 s**、三态 **触发 7 / 不触发 23 / 用尽 0 / 未观测 0**、130 断言 → 红 18 / 未观测 5；`rounds` 区（打满 4 枪 + `TOOL_ROUNDS_EXHAUSTED` + 落工单）**5/5 绿**。**run#1（245,452 token）作废**：工单服务没起 → 5 条超限用例 `ticket_ok` 全红，属环境红不进读数；补起后转绿即反证。**18 条红三簇**：① PLAN 区 5 条 = **模型方差**（同样 5 条 run#1 全绿）；② 反思触发档 4 条 = 机制触发（counter +1、`induction=window`）但模型提前收尾没打第二枪；③ 用尽档 2 条撞**口径张力**（prompt 第 4 条教「换一种做法」vs 该档要求原样重试同一工具）+ 写工具档 1 条被**幂等回放**挡住（同批更早用例已用同单同参提交过退款；复位只清 biz-mock 库、不清 Redis 回放索引——round21 票 61 同源陷阱）——后两条登记给 148 面。**顺带修三处只有活体才暴露的**（0 判据改动）：ops 调用必须同时带 bearer 与 `X-Ops-Token`（否则 401）、`/ops/fault` 是 `PUT`（否则 405）、逐条前置复位。**与 140 预估差**：预估单跑 ≈29 万 → 实测 22.2 万（低 23%）。明细 + 报告落 `eval/results/`（`tool-eval-20261019-085417-dev-autonomy.csv` / `autonomy-part10-dev-20261019.md`），EVIDENCE 加行。**gold / 阈值 / 分母 / `judge()` 零触碰**（gold 180 本轮不重跑）。
 - 2026-10-19（同日，守卫面）：**146 收口（写动作守卫补行业门 = R11 闭合）**——`expectedWrite` 在**非电商租户置空**（门开在源头那一处：纠偏一枪与「写挂起但轮次用尽」两个分支共用它，一处改动同时收口两条路径；`toolsFor` 与网关派生那两道早有的门一行未碰）。病根是「**漏吃同一道门**」：酒店/未登记租户的规划请求 `tools` 为空、模型手上根本没有 `applyRefund`，纠偏却仍递一句「直接调用 applyRefund 把它真的办掉」——与 prompt 第 7 条「无工具时照实说明办不了」冲突，且诱导谎报「已提交」。用例两格（0 token）：HOTEL 负例（`tools` 为空、只 1 次 `complete`、`shoppilot_write_nudge_total` 为 0、无 `corrective=` 行、模型原话原样回给买家）+ **电商正对照**（`tools` 非空、2 次 `complete`、纠偏指令逐字含 `applyRefund`、计数为 1）——只钉负例的话，把门开成恒 null 也能绿，而票 41 花成本立起来的电商纠偏会静默死掉。**变异对照实测为真**：去掉 domain 门 → 负例恰 1 条红，还原即绿（7/7）；全量 `verify` 四模块 `10 + 73 + 446 + 45 = 574` 绿。台账 `registered-debt.md`：**R11 挪「已关闭」**；**R12 同批挪档**（已被票 145 修掉，原条目「响应字段本身未修」已成假陈述）——票 150 只做复核。gold / 阈值 / 分母 / `judge()` 零触碰。
-- 当前 `ready-for-agent` 的开放票：**无**。票 **231** 于 2026-11-27
-  **done（所有者书面签收；独立 Verifier PASS，P0/P1 无）**：
+- 当前 `ready-for-agent` 的开放票：**无**。票 **232** 于 2026-11-27
+  **done（独立 Verifier PASS `87ae5cb`；所有者书面签收）**；票 **231** 于
+  2026-11-27 **done（所有者书面签收；独立 Verifier PASS，P0/P1 无）**；
+  票 **233** 于 2026-11-27 **done（Verifier 第五轮 PASS；所有者签收）**：
   R16–R20 全部收口，矩阵现场另修四处 harness 自身的红
   （sidecar 跨重启继承、入库前等 biz-mock readiness、调试台未登录不打
   `/ops/tenants`、plan 重启未透传 `-Profile`）；最终矩阵
@@ -159,6 +161,22 @@
   不放开 `/ops/**`；R18 按 ADR 0042 归入 `USER_REQUESTED`；R19 allowlist 只进
   验收 harness；R16 以 `.env` 为唯一来源；R20 精确匹配根 POM 版本。
   `feedback` / `plansteps` 两条既有红不在本票范围。
+- 2026-11-26：**round62 开票 232（退款内核与 Shopify 适配器转正）**——按所有者
+  指令「接受 A，按提案默认值继续」；frontier = {232}，契约
+  [`plans/232`](../../plans/232-commerce-kernel-promotion.md)。类型为模块转正
+  （生产依赖变更，走完整链路）；ADR 0088/0089/0090 同日接受。范围只含
+  `kernel/` 独立 reactor、TCK `test-jar`、内核覆盖率与独立 CI；**不接网关、
+  不改 biz-mock、不动根 878 读数**。AC8（真实开发商店 10 条）另需所有者提供
+  Partner dev store 凭据，未完成前只称「假传输层 TCK 通过」。
+- 2026-11-27：**票 232 AC8 执行**——免费开发商店实测发现 `refundCreate`
+  不传 `transactions` 会“消耗可退数量但不退钱”，已修为显式 `REFUND` 交易并
+  失败关闭（`40a5357`）；部分退款到 `REFUNDED`、同键重放、同键冲突、运费退款、
+  手工网关记账均通过。独立 Verifier 判 FAIL（F1 真实限流未触发、两条文档陈旧、
+  退空后重放先撞报价），整改 `e7004e6`：重放先于报价、进程内 10k 有界缓存；
+  真实 GraphQL `THROTTLED` 与 REST 429 已触发；`#1015` live 通过。边界
+  （staffMember/Webhook/return/多笔 CAPTURE/持久幂等）留在票面。独立 Verifier
+  在 `87ae5cb` 复验 **PASS**（GraphQL 32/40 THROTTLED、REST 36/80 429；
+  `#1016` live 退空后重放通过）；所有者同日书面签收，票 232 转 `done`。
 - 2026-11-27：**round61 / 票 231 收口（AC6 已裁定）**——所有者接受 local 档
   **25 绿 / 4 红**（`refund`/`console` 归入 U12 本地 3B 动作工具方差），
   AC6 以该读数为准。dev 档补充读数**不作替代**：首轮 dev 矩阵
@@ -497,6 +515,7 @@
 | 229 | [`229-launcher-env-inheritance.md`](issues/229-launcher-env-inheritance.md) | done（所有者签收） | round59（回归修复，ADR 0031 / 0029）：`Start-ShoppilotService` 经 WMI 脱离启动不继承调用方环境，`Get-ShoppilotDotEnv` 又跳过已存在变量，导致已导出 `SHOPPILOT_*` 丢失（228 实测 401）；`up.ps1` 的 `SHOPPILOT_EMBEDDING_SIDECAR_URL` 同样丢失。修法：合并环境写进 `run-*.cmd`，只传 `SHOPPILOT_*` + 白名单；`mvn` 回退也注入 `JAVA_HOME/MAVEN_OPTS`。读数：ps 语法 38/0、新增 `verify-launcher-env.ps1` 24/24、全量 878/144、AC7 两场景登录 200。首轮 Verifier P1（`start-ticket` 缺 jar 回退空引用）已整改并实跑退出码 0；复验 PASS、AC1–AC8、P0/P1 无；所有者 2026-11-24 书面签收。U2：投放链路已封堵（过期口令 200 / `.env` 401），完整 `up.ps1` 未复跑、保留触发条件。契约 [plans/229](../../plans/229-launcher-env-inheritance.md)（2026-11-24 冻结） |
 | 230 | [`230-round60-closeout.md`](issues/230-round60-closeout.md) | done（2026-11-25 所有者签收） | round60（收尾/验收/文档，无新功能面）：所有者 2026-11-25 选定 **B**——5 个 POM 改 `1.1.0-SNAPSHOT`、不打 tag，`demo.py --prebuilt` 改按 POM 版本精确解析；`DELIVERY.md` 已换代（400+ 提交 / 878 tests / 144 suites / 票 01-230 / frontier 空）；29 步 full 档合并口径 **25 绿 / 4 红**（1.1.0 栈矩阵 22 PASS + 4 FAIL + 3 SKIP）并逐条归因（首轮跑在旧 0.1.0 jar，Verifier P1 后清产物、1.1.0 重跑）；完整 `up.ps1` 复跑 U2（登录 200、`.env` SHA 恢复）；U1/U2 移至已关闭节、U11 保留、新增 R16–R20；合并 `main`、CI 绿后删分支。契约 [plans/230](../../plans/230-round60-closeout.md)（2026-11-25 冻结，Owner ruling + 契约修订 1/2） |
 | 231 | [`231-acceptance-tooling-closeout.md`](issues/231-acceptance-tooling-closeout.md) | done（2026-11-27 所有者签收） | round61（验收工装缺陷修复，ADR 0031）：R20 启动器按根 POM 版本精确解析 jar，缺失走 mvn 回退、不选旧包；R16 验收脚本从进程环境或 `.env` 取凭证，删除 dev 默认值；R19 验收栈合并 `SHOPPILOT_OUTBOUND_ALLOWLIST=127.0.0.1`；R17 调试台坐席登录后 circuit 用坐席令牌、`/ops/**` 403 不放宽；R18 EMO-ESC-07 按 ADR 0042 归入 `USER_REQUESTED`（用例数与分母不变）；契约修订 2/3/5/6：sidecar 跨重启固定、入库前等 biz-mock readiness、调试台未登录不打 `/ops/tenants`、plan 重启透传 `-Profile`、`ingest.ps1` 精确取包；最终 local 矩阵合并 **25 绿 / 4 红**（`refund`/`console` 本地 3B 退款路径 + 既有 `feedback`/`plansteps`），dev 27/2 受 R21 限制；独立 Verifier PASS、P0/P1 无；契约 [plans/231](../../plans/231-acceptance-tooling-closeout.md)（2026-11-26 冻结） |
+| 232 | [`232-commerce-kernel-promotion.md`](issues/232-commerce-kernel-promotion.md) | done（2026-11-27；Verifier PASS `87ae5cb` + 所有者书面签收；2026-11-28 合并 `cab0af2`） | round62（模块转正 + AC8）：退款内核与 Shopify 适配器迁往独立 `kernel/` reactor；TCK `test-jar`、两条资金缺口红绿对照（重复退运费 / 金额缺失）、内核覆盖率与独立 CI；不接网关、不改根 878 读数；根回归五模块 `12+98+718+50=878` 全绿。AC8 在免费开发商店实测发现 `refundCreate` 不传 `transactions` 会零金额退款，已修（`40a5357`）；现场覆盖部分退款到 `REFUNDED`、同键重放/冲突、运费退款、手工网关记账、真实 `THROTTLED`/429；退空后重放已修（`e7004e6`）。独立 Verifier `87ae5cb` PASS（GraphQL 32/40 THROTTLED、REST 36/80 429；`#1016` live 退空后重放）；shopify 24 执行 + 2 live skipped，覆盖率 65.38%。合并 `origin/main` 后 PR [#1](https://github.com/shing26/shoppilot/pull/1) 按 merge commit 合并为 `cab0af2`；post-merge `ci-subset` run `46060075222`、`kernel-ci` run `46060075288` 均 success。staffMember/Webhook/return/多笔 CAPTURE/持久幂等边界留在票面。契约 [plans/232](../../plans/232-commerce-kernel-promotion.md) |
 | 233 | [`233-write-claim-guard.md`](issues/233-write-claim-guard.md) | done（2026-11-27 所有者签收；Verifier 第五轮 PASS） | round62（产品行为回归修复，ADR 0008/0031）：动作意图在文字纠偏后仍未派发写工具、却声称「已为您办理」时，收尾走 `TOOL_ROUNDS_EXHAUSTED` 降级 + 工单，正文不得透出；追问缺失参数与非写意图不触发；`WriteClaimGuard` 判「已完成 → 强承诺（先于追问）→ ASK → REFUSAL → 一般承诺 → 弱确认」，剔除「多少/是否」等误放行裸词，补裸完成声明、条件句与定语/疑问排除；`applyRefund` 在问句已带订单号时 ASK 直接降级；Verifier 五轮 P1（ASK 优先级 / 词表漏项 / 裸声明 / 条件句误伤 / 定语疑问误伤 / compose 第二跳泄漏 / 四条疑问条件句）已整改，第二跳改为缓冲后再判；不新增降级枚举/指标。窄测 15/15、全量 886/145、AC7 活体 10/10 PENDING + 0 谎报（m），累计 0 谎报，分类矩阵 63/65（余 2 条良性 ASK，Verifier 明确接受）；合并 `79d5cba`，`ci-subset` run `45945315405` success，分支已删；契约 [plans/233](../../plans/233-write-claim-guard.md)（2026-11-27 冻结，修订 2） |
 | 234 | [`234-refund-approval-outbox.md`](issues/234-refund-approval-outbox.md) | implemented（Verifier PASS，待签收） | round63（U3，ADR 0091）：受理事务内落 outbox 意图，事务外补偿开单、退避重试、回填 `ticket_id`；开单失败不回滚受理；H2/PG V13；`RefundWorkItemOutboxTest` 10 条；Verifier 三轮闭环 SENDING 取消与 Prometheus 指标名；契约 [plans/234](../../plans/234-refund-approval-outbox.md)（2026-11-28 冻结，修订 1） |
 | 235 | [`235-refund-readback-structured.md`](issues/235-refund-readback-structured.md) | blocked（by 234） | round63（U12 收窄，ADR 0091）：保留文本断言，新增 `payoutBoundary` 到账边界；`verify-refund-approval.ps1` 增加结构化断言；不追 local 27/2；契约 [plans/235](../../plans/235-refund-readback-structured.md)（2026-11-28 冻结） |
