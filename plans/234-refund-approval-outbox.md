@@ -1,8 +1,8 @@
 # 票 234 契约：退款审批跨进程原子性
 
 - Round: 63
-- 类型: 数据一致性修复（U3；ADR 0047 / 0053 / 0061 / 0088）
-- 开票依据: 所有者 2026-11-28「剩下问题按推荐执行」；ADR 0088 第一波
+- 类型: 数据一致性修复（U3；ADR 0047 / 0053 / 0061 / 0091）
+- 开票依据: 所有者 2026-11-28「剩下问题按推荐执行」；ADR 0091 第一波
 - 证据: `BizMockService.applyRefund` 受理事务提交后才跨进程开单；开单失败只 warn + 计数
 - Implementer: 独立分支 `codex/234-refund-approval-outbox`
 - Verifier: 独立 subagent；命令由 Verifier 亲跑
@@ -34,7 +34,7 @@
 - `.scratch/shoppilot-mvp/issues/236-audit-stream-isolation.md`（仅开票工装）
 - `.scratch/shoppilot-mvp/README.md`
 - `.scratch/shoppilot-mvp/registered-debt.md`
-- `docs/adr/0088-internal-trial-hardening-program.md`
+- `docs/adr/0091-internal-trial-hardening-program.md`
 - `.scratch/shoppilot-mvp/round63-spec-trial-hardening.md`
 - `docs/EVIDENCE.md`
 - `docs/CODE_MAP.md`
@@ -42,7 +42,7 @@
 - `docs/STATUS.md`（生成）
 - `docs/TUNING_PLAN.md`（仅机械计数）
 - `README.md`（仅测试数 / ADR badge / 本程序状态）
-- `CONTEXT.md`（仅 ADR 0088 已授权的术语精确化；不改既有结论）
+- `CONTEXT.md`（仅 ADR 0091 已授权的术语精确化；不改既有结论）
 - `shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/BizMockApplication.java`
 - `shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/service/BizMockService.java`
 - `shoppilot-biz-mock/src/main/java/com/shoppilot/bizmock/refundoutbox/`（新增包）

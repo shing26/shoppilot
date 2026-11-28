@@ -15,7 +15,7 @@
 **Plan baseline:** `HEAD 11cd26c`，`origin/main` 同步；CI run `35092864900` 成功，49 秒；收口审计 `PASS 93 / FAIL 0 / SKIP 2`；票 01-32 已收口。
 
 > **当前执行方向（2026-11-28）**：本文仍是历史冻结计划与八站路线；当前 frontier 改由
-> [`ADR 0088`](adr/0088-internal-trial-hardening-program.md) 与
+> [`ADR 0091`](adr/0091-internal-trial-hardening-program.md) 与
 > [`round63 spec`](../.scratch/shoppilot-mvp/round63-spec-trial-hardening.md) 定义：
 > 完成线是「内部试用就绪」，第一波票 234（U3）→ 235（U12 收窄）→ 236（R10）。
 > 本文的 221 tests 等数字是历史落点，不是现状。

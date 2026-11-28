@@ -1,8 +1,8 @@
 # 票 236 契约：测试审计事件隔离
 
 - Round: 63
-- 类型: 证据隔离修复（R10；ADR 0054 / 0088）
-- 开票依据: 所有者 2026-11-28「剩下问题按推荐执行」；ADR 0088 第一波
+- 类型: 证据隔离修复（R10；ADR 0054 / 0091）
+- 开票依据: 所有者 2026-11-28「剩下问题按推荐执行」；ADR 0091 第一波
 - 证据: `RefundReviewTest` 未替换审计通道，测试事件写真实 `shoppilot:audit`；
   活体 biz-mock drain 后把测试行落进 `audit_event`
 - Implementer: 独立分支 `codex/236-audit-stream-isolation`

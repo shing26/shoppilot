@@ -9,7 +9,7 @@
 <p>
 <a href="https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml"><img src="https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg" alt="CI"></a>
 <a href="#eval-gates"><img src="https://img.shields.io/badge/JVM%20Tests-896-informational?logo=apache-maven&amp;logoColor=white" alt="JVM Tests"></a>
-<a href="docs/adr/"><img src="https://img.shields.io/badge/Architecture-87%20ADRs-blueviolet" alt="ADRs"></a>
+<a href="docs/adr/"><img src="https://img.shields.io/badge/Architecture-90%20ADRs-blueviolet" alt="ADRs"></a>
 <a href="https://openjdk.org/projects/loom/"><img src="https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&amp;logoColor=white" alt="Java 21 Loom"></a>
 <a href="https://spring.io/projects/spring-boot"><img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&amp;logoColor=white" alt="Spring Boot 3.3.5"></a>
 <a href="https://openjdk.org/jeps/444"><img src="https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue" alt="Virtual Threads"></a>
@@ -34,7 +34,7 @@
 
 > **Round 51–63 交付状态（2026-11-28）**：219–233 中已收口的票均已按票面签收（无 232）；round63 第一波
 > 234（U3）→ 235（U12 收窄）→ 236（R10）已开票，完成线见
-> [ADR 0088](docs/adr/0088-internal-trial-hardening-program.md)。
+> [ADR 0091](docs/adr/0091-internal-trial-hardening-program.md)。
 
 <a id="quick-glance" name="quick-glance"></a>
 
@@ -116,7 +116,7 @@
 
 | 评估维度 | 依据路径 | 关键设计考量与实测读数 |
 | :--- | :--- | :--- |
-| **架构决策演进** | [`docs/adr/`](docs/adr/) | 88 个编号位（0001-0088，0022 预留未占用）/ 87 篇成文，包含完整选型权衡、备选方案与后果推演。 |
+| **架构决策演进** | [`docs/adr/`](docs/adr/) | 91 个编号位（0001-0091，0022 预留未占用）/ 90 篇成文，包含完整选型权衡、备选方案与后果推演。 |
 | **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求实打 bge-m3 为 24–65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平。 |
 | **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0-token 判据抓出三个静默缺陷。 |
 | **全套技术栈本地运行** | [快速开始](#quick-start) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |

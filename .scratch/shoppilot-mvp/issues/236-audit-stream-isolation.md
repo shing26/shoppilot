@@ -1,7 +1,7 @@
 # 票 236：测试审计事件隔离（R10）
 
-Round: 63（内部试用就绪第一波；ADR 0088）
-ADR: 0054（事件与审计）、0088（程序范围）
+Round: 63（内部试用就绪第一波；ADR 0091）
+ADR: 0054（事件与审计）、0091（程序范围）
 Status: blocked　Claimed by: 未领取　Blocked by: 235
 契约：[plans/236-audit-stream-isolation.md](../../plans/236-audit-stream-isolation.md)（2026-11-28 冻结）
 

@@ -1,7 +1,7 @@
 # 票 234：退款审批跨进程原子性（U3）
 
-Round: 63（内部试用就绪第一波；ADR 0088）
-ADR: 0047（退款审核闸门）、0053（工单跨服务）、0061（持久档）、0088（程序范围）
+Round: 63（内部试用就绪第一波；ADR 0091）
+ADR: 0047（退款审核闸门）、0053（工单跨服务）、0061（持久档）、0091（程序范围）
 Status: implemented（独立 Verifier PASS，待所有者签收）　Claimed by: Codex　Blocked by: 无
 契约：[plans/234-refund-approval-outbox.md](../../plans/234-refund-approval-outbox.md)（2026-11-28 冻结）
 

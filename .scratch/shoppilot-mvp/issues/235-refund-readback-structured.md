@@ -1,7 +1,7 @@
 # 票 235：退款回读结构化（U12 收窄）
 
-Round: 63（内部试用就绪第一波；ADR 0088）
-ADR: 0047（退款审核闸门）、0088（程序范围）
+Round: 63（内部试用就绪第一波；ADR 0091）
+ADR: 0047（退款审核闸门）、0091（程序范围）
 Status: blocked　Claimed by: 未领取　Blocked by: 234
 契约：[plans/235-refund-readback-structured.md](../../plans/235-refund-readback-structured.md)（2026-11-28 冻结）
 
