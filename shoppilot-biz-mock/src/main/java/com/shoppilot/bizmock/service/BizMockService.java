@@ -6,6 +6,8 @@ import com.shoppilot.bizmock.domain.Order;
 import com.shoppilot.bizmock.domain.Refund;
 import com.shoppilot.bizmock.audit.AuditService;
 import com.shoppilot.bizmock.fault.FaultInjector;
+import com.shoppilot.bizmock.refundoutbox.RefundWorkItemOutboxRepository;
+import com.shoppilot.bizmock.refundoutbox.RefundWorkItemProcessor;
 import com.shoppilot.bizmock.repo.AddressHistoryRepository;
 import com.shoppilot.bizmock.repo.LogisticsRepository;
 import com.shoppilot.bizmock.repo.OrderRepository;
@@ -14,8 +16,6 @@ import com.shoppilot.bizmock.tenant.TenantContextHolder;
 import com.shoppilot.tool.ToolName;
 import com.shoppilot.tool.audit.Actor;
 import com.shoppilot.tool.audit.AuditActions;
-import com.shoppilot.tool.workitem.TicketSource;
-import com.shoppilot.bizmock.workitem.WorkItemClient;
 import com.shoppilot.tool.request.ApplyRefundRequest;
 import com.shoppilot.tool.request.ModifyDeliveryAddressRequest;
 import com.shoppilot.tool.view.AddressView;
@@ -30,8 +30,6 @@ import com.shoppilot.tool.view.RefundReviewState;
 import com.shoppilot.tool.view.RefundView;
 import com.shoppilot.tool.view.ToolResponse;
 import com.shoppilot.tool.view.ToolStatus;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,32 +60,28 @@ public class BizMockService {
     private final RefundRepository refundRepository;
     private final FaultInjector faultInjector;
     private final TransactionTemplate transactionTemplate;
-
-    /** 工单出口（round23 票 72）：工单数据在工单服务，这里只能调过去。 */
-    private final WorkItemClient workItemClient;
+    private final RefundWorkItemOutboxRepository refundOutbox;
+    private final RefundWorkItemProcessor refundWorkItemProcessor;
 
     /** 审计（round23 票 71）：退款放行/驳回是唯一不可逆的资金迁移，必须留痕。 */
     private final AuditService auditService;
 
-    /** 退款已提交但审批工单没开成（2026-10-22 评审）：资金正确性优先，工单补偿可观测。 */
-    private final Counter refundTicketMissing;
-
     public BizMockService(OrderRepository orderRepository, LogisticsRepository logisticsRepository,
                           AddressHistoryRepository addressHistoryRepository, RefundRepository refundRepository,
                           FaultInjector faultInjector,
-                          TransactionTemplate transactionTemplate, WorkItemClient workItemClient,
-                          AuditService auditService, MeterRegistry registry) {
+                          TransactionTemplate transactionTemplate,
+                          RefundWorkItemOutboxRepository refundOutbox,
+                          RefundWorkItemProcessor refundWorkItemProcessor,
+                          AuditService auditService) {
         this.orderRepository = orderRepository;
         this.logisticsRepository = logisticsRepository;
         this.addressHistoryRepository = addressHistoryRepository;
         this.refundRepository = refundRepository;
         this.faultInjector = faultInjector;
         this.transactionTemplate = transactionTemplate;
-        this.workItemClient = workItemClient;
+        this.refundOutbox = refundOutbox;
+        this.refundWorkItemProcessor = refundWorkItemProcessor;
         this.auditService = auditService;
-        this.refundTicketMissing = Counter.builder("shoppilot_refund_ticket_missing_total")
-                .description("退款已落库但审批工单没开成的次数（资金正确性优先，工单走补偿）")
-                .register(registry);
     }
 
     /** 买家自己的最近 20 单（只读）。没有买家上下文时返回空集，不越权查全租户。 */
@@ -314,17 +308,20 @@ public class BizMockService {
         }
         // 插入必须独占一个事务：约束冲突后当前事务已被标记 rollback-only，
         // 在同一个事务里 catch 住继续查会拿到半死的 Session，50 并发下直接炸给调用方。
-        // 2026-10-22 评审 P0：DB 层加在办唯一键（active_order_id），并发双退由数据库兜底；
-        // 工单调用移出事务，失败只记账不阻断资金状态。
+        // 2026-10-22 评审 P0：DB 层加在办唯一键（active_order_id），并发双退由数据库兜底。
+        // round63 票 234：outbox 意图与退款、订单冻结同事务；跨进程开单放到提交后补偿。
         final String orderId = order.getId();
+        final String tenantId = TenantContextHolder.tenantId();
+        final Instant acceptedAt = Instant.now();
         final Refund saved;
         try {
             saved = transactionTemplate.execute(status -> {
-                Refund inserted = refundRepository.saveAndFlush(new Refund(TenantContextHolder.tenantId(), orderId,
+                Refund inserted = refundRepository.saveAndFlush(new Refund(tenantId, orderId,
                         order.getCustomerId(), amount, reason, idempotencyToken, PENDING_REVIEW,
-                        Instant.now()));
+                        acceptedAt));
                 order.setStatus(OrderStatus.REFUNDING);
                 orderRepository.save(order);
+                refundOutbox.enqueue(tenantId, inserted.getId(), orderId, order.getCustomerId(), acceptedAt);
                 return inserted;
             });
         } catch (DataIntegrityViolationException raceWithConcurrentSubmit) {
@@ -337,11 +334,12 @@ public class BizMockService {
                                     "该订单已有一笔退款在办，不能重复发起", List.of()))
                             .orElseThrow(() -> raceWithConcurrentSubmit));
         }
-        String ticketId = openRefundApprovalWorkItem(saved, orderId, order.getCustomerId());
-        if (ticketId != null) {
-            transactionTemplate.executeWithoutResult(status -> refundRepository.findById(saved.getId())
-                    .ifPresent(refreshed -> refreshed.setTicketId(ticketId)));
-            saved.setTicketId(ticketId);
+        try {
+            refundWorkItemProcessor.processRefund(saved.getId(), tenantId, Instant.now());
+        } catch (RuntimeException compensationFailure) {
+            // 受理已提交，开单失败只能留给补偿器；这里绝不能再抛给买家。
+            log.warn("退款 {} 的审批工单立即补偿失败，等待下一轮重试: {}",
+                    saved.getId(), compensationFailure.getMessage());
         }
         // 受理不是放行（ADR 0047）：资金要人工审核后才动。订单已在同一事务里置 REFUNDING，
         // 在办唯一键由 active_order_id 唯一索引保证；网关的订单锁是第二道，不是唯一一道。
@@ -400,6 +398,7 @@ public class BizMockService {
         if ("APPROVE".equalsIgnoreCase(decision)) {
             refund.setStatus(PROCESSING);
             Refund saved = refundRepository.save(refund);
+            refundOutbox.cancelByRefundId(saved.getId(), TenantContextHolder.tenantId(), Instant.now());
             // 放行是唯一不可逆的资金迁移，必须留痕（ADR 0056）：谁在什么时候放行了哪一笔
             auditService.publish(AuditActions.REFUND_APPROVED, "REFUND", String.valueOf(saved.getId()),
                     reviewer, "退款放行，金额 " + saved.getAmountFen() + " 分");
@@ -408,6 +407,7 @@ public class BizMockService {
         if ("REJECT".equalsIgnoreCase(decision)) {
             refund.setStatus(REJECTED);
             Refund saved = refundRepository.save(refund);
+            refundOutbox.cancelByRefundId(saved.getId(), TenantContextHolder.tenantId(), Instant.now());
             rollbackOrder(refund.getOrderId());
             auditService.publish(AuditActions.REFUND_REJECTED, "REFUND", String.valueOf(saved.getId()),
                     reviewer, note == null || note.isBlank() ? "驳回，未填原因" : "驳回：" + note);
@@ -449,31 +449,6 @@ public class BizMockService {
         } catch (NumberFormatException notANumber) {
             return null;
         }
-    }
-
-    /**
-     * 落一张退款审批工作项（round23 票 72）。
-     *
-     * <p>工单数据搬到工单服务之后，这里**不再持有** {@code tickets} 表，退款受理只能经
-     * {@link WorkItemClient} 调过去。这一步因此跨进程、不再与退款插入同事务——
-     * 处置与边界写在这里：<b>审批的真源是 {@code refunds.PENDING_REVIEW}（审核队列读它），
-     * 工单是受理侧的工作项</b>。所以开单失败不会动资金状态，只留下一张没人处理的退款；
-     * 为此本次受理按**已受理**继续推进并 warn——宁可让队列里多一张单，也不要让买家的退款卡住。
-     *
-     * <p>回指 {@code refunds.ticket_id} 只在拿到工单号时写；拿不到就留空，
-     * 「查不到工单号」比「指向一个不存在的号」诚实。
-     */
-    private String openRefundApprovalWorkItem(Refund refund, String orderId, String customerId) {
-        String ticketId = workItemClient.create(TicketSource.REFUND_APPROVAL, customerId,
-                "REFUND_APPROVAL", "订单 " + orderId + " 的退款待人工审核", "", null,
-                "{\"refundId\":\"" + refund.getId() + "\",\"orderId\":\"" + orderId + "\"}");
-        if (ticketId == null) {
-            // 资金状态已提交，工单只是工作项：宁可让队列少一张单，也不让退款卡在事务里。
-            // 可观测性由 metric 兜住；真正的 outbox 补偿登记为下一轮 debt。
-            log.warn("退款 {} 的审批工单没开成；审核队列仍可处理（真源是 refunds 表）", refund.getId());
-            refundTicketMissing.increment();
-        }
-        return ticketId;
     }
 
     /** 可选参数留空 = 不改这一项；退款原因的默认值见 applyRefund。 */

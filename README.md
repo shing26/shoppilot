@@ -8,8 +8,8 @@
 
 <p>
 <a href="https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml"><img src="https://github.com/shing26/shoppilot/actions/workflows/ci-subset.yml/badge.svg" alt="CI"></a>
-<a href="#eval-gates"><img src="https://img.shields.io/badge/JVM%20Tests-886-informational?logo=apache-maven&amp;logoColor=white" alt="JVM Tests"></a>
-<a href="docs/adr/"><img src="https://img.shields.io/badge/Architecture-86%20ADRs-blueviolet" alt="ADRs"></a>
+<a href="#eval-gates"><img src="https://img.shields.io/badge/JVM%20Tests-896-informational?logo=apache-maven&amp;logoColor=white" alt="JVM Tests"></a>
+<a href="docs/adr/"><img src="https://img.shields.io/badge/Architecture-87%20ADRs-blueviolet" alt="ADRs"></a>
 <a href="https://openjdk.org/projects/loom/"><img src="https://img.shields.io/badge/Java-21%20Loom-ED8B00?logo=openjdk&amp;logoColor=white" alt="Java 21 Loom"></a>
 <a href="https://spring.io/projects/spring-boot"><img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&amp;logoColor=white" alt="Spring Boot 3.3.5"></a>
 <a href="https://openjdk.org/jeps/444"><img src="https://img.shields.io/badge/Concurrency-Virtual%20Threads-blue" alt="Virtual Threads"></a>
@@ -32,14 +32,15 @@
 
 ---
 
-> **Round 51–58 交付状态（2026-11-24）**：219 / 220 / 221 / 222 / 223 / 224 /
-> 225 / 226 / 227 / 228 均已书面签收；224–228 经独立 Verifier PASS。
+> **Round 51–63 交付状态（2026-11-28）**：219–233 中已收口的票均已按票面签收（无 232）；round63 第一波
+> 234（U3）→ 235（U12 收窄）→ 236（R10）已开票，完成线见
+> [ADR 0088](docs/adr/0088-internal-trial-hardening-program.md)。
 
 <a id="quick-glance" name="quick-glance"></a>
 
 ## ⚡ 60 秒速览
 
-| **886**<br/><sub>JVM tests</sub> | **145**<br/><sub>test suites</sub> | **86**<br/><sub>ADRs</sub> | **29**<br/><sub>full-tier acceptance steps</sub> |
+| **896**<br/><sub>JVM tests</sub> | **146**<br/><sub>test suites</sub> | **87**<br/><sub>ADRs</sub> | **29**<br/><sub>full-tier acceptance steps</sub> |
 | :---: | :---: | :---: | :---: |
 
 当前测试数与覆盖率以 [`docs/STATUS.md`](docs/STATUS.md) 为准；历史读数、未达成项与复现命令在 [`docs/EVIDENCE.md`](docs/EVIDENCE.md)，两处不混读。
@@ -47,7 +48,7 @@
 - **模型不可靠** → 三级意图级联 + 10 态显式状态机 + 4 轮工具硬上限；读工具失败只反思一次，超限落可查工单，不拿失败前提硬办后步。
 - **并发热点会打穿缓存** → Java 21 虚拟线程 + SingleFlight 合并穿透 + L1/L2 双层缓存 + 词法极性守卫；命中路径模型与远程向量化增量恒为 0。
 - **涉资动作必须担责** → 退款只生成 `PENDING_APPROVAL` 提案，放行与驳回必须由已验签坐席执行，审计事件同时记录 `actor_authenticated`。
-- **结论要能被机器守住** → 886 条 JVM 测试、0-token 评测门禁、离线 rescore、检索录放门与覆盖率棘轮一起进 CI；判据、gold 与分母不为变绿而改。
+- **结论要能被机器守住** → 896 条 JVM 测试、0-token 评测门禁、离线 rescore、检索录放门与覆盖率棘轮一起进 CI；判据、gold 与分母不为变绿而改。
 
 <a id="product-surfaces" name="product-surfaces"></a>
 
@@ -115,7 +116,7 @@
 
 | 评估维度 | 依据路径 | 关键设计考量与实测读数 |
 | :--- | :--- | :--- |
-| **架构决策演进** | [`docs/adr/`](docs/adr/) | 87 个编号位（0001-0087，0022 预留未占用）/ 86 篇成文，包含完整选型权衡、备选方案与后果推演。 |
+| **架构决策演进** | [`docs/adr/`](docs/adr/) | 88 个编号位（0001-0088，0022 预留未占用）/ 87 篇成文，包含完整选型权衡、备选方案与后果推演。 |
 | **高并发压测与模型剥离** | [`docs/loadtest-report.md`](docs/loadtest-report.md) | 剥离模型端网络波动：每请求实打 bge-m3 为 24–65 QPS，编排层三条带缓存曲线在 1000 QPS 附近压平。 |
 | **静默故障定位与复盘** | [`docs/incident-2026-10-silent-failure-modes.md`](docs/incident-2026-10-silent-failure-modes.md) | 门禁全绿下的 Redis 异步事件断流真实定位；通过 `MONITOR` 取证与新增 0-token 判据抓出三个静默缺陷。 |
 | **全套技术栈本地运行** | [快速开始](#quick-start) | `pwsh -NoProfile -File scripts/up.ps1`；容器档严格执行凭据校验，空凭证由启动守卫拒启。 |
@@ -397,7 +398,7 @@ pwsh -NoProfile -File scripts/run-acceptance.ps1 -Tier full    # 全栈档：四
 
 **持久化档验收边界**：票 220 的 Postgres 档容器验收（重启存活、灾难恢复 14/14、业务读回，合计 20/20）使用的是 2026-11-10 / 11-01 构建的镜像、非 HEAD 重编，且只验 `-DockerExec` 分支；默认宿主模式未实跑（`.scratch/shoppilot-mvp/issues/220`）。
 
-**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **886 条** JVM 测试（tool-api 12 + biz-mock 98 + ticket 50 + gateway 726）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
+**CI 子集门禁**：[`.github/workflows/ci-subset.yml`](.github/workflows/ci-subset.yml) 在 `push` 到 `main`、pull request 和人工触发时，用 GitHub Actions 的 `ubuntu-latest` + Temurin JDK 21 执行 `bash ./mvnw -B -ntp verify`——覆盖构建与 **896 条** JVM 测试（tool-api 12 + biz-mock 108 + ticket 50 + gateway 726）、判据自检 40/40、离线 rescore 差异比对（gold 一字不动）、套件与一页纸夹具门、task 判据、检索录放门、覆盖率棘轮、告警规则 `promtool test rules`，以及两个前端构建产物的逐字节校验。它不要求任何 secret、模型额度、Ollama、ES、Qdrant 或 Docker，失败时上传 Surefire 报告；它仍不替代本机 29 步全量验收（含活体中间件、浏览器与一键演示）。
 
 ---
 
@@ -496,7 +497,7 @@ slot_ask | fallback | duplicate_submit | rate_limited
 
 **这张表逐条写"怎么量的"**。所有数字来自 `loadtest/results/` 下的产物，表格由 `python scripts/build_loadtest_report.py` 生成，本文不誊写第二个数字。吞吐与延迟类指标衡量的是**网关编排层**，生成侧是固定延迟的 Mock，不含模型推理（ADR 0001）。
 
-当前 **77 个唯一 `shoppilot_*` 指标名**（三模块 `src/main` 源码口径；`shoppilot-ticket` 从 round23 起不在其中，四模块口径是 79，两个数一起摆着）。round50 票 217 新增 `shoppilot_answer_egress_guard_total{outlet}`（买家可见正文命中内部标识出站守卫的次数：answer / sse_token / cache_reuse / slot_resume 四个出口，SEC-INJ-04 修复）。round49 票 212 新增 `shoppilot_embedding_fallback_total`（运行期查询向量化打 sidecar 失败后回落 Ollama 的次数，ADR 0085；默认不配 sidecar 时恒零）。round48 补口新增 `shoppilot_routing_shadow_total`（Stage3 路由表建议与实际模式的影子计数，默认关）。round47 票 198 新增 `shoppilot_handoff_decision_max_seconds`（Gauge：Handoff 触发器判定耗时的进程内累计最大值，替代会随时间窗衰减的 `Timer.max()`；round50 票 218 从 `shoppilot_handoff_decision_seconds_max` 改名——原名与 Timer 自动导出的 Prometheus `_seconds_max` 重名，导致整个 `/actuator/prometheus` 抓取 500，改名为同名不重的独立指标名，唯一指标名计数不变）。round43 票 186 新增 `shoppilot_knowledge_revisions_total{result=filed|published|rejected}`（知识修订三态：附稿 / 发布 / 驳回）。口径说明：上一版写 56/58 是 round35 的复点；round36-42 各轮新增指标未逐轮更新本行，round43 收口时以 `grep -rhoE "shoppilot_[a-z0-9_]+" <模块>/src/main | sort -u` 重新复点出 72/74，中间的漂移如实照登，不回溯补账。
+当前 **79 个唯一 `shoppilot_*` 指标名**（三模块 `src/main` 源码口径；`shoppilot-ticket` 从 round23 起不在其中，四模块口径是 81，两个数一起摆着）。round63 票 234 新增 `shoppilot_refund_ticket_outbox_compensated_total`（退款审批工单由 outbox 补偿器补开的次数）与 `shoppilot_refund_ticket_outbox_pending`（Gauge：尚未开单或取消的 outbox 行数）。round50 票 217 新增 `shoppilot_answer_egress_guard_total{outlet}`（买家可见正文命中内部标识出站守卫的次数：answer / sse_token / cache_reuse / slot_resume 四个出口，SEC-INJ-04 修复）。round49 票 212 新增 `shoppilot_embedding_fallback_total`（运行期查询向量化打 sidecar 失败后回落 Ollama 的次数，ADR 0085；默认不配 sidecar 时恒零）。round48 补口新增 `shoppilot_routing_shadow_total`（Stage3 路由表建议与实际模式的影子计数，默认关）。round47 票 198 新增 `shoppilot_handoff_decision_max_seconds`（Gauge：Handoff 触发器判定耗时的进程内累计最大值，替代会随时间窗衰减的 `Timer.max()`；round50 票 218 从 `shoppilot_handoff_decision_seconds_max` 改名——原名与 Timer 自动导出的 Prometheus `_seconds_max` 重名，导致整个 `/actuator/prometheus` 抓取 500，改名为同名不重的独立指标名，唯一指标名计数不变）。round43 票 186 新增 `shoppilot_knowledge_revisions_total{result=filed|published|rejected}`（知识修订三态：附稿 / 发布 / 驳回）。口径说明：上一版写 56/58 是 round35 的复点；round36-42 各轮新增指标未逐轮更新本行，round43 收口时以 `grep -rhoE "shoppilot_[a-z0-9_]+" <模块>/src/main | sort -u` 重新复点出 72/74，中间的漂移如实照登，不回溯补账。
 
 | 指标 | 判据 | 实测 | 口径 | 证据 |
 | --- | --- | --- | --- | --- |
@@ -680,7 +681,7 @@ pwsh -NoProfile -File scripts/clean_clone_check.ps1 -Teardown
 <summary>🔁 复现：压测、评测与验收命令</summary>
 
 ```powershell
-# 单元、架构与主链路 JVM 集成测试（四模块 12 + 98 + 726 + 50 = 886 项；当前值以 docs/STATUS.md 为准）
+# 单元、架构与主链路 JVM 集成测试（四模块 12 + 108 + 726 + 50 = 896 项；当前值以 docs/STATUS.md 为准）
 mvn -o test
 # LLM 录放门禁（0 token）：cassette / key / 基线 / 既有 judge() 逐条比对；缺卡即红
 python scripts/verify_llm_replay.py
