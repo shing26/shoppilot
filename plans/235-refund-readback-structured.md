@@ -37,6 +37,7 @@
 - `frontend-buyer/src/api.ts`
 - `frontend-buyer/src/components/`（仅退款/订单详情展示所需文件）
 - `frontend-buyer/src/**/*.test.ts` / `frontend-buyer/src/**/*.spec.ts`（如新增）
+- `shoppilot-gateway/src/main/resources/static/buyer/`（`npm run build` 产物；修订 1）
 
 ## Acceptance criteria
 
@@ -84,3 +85,10 @@ git status --short
 ```powershell
 pwsh -NoProfile -File scripts/verify-refund-approval.ps1
 ```
+
+## 修订
+
+**修订 1（2026-11-28）**：Allowlist 补入
+`shoppilot-gateway/src/main/resources/static/buyer/`。原因是本仓买家端构建产物随源码入库
+（历次前端票同做法），AC5 的展示改动只有把 `npm run build` 产物一起提交才会被网关实际服务；
+该目录只含本次构建生成的 `index.html` 与哈希资源，不改变 AC、判据或业务语义。

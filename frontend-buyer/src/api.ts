@@ -146,6 +146,8 @@ export interface OrderDetail {
   shippedAt: string | null
   deliveredAt: string | null
   refundReview: string | null
+  /** 到账边界：有退款时为 PAYMENT_CHANNEL，表示到账由支付渠道处理。 */
+  payoutBoundary: string | null
 }
 
 export interface LogisticsNode {

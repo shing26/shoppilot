@@ -24,7 +24,12 @@ public record OrderView(
          * 该订单当前退款申请的审核态（票 60）。无在办退款/无退款时为 null。
          * 它补齐的正是 {@link OrderStatus#REFUNDING} 那格"待审与已放行同形"的缺口。
          */
-        RefundReviewState refundReview) {
+        RefundReviewState refundReview,
+        /**
+         * 退款到账边界（票 235）。无退款为 null；有退款时固定为
+         * {@link PayoutBoundary#PAYMENT_CHANNEL}，与自由文本 {@code message} 并存。
+         */
+        PayoutBoundary payoutBoundary) {
 
     public String amountYuan() {
         return String.format("%.2f", amountFen / 100.0d);

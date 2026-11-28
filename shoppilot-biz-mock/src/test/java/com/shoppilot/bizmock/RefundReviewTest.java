@@ -168,11 +168,17 @@ class RefundReviewTest {
     @Test
     @DisplayName("买家读回：queryOrderDetail 带退款审核态，三态可分辨且写明到账边界（票 60）")
     void buyerReadbackDistinguishesTheThreeRefundStates() throws Exception {
+        RefundTarget noRefundTarget = findRefundableOrder();
+        JsonNode noRefund = orderDetail(noRefundTarget);
+        assertThat(noRefund.path("payload").path("refundReview").isNull()).isTrue();
+        assertThat(noRefund.path("payload").path("payoutBoundary").isNull()).isTrue();
+
         RefundTarget pendingTarget = findRefundableOrder();
         long pendingId = applyRefund(pendingTarget, "readback-pending-" + System.nanoTime())
                 .path("payload").path("refundId").asLong();
         JsonNode pending = orderDetail(pendingTarget);
         assertThat(pending.path("payload").path("refundReview").asText()).isEqualTo("PENDING_REVIEW");
+        assertThat(pending.path("payload").path("payoutBoundary").asText()).isEqualTo("PAYMENT_CHANNEL");
         assertThat(pending.path("message").asText()).contains("等待人工审核").contains("支付渠道");
 
         RefundTarget releasedTarget = findRefundableOrder();
@@ -181,6 +187,7 @@ class RefundReviewTest {
         review(releasedTarget.tenantId(), releasedId, "APPROVE", null);
         JsonNode released = orderDetail(releasedTarget);
         assertThat(released.path("payload").path("refundReview").asText()).isEqualTo("RELEASED");
+        assertThat(released.path("payload").path("payoutBoundary").asText()).isEqualTo("PAYMENT_CHANNEL");
         // 到账边界必须写下来：这是 REFUNDED 终态不推进之后，买家唯一能拿到的出口
         assertThat(released.path("message").asText()).contains("已放行").contains("支付渠道");
 
@@ -190,6 +197,7 @@ class RefundReviewTest {
         review(rejectedTarget.tenantId(), rejectedId, "REJECT", null);
         JsonNode rejected = orderDetail(rejectedTarget);
         assertThat(rejected.path("payload").path("refundReview").asText()).isEqualTo("REJECTED");
+        assertThat(rejected.path("payload").path("payoutBoundary").asText()).isEqualTo("PAYMENT_CHANNEL");
         assertThat(rejected.path("message").asText()).contains("驳回");
     }
 

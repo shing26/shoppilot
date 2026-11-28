@@ -26,6 +26,7 @@ import com.shoppilot.tool.view.OrderDetailView;
 import com.shoppilot.tool.view.OrderLogisticsView;
 import com.shoppilot.tool.view.OrderStatus;
 import com.shoppilot.tool.view.OrderView;
+import com.shoppilot.tool.view.PayoutBoundary;
 import com.shoppilot.tool.view.RefundReviewState;
 import com.shoppilot.tool.view.RefundView;
 import com.shoppilot.tool.view.ToolResponse;
@@ -169,13 +170,17 @@ public class BizMockService {
      */
     @Transactional(readOnly = true)
     public Optional<OrderDetailView> buyerOrderDetail(String orderNo) {
-        return buyerOwned(orderNo).map(order -> new OrderDetailView(
-                order.getId(), order.getAmountFen(), order.getStatus(), order.getCategoryName(),
-                order.serviceFlagList(),
-                new AddressView(order.getReceiverName(), maskPhone(order.getReceiverPhone()),
-                        order.getProvince(), order.getCity(), order.getDistrict(), order.getDetailAddress()),
-                order.getAddressVersion(), order.getCreatedAt(), order.getPaidAt(),
-                order.getShippedAt(), order.getDeliveredAt(), latestRefundReviewState(order)));
+        return buyerOwned(orderNo).map(order -> {
+            RefundReviewState reviewState = latestRefundReviewState(order);
+            return new OrderDetailView(
+                    order.getId(), order.getAmountFen(), order.getStatus(), order.getCategoryName(),
+                    order.serviceFlagList(),
+                    new AddressView(order.getReceiverName(), maskPhone(order.getReceiverPhone()),
+                            order.getProvince(), order.getCity(), order.getDistrict(), order.getDetailAddress()),
+                    order.getAddressVersion(), order.getCreatedAt(), order.getPaidAt(),
+                    order.getShippedAt(), order.getDeliveredAt(), reviewState,
+                    payoutBoundary(reviewState));
+        });
     }
 
     /**
@@ -466,11 +471,18 @@ public class BizMockService {
     }
 
     private OrderView toView(Order order) {
+        RefundReviewState reviewState = latestRefundReviewState(order);
         return new OrderView(order.getId(), order.getAmountFen(), order.getStatus(), order.getCategoryName(),
                 order.serviceFlagList(),
                 new AddressView(order.getReceiverName(), order.getReceiverPhone(), order.getProvince(),
                         order.getCity(), order.getDistrict(), order.getDetailAddress()),
-                order.getCreatedAt(), order.getPaidAt(), order.getShippedAt(), latestRefundReviewState(order));
+                order.getCreatedAt(), order.getPaidAt(), order.getShippedAt(), reviewState,
+                payoutBoundary(reviewState));
+    }
+
+    /** 有退款审核态就说明资金已进入退款链路；到账权威在支付渠道（ADR 0047 / 票 235）。 */
+    private static PayoutBoundary payoutBoundary(RefundReviewState reviewState) {
+        return reviewState == null ? null : PayoutBoundary.PAYMENT_CHANNEL;
     }
 
     /** 订单最近一笔退款的审核态（票 60）；无退款、或退款处于未知状态时返回 null。 */

@@ -150,6 +150,15 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 - **已知窗口**：审核与「补偿器已读取 PENDING_REVIEW、正在建单」并发时，仍可能补开一张已审核退款的工单；这是至少一次语义的残余窗口，不宣称恰好一次。V13 不回填升级前已存在、`ticket_id` 为空的历史退款。
 - **合并与 CI（2026-11-28）**：所有者书面签收后合入 `main`（merge `fbaccd2`）；合并前解决与票 232 的 `README.md` / `docs/STATUS.md` 冲突，`gen_status.py` 重生成后仍为 896 tests / 146 suites、90 篇 ADR。post-merge `ci-subset` run [`46099646530`](https://github.com/shing26/shoppilot/actions/runs/46099646530) **success**（Build and JVM tests 2m54s、Handoff golden set 33s）；实现分支已删除。
 
+## 2026-11-28 round63 票 235（U12 收窄）：退款回读结构化
+
+- **实现口径**：`OrderView` / `OrderDetailView` 新增 add-only 的 `payoutBoundary`；无退款为 null，有退款的三态（`PENDING_REVIEW` / `RELEASED` / `REJECTED`）均为 `PAYMENT_CHANNEL`。`refundReview` 三态、`refundBoundaryNote` 中文原文与既有 `message` 断言未改。
+- **JVM**：`RefundReviewTest` 10 条，新增无退款 `refundReview=null` + `payoutBoundary=null`，以及三态 `payoutBoundary=PAYMENT_CHANNEL`；全仓 `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，896 tests / 146 suites，0 failures / 0 errors / 0 skipped**。
+- **前端**：`frontend-buyer` typecheck 通过、44 条 vitest 通过、`vite build` 通过；`OrderCard` 显示退款进度，只把 `PAYMENT_CHANNEL` 映射为「到账由支付渠道处理」，不显示伪造到账时间；构建产物与源码同提交（契约修订 1）。
+- **活体（独立 Verifier 亲跑两次，HEAD `88ef2dd`）**：`scripts/verify-refund-approval.ps1` 第 1/2/3/5/6/7/8 步 PASS；新增结构化断言 `order detail reports RELEASED + PAYMENT_CHANNEL` 与 `... REJECTED + PAYMENT_CHANNEL` 两次均 PASS；原「放行 / 支付渠道」文本断言**保留但两次红**（local 3B 原文分别为「已通过审核…支付渠道…」「已通过审核…支付渠道…」，均缺「放行」），脚本退出码 1。
+- **判定**：AC1–AC7 PASS；AC8 按冻结契约判 **PASS（登记未达成）**——结构化断言 PASS、原文本断言未删除/未弱化、local 3B 文本红点如实登记。不以结构化字段替代或放宽原文本断言。
+- **环境边界**：Qdrant / Elasticsearch 不可用（Docker 引擎未能启动），网关 health 的 deps 为 DOWN；退款 1–8 步均实际执行，本票链路不依赖检索。Redis 由本机临时实例提供。未换模型、未追 local 27/2。
+
 ## 2026-10-22 可信度收口（fix，非新功能）
 
 - **安全**：`/api/v1/support/ops/**` 默认拒绝（仅 `/ops/tickets/mine` 买家白名单）；`PostureGuard` 把 `replace-with-*` / `sk-replace-me` 判为未覆盖；`/auth/mock-token` 增加请求期 remoteAddr/Host 校验。
