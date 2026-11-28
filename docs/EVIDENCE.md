@@ -158,6 +158,7 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 - **活体（独立 Verifier 亲跑两次，HEAD `88ef2dd`）**：`scripts/verify-refund-approval.ps1` 第 1/2/3/5/6/7/8 步 PASS；新增结构化断言 `order detail reports RELEASED + PAYMENT_CHANNEL` 与 `... REJECTED + PAYMENT_CHANNEL` 两次均 PASS；原「放行 / 支付渠道」文本断言**保留但两次红**（local 3B 原文分别为「已通过审核…支付渠道…」「已通过审核…支付渠道…」，均缺「放行」），脚本退出码 1。
 - **判定**：AC1–AC7 PASS；AC8 按冻结契约判 **PASS（登记未达成）**——结构化断言 PASS、原文本断言未删除/未弱化、local 3B 文本红点如实登记。不以结构化字段替代或放宽原文本断言。
 - **环境边界**：Qdrant / Elasticsearch 不可用（Docker 引擎未能启动），网关 health 的 deps 为 DOWN；退款 1–8 步均实际执行，本票链路不依赖检索。Redis 由本机临时实例提供。未换模型、未追 local 27/2。
+- **签收与合并（2026-11-28）**：所有者书面签收；post-sign merge `dce6909` 已落本地 `main`，合并后 `mvnw verify` 仍 BUILD SUCCESS（896 tests / 146 suites），文档真值与脚本语法全绿。GitHub 443 与本机代理均不可达，push 与 post-merge `ci-subset` 未完成；CI success 前票面保持 `signed`，不写 `done`、不解锁 236。
 
 ## 2026-10-22 可信度收口（fix，非新功能）
 

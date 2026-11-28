@@ -1,7 +1,7 @@
 # round63：内部试用就绪（退款脊柱 + 第一波硬化）
 
 Round: 63（**所有者 2026-11-28 授权「剩下问题按推荐执行」**）
-Status: Approved（ADR 0091 已 Accepted；票 234 已签收合并，235 implemented + Verifier PASS-with-registered-unmet 待签收，236 blocked by 235）
+Status: Approved（ADR 0091 已 Accepted；票 234 已签收合并，235 已签收 + 本地合并 `dce6909`、待 push/CI，236 blocked by 235）
 边界声明：本文件只冻结范围与顺序，不代表任何票已实现。每张票仍以
 `plans/<id>-*.md` 的 Allowlist / AC / Verify / Forbidden 为准。
 

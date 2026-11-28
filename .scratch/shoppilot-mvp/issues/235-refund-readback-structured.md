@@ -2,7 +2,7 @@
 
 Round: 63（内部试用就绪第一波；ADR 0091）
 ADR: 0047（退款审核闸门）、0091（程序范围）
-Status: implemented（独立 Verifier PASS-with-registered-unmet，待所有者签收）　Claimed by: Codex　Blocked by: 无（234 已于 2026-11-28 收口）
+Status: signed（2026-11-28 所有者签收；本地合并 `dce6909`；待 push / CI）　Claimed by: Codex　Blocked by: 无（234 已于 2026-11-28 收口）
 契约：[plans/235-refund-readback-structured.md](../../plans/235-refund-readback-structured.md)（2026-11-28 冻结）
 
 ## What to build
@@ -51,3 +51,7 @@ Status: implemented（独立 Verifier PASS-with-registered-unmet，待所有者�
   按 AC8 原文保留该红点，不删除、不弱化，不以结构化字段替它洗绿。
 - 环境边界：Qdrant/ES 不可用（Docker 引擎未起）；退款链路不依赖它们，
   活体 1–8 步均实际执行。Redis 由本机临时实例提供。
+- **签收与合并（2026-11-28）**：所有者书面签收；post-sign merge `dce6909` 已落本地
+  `main`，合并后 `mvnw verify` 仍为 896 tests / 146 suites、0 失败，文档门禁与脚本语法全绿。
+  受本机网络（GitHub 443 与代理均不可达）阻塞，push 与 post-merge `ci-subset` 尚未完成；
+  CI success 前不写 `done`、不解锁 236。
