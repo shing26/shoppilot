@@ -142,10 +142,17 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
 4. 历史文件名是审计接口。除非 ticket 明确要求迁移，不重命名、不压缩、不清理旧产物。
 5. `ShopPilot-项目梳理-20260913.md` 不是证据；它是 2026-09-13 的过期快照，且当前未跟踪。
 
+## 2026-11-28 round63 票 234（U3）：退款审批工单 outbox
+
+- **实现口径**：受理事务内同写 `refunds`、订单 `REFUNDING` 与 H2/PG `V13` 的 `refund_work_item_outbox`；提交后立即补开，失败按有界指数退避重试，成功后回填 `refunds.ticket_id`。工单创建是**至少一次**：`SENDING` 租约（2 分钟）过期后的重试可能重复开单；已审核退款由补偿器取消自己认领的 `SENDING` 行，避免「回收 → 认领 → 取消 0 行」的无限循环。
+- **JVM**：`RefundWorkItemOutboxTest` 10 条（AC1–AC6 + `SENDING` 取消回归 + REJECT 路径 + 上下文恢复 + Prometheus 导出名）；`RefundInvariantTest` / `WorkItemProducerTest` 既有断言未弱化。全仓 `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，896 tests / 146 suites，0 failures / 0 errors / 0 skipped**；biz-mock LINE 84.10%（门槛 76%）。
+- **活体（本机 JVM，HEAD `f143288` + dirty 工作树）**：`pwsh -NoProfile -File scripts/verify-refund-outbox.ps1` 全 PASS——停 :8092 → 直连 biz-mock 受理返回 `PENDING_APPROVAL` / `PENDING_REVIEW`（开单失败不回滚）→ 恢复工单服务 → 补偿只补开 1 张 `REFUND_APPROVAL` 工单并把 payload 回指同一 `refundId` → Prometheus 抓取端存在 `shoppilot_refund_ticket_outbox_compensated_total` 且不存在带保留后缀的旧名 → 经网关坐席账号放行进入 `PROCESSING` → 移出待审队列；`finally` 恢复 :8092。证据边界：本机演示栈，未验证多实例并发与真实支付到账。
+- **已知窗口**：审核与「补偿器已读取 PENDING_REVIEW、正在建单」并发时，仍可能补开一张已审核退款的工单；这是至少一次语义的残余窗口，不宣称恰好一次。V13 不回填升级前已存在、`ticket_id` 为空的历史退款。
+
 ## 2026-10-22 可信度收口（fix，非新功能）
 
 - **安全**：`/api/v1/support/ops/**` 默认拒绝（仅 `/ops/tickets/mine` 买家白名单）；`PostureGuard` 把 `replace-with-*` / `sk-replace-me` 判为未覆盖；`/auth/mock-token` 增加请求期 remoteAddr/Host 校验。
-- **资金**：`refunds.active_order_id` 可空唯一列 + H2/PG `V9`（一单最多一笔在办退款）；审批单调用移出事务（afterCommit），失败计数 `shoppilot_refund_ticket_missing_total`。
+- **资金**：`refunds.active_order_id` 可空唯一列 + H2/PG `V9`（一单最多一笔在办退款）；审批单调用移出受理事务，失败计数 `shoppilot_refund_ticket_missing_total`。
 - **可复现**：`scripts/bootstrap_env.py`、`scripts/demo.py --up`、`postgres` 归 `full` 档；CI 的 Coverage 步追加 `gen_status.py --check` 与 `docker compose config`。
 - **验证**：`RefundInvariantTest`（绕网关并发 + 工单不可达）、`OpsAuthorizationInterceptorTest`、`AuthControllerMockTokenTest`、`DevDefaultsPolicyTest` 占位符用例；当前读数见 [`STATUS.md`](STATUS.md)。
 - **活体（2026-10-22，本机 JVM，perf MockLLM + bge-m3）**：`python scripts/demo.py --scenario all` 三场景 PASS——缓存第二次 L1 且模型增量 0；串号 T001 `queryLogistics=STATE_NOT_ALLOWED` / T002 `NOT_FOUND`；降级 `LLM_TIMEOUT` + 工单号。另实测 ops：买家 token 打 `feedback/review-queue` 与 `tenants` 均 403，`tickets/mine` 200，ops token 200；退款并发（绕过网关、不同 token）一笔 `PENDING_APPROVAL`、一笔 `STATE_NOT_ALLOWED`。

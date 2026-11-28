@@ -82,6 +82,13 @@ shoppilot:
     # 短超时是刻意的：调用方在用户的对话回合里，多等一秒就是一次可感知的卡顿。
     ticket-base-url: ${SHOPPILOT_TICKET_URL:http://127.0.0.1:8092}
     ticket-timeout: 2s
+    # round63 票 234：退款审批工单 outbox 的补偿节奏。默认 5s 扫一轮，
+    # 失败从 2s 起指数退避、上限 5m；测试用大间隔关闭后台轮询。
+    refund-outbox:
+      poll-interval-ms: 5000
+      initial-delay-ms: 5000
+      initial-backoff: 2s
+      max-backoff: 5m
     identity:
       # round25 票 80 / ADR 0056：演示账号的口令。**默认值是空串，不是某个口令**——
       # 空串的语义是「一条演示账号都不建」。仓库里放一个默认口令，就等于把一把没换过的锁
