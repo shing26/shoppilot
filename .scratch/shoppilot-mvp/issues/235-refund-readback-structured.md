@@ -2,7 +2,7 @@
 
 Round: 63（内部试用就绪第一波；ADR 0091）
 ADR: 0047（退款审核闸门）、0091（程序范围）
-Status: in-progress　Claimed by: Codex　Blocked by: 无（234 已于 2026-11-28 收口）
+Status: implemented（独立 Verifier PASS-with-registered-unmet，待所有者签收）　Claimed by: Codex　Blocked by: 无（234 已于 2026-11-28 收口）
 契约：[plans/235-refund-readback-structured.md](../../plans/235-refund-readback-structured.md)（2026-11-28 冻结）
 
 ## What to build
@@ -33,3 +33,21 @@ Status: in-progress　Claimed by: Codex　Blocked by: 无（234 已于 2026-11-2
 - `verify-refund-approval.ps1` 第 4 步仍靠自由文本「放行」+「支付渠道」；
   local 3B 回读措辞不稳定。
 - 本票只做结构化字段与断言，不解决 local 3B 工具派发率。
+
+**实现与验证（2026-11-28，HEAD `88ef2dd`）**
+
+- `OrderView` / `OrderDetailView` 新增 `payoutBoundary`；无退款 null，三态退款均为
+  `PAYMENT_CHANNEL`。`refundReview` 三态与 `refundBoundaryNote` 原文未改。
+- `RefundReviewTest` 补无退款 null 与三态边界断言；窄测 10/10。
+- `verify-refund-approval.ps1` 新增放行/驳回两条买家订单详情结构化断言，
+  原「放行 / 支付渠道」文本断言原样保留。
+- 买家端 `OrderDetail` 类型同步；`OrderCard` 显示退款进度，只把
+  `PAYMENT_CHANNEL` 映射为「到账由支付渠道处理」，不显示预计到账时间。
+- 独立 Verifier 亲跑：全仓 `mvnw verify` 896 tests / 146 suites，0 失败；
+  typecheck、44 条前端测试、build、脚本语法、文档门禁全绿；AC1–AC8 判
+  **PASS-with-registered-unmet**。
+- **登记未达成**：local 3B 两次活体读回都含「支付渠道」但缺「放行」，
+  原文本断言两次红、脚本退出码 1；放行/驳回两条结构化断言两次均 PASS。
+  按 AC8 原文保留该红点，不删除、不弱化，不以结构化字段替它洗绿。
+- 环境边界：Qdrant/ES 不可用（Docker 引擎未起）；退款链路不依赖它们，
+  活体 1–8 步均实际执行。Redis 由本机临时实例提供。
