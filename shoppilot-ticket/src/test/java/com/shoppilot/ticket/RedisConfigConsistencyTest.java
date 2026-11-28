@@ -74,6 +74,21 @@ class RedisConfigConsistencyTest {
         }
     }
 
+    /**
+     * round63 票 236 修订 1：ticket 的 {@code @SpringBootTest} 会真的发审计事件。
+     * 测试 classpath 必须切到独立 Redis 逻辑库，否则全仓 verify 会把
+     * {@code TICKET_*} 测试行写进活体 DB 0。
+     */
+    @Test
+    @DisplayName("ticket 测试 classpath 使用独立 Redis DB，不写活体 DB 0")
+    void testClasspathUsesIsolatedRedisDatabase() throws IOException {
+        Path props = Path.of("src/test/resources/application.properties");
+        assertThat(props).as("ticket 测试资源必须存在，否则测试会回落到生产 DB 0").exists();
+        assertThat(Files.readString(props, StandardCharsets.UTF_8))
+                .as("ticket 测试必须用独立 Redis 逻辑库")
+                .contains("spring.data.redis.database=1");
+    }
+
     /** 从 yml 里把 host 与 port 两行抠出来，别的都不管。 */
     private static String redisShapeOf(String service, String yml) {
         Matcher host = Pattern.compile("(?m)^\\s{6}host:\\s*(\\$\\{SHOPPILOT_REDIS_HOST:[^}]*}|\\S+)\\s*$").matcher(yml);

@@ -167,22 +167,36 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   `shoppilot:audit` / `shoppilot-audit`；`publish` / `read` / `acknowledge` /
   `createGroup` 统一使用配置值。biz-mock 测试 classpath 指向
   `shoppilot:audit-test` / `shoppilot-audit-test`，事件字段、幂等键、
-  直写兜底与 `/api/audit` 契约零改动。
+  直写兜底与 `/api/audit` 契约零改动。ticket 测试 classpath 使用独立
+  Redis 逻辑库（`spring.data.redis.database=1`），`AuditPublisher` 本体与
+  生产流名不动。
 - **JVM**：新增 `AuditStreamIsolationTest` 3 条（默认生产值；
   自定义流/组用于 publish/createGroup/read；自定义流/组用于 acknowledge）。
+  `RedisConfigConsistencyTest` 增加 1 条静态守卫，钉住 ticket 测试的 DB 1。
   `shoppilot-biz-mock -am test` **111 tests BUILD SUCCESS**；
-  全仓 `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，899 tests / 147 suites，
+  全仓 `.\mvnw.cmd -B -ntp verify` **BUILD SUCCESS，900 tests / 147 suites，
   0 failures / 0 errors / 0 skipped**。
-- **活体（本机 Redis 16379 + biz-mock 8091，HEAD `b0bb2b1` + dirty 工作树）**：
-  `pwsh -NoProfile -File scripts/verify-audit-isolation.ps1` 退出 0；
-  跑 `RefundReviewTest` 前 `/api/audit` 为 `rows=0 uniqueEventIds=0`，
-  跑完后仍为 `rows=0 newEventIds=0 testShapedRows=0`，10 条审核测试全部 PASS。
-  若测试仍写生产流，查询侧惰性 drain 会使 after 出现测试行；本次未出现。
+- **独立 Verifier 首轮（HEAD `39049b3`）**：判定 FAIL，抓出三项 P1——
+  ticket 测试仍经 `AuditPublisher` 写生产流（全量 verify 后
+  `XLEN shoppilot:audit=11` 并落入活体 `/api/audit`）；AC5 脚本在
+  `RefundReviewTest` 未执行或基线已有测试行时仍可假通过；票面改了
+  round63 spec 这个票外文件。实现方未合并、未签收。
+- **修订 1（2026-11-28）**：契约把 ticket 测试资源加入 Allowlist；ticket
+  测试改用 Redis DB 1；`RedisConfigConsistencyTest` 增加静态守卫；AC5 脚本
+  增加 surefire 报告 10 条断言、生产/测试流 `XLEN` 一平一增断言、基线零
+  测试形态行断言；回退 round63 spec 改动。
+- **活体（本机 Redis 16379 + biz-mock 8091，HEAD `39049b3` + 修订 1
+  dirty 工作树）**：全量 verify 前后 DB 0 `XLEN shoppilot:audit` 均为 11、
+  DB 0 测试流 112→168、DB 1 生产流 22→33；重启 biz-mock 后
+  `/api/audit` 为 0 行。`scripts/verify-audit-isolation.ps1` 退出 0：
+  `before rows=0`、`after rows=0 newEventIds=0 testShapedRows=0`，
+  生产流 11→11、测试流 118→124，surefire 报告
+  `tests=10 failures=0 errors=0 skipped=0 fresh=True`。
 - **边界**：活体基线为空表，eventId 去重边界未在历史非空表上复测；
   测试流 `shoppilot:audit-test` 不做 TTL/MAXLEN 清理；生产流名可被环境变量
   误覆盖，未加启动期防呆。以上均登记，不在本票扩范围。
-- **状态**：实现完成，本地 AC1–AC6 PASS；独立 Verifier 与所有者签收未完成，
-  不写 `done`、不合并 `main`。
+- **状态**：修订 1 实现完成，本地 AC1–AC6 PASS；独立 Verifier 复验与所有者
+  签收未完成，不写 `done`、不合并 `main`。
 
 ## 2026-10-22 可信度收口（fix，非新功能）
 

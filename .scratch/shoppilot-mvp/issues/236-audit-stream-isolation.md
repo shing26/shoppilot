@@ -44,25 +44,44 @@ Status: implemented（待独立 Verifier）　Claimed by: Codex　Blocked by: �
   `SHOPPILOT_AUDIT_STREAM` / `SHOPPILOT_AUDIT_GROUP` 映射，生产默认不变。
 - 测试 classpath 的 `application.properties` 指向
   `shoppilot:audit-test` / `shoppilot-audit-test`。
+- ticket 测试 classpath 使用独立 Redis 逻辑库
+  （`spring.data.redis.database=1`），避免 `TicketWorkflowTest` 等
+  `@SpringBootTest` 把 `TICKET_*` 事件写进活体 DB 0；`AuditPublisher` 本体
+  与生产流名不动。
 - 新增 `AuditStreamIsolationTest` 3 条：默认构造生产值、自定义流/组用于
   publish/createGroup/read、自定义流/组用于 acknowledge。
+- `RedisConfigConsistencyTest` 增加 1 条静态守卫，钉住 ticket 测试的 DB 1。
 - 新增 `scripts/verify-audit-isolation.ps1`：活体 `/api/audit` 前后快照 +
-  `RefundReviewTest` + eventId/总数/测试行三重断言。
+  `RefundReviewTest` + eventId/总数/测试行三重断言 + surefire 10 条 +
+  生产/测试流 `XLEN` 一平一增 + 基线零测试形态行。
 
 **验收证据（HEAD `b0bb2b1` + 票内 dirty 工作树）**
 
 - **AC1 / AC2 / AC4**：`AuditStreamIsolationTest` 3/3 +
   `RedisAuditChannelWireTest` 4/4 PASS；默认构造仍写生产流/组。
-- **AC3**：`RefundReviewTest` 10/10 PASS，测试 classpath 使用独立流/组。
+- **AC3**：`RefundReviewTest` 10/10 PASS，biz-mock 测试使用独立流/组；
+  ticket 测试 51/51 PASS，审计事件落 DB 1，DB 0 生产流无新增。
 - **AC5 活体（本机 Redis 16379 + biz-mock 8091）**：
   `pwsh -NoProfile -File scripts/verify-audit-isolation.ps1` 退出 0；
   `before rows=0 uniqueEventIds=0` → 跑 10 条退款审核测试 →
-  `after rows=0 newEventIds=0 testShapedRows=0`。若测试仍写生产流，
-  第一次 `/api/audit` 会惰性 drain 出测试行，after 必然非空。
+  `after rows=0 newEventIds=0 testShapedRows=0`；surefire 报告
+  `tests=10 failures=0 errors=0 skipped=0 fresh=True`；生产流 `XLEN`
+  11→11，测试流 118→124。脚本在测试未执行或基线已有测试行时会失败。
 - **AC6**：`shoppilot-biz-mock -am test` 111 tests BUILD SUCCESS；
   全仓 `.\mvnw.cmd -B -ntp verify` BUILD SUCCESS，
-  **899 tests / 147 suites，0 failures / 0 errors / 0 skipped**。
-- **AC7**：独立 Verifier 尚未启动；本票不自行宣称签收。
+  **900 tests / 147 suites，0 failures / 0 errors / 0 skipped**。
+- **AC7**：独立 Verifier 首轮在 `39049b3` 判 FAIL（三项 P1：ticket 测试
+  污染生产流、AC5 脚本可假通过、票外文件）。修订 1 已修复并回退票外改动，
+  待 Verifier 复验；本票不自行宣称签收。
+
+**修订 1（2026-11-28，Verifier 发现后）**
+
+- 全仓 verify 曾让 ticket 测试写 `TICKET_*` 事件到生产流；根因是 ticket
+  `@SpringBootTest` 共用 DB 0。修法是测试 classpath 切 DB 1，而不是改
+  `AuditPublisher` 或生产流名。
+- AC5 脚本原来只看退出码和新增行；现在解析 surefire 报告、做 `XLEN`
+  正向控制，并要求基线本身零测试形态行。
+- round63 spec 的票外状态改动已回退；该文件不在 Allowlist 内。
 
 **三个现场追问**
 
