@@ -185,18 +185,25 @@ README 里的数字、否决项和“可复现”声明都应从这里找到证�
   测试改用 Redis DB 1；`RedisConfigConsistencyTest` 增加静态守卫；AC5 脚本
   增加 surefire 报告 10 条断言、生产/测试流 `XLEN` 一平一增断言、基线零
   测试形态行断言；回退 round63 spec 改动。
-- **活体（本机 Redis 16379 + biz-mock 8091，HEAD `39049b3` + 修订 1
-  dirty 工作树）**：全量 verify 前后 DB 0 `XLEN shoppilot:audit` 均为 11、
+- **活体（本机 Redis 16379 + biz-mock 8091，HEAD `d0cab6c`）**：全量 verify
+  前后 DB 0 `XLEN shoppilot:audit` 均为 11、
   DB 0 测试流 112→168、DB 1 生产流 22→33；重启 biz-mock 后
   `/api/audit` 为 0 行。`scripts/verify-audit-isolation.ps1` 退出 0：
   `before rows=0`、`after rows=0 newEventIds=0 testShapedRows=0`，
   生产流 11→11、测试流 118→124，surefire 报告
   `tests=10 failures=0 errors=0 skipped=0 fresh=True`。
+- **独立 Verifier 复验（`d0cab6c`）**：P1-1/2/3 全 PASS；AC1–AC6 PASS；
+  全仓 verify **900 tests / 147 suites，0 failures / 0 errors / 0 skipped**；
+  总判定 **PASS-with-registered-unmet**，P0/P1 清零。Verifier 另用 T999
+  控制事件验证 AC5 基线失败分支：脚本退出 1 并报
+  `FAIL live audit baseline has no test-shaped rows found=1`。
 - **边界**：活体基线为空表，eventId 去重边界未在历史非空表上复测；
   测试流 `shoppilot:audit-test` 不做 TTL/MAXLEN 清理；生产流名可被环境变量
-  误覆盖，未加启动期防呆。以上均登记，不在本票扩范围。
-- **状态**：修订 1 实现完成，本地 AC1–AC6 PASS；独立 Verifier 复验与所有者
-  签收未完成，不写 `done`、不合并 `main`。
+  误覆盖，未加启动期防呆；AC5 默认只查 T001 / `limit=200`。以上均登记，
+  不在本票扩范围。DB 0 生产流保留 11 条修复前历史测试事件（已 ack、
+  `lag=0`），按 Forbidden 不清理。
+- **状态**：修订 1 实现完成，独立 Verifier `PASS-with-registered-unmet`；
+  所有者签收未完成，不写 `done`、不合并 `main`。
 
 ## 2026-10-22 可信度收口（fix，非新功能）
 

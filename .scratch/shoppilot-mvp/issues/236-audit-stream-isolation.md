@@ -2,7 +2,7 @@
 
 Round: 63（内部试用就绪第一波；ADR 0091）
 ADR: 0054（事件与审计）、0091（程序范围）
-Status: implemented（待独立 Verifier）　Claimed by: Codex　Blocked by: 无（235 已于 2026-11-28 收口）
+Status: implemented（独立 Verifier PASS-with-registered-unmet，待所有者签收）　Claimed by: Codex　Blocked by: 无（235 已于 2026-11-28 收口）
 契约：[plans/236-audit-stream-isolation.md](../../plans/236-audit-stream-isolation.md)（2026-11-28 冻结）
 
 ## What to build
@@ -71,8 +71,10 @@ Status: implemented（待独立 Verifier）　Claimed by: Codex　Blocked by: �
   全仓 `.\mvnw.cmd -B -ntp verify` BUILD SUCCESS，
   **900 tests / 147 suites，0 failures / 0 errors / 0 skipped**。
 - **AC7**：独立 Verifier 首轮在 `39049b3` 判 FAIL（三项 P1：ticket 测试
-  污染生产流、AC5 脚本可假通过、票外文件）。修订 1 已修复并回退票外改动，
-  待 Verifier 复验；本票不自行宣称签收。
+  污染生产流、AC5 脚本可假通过、票外文件）。修订 1 修复后，Verifier 在
+  `d0cab6c` 复验 **PASS-with-registered-unmet**：三项 P1 全闭环，
+  AC1–AC6 PASS，P0/P1 清零；未达成项仅为所有者书面签收及下述残余边界。
+  本票不自行宣称签收。
 
 **修订 1（2026-11-28，Verifier 发现后）**
 
@@ -82,6 +84,16 @@ Status: implemented（待独立 Verifier）　Claimed by: Codex　Blocked by: �
 - AC5 脚本原来只看退出码和新增行；现在解析 surefire 报告、做 `XLEN`
   正向控制，并要求基线本身零测试形态行。
 - round63 spec 的票外状态改动已回退；该文件不在 Allowlist 内。
+
+**残余边界（非 P1，Verifier 已登记）**
+
+- DB 0 生产流保留 11 条修复前历史测试事件（已 ack、`lag=0`），按 Forbidden
+  不清理；Verifier 为验证基线失败分支另注入 1 条 T999 控制事件，仅在本机
+  临时 Redis/H2 内存栈中。
+- 测试流无 TTL/MAXLEN：DB 0 测试流 224 条、DB 1 55 条；DB 1 无消费者，
+  长期跑会累积，留待运维策略票。
+- AC5 脚本默认只查 `T001`、`limit=200`；多租户或超过 200 行的基线不在
+  默认检查面内。
 
 **三个现场追问**
 
