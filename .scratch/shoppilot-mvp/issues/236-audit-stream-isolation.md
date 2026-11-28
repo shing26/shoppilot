@@ -2,7 +2,7 @@
 
 Round: 63（内部试用就绪第一波；ADR 0091）
 ADR: 0054（事件与审计）、0091（程序范围）
-Status: blocked　Claimed by: 未领取　Blocked by: 235
+Status: ready-for-agent　Claimed by: 未领取　Blocked by: 无（235 已于 2026-11-28 收口）
 契约：[plans/236-audit-stream-isolation.md](../../plans/236-audit-stream-isolation.md)（2026-11-28 冻结）
 
 ## What to build
